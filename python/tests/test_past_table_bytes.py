@@ -12,7 +12,11 @@ on six pattern entries.
 
 `patterns.past_table_rests` is the rule: a past-table byte whose landing cell
 is a constant `$0000` -- zero in the file AND unnamed by any absolute-operand
-instruction -- is emitted as a KEYOFF. These tests pin the static reading on
+instruction -- is decoded as a KEYOFF, and `goatwriter.past_table_drum_plan`
+re-emits it as a note on a variant instrument wherever the instrument's wave
+program sounds an absolute-pitch frame (Sanxion's noise drum; see
+test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7). These tests
+pin the static reading on
 Sanxion, the six entries it reaches, both halves of the rule, and that
 Commando (whose cell is written by `$515A STA $54F8,X`) does not qualify.
 """
@@ -26,7 +30,10 @@ from corpus import CORPUS, needs_corpus
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+import songview  # noqa: E402
+from h2g import goatwriter as gw  # noqa: E402
 from h2g import patterns  # noqa: E402
+from h2g.convert import convert  # noqa: E402
 from h2g.detect import detect  # noqa: E402
 from h2g.sidfile import load_sid  # noqa: E402
 
@@ -42,6 +49,22 @@ SANXION_CELL = 0xB50D          # SANXION_TABLE + 2 * 96
 # stream before slicing. Six entries, one row each.
 SANXION_SIX = {0x1: 20, 0x3: 20, 0x4: 20, 0x6: 20, 0x7: 20, 0x8: 20}
 G_SHARP_7 = patterns.GT_FIRSTNOTE + 92
+# The GT instrument the six drum rows play (record 0 under
+# --compact-instruments), its wave program as converted, and the variant's:
+# the two `$41` frames the note pitches -- at `$0000` in the original, DC --
+# become `$09` (`$E9` in the table: test bit, gate kept), and the absolute
+# B-5 noise frame the original sounds stays.
+SANXION_DRUM_RECORD = 1
+SANXION_RECORD_WAVE = [(0x41, 0x00), (0x81, 0xC7), (0x41, 0x00), (0xFF, 0x00)]
+SANXION_VARIANT_WAVE = [(0xE9, 0x00), (0x81, 0xC7), (0xE9, 0x00), (0xFF, 0x00)]
+PRESETS = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
+
+
+def _preset_opts(name):
+    import json
+    import fidelity as F
+    return F._preset_opts(json.loads(PRESETS.read_text(encoding="utf-8")),
+                          name)
 
 
 def _sanxion():
@@ -66,6 +89,22 @@ def test_sanxion_byte_60_lands_on_two_zero_bytes_nothing_names():
 
 @needs_corpus
 def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
+    """The six drum entries' `01 60` at row 20 -- and what the CONVERSION
+    finally emits there.
+
+    The decoder still writes a KEYOFF carrying the record's number: that is
+    the shape `goatwriter.past_table_drum_plan` keys on, and the decode-level
+    half below pins it. But the KEYOFF is no longer what the file says.
+    RETRACTED as the emitted row (found wrong at e362bd6, re-measured in
+    C:/t/sanxion-noise-drum): the original's `$60` is a note-on at frequency
+    `$0000` whose record-0 wave program `41 / 81 at absolute B-5 / 41 / stop`
+    sounds a noise frame at `41B8` on siddump's third voice -- 41 in 100 s,
+    first at frame 645 -- and the KEYOFF sounded none. The emitted row is a
+    note on a VARIANT of record 0 whose pitched frames are test-bit silence
+    (`$09`: test bit, gate kept as the original's `$41` keeps it) and whose
+    absolute frame is kept, with the record's own pulse pointer so the
+    note-on reseeds the pulse as the original's does.
+    """
     sid, det = _sanxion()
     hits = {}
     for i in range(det.pattern_used):
@@ -92,6 +131,36 @@ def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
         ev = patterns._build_raw_pattern(data, addr,
                                          rest_notes=frozenset({96}), **kw)
         assert ev[4 * row] == patterns.GT_KEYOFF, (i, row)
+    # What the file emits under presets.json: no KEYOFF carrying a record's
+    # number survives, and six rows are a note on the variant -- one per
+    # drum entry, each at row 20 of its pattern.
+    song = songview.parse_sng(convert(str(SANXION), log=lambda m: None,
+                                      **_preset_opts("Sanxion.sid")))
+    variant = len(song.instruments)
+    record = song.instruments[SANXION_DRUM_RECORD - 1]
+    drum = song.instruments[variant - 1]
+    wave = song.tables["WTBL"]
+    assert wave[record.wave_ptr - 1:record.wave_ptr + 3] == SANXION_RECORD_WAVE
+    assert wave[drum.wave_ptr - 1:drum.wave_ptr + 3] == SANXION_VARIANT_WAVE
+    # Everything but the wave pointer is the record's: envelope, pulse
+    # pointer (the reseed), filter, vibrato, gate timer, firstwave.
+    assert (replace(drum, number=0, wave_ptr=0)
+            == replace(record, number=0, wave_ptr=0))
+    rows, keyoffs = [], 0
+    for pat in song.patterns:
+        for k in range(0, len(pat) - 3, 4):
+            if pat[k] == patterns.GT_KEYOFF and pat[k + 1]:
+                keyoffs += 1
+            if pat[k + 1] == variant:
+                rows.append(k // 4)
+                assert pat[k] == patterns.GT_FIRSTNOTE, k // 4
+                # The record is named again on the voice's next note, so
+                # the variant's number does not latch past the drum.
+                nxt = next(j for j in range(k + 4, len(pat), 4)
+                           if pat[j + 1] or pat[j] <= patterns.GT_LASTNOTE)
+                assert pat[nxt + 1] == SANXION_DRUM_RECORD
+    assert keyoffs == 0
+    assert rows == [20] * len(SANXION_SIX)
 
 
 @needs_corpus
@@ -172,6 +241,99 @@ def test_reach_is_four_files_decoded_and_one_played():
                 break
     assert hit == {"BMX_Kidz.sid", "Kings_of_the_Beach_ingame.sid",
                    "Ricochet.sid", "Sanxion.sid"}
+
+
+# ---------------------------------------------------------------------------
+# The past-table drum: `goatwriter.past_table_drum_plan` re-emits the KEYOFF
+# above as a note on a variant of its record, wherever the record's wave
+# program sounds an absolute-pitch frame (`_past_table_drum_block`).
+# ---------------------------------------------------------------------------
+
+def test_the_variant_silences_the_pitched_frames_and_keeps_the_absolute():
+    table = SANXION_RECORD_WAVE + [(0x11, 0x00)]
+    assert gw._past_table_drum_block(table, 1) == SANXION_VARIANT_WAVE
+    # A gate-off frame keeps its gate bit off: `$40` -> `$08` (`$E8`).
+    assert gw._past_table_drum_block(
+        [(0x40, 0x00), (0x81, 0xC7), (0xFF, 0x00)], 1) == [
+            (0xE8, 0x00), (0x81, 0xC7), (0xFF, 0x00)]
+    # `$80` keeps the last pitch written: after the absolute frame it is
+    # still B-5 and audible, so it stays; a command passes through.
+    assert gw._past_table_drum_block(
+        [(0x41, 0x00), (0x81, 0xC7), (0x41, 0x80), (0xF1, 0x02),
+         (0xFF, 0x00)], 1) == [
+            (0xE9, 0x00), (0x81, 0xC7), (0x41, 0x80), (0xF1, 0x02),
+            (0xFF, 0x00)]
+
+
+def test_the_variant_declines_what_it_cannot_say():
+    # No absolute frame: the variant would be silence, which the KEYOFF is.
+    assert gw._past_table_drum_block([(0x41, 0x00), (0xFF, 0x00)], 1) is None
+    # A delay that writes the note's pitch under an audible waveform would
+    # need that waveform changed, which only a waveform byte can do.
+    assert gw._past_table_drum_block(
+        [(0x81, 0xC7), (0x03, 0x00), (0xFF, 0x00)], 1) is None
+    # A loop is walked once only, so it is refused.
+    assert gw._past_table_drum_block(
+        [(0x41, 0x00), (0x81, 0xC7), (0xFF, 0x01)], 1) is None
+    # Nothing stops it within the table.
+    assert gw._past_table_drum_block([(0x41, 0x00), (0x81, 0xC7)], 1) is None
+
+
+@needs_corpus
+def test_the_plan_names_the_record_again_before_the_next_note():
+    # The variant's number latches for the voice (gplay.c:912-913), so the
+    # next note must name the record again; one that does not gets it
+    # written in, and a drum with no row left to do it keeps the KEYOFF.
+    sid, det = _sanxion()
+    wave = SANXION_RECORD_WAVE
+    end = [0xFF, 0, 0, 0]
+    pats = [
+        [0x70, 1, 0, 0, patterns.GT_KEYOFF, 1, 0, 0, 0xBD, 0, 0, 0,
+         0x72, 0, 0, 0] + end,
+        [0x70, 1, 0, 0, patterns.GT_KEYOFF, 1, 0, 0, 0xBD, 0, 0, 0] + end,
+    ]
+    out, variants = gw.past_table_drum_plan(
+        sid, det, pats, [[0, 1, 0xFF, 0]], list(wave), [1], 0, 1, 2)
+    assert variants == [(1, 2, SANXION_VARIANT_WAVE)]
+    assert out[0][4:8] == [patterns.GT_FIRSTNOTE, 2, 0, 0]
+    assert out[0][12:14] == [0x72, 1]
+    assert out[1] is pats[1]
+    # A transpose below zero lifts the note so it stays a real one.
+    out, _ = gw.past_table_drum_plan(
+        sid, det, pats, [[0xEC, 0, 0xFF, 0]], list(wave), [1], 0, 1, 2)
+    assert out[0][4] == patterns.GT_FIRSTNOTE + 4
+    # A file with no past-table rest byte is returned untouched.
+    cell = sid.to_offset(SANXION_CELL)
+    patched = bytearray(sid.data)
+    patched[cell + 1] = 0x07
+    sid0 = replace(sid, data=bytes(patched))
+    assert patterns.past_table_rests(sid0, det) == frozenset()
+    assert gw.past_table_drum_plan(
+        sid0, det, pats, [[0, 1, 0xFF, 0]], list(wave), [1], 0, 1, 2) == (
+            pats, [])
+
+
+@needs_corpus
+def test_only_a_past_table_rest_writes_a_keyoff_with_an_instrument(
+        monkeypatch):
+    # The plan keys on the shape "KEYOFF carrying an instrument number". It
+    # is the rule's alone: with `past_table_rests` stood down, no entry of
+    # any classic-dialect file decodes to it under the presets' grammar --
+    # `rest_keyoff`, the bit-6 rest, writes `00` there.
+    grammar = dict(GRAMMAR, rest_keyoff=True, rest_instrument=True)
+    real = patterns.past_table_rests
+    with_rule, without = set(), set()
+    for path, sid, det in _classic_corpus():
+        for i in range(max(det.pattern_used, 0)):
+            for fn, seen in ((real, with_rule),
+                             (lambda s, d: frozenset(), without)):
+                monkeypatch.setattr(patterns, "past_table_rests", fn)
+                ev = patterns.decode_entry(sid, det, i, **grammar)
+                if ev and any(ev[k] == patterns.GT_KEYOFF and ev[k + 1]
+                              for k in range(0, len(ev) - 3, 4)):
+                    seen.add(path.name)
+    assert without == set()
+    assert "Sanxion.sid" in with_rule
 
 
 # ---------------------------------------------------------------------------

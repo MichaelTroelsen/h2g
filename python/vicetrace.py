@@ -53,8 +53,9 @@ def sign_extended(value: int) -> bool:
     (260872 of 260872) and of none other. So `.freq`, `.pulse` and `.adsr` are
     only trustworthy when this is False; when True the real high byte is
     destroyed and only the low byte is data. `.ctrl` and the filter fields are
-    8-bit and unaffected. `fidelity.vice_freq_repair` reconstructs a frequency
-    stream against siddump; nothing reconstructs pulse or adsr.
+    8-bit and unaffected. `parse` repairs `.pulse` and `.adsr` by continuity
+    (`repair_sign_extension`); `.freq` stays raw for
+    `fidelity.vice_freq_repair`, which has siddump as an oracle.
     """
     return (value >> 8) == 0xFF and bool(value & 0x80)
 
@@ -135,7 +136,97 @@ def parse(text: str) -> list[Sample]:
             cur.cutoff, cur.res, cur.modevol = (int(g, 16) for g in m.groups())
     if cur is not None:
         samples.append(cur)
+    _repair_pulse_adsr(samples)
     return samples
+
+
+def repair_sign_extension(raw: list[int], attacks: list[int]) -> list[int]:
+    """Rebuild the high bytes the dump's sign extension destroyed, by continuity.
+
+    A corrupt run is a maximal stretch of `sign_extended` samples. The true
+    high byte only changes when the low byte wraps `$FF -> $00`, which ends a
+    run, so a run takes the lower of its neighbours' high bytes (they agree or
+    differ by one). Neighbours on the far side of a gate rise (`attacks`) are
+    another note and are ignored; a run with no anchor takes the nearest
+    correct sounding sample, else 0. Neighbours differing by more than one
+    (a jump inside a note) take the high byte nearest the straight line between
+    them. `fidelity.vice_freq_repair` is the frequency version, which also has
+    siddump as an oracle; pulse and ADSR have none under `--vice`, so this is
+    continuity alone.
+    """
+    n = len(raw)
+    out = list(raw)
+    atk = sorted(set(attacks))
+    i = 0
+    while i < n:
+        if not sign_extended(raw[i]):
+            i += 1
+            continue
+        s = i
+        while i < n and sign_extended(raw[i]):
+            i += 1
+        e = i
+        note_start, note_end = 0, n
+        for a in atk:
+            if a <= s:
+                note_start = a
+            else:
+                note_end = a
+                break
+        before = raw[s - 1] if s - 1 >= note_start else None
+        after = raw[e] if e < note_end else None
+        if before is not None and after is not None:
+            hb, ha = before >> 8, after >> 8
+            if abs(hb - ha) <= 1:
+                his = [min(hb, ha)] * (e - s)
+            else:
+                lo_h, hi_h = min(hb, ha), max(hb, ha)
+                his = []
+                for k in range(s, e):
+                    t = (k - (s - 1)) / (e - (s - 1))
+                    target = before + (after - before) * t
+                    lo = raw[k] & 0xFF
+                    his.append(min(range(lo_h, hi_h + 1),
+                                   key=lambda h: abs(((h << 8) | lo) - target)))
+        elif before is not None:
+            his = [before >> 8] * (e - s)
+        elif after is not None:
+            his = [after >> 8] * (e - s)
+        else:
+            j = s - 1
+            while j >= 0 and (sign_extended(raw[j]) or not raw[j]):
+                j -= 1
+            k = e
+            while k < n and (sign_extended(raw[k]) or not raw[k]):
+                k += 1
+            cands = [(s - j, j)] if j >= 0 else []
+            if k < n:
+                cands.append((k - e + 1, k))
+            his = [(raw[min(cands)[1]] >> 8) if cands else 0] * (e - s)
+        for k, h in zip(range(s, e), his):
+            out[k] = (h << 8) | (raw[k] & 0xFF)
+    return out
+
+
+def _repair_pulse_adsr(samples: list[Sample]) -> None:
+    """Repair `.pulse` and `.adsr` in place, voice by voice. `.freq` is left
+    raw: `fidelity.vice_freq_repair` repairs it against siddump."""
+    for vi in range(max((len(s.voices) for s in samples), default=0)):
+        idx = [i for i, s in enumerate(samples) if vi < len(s.voices)]
+        if not idx:
+            continue
+        atk, prev = [], 0
+        for p, i in enumerate(idx):
+            g = samples[i].voices[vi].ctrl & 1
+            if g and not prev:
+                atk.append(p)
+            prev = g
+        for attr in ("pulse", "adsr"):
+            raw = [getattr(samples[i].voices[vi], attr) for i in idx]
+            if not any(sign_extended(x) for x in raw):
+                continue
+            for i, val in zip(idx, repair_sign_extension(raw, atk)):
+                setattr(samples[i].voices[vi], attr, val)
 
 
 def gate_edges(samples: list[Sample], voice: int) -> list[int]:

@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from typing import Callable, List
 
-from .detect import Detection, detect
+from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
-                         build_sng, derived_group_tempos, orderlist_tempo_values,
+                         append_song, build_sng, derived_group_tempos,
+                         file_multiplier, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
-                         pack_subtune, recommended_multiplier)
+                         HEADER_LEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -20,7 +21,10 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
                        inherit_free_rows)
+from .instrument_drop import (
+    drop_unnamed_instruments as drop_unnamed_instruments_from)
 from .sidfile import SidFile, load_sid
+from .stored_wave import stored_wave_notes
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
                      silence_pre_instrument_notes,
@@ -133,8 +137,7 @@ def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
     """
     try:
         speeds = find_song_speeds(sid, det)
-        return recommended_multiplier(
-            speeds, pack_subtune(speeds, sid.start_song), skip_gate)
+        return file_multiplier(sid, speeds, skip_gate)
     except Exception:                                          # noqa: BLE001
         return 1
 
@@ -165,6 +168,7 @@ def convert(sid_path: str, log: Logger = print,
             no_test_restart: bool = False,
             two_stage: bool = False,
             voice_two_stage: bool = False,
+            wave_alternate: bool = False,
             sfx_drum: bool = False,
             wave_program: bool = False,
             vibrato_command: bool = False,
@@ -183,7 +187,8 @@ def convert(sid_path: str, log: Logger = print,
             engine: int = 0,
             tempo: int | str | None = None,
             real_firstwave_instruments: tuple = (),
-            pulse_phase: bool = False) -> bytes:
+            pulse_phase: bool = False,
+            drop_unnamed_instruments: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -303,8 +308,35 @@ def convert(sid_path: str, log: Logger = print,
     regression. Naming only the instrument that needs it avoids that: empty
     by default and byte-inert everywhere it names nothing. See
     goatwriter._write_instruments.
+
+    wave_alternate emits effect bit $02's DERIVED alternate waveform
+    (det.wave_alternate_noise: `AND #$07 / ORA #$80`, noise at the voice's
+    own control bits) in the two players that derive it rather than table it
+    -- Chicken Song and Hollywood or Bust. Per song and off by default: it
+    trades Chicken Song `wave` for noise frames and costs Hollywood or Bust
+    11.5 points of melody (figures beside the emission in goatwriter, and
+    in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every other file.
+
+    drop_unnamed_instruments removes, from the finished file, every
+    instrument record no pattern row names, and renumbers the instrument
+    columns to match; instrument 1 is always kept, because both players
+    start every voice on it (gplay.c:62, player.s:621). Knucklebusters'
+    record 27 -- $00 $00, pulse width $000, an empty wavetable block, named
+    0 times -- is the case that asked for it. The packed .sid is unchanged
+    (greloc.c:291 already drops them); the tables are left as written.
+    Applied after every pass, so `real_firstwave_instruments` and the clone
+    passes still number instruments as written. Off by default: the Commando
+    fixture carries one such record (its instrument 13). See
+    instrument_drop.
+
+    A COMPILATION -- several players behind an init/play dispatch
+    (`detect.find_players`) -- converts subtune 0 from the first player as
+    before, then appends each further player's own conversion as the next
+    subtune. See `_append_players`. `sid_path` may also be an already-loaded
+    `SidFile`, which is how each player's view is converted.
     """
-    sid = load_sid(sid_path)
+    opts = {k: v for k, v in locals().items() if k not in ("sid_path", "log")}
+    sid = sid_path if isinstance(sid_path, SidFile) else load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
     log(f"SID Name....: '{sid.name}'")
     log(f"SID Author..: '{sid.author}'")
@@ -401,6 +433,13 @@ def convert(sid_path: str, log: Logger = print,
                    if pulse_phase and pulse and det.pulse_bounds >= 0
                    and det.pulse_tri_hi < 0 and pulse_reseed_gated(sid)
                    else {})
+    # A note byte past the table that lands on the per-voice stored-waveform
+    # cells sounds what voices 0 and 1 hold at that moment -- read by walking
+    # the orderlists, which are still in Hubbard numbering here, under the
+    # grammar convert_patterns decodes with. Not an option: it is what the
+    # player does. Commando is held out by name (stored_wave.HELD).
+    wave_notes = stored_wave_notes(sid, det, tracks, log, slides=slides,
+                                   status_bit6=status_bit6)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -418,6 +457,7 @@ def convert(sid_path: str, log: Logger = print,
         # detect._find_rest_silence_envelope.
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
         instr_base=instr_base, tie=tie,
+        wave_notes=wave_notes,
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
@@ -782,7 +822,7 @@ def convert(sid_path: str, log: Logger = print,
                 # must leave the output exactly as it was.
                 tracks[:] = snapshot
 
-    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
+    sng = build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
                      pulse=pulse, multiplier=multiplier,
                      sustain_exact=sustain_exact,
@@ -793,6 +833,7 @@ def convert(sid_path: str, log: Logger = print,
                      no_test_restart=no_test_restart,
                      two_stage=two_stage,
                      voice_two_stage=voice_two_stage,
+                     wave_alternate=wave_alternate,
                      instr_voices=instrument_voices(tracks, new_patterns),
                      # Per instrument where the orderlists allow it: the
                      # file-wide `short_row_calls` below caps EVERY instrument
@@ -815,3 +856,128 @@ def convert(sid_path: str, log: Logger = print,
                      real_firstwave_instruments=real_firstwave_instruments,
                      arps=ilv_arps,
                      pulse_plan=pulse_plan)
+    sng = _append_players(sng, sid, det, multiplier, opts, log)
+    if drop_unnamed_instruments:
+        # Last, on the finished bytes: every pass that writes or renumbers
+        # an instrument column (the clone passes included) has run.
+        sng = drop_unnamed_instruments_from(sng, log)
+    return sng
+
+
+def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
+                    opts: dict, log: Logger) -> bytes:
+    """`sng` with players 1..N-1 of a compilation appended as subtunes.
+
+    Every gate below is a refusal to guess, and a refusal keeps what came
+    before it -- the subtunes appended so far -- because subtune n of the
+    result must be the original's subtune n, and skipping a player would
+    renumber every one after it:
+
+    * the dispatch names two or more players (`det.players`) and the first is
+      the one `detect()` already read, so `sng`'s subtunes ARE player 0's;
+    * `sng` carries exactly player 0's subtunes, numbered 0..B-1;
+    * player k owns the next subtune number and is entered with A = 0, so a
+      one-subtune view reads the orderlist the original plays
+      (`detect.player_view`);
+    * the view re-detects to player k's own tables (`find_players`' reading);
+    * the appended song fits Goattracker's caps (`goatwriter.append_song`).
+
+    Each view converts with this call's options at this file's pack factor,
+    except the two that name things in the FIRST player: the per-instrument
+    firstwave list numbers player 0's instruments, and the unnamed-instrument
+    drop runs once, on the finished file, after this.
+
+    **The pulse table is the cap that binds.** 5_Title_Tunes' subtune 0
+    spends 214 of its 255 pulse rows on `pulse_phase`, so four more players'
+    sweeps cannot all fit beside it, phase-expanded or not. The appended
+    players are therefore tried at up to three levels -- the file's options,
+    then without `pulse_phase`, then without `pulse` (each record's starting
+    width, held) -- and the first level at which every player fits is kept;
+    where none does, the one that appends the most. Subtune 0 is never
+    degraded: it is the tune the file starts on, and its bytes do not move.
+    """
+    players = det.players
+    if isinstance(sid, PlayerView) or len(players) < 2:
+        return sng
+    first = players[0]
+    if first.instr_addr < 0 or first.pattern_lo_addr < 0 \
+            or sid.to_offset(first.instr_addr) != det.instr_start \
+            or sid.to_offset(first.pattern_lo_addr) != det.pattern_lo:
+        log(f"Players.................: {len(players)}, but subtune 0 was not "
+            "read from the first; nothing appended")
+        return sng
+    have = sng[HEADER_LEN]
+    if first.subtunes != tuple(range(have)):
+        log(f"Players.................: player 0 owns subtunes "
+            f"{list(first.subtunes)} and the conversion carries {have}; "
+            "nothing appended")
+        return sng
+    base_opts = dict(opts, real_firstwave_instruments=(),
+                     drop_unnamed_instruments=False, engine=0)
+    levels = [("the file's options", base_opts)]
+    for flag, what in (("pulse_phase", "without pulse_phase"),
+                       ("pulse", "without pulse sweeps")):
+        if levels[-1][1].get(flag):
+            levels.append((what, dict(levels[-1][1], **{flag: False})))
+    views = {}
+    best = None
+    for what, level_opts in levels:
+        lines: List[str] = []
+        out, appended = _append_level(sng, sid, players, have, multiplier,
+                                      level_opts, views, lines.append)
+        if best is None or appended > best[1]:
+            best = (out, appended, what, lines)
+        if appended == len(players) - 1:
+            break
+    out, appended, what, lines = best
+    for line in lines:
+        log(line)
+    log(f"Players.................: {appended} of {len(players) - 1} further "
+        f"player(s) appended as subtunes {have}..{have + appended - 1} "
+        f"({what})" if appended else
+        f"Players.................: none of {len(players) - 1} further "
+        "player(s) appended")
+    return out
+
+
+def _append_level(sng: bytes, sid: SidFile, players, have: int,
+                  multiplier: int, view_opts: dict, views: dict,
+                  log: Logger):
+    """(song, players appended) for one set of the appended players' options."""
+    out = sng
+    for k in range(1, len(players)):
+        p = players[k]
+        stop = None
+        if k not in views:
+            view = None
+            if p.subtunes != (have + k - 1,):
+                why = f"owns subtunes {list(p.subtunes)}, not [{have + k - 1}]"
+            else:
+                view = player_view(sid, players, k, multiplier)
+                why = None if view is not None else \
+                    "is not entered as `LDA #0 / JSR` with one subtune"
+            if view is not None:
+                _vs, vdet = _detect_tables(view, lambda _m: None)
+                if (p.instr_addr < 0 or p.pattern_lo_addr < 0
+                        or vdet.instr_start != view.to_offset(p.instr_addr)
+                        or vdet.pattern_lo != view.to_offset(p.pattern_lo_addr)):
+                    why = "re-detects to tables other than its own"
+            views[k] = (view, why)
+        view, stop = views[k]
+        if stop is None:
+            try:
+                extra = convert(view, log=lambda m, k=k: log(f"[player {k}] {m}"),
+                                **view_opts)
+            except (UnsupportedSidError, ConversionAbort, ValueError) as exc:
+                stop = f"does not convert ({exc})"
+        if stop is None:
+            merged = append_song(out, extra, tag=f"{k}/", log=log)
+            if merged is None:
+                stop = "does not fit beside the players before it"
+            else:
+                out = merged
+        if stop is not None:
+            log(f"*** PLAYER {k} {stop}; subtune {have + k - 1} onward NOT "
+                "CONVERTED ***")
+            return out, k - 1
+    return out, len(players) - 1

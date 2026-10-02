@@ -515,3 +515,44 @@ def test_every_cal_none_exit_declares_its_own_cause():
         f"expected at least two cause-declaring inherit() exits in "
         f"approvals.py, found {sites} -- either they were removed or this "
         f"check is now looking at the wrong function")
+
+
+# --- the corpus loop prints the _preset_opts miss TOTAL --------------------
+
+def _run_main(tmp_path, monkeypatch, capsys, songs_in_doc, stems):
+    import fidelity as F
+    for s in stems:
+        (tmp_path / f"{s}.sid").write_bytes(b"")
+    doc = {"always": {}, "songs": {f"{k}.sid": {} for k in songs_in_doc}}
+    pj = tmp_path / "p.json"
+    pj.write_text(json.dumps(doc), encoding="utf-8")
+
+    def fake_assess(stem, sid, sha, doc, *a, **k):
+        F._preset_opts(doc, f"{stem}.sid")
+        return {"failed": []}, "x"
+
+    monkeypatch.setattr(AP, "approved_tunes",
+                        lambda: {s: {"sng_sha256": "x"} for s in stems})
+    monkeypatch.setattr(AP, "load_calibration", lambda: None)
+    monkeypatch.setattr(AP, "load_approvals_json", lambda: {})
+    monkeypatch.setattr(AP, "assess", fake_assess)
+    monkeypatch.setattr(AP, "record", lambda *a, **k: {"status": "s"})
+    F.reset_preset_opts_misses()
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        AP.main([str(tmp_path), "--presets", str(pj),
+                 "-o", str(tmp_path / "o.json"),
+                 "--workdir", str(tmp_path / "w")])
+    return capsys.readouterr().err
+
+
+def test_main_reports_miss_total_and_names(tmp_path, monkeypatch, capsys):
+    err = _run_main(tmp_path, monkeypatch, capsys, ["a"], ["a", "b", "c"])
+    assert "preset-opts misses: TOTAL 2" in err
+    assert "b.sid" in err and "c.sid" in err
+
+
+def test_main_reports_zero_when_all_present(tmp_path, monkeypatch, capsys):
+    err = _run_main(tmp_path, monkeypatch, capsys, ["a", "b"], ["a", "b"])
+    assert "preset-opts misses: TOTAL 0" in err

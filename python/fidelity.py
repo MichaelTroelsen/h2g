@@ -1558,8 +1558,14 @@ def gate_census_report(rows: list[dict]) -> str:
 GATE_BIT = 0x01
 
 
+# The release nibble of the 16-bit pair ($D406 bits 0-3). `--cut-release`
+# zeroes it on our side, so under that option it cannot be compared.
+RELEASE_NIBBLE = 0x000F
+
+
 def adsr_compare(orig: list[Voice], ours: list[Voice],
-                 nframes: int, lag: int = 0) -> dict:
+                 nframes: int, lag: int = 0,
+                 mask_release: bool = False) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
 
     Built exactly like wave_compare: the ADSR pair is sparse, so each side's
@@ -1618,6 +1624,16 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     gated-off frames carry 3030 that differ in release, and every one of them
     is a tail the two sides do not share.
 
+    **`mask_release`** (the row passes `opts["cut_release"]`) drops the release
+    nibble from the compare, both sides. `--cut-release` writes $xx?0 where the
+    original has $xx?F, so with it on the whole-pair compare scored a correct
+    AD and sustain as a disagreement forever (Samantha Fox 380, Warhawk 1055+,
+    Kentilla 1445 gate-on frames after 922c782). The cost is a stated
+    blindness: with the mask on, `adsr` cannot see a wrong release. The
+    unmasked figure rides in the row as `adsr_exact`, and the mask is applied
+    to every frame, not only the frames cut_release touches (it cannot be told
+    from them here). `adsr_gated_off_audible` still reads the release nibble.
+
     `lag` is the startup latency from `startup_lag`, applied for the reason
     given there: this walks the traces frame against frame, and a packed .sid
     reaches its first note a few frames after the original does.
@@ -1635,6 +1651,8 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     # census above. The gate is $D404 bit 0, the bit gate_compare owns and
     # every other column here ignores.
     off = off_audible = 0
+    exact = 0
+    keep = ~RELEASE_NIBBLE if mask_release else -1
     per_voice = []
     for a, b in zip(orig, ours):
         ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
@@ -1647,6 +1665,8 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
                 continue
             vt += 1
             if x == y:
+                exact += 1
+            if (x & keep) == (y & keep):
                 va += 1
             elif not ((ga or 0) & GATE_BIT) and not ((gb or 0) & GATE_BIT):
                 off += 1
@@ -1658,6 +1678,8 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     return {
         "adsr": (agree / total) if total else None,
         "adsr_frames": total,
+        "adsr_exact": (exact / total) if total else None,
+        "adsr_release_masked": bool(mask_release),
         "adsr_voices": per_voice,
         "adsr_gated_off": off,
         "adsr_gated_off_audible": off_audible,
@@ -2126,9 +2148,59 @@ def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
     return out
 
 
+def envelope_zero_frame(wf: list[int], adsr: list[int], start: int,
+                        end: int) -> int:
+    """The first frame in `[start, end)` on which the envelope is at zero,
+    or `end` if it never gets there.
+
+    **Why `depth` needs it.** A player can go on sweeping the frequency
+    after the envelope has died: BMX_Kidz's rest record gates off and then
+    writes AD = 0, SR = 0 a few frames into every note, and the vibrato keeps
+    widening for another seventy frames on a voice the chip has silenced.
+    Every cycle measured there is a cycle no listener hears, and a ratio
+    pooled over them cannot pair however right the audible part is.
+
+    Two rules, both read off the two registers siddump prints and both
+    charging the frame a change lands on, as `_release_frames` does:
+
+    * **Gate closed.** From the frame the gate drops, the voice sounds for
+      `_release_frames` of the release nibble latched then, and is silent
+      after. A later change to the pair while still released re-latches the
+      nibble -- the envelope keeps falling, now at the new rate, from a level
+      no higher than full -- so `f + _release_frames(new) - 1` is an upper
+      bound on the last audible frame and replaces the old one. A pair of
+      zero is release 0, i.e. one frame.
+    * **Gate open, pair zero.** AD = 0, SR = 0 under an open gate decays to a
+      sustain of 0 in 6 ms; the frame after the write is silent.
+
+    Silence is absorbing until the next gate rising edge: a released
+    envelope cannot climb, and an open one sitting at sustain 0 does not
+    climb when SR is later raised. So the caller cuts the note here rather
+    than filtering silent frames out of it, which would splice two halves
+    of a sweep into one fictitious cycle.
+
+    **Not modelled**, and so still counted as audible: a non-zero pair whose
+    sustain nibble is 0, decaying to silence under an open gate. The rules
+    above only fire on what the registers state outright.
+    """
+    until = None                       # last audible frame once released
+    for f in range(start, end):
+        if wf[f] & WF_GATE:
+            until = None
+            if adsr[f] == 0:
+                return min(f + 1, end)
+            continue
+        if until is None or (f > start and adsr[f] != adsr[f - 1]):
+            until = f + _release_frames(adsr[f] & 0x0F) - 1
+        if f > until:
+            return f
+    return end
+
+
 def oscillation_depths(voices: list[Voice], nframes: int,
                        keys: set[int] | None = None,
-                       skip_radius: int | tuple[int, int] = 1) -> dict:
+                       skip_radius: int | tuple[int, int] = 1,
+                       audible_only: bool = True) -> dict:
     """`{ADSR: median cycle swing, as a fraction of the pitch}`.
 
     **Segmented on gate rising edges** -- `Voice.attack_frames`, the frames
@@ -2157,6 +2229,15 @@ def oscillation_depths(voices: list[Voice], nframes: int,
 
     `skip_radius` as in `pitch_motion`: 1 frame-sample for siddump,
     `vice_skip_span(m)` calls for a VICE trace.
+
+    `audible_only` (default on) ends each note's segment at
+    `envelope_zero_frame`: cycles swept on a voice whose envelope is already
+    at zero are not measured. It needs the waveform register to see the
+    gate, so a voice with no `wf_events` -- every `_vice_pitch_voices` voice,
+    which carries the frequency and the attack keys only -- is read whole,
+    as before. Off reproduces the pre-gate reading, which is what the A/B
+    that introduced it compared against. Measured at -t 180 with presets
+    (C:/t/depth-silent-tail-cycles): see the depth Dimension entry.
     """
     before, after = _skip_span(skip_radius)
     masked = {instrument_key(k) for k in keys} if keys is not None else None
@@ -2164,6 +2245,8 @@ def oscillation_depths(voices: list[Voice], nframes: int,
     for v in voices:
         fq = register_timeline(v.freq_events, nframes)
         adsr = register_timeline(v.adsr_events, nframes)
+        wf = (register_timeline(v.wf_events, nframes)
+              if audible_only and v.wf_events else None)
         skip = set()
         for a in v.attack_frames:
             skip |= set(range(a - before, a + after + 1))
@@ -2174,7 +2257,10 @@ def oscillation_depths(voices: list[Voice], nframes: int,
                     and instrument_key(key) not in masked:
                 continue
             nxt = atk[j + 1] if j + 1 < len(atk) else nframes
-            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
+            stop = min(nxt, nframes)
+            if wf is not None and a < stop:
+                stop = envelope_zero_frame(wf, adsr, a, stop)
+            seg = [fq[f] for f in range(a, stop) if f not in skip]
             for swing, centre in vibrato_swings(seg):
                 if centre > 0:
                     pooled.setdefault(key, []).append(swing / centre)
@@ -2184,7 +2270,8 @@ def oscillation_depths(voices: list[Voice], nframes: int,
 
 def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
                   keys: set[int] | None = None,
-                  skip_radius: int | tuple[int, int] = 1) -> dict:
+                  skip_radius: int | tuple[int, int] = 1,
+                  audible_only: bool = True) -> dict:
     """How deep our vibrato swings, over the original's.
 
     `vib` is a *count* of pitch reversals -- the rate -- and this project has
@@ -2269,11 +2356,11 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
     shape at this head.
     """
     return _depth_compare_sided(orig, ours, nframes, nframes, keys,
-                                skip_radius, skip_radius)
+                                skip_radius, skip_radius, audible_only)
 
 
 def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
-                         skip_orig, skip_ours) -> dict:
+                         skip_orig, skip_ours, audible_only=True) -> dict:
     """`depth_compare` with each side on its own axis -- see
     `vice_pitch_compare`, where ours is indexed by its own play calls.
 
@@ -2295,8 +2382,8 @@ def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
         # The original oscillates nothing on them, so an empty pair is the
         # correct comparison and not a failed one. See vibrato_population.
         return {"depth_refusal": "gated"}
-    a = oscillation_depths(orig, n_orig, keys, skip_orig)
-    b = oscillation_depths(ours, n_ours, keys, skip_ours)
+    a = oscillation_depths(orig, n_orig, keys, skip_orig, audible_only)
+    b = oscillation_depths(ours, n_ours, keys, skip_ours, audible_only)
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
         # Every no-shared-key row measured at v0.5.491 has an EMPTY
@@ -4788,7 +4875,7 @@ DIMENSIONS = (
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
-              "per-frame agreement of the envelope pair (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte, so read with that blindness)"),
+              "per-frame agreement of the envelope pair; the release nibble is NOT compared on a file converted with `cut_release` (every preset file), which zeroes it on our side, so a wrong release is invisible to this column (unmasked figure in the row's `adsr_exact`; the `--vice` path still compares the whole pair) (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte, so read with that blindness)"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
     # read. That exclusion is right for a timbre column and it made a whole
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
@@ -4960,6 +5047,16 @@ DIMENSIONS = (
               "comparison did not happen, which is a candidate for work and "
               "not an honest gap; `depth_keys` records the population size "
               "behind either mark. "
+              "**Counts only cycles swung while the envelope is above "
+              "zero** (`envelope_zero_frame`, since the depth-silent-tail "
+              "change): a note is cut where its released envelope runs out "
+              "or its ADSR pair is written zero, because a player that keeps "
+              "sweeping on a silenced voice -- BMX_Kidz's rest record, 85% "
+              "of the original's cycles on its one vibrato key at -t 180 -- "
+              "is swinging for no listener. Still blind to a non-zero pair "
+              "whose sustain is 0 decaying out under an open gate, and the "
+              "`--vice` path is NOT gated (its voices carry no waveform "
+              "register to read the gate from). "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
               "understated; `--vice` reads it per play call"),
@@ -5000,6 +5097,15 @@ DIMENSIONS = (
               "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180. Declines (`-`) "
               "a file whose only noise is runs the window cut, and records "
               "the cut runs and frames per side so the `-` says why. "
+              "**A RUN CUT ONLY AT THE RIGHT EDGE STAYS EXCLUDED BY DESIGN**, "
+              "not counted as a lower-bound length: over the 89 originals at "
+              "-t 180, 9 end the window inside a gated noise run and every "
+              "one is a 1-2 frame drum tick cut mid-tick, with no instrument "
+              "seen ONLY in such a run, so a lower bound would add truncated "
+              "lengths to a modal comparison and recover nothing. Confuzion's "
+              "voice 2 latch after ~305 s is gate-off (`$80`), which the edge "
+              "rule never sees at any width -- v0.5.494, HEAD 1dde44a "
+              "(`C:/t/confuzion-style-permanent-no/census180.txt`). "
               "**Blind to noise sounded under a CLOSED gate**, and declines "
               "(`-`) a file whose original sounds its noise only that way: "
               "Kentilla, Proteus and Warhawk write each drum burst `$80` one "
@@ -5192,7 +5298,12 @@ DIMENSIONS = (
               "fixes on `len`/`drift` (CLOCK_KNOWN_BAD). **A CORRECT FIX CAN "
               "READ WORSE HERE**, because a per-frame agreement falls when a "
               "fix unmasks a defect the old behaviour hid (CLAUDE.md's "
-              "Human_Race case, where the right clock cost melody 65 -> 56%)"),
+              "Human_Race case, where the right clock cost melody 65 -> 56%). "
+              "**A ONE-FRAME DRUM PITCH FIX IS BELOW ITS FLOOR**: aud credits a noise "
+              "pitch only where the percussion event lands on the same frame on both "
+              "sides, so a one-frame tick's pitch fix is capped near 0.001-0.003 over "
+              "60 s against the 0.0077 floor (Monty 0.5.394 -> 0.5.395, evidence "
+              "C:/t/monty-drum-aud/classes.txt); read `our_noise_pitch` for it, not this"),
     Dimension("loud", "loud", (AUDIO,), "fraction",
               "per-frame agreement of the rendered loudness envelope -- the "
               "first column that reads the master-volume nibble; `loud_ratio` "
@@ -5589,9 +5700,32 @@ def length_rule_failures(rows: list[dict]) -> list[dict]:
             and abs(r["length_delta"]) > LENGTH_TOLERANCE]
 
 
+# Every name `_preset_opts` was asked for that was not a key of a populated
+# `songs` block, one entry per call (never reset by a call). The warning below
+# is deduplicated per call site by the warnings module, so a loop over the
+# corpus shows ONE warning however many files missed; a caller that must say
+# how many reads this instead (see `preset_opts_miss_report`).
+PRESET_OPTS_MISSES: list[str] = []
+
+
+def reset_preset_opts_misses() -> None:
+    PRESET_OPTS_MISSES.clear()
+
+
+def preset_opts_miss_report() -> str:
+    """One line: `preset-opts misses: TOTAL n` plus each offending name."""
+    n = len(PRESET_OPTS_MISSES)
+    if not n:
+        return "preset-opts misses: TOTAL 0"
+    return (f"preset-opts misses: TOTAL {n} -- "
+            + ", ".join(PRESET_OPTS_MISSES)
+            + " (each got the always-block options only)")
+
+
 def _preset_opts(doc: dict, name: str) -> dict:
     songs = doc.get("songs") or {}
     if songs and name not in songs:
+        PRESET_OPTS_MISSES.append(name)
         # MISS vs LEGITIMATELY-EMPTY: a song with a real per-song entry that
         # happens to be `{}` is normal. A name that is not a key at all while
         # `songs` is populated is not -- both used to fall through to the
@@ -5736,6 +5870,52 @@ def resolve_subtune(sid: Path, requested) -> int:
         return 0
 
 
+# **Per-file traced-subtune pins: (the original's subtune, OUR counterpart).**
+# For a file whose subtunes do not correspond one to one, the harness used to
+# score the original's default subtune against ours at the SAME index, i.e. two
+# different pieces of music, and every column of the row read as a conversion
+# defect. Each entry here is a pair `--diagnose` already prints, and each is
+# established by evidence outside the matrix, not by the matrix alone:
+#
+#   Commodore_64_Music_Examples  s1 -> o0 (96% at -t 180). The converter's log
+#       says "track table runs into another table after $1", so our .sng
+#       carries ONE subtune, and it is the original's second; s0 against o0
+#       scored melody 7% on a conversion of different music.
+#   Dragons_Lair_Part_II         s0 -> o9 (95%). The .sid's init remaps PSID 0
+#       to song 9 (SUBTUNE_REMAP below); `--search-subtunes 3` searched o0..o1
+#       and never reached it, so the row was s0 against o0 (melody 9%).
+#
+# Kept here rather than in presets.json: a pin is a fact about the .sid's glue
+# code and the pairing, not a `convert()` option, it must hold whether or not a
+# run passes `--presets`, and presets.json is generated. Fidelity-only: the
+# converter never reads it. `resolve_subtune` is left as it was, because its
+# other callers (listen.py, presets.py, sound_calibrate.py, approvals.py)
+# trace both sides at the one index it returns -- a pinned ORIGINAL index there
+# would point OUR side at a subtune C64ME's .sng does not have.
+SUBTUNE_COUNTERPART: dict[str, tuple[int, int]] = {
+    "Commodore_64_Music_Examples.sid": (1, 0),
+    "Dragons_Lair_Part_II.sid": (0, 9),
+}
+
+
+def resolve_pair(sid: Path, requested) -> tuple[int, int, bool]:
+    """(original's subtune, ours, pinned) -- the two sides a row is scored at.
+
+    Under "auto" a file in `SUBTUNE_COUNTERPART` is traced at its pinned pair.
+    A forced `-a N` traces the original's N and pins our side only when N is
+    the pin's own original index; any other N falls back to the diagonal,
+    because no counterpart for it is known. Everything else is the diagonal
+    `resolve_subtune` has always returned, unpinned.
+    """
+    pin = SUBTUNE_COUNTERPART.get(Path(sid).name)
+    if pin is not None and requested == "auto":
+        return pin[0], pin[1], True
+    orig = resolve_subtune(sid, requested)
+    if pin is not None and orig == pin[0]:
+        return orig, pin[1], True
+    return orig, orig, False
+
+
 def _drift_gate_skip_declined(sid: Path, subtune: int) -> bool:
     """Whether this file/subtune carries the outer gate's skip counter *and*
     `effective_frames` declines to correct for it -- the exact condition
@@ -5789,13 +5969,21 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     it -- convert() takes no such keyword. It reaches the packing step only;
     siddump cannot honour it (see pack_sid).
     """
-    sub = resolve_subtune(sid, args.subtune)
+    # `sub` is the ORIGINAL's subtune, `our_sub` ours -- the same index except
+    # where SUBTUNE_COUNTERPART pins the pair. Every trace of `packed` below
+    # goes through `our_sub`; every trace of the original through `sub`.
+    sub, our_sub, pinned = resolve_pair(sid, args.subtune)
     # Every row carries the settings it was taken at, so a saved run is
     # self-describing: --baseline refuses to compare two runs traced at
     # different seconds or subtunes, and it can only do that if the file says.
     row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier,
                  "subtune": sub, "seconds": args.seconds,
                  "version": __version__, "label": getattr(args, "label", None)}
+    if pinned:
+        # Our side of the pin. `settings_mismatch` reads it: a baseline taken
+        # before the pin differs in `subtune` on this file BECAUSE of the pin,
+        # which is the change under test rather than a different `-a`.
+        row["subtune_pinned"] = our_sub
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:  # noqa: BLE001 -- a file that will not convert is a result
@@ -5836,7 +6024,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         exp = None
     if exp and (exp["stub"] or exp["lost"]):
         row["export"] = exp
-        if sub in exp["stub"]:
+        if our_sub in exp["stub"]:      # `stub` indexes OUR subtunes
             row["traced_subtune_dropped"] = True
 
     packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
@@ -5875,7 +6063,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # the cost falls where the finding is.
         row.update(length_compare(
             a,
-            run_siddump(packed, seconds, sub, args.siddump,
+            run_siddump(packed, seconds, our_sub, args.siddump,
                         calls=getattr(args, "calls_per_frame", None) or multiplier),
             seconds))
         row["original_ends"] = seconds = ended
@@ -5916,7 +6104,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             else:
                 row.update(length_compare(
                     a_long,
-                    run_siddump(packed, long_seconds, sub, args.siddump,
+                    run_siddump(packed, long_seconds, our_sub, args.siddump,
                                 calls=getattr(args, "calls_per_frame", None)
                                 or multiplier),
                     long_seconds))
@@ -6007,11 +6195,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # sampling. Only the sequence dimensions survive it -- see below.
     equal = bool(getattr(args, "equal_calls", False)) and multiplier > 1
     if equal:
-        b = run_siddump(packed, seconds * multiplier, sub, args.siddump,
+        b = run_siddump(packed, seconds * multiplier, our_sub, args.siddump,
                         calls=1)
         row["equal_calls"] = multiplier
     else:
-        b = run_siddump(packed, seconds, sub, args.siddump,
+        b = run_siddump(packed, seconds, our_sub, args.siddump,
                         calls=getattr(args, "calls_per_frame", None) or multiplier)
     if multiplier > 1:
         calls = getattr(args, "calls_per_frame", None) or multiplier
@@ -6023,7 +6211,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # lets the summary say which rate a file actually plays right at
             # instead of asserting that the packed one must be it.
             row["melody_at_1x"] = compare(a, run_siddump(
-                packed, seconds, sub, args.siddump, calls=1))["melody"]
+                packed, seconds, our_sub, args.siddump, calls=1))["melody"]
     row["status"] = "measured"
     row.update(compare(a, b))
     if row.get("equal_calls"):
@@ -6035,7 +6223,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides"):
             row.pop(k, None)
     best_dump = b
-    if args.search_subtunes > 1:
+    if pinned:
+        # A pinned pair is not searched: the counterpart was established by
+        # reading the file (SUBTUNE_COUNTERPART), and a window search around
+        # it could only trade it for a neighbour that happens to score higher.
+        # Recorded as `matched_subtune` so every reader of that key -- VICE,
+        # --sound, the report's shifted-subtune line -- traces the same side.
+        row["matched_subtune"] = our_sub
+    elif args.search_subtunes > 1:
         # Our subtune numbering does not have to line up with the original's:
         # a subtune whose orderlist exceeds Goattracker's limit costs itself,
         # and every later one shifts down. Trying each of ours against the
@@ -6076,7 +6271,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                exe=args.vice_exe,
                                out=workdir / "vice_orig.txt")
             vu = vicetrace.run(packed, seconds,
-                               row.get("matched_subtune", sub),
+                               row.get("matched_subtune", our_sub),
                                exe=args.vice_exe,
                                out=workdir / "vice_ours.txt")
             if vo and vu:
@@ -6109,7 +6304,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             if raw != lag:
                 row["startup_lag_raw"] = raw
             row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
-            row.update(adsr_compare(a, best_dump, nframes, lag=lag))
+            row.update(adsr_compare(a, best_dump, nframes, lag=lag,
+                                    mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
@@ -6157,7 +6353,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # skip correction -- see _drift_gate_skip_declined. Computed
                 # only where a drift figure was actually reported, since it
                 # is only meaningful next to one.
-                row["drift_gate_skip"] = _drift_gate_skip_declined(sid, sub)
+                # Our side's song index: the skip counter is the converter's
+                # reading of the player song it emitted, which a pin moves.
+                row["drift_gate_skip"] = _drift_gate_skip_declined(sid, our_sub)
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a
@@ -6221,7 +6419,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         prior = 0.02 * row.get("startup_lag", 0)
         row.update(sound.compare_sids(
             local_orig, packed, seconds, sub,
-            row.get("matched_subtune", sub), prior_s=prior))
+            row.get("matched_subtune", our_sub), prior_s=prior))
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
@@ -6623,9 +6821,12 @@ def report(rows: list[dict], args) -> str:
         "is a drum tick the conversion invented.",
         "* **gate** -- overlap of the frames on which each side has the voice *released*: `|both off| / |either off|`. Every other register column here ignores $D404's gate bit, and **wave** says why -- a gated-off voice keeps its waveform latched, so folding the gate into a timbre score would count every note-length disagreement twice. The cost of that exclusion was invisible until a change that only opens and closes the gate (`--rest-keyoff`, 19 files) moved one number on one file. Scored over the gate-off frames alone because both sides hold it on most of the time. It **rises when notes are removed** -- fewer attacks, more silence -- so read it beside **retrig** and the two attack counts, never on its own.",
         "* **adsr** -- per-frame agreement of the envelope registers "
-        "($D405/$D406, the whole 16-bit pair), carried forward between "
+        "($D405/$D406, the 16-bit pair), carried forward between "
         "writes exactly as **wave** is. Frames where neither side has ever "
-        "set an envelope are not counted.",
+        "set an envelope are not counted. **Blind to the release nibble on "
+        "a file converted with `cut_release`** (every preset file): that "
+        "option zeroes it on our side, so only AD and sustain are compared "
+        "there; `adsr_exact` in the JSON is the whole pair.",
         "* **pul** -- how many times the duty cycle moved, ours over the "
         "original's. A count rather than an agreement: two players sweeping "
         "the same pulse from different phases share almost no frame values, "
@@ -6691,7 +6892,12 @@ def report(rows: list[dict], args) -> str:
         "-- so read **len** and **drift** for that, never this column; the "
         "calibration validates its clock pairs on those two. Treat it as a "
         "coarse guard against "
-        "gross breakage until that is resolved, never as a verdict.",
+        "gross breakage until that is resolved, never as a verdict. A "
+        "one-frame drum pitch fix is **below its floor**: it credits a noise "
+        "pitch only where the event lands on the same frame on both sides, "
+        "so such a fix is capped near 0.001-0.003 over 60 s against the "
+        "0.0077 floor (Monty 0.5.394 -> 0.5.395, evidence "
+        "C:/t/monty-drum-aud/classes.txt); read `our_noise_pitch` for it.",
         "* **loud** -- per-frame agreement of the rendered loudness envelope; "
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
@@ -6948,7 +7154,8 @@ def report(rows: list[dict], args) -> str:
                     "What those files really carry is a *row length* error of "
                     "10-33%, which is a different defect in a different place "
                     "(see `--pace`).")
-        off0 = sorted(r["file"] for r in rows if r.get("subtune"))
+        off0 = sorted(r["file"] for r in rows if r.get("subtune")
+                      and r.get("subtune_pinned") is None)
         if off0:
             out.append(
                 f"- {len(off0)} file(s) are traced at a subtune other than 0, "
@@ -6958,7 +7165,8 @@ def report(rows: list[dict], args) -> str:
                 "against it scored 5% where its real startSong scores 89%. "
                 f"({', '.join(off0)})")
         shifted = sorted(
-            f"{r['file']} ({r['subtune']}->{r['matched_subtune']})"
+            f"{r['file']} ({r['subtune']}->{r['matched_subtune']}"
+            + (", pinned" if r.get("subtune_pinned") is not None else "") + ")"
             for r in rows
             if r.get("matched_subtune") is not None
             and r["matched_subtune"] != r.get("subtune"))
@@ -6979,7 +7187,9 @@ def report(rows: list[dict], args) -> str:
                 "converter. Every column read fine throughout, because this "
                 "search was finding the right counterpart and scoring it. **A "
                 "non-empty list here is a lead to run `--diagnose` on, not a "
-                "footnote.** "
+                "footnote.** An entry marked *pinned* is neither: its pair is "
+                "fixed by `SUBTUNE_COUNTERPART`, read from the file, and was "
+                "not searched. "
                 f"({', '.join(shifted)})")
         patched = sum(1 for r in rows if r.get("restarts_patched"))
         if patched:
@@ -7362,6 +7572,13 @@ def settings_mismatch(base: dict, new: dict) -> list[str]:
             continue
         for k in _FATAL_SETTINGS:
             bv, nv = b.get(k), n.get(k)
+            if k == "subtune" and b.get("subtune_pinned") != n.get("subtune_pinned"):
+                # The pin itself differs between the runs (one side predates
+                # SUBTUNE_COUNTERPART, or the entry changed), so this file's
+                # traced subtune moved BECAUSE of the pin -- the change under
+                # test, named by `pin_drift`, not a different `-a`. Two rows
+                # carrying the SAME pin still refuse on a subtune difference.
+                continue
             if bv is not None and nv is not None and bv != nv:
                 bad.append(f"{name}: {k} {bv!r} -> {nv!r}")
     return bad
@@ -7386,6 +7603,29 @@ def window_mismatches(base: dict, new: dict) -> list[tuple[str, int, int]]:
         if bw is not None and nw is not None and bw != nw:
             bad.append((name, bw, nw))
     return bad
+
+
+def _scored_pair(row: dict) -> str:
+    """`s<original>/o<ours>` as a row was scored -- `matched_subtune` where
+    the search or a pin recorded one, else the diagonal."""
+    sub = row.get("subtune")
+    return f"s{sub}/o{row.get('matched_subtune', sub)}"
+
+
+def pin_drift(base: dict, new: dict) -> list[str]:
+    """Files whose SUBTUNE_COUNTERPART pin differs between two runs, with the
+    pair each run scored. Printed under "The change under test" because
+    `settings_mismatch` lets these rows through rather than refusing them."""
+    out = []
+    for name in sorted(base):
+        n = new.get(name)
+        if n is None:
+            continue
+        b = base[name]
+        if b.get("subtune_pinned") != n.get("subtune_pinned"):
+            out.append(f"`{name}` scored at {_scored_pair(b)} -> "
+                       f"{_scored_pair(n)}")
+    return out
 
 
 def _normalize_opt_value(v):
@@ -7613,6 +7853,9 @@ def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]
     out = head + ["## The change under test", ""]
     out += ([f"- conversion settings that differ: {d}" for d in drift]
             or ["- conversion settings: identical on every file in both runs"])
+    out += [f"- traced subtune pin differs (SUBTUNE_COUNTERPART): {p}"
+            for p in pin_drift({f: base[f] for f in both},
+                               {f: new[f] for f in both})]
     if not hashed:
         out.append("- converted bytes: **unknown** -- one of these runs "
                    "predates the per-row output hash, so this comparison "
@@ -8533,7 +8776,10 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     out" when the real error was between 10% and 50%.
     """
     out: list[str] = []
-    traced = resolve_subtune(sid, args.subtune)
+    # The original at `traced`, ours at its counterpart: a pinned file's
+    # diagonal is two different pieces of music, and a pace read across them
+    # times nothing (SUBTUNE_COUNTERPART).
+    traced, our_traced, _pinned = resolve_pair(sid, args.subtune)
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:                                  # noqa: BLE001
@@ -8552,7 +8798,9 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     # gate when --skip-gate corrected it.
     read = effective_frames(speeds, traced, bool(opts.get("skip_gate")))
     tempo = None
-    out.append(f"{sid.name}: subtune {traced}, {args.seconds}s, "
+    out.append(f"{sid.name}: subtune {traced}"
+               + (f" against our o{our_traced} (pinned)" if _pinned else "")
+               + f", {args.seconds}s, "
                f"packed -S{multiplier}; speed gate reads "
                f"{read if read is not None else 'nothing'} frame(s) per "
                f"duration unit")
@@ -8561,7 +8809,8 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     rates = sorted({1, multiplier})
     seen = []
     for m in rates:
-        b = run_siddump(packed, args.seconds, traced, args.siddump, calls=m)
+        b = run_siddump(packed, args.seconds, our_traced, args.siddump,
+                        calls=m)
         got = pace(a, b)
         if got.get("slope") is None:
             out.append(f"  -m{m}: only {got['n']} matched gap(s) -- the two "
@@ -8770,7 +9019,7 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     """What `--diagnose` prints for one file: correspondence, then cause."""
     out: list[str] = []
     hdr = load_sid(str(sid))
-    traced = resolve_subtune(sid, args.subtune)
+    traced, our_traced, pinned = resolve_pair(sid, args.subtune)
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:                       # noqa: BLE001
@@ -8794,6 +9043,9 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     remap = SUBTUNE_REMAP.get(sid.name)
     if remap:
         out.append(f"  known subtune remap: {remap}")
+    if pinned:
+        out.append(f"  pinned pair (SUBTUNE_COUNTERPART): every other number "
+                   f"for this file is taken at s{traced} against o{our_traced}")
     out.append("")
 
     grid, ni, nj = subtune_matrix(local, packed, args, cal,
@@ -8838,7 +9090,16 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
         window = (range(max(0, traced - half), traced + search - half)
                   if search > 1 else [traced])
         counterpart = best_j[traced] if traced < len(best_j) else traced
-        if counterpart != traced and counterpart in window:
+        if pinned:
+            out.append(
+                f"     Every other number for this .sid is taken at s{traced}"
+                f" against o{our_traced}: the pair is pinned in"
+                " SUBTUNE_COUNTERPART"
+                + ("" if counterpart == our_traced else
+                   f", BUT this matrix's best for s{traced} is o{counterpart}"
+                   " -- the pin is stale or wrong, re-read the file")
+                + ". The numbering is still wrong in the .sng.")
+        elif counterpart != traced and counterpart in window:
             out.append(
                 f"     Every other number for this .sid is taken at s{traced}"
                 f" against o{counterpart}, not o{traced}:"
@@ -8859,8 +9120,8 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     out.append("")
 
     # Per-voice cause, at the traced subtune and again at its real counterpart.
-    pairs = [("as measured", traced, traced)]
-    if traced < len(best_j) and best_j[traced] != traced:
+    pairs = [("as measured", traced, our_traced)]
+    if traced < len(best_j) and best_j[traced] != our_traced:
         pairs.append(("at the best counterpart", traced, best_j[traced]))
     for label, i, j in pairs:
         if i >= ni or j >= nj:
@@ -9160,6 +9421,7 @@ def _run(p, args, workdir: Path) -> int:
                     # presets.json was generated without the option.
                     mult = _skip_gate_multiplier(sid) or mult
                 print(pace_report(sid, workdir, opts, args, mult))
+            print(preset_opts_miss_report(), file=sys.stderr)
             return 0
         if args.diagnose:
             # Deliberately not a row: the output is an argument about one
@@ -9178,6 +9440,7 @@ def _run(p, args, workdir: Path) -> int:
                     opts["regrid"] = True
                 print(diagnose(sid, workdir, opts, args,
                                _preset_multiplier(doc, sid.name)))
+            print(preset_opts_miss_report(), file=sys.stderr)
             return 0
 
         if args.naming_census:
@@ -9201,7 +9464,7 @@ def _run(p, args, workdir: Path) -> int:
                 rec = {"file": sid.name}
                 try:
                     mult = _preset_multiplier(doc, sid.name)
-                    sub = resolve_subtune(sid, args.subtune)
+                    sub, our_sub, _pinned = resolve_pair(sid, args.subtune)
                     cal, _ft = table_calibration(sid, base)
                     local = workdir / "o.sid"
                     shutil.copyfile(sid, local)
@@ -9214,7 +9477,7 @@ def _run(p, args, workdir: Path) -> int:
                         packed = pack_sid(blob, workdir, args.gt2reloc, mult)
                         if packed is None:
                             raise RuntimeError("gt2reloc wrote no .sid")
-                        arms.append(run_siddump(packed, args.seconds, sub,
+                        arms.append(run_siddump(packed, args.seconds, our_sub,
                                                 args.siddump, 0, calls=mult))
                     rec.update(naming_split(orig, arms[0], arms[1]))
                 except Exception as exc:            # noqa: BLE001
@@ -9224,6 +9487,7 @@ def _run(p, args, workdir: Path) -> int:
                 naming_census_report(recs), encoding="utf-8")
             print(f"wrote {args.naming_census} "
                   f"(forced: {', '.join(forced)})", file=sys.stderr)
+            print(preset_opts_miss_report(), file=sys.stderr)
             return 0
         rows = []
         for sid in sids:
@@ -9258,6 +9522,7 @@ def _run(p, args, workdir: Path) -> int:
                     and row["retrigger_ratio"] else row["status"])
             print(f"  {sid.name:44} {note}", file=sys.stderr)
 
+    print(preset_opts_miss_report(), file=sys.stderr)
     text = report(rows, args)
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")

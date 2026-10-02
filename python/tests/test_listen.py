@@ -565,3 +565,49 @@ def test_sidplayfp_power_on_delay_is_inside_the_fixed_range():
     d = L.SIDPLAYFP_POWER_ON_DELAY
     assert isinstance(d, int) and not isinstance(d, bool)
     assert 0 <= d <= 8191, "above 8191 sidplayfp draws the delay at random"
+
+
+# --- listen_notes' "No legato" counts slow ties only -----------------------
+# A tie within RAPID_TIE_FRAMES of the voice's previous attack or tie is an
+# arpeggio step: on Lakers_vs_Celtics and Sun_Never_Shines 95-99% of the
+# original's ties are that shape, and a whole-file count fired "No legato" on
+# chords (C:/t/listen-tie-shape at 1dde44a).
+from fidelity import Voice  # noqa: E402
+
+
+def _voice(attacks, ties):
+    return Voice(attacks=["C-4"] * len(attacks), attack_frames=list(attacks),
+                 ties=len(ties), tie_frames=list(ties))
+
+
+def test_tie_shares_splits_arpeggio_steps_from_held_glides():
+    # attack at 0, arpeggio ties at 1,2,3, then a held note gliding at 40, 90
+    v = _voice([0], [1, 2, 3, 40, 90])
+    assert L.tie_shares(v) == (3, 2)
+
+
+def test_tie_shares_measures_from_the_previous_attack_too():
+    v = _voice([10, 50], [12, 80])
+    assert L.tie_shares(v) == (1, 1)
+
+
+def _arp_voice(n):
+    # n attacks 30 frames apart, each followed by a 2-frame arpeggio of 9 ties
+    attacks = [30 * i for i in range(n)]
+    ties = [a + 2 * k for a in attacks for k in range(1, 10)]
+    return _voice(attacks, ties)
+
+
+def test_no_legato_does_not_fire_on_arpeggio_shaped_ties():
+    orig = [_arp_voice(40), _voice([], []), _voice([], [])]
+    ours = [_voice([30 * i for i in range(40)], []), _voice([], []), _voice([], [])]
+    notes = L.listen_notes({}, orig, ours)
+    assert not any("No legato" in n for n in notes)
+
+
+def test_no_legato_still_fires_on_a_slow_tie_deficit_and_names_the_voice():
+    slow = _voice([0], [40 * k for k in range(1, 31)])
+    orig = [_voice([], []), slow, _voice([], [])]
+    ours = [_voice([], []), _voice([0], [40]), _voice([], [])]
+    notes = [n for n in L.listen_notes({}, orig, ours) if "No legato" in n]
+    assert notes and "30 slow" in notes[0] and "(voice 2)" in notes[0]

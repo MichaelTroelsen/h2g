@@ -408,6 +408,7 @@ def main(argv=None) -> int:
         print(f"  {stem:32} {tunes[stem]['status']}"
               + (f"  ({', '.join(verdict['failed'])})" if verdict["failed"] else ""),
               file=sys.stderr)
+    print(F.preset_opts_miss_report(), file=sys.stderr)
     out = {"generator": f"h2g {__version__} approvals.py", "head": F.git_label(ROOT),
            "seconds": args.seconds, "calibrated": cal is not None, "tunes": tunes}
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)

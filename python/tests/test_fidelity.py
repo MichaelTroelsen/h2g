@@ -367,6 +367,15 @@ def test_the_wave_dimension_declares_the_tail_rule():
     assert "not comparable" in d.of and "byte-identical" in d.of
 
 
+def test_the_aud_dimension_says_a_one_frame_drum_pitch_fix_is_below_its_floor():
+    d = [d for d in fidelity.DIMENSIONS if d.key == "aud"][0]
+    assert "ONE-FRAME DRUM PITCH FIX IS BELOW ITS FLOOR" in d.of
+    assert "same frame on both sides" in d.of
+    assert "0.001-0.003" in d.of and "0.0077 floor" in d.of
+    assert "0.5.394 -> 0.5.395" in d.of and "monty-drum-aud/classes.txt" in d.of
+    assert "our_noise_pitch" in d.of
+
+
 def test_wave_is_none_when_no_frames_are_counted():
     got = fidelity.wave_compare(_wf_voices(), _wf_voices(), nframes=5)
     assert got["wave"] is None
@@ -408,6 +417,39 @@ def test_a_wrong_sustain_nibble_costs_every_frame_it_is_held():
                                 _adsr_voices([(0, 0x0FFE)]), 20)
     assert got["adsr"] == 0.0
     assert got["adsr_frames"] == 20
+
+
+def test_mask_release_ignores_only_the_release_nibble():
+    """`--cut-release` writes $xx?0 where the original has $xx?F: with the
+    mask on that is agreement, with it off the whole-pair compare disagrees,
+    and a wrong AD or sustain still costs the frame either way."""
+    orig = _adsr_voices([(0, 0x09AF)])
+    cut = _adsr_voices([(0, 0x09A0)])
+    off = fidelity.adsr_compare(orig, cut, 10)
+    on = fidelity.adsr_compare(orig, cut, 10, mask_release=True)
+    assert off["adsr"] == 0.0 and on["adsr"] == 1.0
+    assert on["adsr_exact"] == 0.0 and on["adsr_release_masked"] is True
+    wrong_sustain = _adsr_voices([(0, 0x09BF)])
+    assert fidelity.adsr_compare(orig, wrong_sustain, 10,
+                                 mask_release=True)["adsr"] == 0.0
+    wrong_ad = _adsr_voices([(0, 0x19A0)])
+    assert fidelity.adsr_compare(orig, wrong_ad, 10,
+                                 mask_release=True)["adsr"] == 0.0
+
+
+def test_the_row_masks_the_release_only_when_cut_release_is_on():
+    """The wiring in `_measure` has no cheaper seam than its source: a row
+    that passed a constant would mask (or not) for every preset."""
+    import inspect
+    src = " ".join(inspect.getsource(fidelity._measure).split())
+    assert ('adsr_compare(a, best_dump, nframes, lag=lag, '
+            'mask_release=bool(opts.get("cut_release")))') in src
+
+
+def test_adsr_dimension_and_report_declare_the_release_blindness():
+    dim = next(d for d in fidelity.DIMENSIONS if d.key == "adsr")
+    assert "release nibble is NOT compared" in dim.of
+    assert "cut_release" in dim.of
 
 
 def test_a_hard_restart_frame_costs_only_that_frame():
@@ -2836,6 +2878,81 @@ def test_a_release_rewritten_by_cut_release_still_joins():
     assert abs(got["depth_ratio"] - 1.0) < 0.01
 
 
+# --- depth only counts cycles the listener can hear -------------------------
+#
+# BMX_Kidz's rest record gates off and writes AD = 0, SR = 0 a dozen frames
+# into every note while its player keeps widening the sweep for seventy more.
+# Those cycles are on a silenced voice; `envelope_zero_frame` ends the note
+# there. Measured at -t 180 (C:/t/depth-silent-tail-cycles).
+
+
+def _silent_tail_voice(audible_amp, tail_amp, adsr=0x0A78):
+    """One note: `audible_amp` vibrato under an open gate, then gate off and
+    AD = SR = 0 while the frequency keeps swinging at `tail_amp`."""
+    head, tail = _osc(6, audible_amp), _osc(20, tail_amp)
+    off = len(head)                        # gate drops here...
+    zero = off + 2                         # ...and the pair is zeroed here
+    freqs = head + [f - tail[0] + head[-1] for f in tail]
+    v = fidelity.Voice(
+        attacks=["C-4"], attack_frames=[0],
+        freq_events=[(f, x) for f, x in enumerate(freqs)],
+        wf_events=[(0, 0x41), (off, 0x40)],
+        adsr_events=[(0, adsr), (zero, 0x0000)])
+    return v, len(freqs), zero
+
+
+def test_envelope_zero_frame_cuts_where_the_envelope_dies():
+    n = 100
+    # Gate drops at 10 with release 8 (300 ms = 15 frames): audible 10..24.
+    wf = [0x41] * 10 + [0x40] * (n - 10)
+    assert fidelity.envelope_zero_frame(wf, [0x0A78] * n, 0, n) == 25
+    # A pair of zero two frames later re-latches release 0: frame 12 is
+    # charged, 13 is silent.
+    adsr = [0x0A78] * 12 + [0x0000] * (n - 12)
+    assert fidelity.envelope_zero_frame(wf, adsr, 0, n) == 13
+    # Under an open gate a zero pair decays to sustain 0 in 6 ms.
+    assert fidelity.envelope_zero_frame([0x41] * n, adsr, 0, n) == 13
+    # An envelope that never dies runs to the segment's end.
+    assert fidelity.envelope_zero_frame([0x41] * n, [0x0A78] * n, 0, 40) == 40
+
+
+def test_depth_ignores_cycles_swung_after_the_envelope_died():
+    """The audible vibrato is 400 units deep; the silent tail is 2000. A
+    reading over the whole note reports the tail; the gated one the vibrato."""
+    v, n, _zero = _silent_tail_voice(400, 2000)
+    got = fidelity.oscillation_depths([v, fidelity.Voice(), fidelity.Voice()],
+                                      n, {0x0A78})
+    assert 0.08 < got[0x0A78] < 0.11, got          # 400 / ~0x1000
+    ungated = fidelity.oscillation_depths(
+        [v, fidelity.Voice(), fidelity.Voice()], n, {0x0A78},
+        audible_only=False)
+    assert ungated[0x0A78] > 0.3, ungated          # the tail's 2000
+
+
+def test_a_silent_tail_on_one_side_does_not_move_the_ratio():
+    """The pairing failure the task named: the original sweeps on after its
+    envelope died, ours stops -- the audible part is identical, so the ratio
+    must read 1.0, and the pre-gate reading did not."""
+    o, n, _ = _silent_tail_voice(400, 2000)
+    u, _, _ = _silent_tail_voice(400, 0)
+    orig = [o, fidelity.Voice(), fidelity.Voice()]
+    ours = [u, fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.depth_compare(orig, ours, n, {0x0A78})
+    assert abs(got["depth_ratio"] - 1.0) < 0.01, got
+    old = fidelity.depth_compare(orig, ours, n, {0x0A78}, audible_only=False)
+    assert old["depth_ratio"] < 0.5, old
+
+
+def test_a_voice_without_a_waveform_trace_is_read_whole():
+    """`_vice_pitch_voices` carries no `wf_events`: with no gate to read the
+    envelope cannot be judged, so the note is not cut."""
+    v, n, _ = _silent_tail_voice(400, 2000)
+    v.wf_events = []
+    got = fidelity.oscillation_depths([v, fidelity.Voice(), fidelity.Voice()],
+                                      n, {0x0A78})
+    assert got[0x0A78] > 0.3, got
+
+
 def test_depth_is_a_declared_dimension_reading_the_frequency_registers():
     d = next(d for d in fidelity.DIMENSIONS if d.key == "depth_ratio")
     assert d.column == "depth" and d.kind == "ratio"
@@ -4639,3 +4756,211 @@ def test_vice_octave_split_sums_both_voices_of_each_side():
     got = fidelity.vice_octave_split(side(0x1168, 0x22D0, 156),
                                      side(0x1168, 0x1168, 156))
     assert got == {"orig_octave_split_frames": 3, "our_octave_split_frames": 0}
+
+
+def test_a_run_cut_only_at_the_right_edge_stays_excluded_by_design():
+    """The confuzion-style-permanent-noise-latch decision (v0.5.494): a run
+    that starts inside the window and is still open at its last frame is
+    dropped from noise_runs, not kept as a lower-bound length, and counted by
+    noise_edge_runs instead. Census at -t 180: 9 of 89 originals end inside a
+    gated noise run, all 1-2 frame ticks, none an instrument seen only there."""
+    adsr = [(0, 0x0A99)]
+    side = _run_side([(1, 0x81), (4, 0x41), (9, 0x81)], adsr)
+    assert fidelity.noise_runs(side, 12) == {0x0A99: Counter({3: 1})}
+    assert fidelity.noise_edge_runs(side, 12) == {"runs": 1, "frames": 3}
+    d = [d for d in fidelity.DIMENSIONS if d.column == "nrun"][0]
+    assert "A RUN CUT ONLY AT THE RIGHT EDGE STAYS EXCLUDED BY DESIGN" in d.of
+    assert "9 end the window inside a gated noise run" in d.of
+
+
+# --- _preset_opts misses are COUNTED, not only warned ----------------------
+#
+# The warning above is deduplicated per call site, so a loop over the corpus
+# shows one warning however many files missed. PRESET_OPTS_MISSES is what a
+# caller reads to print a TOTAL with the offending names.
+
+def test_miss_counter_accumulates_one_entry_per_missed_call():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for n in ("x.sid", "y.sid", "a.sid", "z.sid"):
+            fidelity._preset_opts(doc, n)
+    assert fidelity.PRESET_OPTS_MISSES == ["x.sid", "y.sid", "z.sid"]
+    rep = fidelity.preset_opts_miss_report()
+    assert "TOTAL 3" in rep
+    for n in ("x.sid", "y.sid", "z.sid"):
+        assert n in rep
+    assert "a.sid" not in rep
+    fidelity.reset_preset_opts_misses()
+
+
+def test_miss_counter_reads_zero_when_every_key_is_present():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}, "b.sid": {"pack": True}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fidelity._preset_opts(doc, "a.sid")
+        fidelity._preset_opts(doc, "b.sid")
+    assert fidelity.PRESET_OPTS_MISSES == []
+    assert fidelity.preset_opts_miss_report() == "preset-opts misses: TOTAL 0"
+
+
+def test_miss_counter_ignores_an_empty_songs_block():
+    fidelity.reset_preset_opts_misses()
+    fidelity._preset_opts({"always": {}, "songs": {}}, "anything.sid")
+    assert fidelity.PRESET_OPTS_MISSES == []
+
+
+# --- per-file traced-subtune pins (SUBTUNE_COUNTERPART) --------------------
+# Commodore_64_Music_Examples' .sng carries ONE subtune, the original's s1
+# ("track table runs into another table after $1"); Dragons_Lair_Part_II's
+# init remaps PSID 0 to song 9. Both rows used to be scored s0 against o0 --
+# melody 7% and 9% at -t 180 against `--diagnose`'s s1->o0 96% and s0->o9
+# 95% -- because the harness traced both sides at one index and the
+# +/-1 search window never reached o9.
+
+
+def test_the_two_known_correspondence_rows_are_pinned_to_their_counterparts():
+    assert fidelity.SUBTUNE_COUNTERPART == {
+        "Commodore_64_Music_Examples.sid": (1, 0),
+        "Dragons_Lair_Part_II.sid": (0, 9),
+    }
+
+
+@pytest.mark.parametrize("name,requested,want", [
+    ("Commodore_64_Music_Examples.sid", "auto", (1, 0, True)),
+    ("Commodore_64_Music_Examples.sid", 1, (1, 0, True)),
+    # A forced index with no known counterpart is the diagonal, unpinned.
+    ("Commodore_64_Music_Examples.sid", 0, (0, 0, False)),
+    ("Dragons_Lair_Part_II.sid", "auto", (0, 9, True)),
+    ("Dragons_Lair_Part_II.sid", 0, (0, 9, True)),
+    ("Dragons_Lair_Part_II.sid", 3, (3, 3, False)),
+    # An unpinned file is exactly what resolve_subtune always returned.
+    ("Nobody.sid", 2, (2, 2, False)),
+    ("Nobody.sid", "auto", (0, 0, False)),
+])
+def test_resolve_pair_pins_only_the_known_pair(tmp_path, name, requested, want):
+    assert fidelity.resolve_pair(tmp_path / name, requested) == want
+
+
+def test_resolve_subtune_is_untouched_by_a_pin():
+    """Its other callers trace both sides at the one index it returns; a pin
+    leaking in here would point C64ME's OUR side at a subtune it lacks."""
+    p = pathlib.Path("C:/nowhere/Commodore_64_Music_Examples.sid")
+    assert fidelity.resolve_subtune(p, "auto") == 0
+
+
+def test_a_pin_appearing_between_two_runs_is_the_change_not_a_refusal():
+    old = _ab("Commodore_64_Music_Examples.sid", "aaa", subtune=0,
+              matched_subtune=0, melody=0.07)
+    new = _ab("Commodore_64_Music_Examples.sid", "aaa", subtune=1,
+              matched_subtune=0, subtune_pinned=0, melody=0.96)
+    text, code = fidelity.compare_runs([old], [new])
+    assert code == 0, text
+    assert "## Refused" not in text
+    assert ("traced subtune pin differs (SUBTUNE_COUNTERPART): "
+            "`Commodore_64_Music_Examples.sid` scored at s0/o0 -> s1/o0") in text
+
+
+def test_two_runs_with_the_same_pin_still_refuse_a_subtune_difference():
+    old = _ab("A.sid", subtune=0, subtune_pinned=4)
+    new = _ab("A.sid", "new", subtune=2, subtune_pinned=4)
+    text, code = fidelity.compare_runs([old], [new])
+    assert code == 2 and "subtune 0 -> 2" in text
+
+
+def test_an_unpinned_subtune_difference_still_refuses():
+    assert fidelity.settings_mismatch(
+        {"A.sid": {"subtune": 0}}, {"A.sid": {"subtune": 3}}) == [
+        "A.sid: subtune 0 -> 3"]
+
+
+def _measure_pinned(name, monkeypatch, seconds=10):
+    import json as _json
+    import types
+    sid = CORPUS / name
+    if not sid.exists():
+        pytest.skip(f"{name} not in the corpus")
+    if not pathlib.Path(fidelity.GT2RELOC).exists():
+        pytest.skip("gt2reloc not available")
+    doc = _json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    opts = fidelity._preset_opts(doc, name)
+    mult = fidelity._preset_multiplier(doc, name)
+    traced = []
+    real = fidelity.run_siddump
+
+    def spy(path, secs, subtune, *a, **k):
+        traced.append((pathlib.Path(path).name, subtune))
+        return real(path, secs, subtune, *a, **k)
+    monkeypatch.setattr(fidelity, "run_siddump", spy)
+    args = types.SimpleNamespace(
+        seconds=seconds, subtune="auto", label=None, search_subtunes=3,
+        siddump=siddump, gt2reloc=fidelity.GT2RELOC, register=False,
+        audio=False, length_probe=1, vice=False, sound=False)
+    work, owned = fidelity.make_workdir()
+    try:
+        row = fidelity.measure(sid, work, opts, args, mult)
+    finally:
+        if owned:
+            shutil.rmtree(work, ignore_errors=True)
+    return row, traced
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name", sorted(fidelity.SUBTUNE_COUNTERPART))
+def test_a_pinned_row_traces_each_side_at_its_own_subtune(name, monkeypatch):
+    """At the seam: every trace `measure` takes of the ORIGINAL is at the
+    pin's original index and every trace of OURS at its counterpart, the
+    search window is not consulted, and the row scores the right music."""
+    orig_sub, our_sub = fidelity.SUBTUNE_COUNTERPART[name]
+    row, traced = _measure_pinned(name, monkeypatch)
+    assert row["status"] == "measured", row.get("detail")
+    assert (row["subtune"], row["matched_subtune"], row["subtune_pinned"]) == (
+        orig_sub, our_sub, our_sub)
+    orig = {s for f, s in traced if f == "o.sid"}
+    ours = {s for f, s in traced if f != "o.sid"}
+    assert orig == {orig_sub} and ours == {our_sub}, traced
+    # s0 against o0 scored 7% (C64ME) and 9% (DL2); the counterpart is the
+    # same music, so anything near the diagonal's figure means the pin did
+    # not reach the comparison.
+    assert row["melody"] > 0.5, row["melody"]
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name", sorted(fidelity.SUBTUNE_COUNTERPART))
+def test_pace_traces_a_pinned_file_at_its_counterpart(name, monkeypatch):
+    """`--pace` reads the same pair the row is scored at: across C64ME's or
+    DL2's diagonal it would time two different pieces of music."""
+    import json as _json
+    import types
+    sid = CORPUS / name
+    if not sid.exists():
+        pytest.skip(f"{name} not in the corpus")
+    if not pathlib.Path(fidelity.GT2RELOC).exists():
+        pytest.skip("gt2reloc not available")
+    orig_sub, our_sub = fidelity.SUBTUNE_COUNTERPART[name]
+    doc = _json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    opts = fidelity._preset_opts(doc, name)
+    mult = fidelity._preset_multiplier(doc, name)
+    traced = []
+    real = fidelity.run_siddump
+
+    def spy(path, secs, subtune, *a, **k):
+        traced.append((pathlib.Path(path).name, subtune))
+        return real(path, secs, subtune, *a, **k)
+    monkeypatch.setattr(fidelity, "run_siddump", spy)
+    args = types.SimpleNamespace(seconds=10, subtune="auto", siddump=siddump,
+                                 gt2reloc=fidelity.GT2RELOC)
+    work, owned = fidelity.make_workdir()
+    try:
+        text = fidelity.pace_report(sid, work, opts, args, mult)
+    finally:
+        if owned:
+            shutil.rmtree(work, ignore_errors=True)
+    assert {s for f, s in traced if f == "o.sid"} == {orig_sub}, traced
+    assert {s for f, s in traced if f != "o.sid"} == {our_sub}, traced
+    assert (f"subtune {orig_sub} against our o{our_sub} (pinned)"
+            in text.splitlines()[0]), text

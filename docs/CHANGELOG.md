@@ -4,6 +4,26 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.495 — 2026-10-02
+
+- runqueue drain: 30 cycles -- nibble arp period/phase, per-note fixed-arp split, Chimera tie rows, stored-wave $68 pitch, 5_Title_Tunes multi-player, zero-page triangle pulse, shared pulse ramps, harness pins and masks
+
+  Converter (output-changing; every figure is in that task's `.claude/tasks/runs.jsonl` record):
+  - Nibble-dialect arpeggios: per-record alternation period read from the player's self-modified AND mask and stretched by the outer-gate stall; ticked records unroll through the noise tick from the walked counter residue; Formula_1's opcode-spelled block goes up via ADC; a fractional gated half spreads over an even loop (Warhawk, IK, F1, Thrust, Spellbound and the other nibble files).
+  - Fixed arpeggios: per-note residue clones where the phase vote splits (Hunter_Patrol, Game_Killer, Human_Race, Chimera, One_Man, Zoids); Chimera's tied rows take a row-locked shape (vib 0.48 -> 0.85).
+  - Pitch sequences: -S1 records rotate onto the zero step (Nineteen); Food_Feud's divided phase is carried per instrument (forced pitch_seq only).
+  - Sanxion: short notes hold the $40 attack pitch; the past-table drum row plays its noise burst on a variant instrument.
+  - The $68 stored-waveform pitch is derived from voices 0/1's cells on the nine authorised files; Commando is held.
+  - Zero-page per-voice triangle pulse engine detected (Samantha Fox, Spellbound).
+  - Pulse-phase ramps are shared per leg (Last_V8, Master_of_Magic, Phantoms keep their sweeps under forced pulse_phase).
+  - 5_Title_Tunes emits subtunes 1-4 from players 1-4's own tables.
+  - Rasputin's opening octave trill follows its tempo (tempo-duty split).
+  - New options: `drop_unnamed_instruments` (in the always block; 71 files) and `wave_alternate` (per song, excluded from always).
+  - The CLI forwards every preset option `_preset_opts` does.
+  Harness: subtune counterparts pinned in code (C64ME s1/o0, Dragons_Lair_Part_II s0/o9); adsr masks the release nibble under cut_release; depth counts only audible cycles; `_preset_opts` misses are totalled; vicetrace repairs sign-extended pulse/ADSR; new aud/nrun Dimension sentences; "No legato" counts only slow ties.
+  Retracted: Game_Killer's 61% call-clock agreement for the triangle pulse sweep was a one-note pairing slip (see docs/LESSONS.md).
+  Not yet regenerated: FIDELITY.md / build/fidelity.json (tests/test_output_sha.py fails until the on-demand refresh).
+
 ## 0.5.494 — 2026-10-01
 
 - the DIGI hold, a classic vibrato gate read from the player, the render key carries the power-on delay, a clock check for the known-bad pairs, and nine smaller drain fixes

@@ -265,3 +265,86 @@ def test_the_budget_refusal_names_the_record_that_lost_its_arpeggio():
     assert "record 2" in lines[0] and "$34" in lines[0]
     assert "LOSES its arpeggio" in lines[0]
     assert len(tight[0]) <= 20               # the fallback still fits
+
+
+def test_a_carried_phase_names_every_frame_from_the_player():
+    """With `phases` the right side is the player's cell, not a rotation.
+
+    Entry `c` past the lead is frame `1 + c // hold`, so it names
+    `phase_notes[phases[c // hold % period]]` -- across the attack stage
+    too, as the original's arpeggio runs across it. The loop is the
+    counter's whole period in calls (8 frames x 3 = 24, the same length the
+    divided two-step block always had), so the jump stays continuous.
+    Food_Feud record 2 at -S3, its majority phase (1, 0, 0, 0, 0, 1, 1, 1):
+    the step lands on frame 1, where the unphased block put it on frame 5.
+    """
+    notes = [0x00, 124]
+    phases = (1, 0, 0, 0, 0, 1, 1, 1)
+    plain = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 3,
+                                           budget=200, frames_per_step=4)
+    got = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 3,
+                                         budget=200, frames_per_step=4,
+                                         phases=phases, phase_notes=notes)
+    left, right = got
+    assert left == plain[0]                    # waveforms and length unchanged
+    assert right[:3] == [0x00] * 3             # the attack frame: its own note
+    # ten frames (two of attack, a period of eight): cells 1,0,0,0,0,1,1,1,1,0
+    assert right[3:-1] == [124] * 3 + [0] * 12 + [124] * 12 + [0] * 3
+    assert right[-1] == plain[1][-1] == 1 + 3 + 6
+    body = right[3:-1]
+    # continuity: the entry after the body's last names what the jump target
+    # (c = 6, frame 3) names
+    assert notes[phases[(len(body) // 3) % 8]] == body[6]
+    # a phase reading with no step behind it falls back to the rotation
+    assert G._two_stage_pitch_seq_entries(
+        0x11, 0x41, 2, notes, 1, 3, budget=200, frames_per_step=4,
+        phases=(2,) * 8, phase_notes=notes) == plain
+
+
+def test_food_feud_carries_the_majority_phase_per_instrument():
+    """The walk over the finished orderlists, voted per instrument.
+
+    Food_Feud with `pitch_seq` forced on its own preset: GT 3 and 4 are
+    records 2 and 3 (`$34`, the voice-2 instruments under ADSR $29F9).
+    Their notes split over three attack states, one per row mod 3 (a row is
+    8/3 frames, so three rows are the counter's 8-frame cycle), and each
+    takes its majority -- both open on the step at frame 1, where the
+    original moves on 393 of 466 such notes.
+    """
+    if not CORPUS.is_dir():
+        return
+    import json
+    import warnings
+    root = pathlib.Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(root / "python"))
+    import fidelity as F
+    from h2g.convert import convert
+    doc = json.loads((root / "presets.json").read_text())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        opts = F._preset_opts(doc, "Food_Feud.sid")
+    opts["pitch_seq"] = True
+    got = {}
+    real = G.pitch_seq_phases
+
+    def spy(*a):
+        got.update(real(*a))
+        return got
+    G.pitch_seq_phases = spy
+    try:
+        convert(str(CORPUS / "Food_Feud.sid"), log=lambda *a, **k: None,
+                **opts)
+    finally:
+        G.pitch_seq_phases = real
+    assert got[3] == (1, 0, 0, 0, 0, 1, 1, 1), got
+    assert got[4] == (1, 1, 1, 0, 0, 0, 0, 1), got
+    # the shipped preset (no `pitch_seq`) computes none of this
+    got.clear()
+    opts["pitch_seq"] = False
+    G.pitch_seq_phases = spy
+    try:
+        convert(str(CORPUS / "Food_Feud.sid"), log=lambda *a, **k: None,
+                **opts)
+    finally:
+        G.pitch_seq_phases = real
+    assert got == {}

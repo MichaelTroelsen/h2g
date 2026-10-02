@@ -520,3 +520,102 @@ def test_every_per_song_decision_in_the_artefact_survives_a_regeneration():
         "these per-song decisions would be deleted by the next presets.py "
         f"run: { {k: v[:3] for k, v in unprotected.items()} } -- add each key "
         "to presets.EXCLUDED_FROM_ALWAYS (which feeds CARRIED_PER_SONG)")
+
+
+# --- the CLI is a third reader of presets.json --------------------------------
+#
+# `python -m h2g --presets` hand-lists the options it forwards, and at 57c086e
+# it read `skip_gate` out of the preset and never passed it to convert(), never
+# read `regrid` at all, dropped `real_firstwave_instruments`, and took
+# `force_park` from `always` only -- so 62 of 89 preset songs converted to
+# different bytes than `fidelity._preset_opts` (Las_Vegas 12444 vs 12446).
+# play.ps1, convert.ps1, approvals.recover_approved_sng and
+# sound_calibrate.convert_at all go through it. `_preset_opts` is the reference
+# reader, so the CLI is pinned to it keyword for keyword.
+
+# `engine` picks a different song out of the file: a command-line choice that
+# the CLI deliberately never takes from a preset (see its --engine help).
+_CLI_NOT_FROM_PRESETS = {"engine"}
+
+
+def _cli_kwargs(monkeypatch, tmp_path, presets_path, name):
+    import h2g.cli as cli
+    seen = {}
+
+    def fake_convert(sid_path, log=None, **opts):
+        seen.update(opts)
+        return b"x"
+
+    monkeypatch.setattr(cli, "convert", fake_convert)
+    rc = cli.main([str(tmp_path / name), "--presets", str(presets_path),
+                   "-q", "-o", str(tmp_path / "out.sng")])
+    assert rc == 0
+    return seen
+
+
+def _assert_cli_matches(got, want, name):
+    for opt in _CLI_NOT_FROM_PRESETS:
+        want.pop(opt, None)
+        got.pop(opt, None)
+    missing = sorted(set(want) - set(got))
+    assert not missing, f"{name}: the CLI never passes {missing} to convert()"
+    wrong = {k: (got[k], want[k]) for k in want if got[k] != want[k]}
+    assert not wrong, f"{name}: CLI vs _preset_opts (cli, ref): {wrong}"
+
+
+def test_the_cli_passes_every_preset_option_set_anywhere(monkeypatch, tmp_path):
+    """Synthetic, so it cannot pass merely because the shipped file happens not
+    to exercise a key: every option is set in `always`, and a song entry
+    switches each bool one back off, so both directions of the override are
+    read for every option `convert()` takes."""
+    opts = [o for o in _convert_options()
+            if o not in _PER_SONG_OPTS and o not in _CLI_NOT_FROM_PRESETS
+            and o not in ("fmt", "tempo")]
+    always = {_RENAMED_OPTS.get(o, o): True for o in opts}
+    always.update(format="gts5", tempo="auto")
+    on = {"max_rows": 128, "pack": True, "prune": True, "dedup": True,
+          "hard_restart_frames": 3, "real_firstwave_instruments": [2, 5]}
+    off = {"max_rows": 94, **{_RENAMED_OPTS.get(o, o): False for o in opts}}
+    doc = {"always": always, "songs": {"on.sid": on, "off.sid": off}}
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    for name in ("on.sid", "off.sid"):
+        _assert_cli_matches(_cli_kwargs(monkeypatch, tmp_path, path, name),
+                            _preset_opts(doc, name), name)
+
+
+def test_the_cli_passes_every_shipped_preset_as_preset_opts_does(
+        monkeypatch, tmp_path):
+    if not PRESETS.exists():
+        pytest.skip("presets.json not generated")
+    doc = json.loads(PRESETS.read_text(encoding="utf-8"))
+    for name in sorted(doc.get("songs", {})):
+        _assert_cli_matches(_cli_kwargs(monkeypatch, tmp_path, PRESETS, name),
+                            _preset_opts(doc, name), name)
+
+
+# One file per reader the CLI got wrong: skip_gate (always), regrid and
+# real_firstwave_instruments (per song), force_park (per song, not always).
+_CLI_BYTE_PARITY = ("Las_Vegas_Video_Poker.sid", "Auf_Wiedersehen_Monty.sid",
+                    "Confuzion.sid")
+
+
+def test_the_cli_writes_the_bytes_preset_opts_converts(tmp_path):
+    """The real conversion, not a recorder: the CLI's file on disk must equal
+    convert(**_preset_opts(...)) byte for byte."""
+    from corpus import CORPUS
+    import h2g.cli as cli
+    if not CORPUS.is_dir():
+        pytest.skip(f"Hubbard corpus not found at {CORPUS} -- set H2G_CORPUS")
+    if not PRESETS.exists():
+        pytest.skip("presets.json not generated")
+    doc = json.loads(PRESETS.read_text(encoding="utf-8"))
+    for name in _CLI_BYTE_PARITY:
+        assert name in doc["songs"], name
+        sid = CORPUS / name
+        out = tmp_path / (name + ".sng")
+        assert cli.main([str(sid), "--presets", str(PRESETS), "-q",
+                         "-o", str(out)]) == 0
+        ref = convert(str(sid), log=lambda m: None, **_preset_opts(doc, name))
+        got = out.read_bytes()
+        assert got == ref, f"{name}: CLI {len(got)} bytes, preset_opts {len(ref)}"

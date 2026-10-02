@@ -245,7 +245,9 @@ def test_ricochets_warning_is_a_pattern_no_orderlist_reaches():
     """
     if not CORPUS.is_dir():
         return
-    opts = dict(FIXED, legal_restart=True)
+    # drop_unnamed_instruments renumbers the instrument column by design;
+    # this reads the numbering detect()'s bound is stated in, so it is off.
+    opts = dict(FIXED, legal_restart=True, drop_unnamed_instruments=False)
     path = CORPUS / "Ricochet.sid"
     blob = convert(str(path), log=lambda m: None, **opts)
     song = songview.parse_sng(blob)
@@ -282,7 +284,8 @@ def test_the_bound_lands_on_the_last_instrument_played_in_several_files():
             continue
         try:
             blob = convert(str(path), log=lambda m: None,
-                           **dict(FIXED, legal_restart=True))
+                           **dict(FIXED, legal_restart=True,
+                                  drop_unnamed_instruments=False))
         except Exception:
             continue
         checked += 1

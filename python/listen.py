@@ -66,9 +66,9 @@ SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
 # measured under (sound_calibrate.py's note above CHECK 2); any fixed value
 # would do, and this one is also the smallest start-state the emulated
 # machine can have. NOTE: a render cached in build/audio before this
-# constant existed was made with a random delay -- the cache key is the
-# .sid's content, not the command line, so those files stay valid keys and
-# stay pre-flag until they are re-rendered.
+# constant existed was made with a random delay -- sound.content_key folds
+# SIDPLAYFP_POWER_ON_DELAY into the key alongside the .sid's content, so
+# those pre-flag renders are cache misses and get re-rendered.
 SIDPLAYFP_POWER_ON_DELAY = 0
 
 # The bands FIDELITY.md reports, and what a listener is being asked to decide
@@ -297,6 +297,30 @@ def pick(rows: list[dict], per_band: int) -> list[tuple[str, dict]]:
     return out
 
 
+RAPID_TIE_FRAMES = 3
+
+
+def tie_shares(voice, rapid: int = RAPID_TIE_FRAMES) -> tuple[int, int]:
+    """(rapid, slow) ties on one fidelity.Voice.
+
+    A tie is rapid when the voice's previous note event (an attack or another
+    tie) is at most `rapid` frames earlier: that is an arpeggio stepping, not a
+    held note gliding into the next. A tie with no earlier note event is slow.
+    """
+    events = sorted([(f, "a") for f in voice.attack_frames]
+                    + [(f, "t") for f in voice.tie_frames])
+    fast = slow = 0
+    prev = None
+    for frame, kind in events:
+        if kind == "t":
+            if prev is not None and frame - prev <= rapid:
+                fast += 1
+            else:
+                slow += 1
+        prev = frame
+    return fast, slow
+
+
 def listen_notes(r: dict, orig, ours) -> list[str]:
     """What the numbers predict, in the terms a listener would use.
 
@@ -324,13 +348,26 @@ def listen_notes(r: dict, orig, ours) -> list[str]:
             f"we slide {u_slides}: vibrato, portamento and drum pitch-sweeps "
             "are the things to listen for missing.")
 
-    o_ties = sum(v.ties for v in orig)
-    u_ties = sum(v.ties for v in ours)
-    if o_ties >= 20 and u_ties < o_ties // 4:
+    # Only the SLOW ties are legato. A tie within RAPID_TIE_FRAMES of the
+    # voice's previous note event is a per-frame arpeggio step, and on
+    # Lakers_vs_Celtics and Sun_Never_Shines 95-99% of the original's ties
+    # are that shape -- a whole-file count fired "No legato" on chords.
+    o_shares = [tie_shares(v) for v in orig]
+    u_shares = [tie_shares(v) for v in ours]
+    o_slow = sum(s for _, s in o_shares)
+    u_slow = sum(s for _, s in u_shares)
+    if o_slow >= 20 and u_slow < o_slow // 4:
+        voices = [str(i + 1) for i, (o, u) in enumerate(zip(o_shares, u_shares))
+                  if o[1] >= 5 and u[1] < o[1] // 4]
         notes.append(
-            f"**No legato.** {o_ties} note changes without a re-trigger in the "
-            f"original, {u_ties} in ours -- every note is re-attacked, so "
-            "phrases that should flow will sound detached.")
+            f"**No legato.** {o_slow} slow note changes without a re-trigger "
+            f"in the original, {u_slow} in ours"
+            + (f" (voice {', '.join(voices)})" if voices else "")
+            + f" -- notes are re-attacked, so phrases that should flow will "
+            f"sound detached. Rapid ties (within {RAPID_TIE_FRAMES} frames of "
+            f"the previous note, arpeggio-shaped): "
+            f"{sum(r for r, _ in o_shares)} original, "
+            f"{sum(r for r, _ in u_shares)} ours.")
 
     pj = r.get("pitch_jaccard")
     if pj is not None and pj < 0.6:

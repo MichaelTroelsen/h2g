@@ -978,3 +978,15 @@ def test_one_counter_gates_the_static_files_and_grows_the_expanding_ones():
         det = detect(sid, lambda *a, **k: None)
         assert det.vibrato_gate is not None, name
         assert det.vibrato_gate.cell == _expanding_vibrato_counter(sid, det), name
+
+
+def test_triangle_vibrato_entry_boundary_matches_harness():
+    # byte 15 = 16 shifts (DEC/BPL loop) of a 16-bit interval = zero, so the
+    # emitter declines exactly where fidelity.vibrato_population does (>=).
+    from h2g.detect import TRIANGLE_VIBRATO_MAX_SHIFT
+    from h2g.goatwriter import _triangle_vibrato_entry
+    assert TRIANGLE_VIBRATO_MAX_SHIFT == 15
+    assert _triangle_vibrato_entry(0, 1) is None
+    assert _triangle_vibrato_entry(14, 1) is not None
+    assert _triangle_vibrato_entry(15, 1) is None
+    assert _triangle_vibrato_entry(16, 1) is None

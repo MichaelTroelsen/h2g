@@ -665,6 +665,7 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
     if not sids:
         pytest.skip("corpus not present")
     found = gated = 0
+    zp = set()
     for path in sids:
         try:
             sid = load_sid(str(path))
@@ -673,12 +674,19 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
             continue
         if det.pulse_tri_hi < 0:
             continue
-        found += 1
-        gated += det.pulse_tri_gated
         assert (det.pulse_tri_lo, det.pulse_tri_hi) == (8, 0x0E), path.name
         # anchored on the instrument table this detection already found
         assert sid.data[det.instr_start:det.instr_start + 1]
+        # The zero-page per-voice dialect (PULSE_TRI_ZP_SHAPE) is counted
+        # apart: it is a second spelling, not a wider reach of this one, and
+        # test_pulse_tri_zp.py owns it.
+        if det.pulse_tri_per_voice:
+            zp.add(path.name)
+            continue
+        found += 1
+        gated += det.pulse_tri_gated
     assert (found, gated) == (24, 19), "the triangle's reach changed"
+    assert zp == {"Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"}
 
 
 # --- packing: gt2reloc's pulse skipping ------------------------------------

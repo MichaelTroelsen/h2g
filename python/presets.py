@@ -106,6 +106,10 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
          "vibrato_command": True, "cut_release": True, "tie": True,
          "rest_instrument": True, "compact_instruments": True,
+         # knucklebusters-gt28-is-a-fully-vacant-instrument-occupying-a-slot
+         # (decision: stop emitting records no pattern names; Commando
+         # carries one, so it is an option set here, not a default).
+         "drop_unnamed_instruments": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
 # HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
@@ -139,6 +143,9 @@ LIVE_ON = {
     "vibrato_command": 25, "cut_release": 31, "tie": 66,
     "rest_instrument": 0, "compact_instruments": 89,
     "voice_two_stage": 1, "rest_keyoff": 56,
+    # Measured at 0.5.494 (dirty drain tree, 2026-10-02), not 0.5.483: the
+    # 71 files that carry a record no pattern names.
+    "drop_unnamed_instruments": 71,
 }
 LIVE_ON_MEASURED_AT = "0.5.483"
 
@@ -456,6 +463,33 @@ EXCLUDED_FROM_ALWAYS = {
     # `--arpeggio` changes NO byte on any other file: 0 of 89 move with it off
     # and exactly 5 with it on, corpus byte-hashed at v0.5.457.
     "arpeggio",
+    # Bit $02's DERIVED alternate (`det.wave_alternate_noise`: the player's
+    # `AND #$07 / ORA #$80`, noise at the voice's own control bits). Per song
+    # because the two files it reaches are two populations -- MEASURED AT
+    # v0.5.494 + uncommitted tree (1dde44a), -t 180, under presets:
+    # Chicken_Song trades `wave` 88.3 -> 83.5% for noise frames 2556 -> 3780
+    # (orig 4188) with melody/seq/pitch/attacks identical; Hollywood_or_Bust
+    # pays melody 60.5 -> 49.0% and seq 58.8 -> 47.2% for noise 0 -> 2998.
+    # Forced on, it moves exactly those 2 of 89 converting files' bytes.
+    #
+    # **NOT in FIDELITY_TOGGLES, because the search refuses it on BOTH files
+    # -- measured, not assumed.** Run with FIDELITY_TOGGLES monkeypatched to
+    # `("wave_alternate",)` and again to `("no_test_restart",
+    # "wave_alternate")` at -t 180, it is selected on neither. Hollywood is
+    # refused by `keeps_notes` (melody). Chicken_Song is refused by the ONSET
+    # VETO alone: `moves_noise_pitch` fires (our noise pitch 14148 -> 5614
+    # against the original's 5611, i.e. 2.52x -> 1.00x), but the search's
+    # per-frame `onset_frame_agreement` falls 0.808 -> 0.769, past the 0.02
+    # margin, so `gave_back` declines it; with onset held at the reference
+    # the same tuple is accepted. (The report's per-instrument `onset` column
+    # is 69% in both arms -- it is the per-frame term that moves.) Adding it
+    # to the walk would therefore cost 255 combinations a song against 127
+    # (`_redundant_combination` skips only the max/wide hard-restart pair,
+    # so the 87 files it cannot move pay too) for 0 of 2 adoptions, and
+    # make the search authoritative over a hand-recorded adoption, the
+    # `pulse_phase` trap above. Adopting it on Chicken_Song is a listening
+    # decision: a song entry `"wave_alternate": true`.
+    "wave_alternate",
 }
 
 
@@ -1995,6 +2029,10 @@ def main(argv=None) -> int:
         print(f"--fidelity searched {', '.join(FIDELITY_TOGGLES)} over "
               f"{len(songs)} song(s) at {args.seconds}s: {n} took a non-default "
               "setting", file=sys.stderr)
+        # The search converts with its own options, never `_preset_opts`, so
+        # this reads 0 by construction; printed so a run that did go through
+        # it (a future caller) cannot miss silently.
+        print(F.preset_opts_miss_report(), file=sys.stderr)
     return 0
 
 

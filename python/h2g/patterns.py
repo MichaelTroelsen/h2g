@@ -345,6 +345,13 @@ def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
     pulse frames are not DC silence. Clamped to index 92 that event is a
     G#7 pulse for two frames, and it is audible.
 
+    So the KEYOFF this set produces is not the last word: the decoder keeps
+    the event's instrument column on it (the only KEYOFF it writes with
+    one), and `goatwriter.past_table_drum_plan` re-emits each such row whose
+    instrument's wave program sounds an absolute-pitch frame as a note on a
+    variant of that instrument -- pitched frames test-bit silent, the
+    absolute frame kept. Sanxion's six drum rows are that case.
+
     A byte qualifies as a rest on two conditions, both read statically:
 
     * the two bytes it lands on are **$00 $00 in the file**, and
@@ -507,7 +514,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                        instr_transpose: Optional[bytes] = None,
                        entry_transpose: int = 0,
                        transpose_exit: Optional[List[tuple]] = None,
-                       free_rows: Optional[List[int]] = None
+                       free_rows: Optional[List[int]] = None,
+                       event_log: Optional[List[tuple]] = None,
+                       wave_notes: Optional[Dict[int, int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -602,6 +611,23 @@ def _build_raw_pattern(data: bytes, addr: int,
     the pattern's end, or None where the pattern named no instrument and
     the entry value carries through. Nothing is appended when the decode
     fails.
+
+    `event_log`, when given a list, receives one `(wait, record, entry)`
+    tuple per event, in order: the event's `wait` field, the instrument
+    RECORD its operand named (`b2 & instr_mask`, before `instr_base`) or
+    None, and the frequency-table entry its note fetch reads (after the
+    transpose and `_wrap_note`, before any rest/constant/clamp reading) or
+    None for an event that fetches no note. The terminator is not an event.
+    Like `exits_tied` it changes no byte of the stream; it is what
+    `stored_wave.stored_wave_notes` walks the orderlists with.
+
+    `wave_notes` maps an event's ORDINAL in this pattern (the index its tuple
+    would have in `event_log`) to the table entry the original sounds there,
+    for a note byte that lands past the table on the per-voice
+    stored-waveform cells -- a pitch only the orderlist walk can know, since
+    it is what the OTHER voices hold at that moment. See
+    `stored_wave.stored_wave_notes`. Consulted before `rest_notes` and
+    `const_notes`; an event not in it reads exactly as before.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -609,6 +635,8 @@ def _build_raw_pattern(data: bytes, addr: int,
     events: List[int] = []
     g_instrument = 0
     i2 = 0
+    # Events decoded so far, terminator excluded: the key `wave_notes` uses.
+    ordinal = 0
     # The voice's standing note offset under `instr_transpose`; see above.
     transpose = entry_transpose if instr_transpose is not None else 0
     notes_before_instr = 0
@@ -634,6 +662,10 @@ def _build_raw_pattern(data: bytes, addr: int,
         # THREE writes -- see the rest branch below -- and a row has
         # one command column.
         hold_cmds: list = []
+        # For `event_log`: the instrument record this event's operand named,
+        # and the table entry its note fetch reads.
+        log_record = None
+        log_entry = None
         b1 = data[addr + i2]
 
         if b1 == 0xFF:
@@ -877,6 +909,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                         cmd2 = min(speed // 4, 0xFF)
             else:
                 g_instrument = (b2 & instr_mask) + instr_base
+                log_record = b2 & instr_mask
                 named_instr = True
                 if instr_transpose is not None:
                     # `LDA table,X` with X = the operand the player stored;
@@ -948,9 +981,21 @@ def _build_raw_pattern(data: bytes, addr: int,
                 # / TAY` does (an 8-bit add, then bit 7 lost).
                 g_note = ((g_note & 0x7F) + transpose) & 0xFF
             g_note = _wrap_note(g_note)
+            log_entry = g_note
+            # A byte landing on the per-voice STORED-WAVEFORM cells past the
+            # table sounds what the other voices hold at this moment, which
+            # `stored_wave.stored_wave_notes` read by walking the orderlists.
+            # It is replaced by that entry here, before the rest/constant
+            # readings and the clamp, and then takes the ordinary path. An
+            # event the walk could not settle is not in the map and is
+            # clamped exactly as before. Commando is held out of the walk
+            # (`stored_wave.HELD`), so its fixture never reaches this line.
+            if wave_notes and ordinal in wave_notes:
+                g_note = wave_notes[ordinal]
             # **THE CLAMP IS RIGHT FOR EVERY BYTE BUT ONE, AND THE ONE IS
             # NOTE 104 ON COMMANDO -- PRICED AT v0.5.461 AND BLOCKED ONLY BY
-            # THE BYTE-EXACT FIXTURE.**
+            # THE BYTE-EXACT FIXTURE.** (Since 2026-10-02 the other nine
+            # `$68` files are read by `wave_notes` above; Commando is held.)
             #
             # Goattracker's note column tops out at index 92, so a byte above
             # it has nowhere to go. For $5D and $5F -- A-7 and B-7, real
@@ -1047,6 +1092,19 @@ def _build_raw_pattern(data: bytes, addr: int,
             # table in seven players may or may not land on the same kind of
             # cell, and only Commando's has been traced. A constant read from
             # one player is a constant about one player.
+            #
+            # **RESOLVED FOR THE NINE, HELD FOR COMMANDO (2026-10-02).** All
+            # ten players with a reached `$68` land on the same kind of cell
+            # -- the per-voice stored-waveform array, lo = voice 0's, hi =
+            # voice 1's -- and none on a constant: the pitch is what those two
+            # voices hold at the fetch, so it differs per play (Crazy_Comets
+            # C-4, Phantoms D#4, Monty/Devils_Galop B-6, mostly B-5).
+            # `stored_wave.stored_wave_notes` walks the orderlists in time and
+            # supplies it per event as `wave_notes`, applied above beside the
+            # wrap. Every predicted frequency was found on the predicted voice
+            # in a 900 s siddump of all ten. Commando is held by name
+            # (`stored_wave.HELD`, human decision) so the fixture keeps the
+            # clamp's G#7 here until the note-104 listen reopens it.
             #
             # NOTHING IS CHANGED BY THIS CENSUS. It bounds the Commando
             # decision -- re-cutting the fixture would be about 1 of 16 files
@@ -1241,6 +1299,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)
         events += [g_note, g_instrument, cmd1, cmd2]
+        if event_log is not None:
+            event_log.append((wait, log_record, log_entry))
+        ordinal += 1
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
         for h in range(wait):
@@ -2068,7 +2129,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  exits_tied: Optional[List[bool]] = None,
                  arps: Optional[List[tuple]] = None,
                  transpose_exit: Optional[List[tuple]] = None,
-                 free_rows: Optional[List[int]] = None
+                 free_rows: Optional[List[int]] = None,
+                 event_log: Optional[List[tuple]] = None,
+                 wave_notes: Optional[Dict[int, int]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2132,7 +2195,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                                   if det.instr_transpose >= 0 else None),
                               entry_transpose=det.instr_entry_transposes.get(i, 0),
                               transpose_exit=transpose_exit,
-                              free_rows=free_rows)
+                              free_rows=free_rows,
+                              event_log=event_log,
+                              wave_notes=wave_notes)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -2512,7 +2577,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_keyoff: bool = False,
                      rest_wave: bool = False,
                      rest_envelope: bool = False,
-                     free_rows: bool = False):
+                     free_rows: bool = False,
+                     wave_notes: Optional[Dict[int, Dict[int, int]]] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -2556,6 +2622,14 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     such a pair, which is why it is opt-in and convert.py asks only where
     the walk that reads it (`collect_pulse_phases` on a bounds-engine file)
     is going to run.
+
+    `wave_notes` is `stored_wave.stored_wave_notes`: per table entry, the
+    pitch each past-table note byte landing on the stored-waveform cells
+    sounds, read by walking the orderlists. Passed to the table entries
+    only, not to the octave `variants` below: a variant exists because the
+    orderlist transposes its source, and a transposed byte lands on a
+    different cell, which the walk does not model (it declines any voice
+    with a transpose). Empty on every file without such a landing.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -2600,7 +2674,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_wave=rest_wave,
                               rest_envelope=rest_envelope, exits_tied=ex,
                               arps=arps,
-                              free_rows=fr if free_rows else None)
+                              free_rows=fr if free_rows else None,
+                              wave_notes=(wave_notes or {}).get(i))
         exits[i] = bool(ex and ex[0])
         free[i] = fr
         if events is None:
@@ -4327,21 +4402,37 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     steps once per frame; at 1 the two clocks are the same and nothing
     changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
     planned $756 where the original held $2B0, every free note three times
-    too far along its sweep. **Passed as 1 for the triangle engine, and
-    that is measured, not inherited**: its sim was validated at `-S1`
-    (5_Title_Tunes), where the two clocks coincide, and on Game_Killer
-    (`-S9`) the walk's planned onset buckets agree with the original's
-    61% over the first 200 sweeping notes on the CALL clock against 21%
-    on the frame clock (chance ~14% on the 7-bucket band) -- which places
-    the sweep's `DEC counter,X / BPL` inside the multispeed core that the
-    once-a-frame entry runs `multiplier` times (inferred from the onsets,
-    not yet read off the disassembly), so a row of `tempo` calls is
-    `tempo` sweep ticks. The two engines really do differ here: the
-    repo's rule that a rate read out of a player is per frame is a rule
-    about the ENTRY, and each engine's counter has to be placed against
-    the core by measurement (convert.py's gate comment has the figures;
-    tests/test_pulse_phase.py pins them). Rasputin and One_Man_and_his_Droid
-    read at chance on both clocks -- a model defect, not a clock one.
+    too far along its sweep. **Passed as 1 for the triangle engine -- and
+    that is NO LONGER a measured choice.** Its sim was validated at `-S1`
+    (5_Title_Tunes), where the two clocks coincide. RETRACTED (measured at
+    04fdcb5 + the uncommitted tree): "on Game_Killer (`-S9`) the walk's
+    planned onset buckets agree with the original's 61% over the first 200
+    sweeping notes on the CALL clock against 21% on the frame clock". That
+    pairing slipped one note: it matched the plan's i-th entry against the
+    i-th original attack whose width a frame on is $800 or more, a list
+    opening with a static $84D note (frame 641) the walk never plans.
+    Paired by NOTE -- the attack index of each planned row in this walk's
+    own play order, ties excluded -- the plan agrees 0.135 at the attack
+    and 0.000 a frame on (call clock), 0.215 / 0.145 (frame clock), chance
+    ~0.14: neither clock predicts the original's onsets, and the inference
+    that placed the sweep's counter inside the multispeed core falls with
+    the figure. What the slip did measure (0.615) is the plan's phase for
+    note i+1 against the original's width a frame after note i -- a lead
+    for the sim's model, not a clock verdict.
+
+    **Where Game_Killer's phase is lost is HERE, not downstream.** Every
+    one of the first 200 planned voice-0 notes opens in the packed `-S9`
+    trace on its planned width plus 0..9 table ticks (25 a call) along its
+    planned direction, 200/200: `build_pulse_phase_table`'s set rows,
+    `budget_pulse_phase_commands` (it drops none on this file) and the
+    table step deliver the plan, and the packed trace's 0.11 against the
+    original is the plan's own agreement, delivered. The original's voice
+    0 meanwhile free-runs $E0 a frame through $8E0..$E20 with a one-frame
+    hold every ~9-10 frames, which neither clock's sim reproduces.
+    tests/test_pulse_phase.py pins both halves
+    (`test_game_killers_planned_phases_reach_the_packed_output`,
+    `test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks`).
+    Rasputin and One_Man_and_his_Droid read at chance on both clocks too.
     `PULSE_PHASE_PREROLL` is in sim steps.
     """
     groups = len(tracks) // 3

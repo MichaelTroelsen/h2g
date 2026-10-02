@@ -202,6 +202,9 @@ for a human listening check into gitignored `build/listen/`.
   for what already calls `multiplier`. Encode against the loop that consumes it:
   a wavetable delay entry is current for `value + 1` calls
   (`gplay.c:697-704`); `tests/test_call_rate.py` transcribes that loop.
+  The rule is about the play routine's ENTRY; where a counter inside the
+  multispeed core steps is per engine and must be measured (`PulseBoundsSim`:
+  per frame; the triangle engine's clock is UNMEASURED -- see LESSONS).
 - **The multiplier belongs to our side only.** Trace the original at `-m1` and
   the conversion at `-m{multiplier}`.
 - **A new `convert()` option is inert until it is in three places**: the

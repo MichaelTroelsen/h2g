@@ -218,6 +218,21 @@ def main(argv=None) -> int:
              "own numbering. Off by default: it renumbers every instrument in "
              "every file, the byte-exact Commando fixture included")
     parser.add_argument(
+        "--wave-alternate", action="store_true",
+        help="emit the derived alternate-noise dialect's waveform as noise "
+             "(`(wave & 7) | $80`) for players whose bit $02 derives it "
+             "(Chicken Song, Hollywood or Bust). Off by default: it trades "
+             "wave for noise on one and costs the other melody; see "
+             "presets.EXCLUDED_FROM_ALWAYS")
+    parser.add_argument(
+        "--drop-unnamed-instruments", action="store_true",
+        help="leave out every instrument record no pattern row names, and "
+             "renumber the instrument columns to match (instrument 1 is always "
+             "kept: both players start every voice on it). The packed .sid "
+             "is unchanged -- gt2reloc already drops them -- and the tables "
+             "are left as written. Off by default: the byte-exact Commando "
+             "fixture carries one such record")
+    parser.add_argument(
         "--rest-instrument", action="store_true",
         help="carry an instrument change that lands on a rest with the rest "
              "itself. Goattracker latches the instrument column whenever it is "
@@ -493,6 +508,10 @@ def main(argv=None) -> int:
              "given explicitly on the command line still win. A song with no "
              "entry converts at the defaults")
     args = parser.parse_args(argv)
+    # Per song and not a flag: which GT instruments get the real-waveform
+    # firstwave byte (convert()'s docstring). Read from the preset entry
+    # below, exactly as fidelity._preset_opts reads it.
+    real_firstwave_instruments: tuple = ()
 
     if args.presets:
         import json
@@ -520,20 +539,26 @@ def main(argv=None) -> int:
             args.format = always["format"]
         if not _given("--tempo") and always.get("tempo") is not None:
             args.tempo = always["tempo"]
-        if not _given("--legal-restart") and always.get("legal_restart"):
-            args.legal_restart = True
-        if not _given("--silent-park") and always.get("silent_park"):
-            args.silent_park = True
-        if not _given("--force-park") and always.get("force_park"):
-            args.force_park = True
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file)) or {}
-        for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
+        real_firstwave_instruments = tuple(
+            entry.get("real_firstwave_instruments") or ())
+        # legal_restart/silent_park/force_park ride the same loop: Confuzion
+        # carries force_park per song, which an always-only read dropped.
+        for flag, key in (("--legal-restart", "legal_restart"),
+                          ("--silent-park", "silent_park"),
+                          ("--force-park", "force_park"),
+                          ("--terminate-patterns", "terminate_patterns"),
+                          ("--slides", "slides"), ("--vibrato", "vibrato"),
                           ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
                           ("--rest-instrument", "rest_instrument"),
                           ("--compact-instruments", "compact_instruments"),
+                          ("--drop-unnamed-instruments",
+                           "drop_unnamed_instruments"),
+                          ("--wave-alternate", "wave_alternate"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--skip-gate", "skip_gate"),
+                          ("--regrid", "regrid"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -613,12 +638,17 @@ def main(argv=None) -> int:
                       legal_restart=args.legal_restart,
                       silent_park=args.silent_park,
                       force_park=args.force_park,
+                      regrid=args.regrid,
+                      skip_gate=args.skip_gate,
+                      real_firstwave_instruments=real_firstwave_instruments,
                       pulse_phase=args.pulse_phase,
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
                       status_bit6=args.status_bit6,
                       rest_instrument=args.rest_instrument,
                       compact_instruments=args.compact_instruments,
+                      drop_unnamed_instruments=args.drop_unnamed_instruments,
+                      wave_alternate=args.wave_alternate,
                       engine=args.engine,
                       reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,

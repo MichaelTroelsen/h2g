@@ -8,16 +8,20 @@ its first player's tables read, and players 1-4 were never read at all.
 pointer-pair spelling) as "this file carries N players" and re-runs the four
 table chains with `find` anchored to each player's own code range.
 
-Three things are pinned here, and the third is the one that decays quietly:
+Four things are pinned here, and the third is the one that decays quietly:
 
   1. The two spellings parse, on synthetic bytes and on the two corpus files,
      to the addresses the players' own operands name.
   2. Anchoring works: player k's tables lie inside player k's range, and
      5_Title_Tunes' five instrument tables are five different addresses.
   3. The CENSUS: over the corpus exactly those two files carry a dispatch,
-     and on every other file `Detection.players` is empty -- so this reading
-     can move nothing the byte-hash sees. It is detection only; conversion
-     from `players` is the next task.
+     and on every other file `Detection.players` is empty -- so nothing
+     built on this reading can move another file's bytes.
+  4. CONVERSION: `convert` appends players 1-4 of 5_Title_Tunes as subtunes
+     1-4, each from a `detect.player_view` of its own window, merged into the
+     one instrument list, pattern list and tables by `goatwriter.append_song`.
+     Subtune 0's bytes are the unmerged conversion's, and each appended
+     subtune plays what its player converted alone plays (`_canon`).
 
 Commodore_64_Music_Examples is also a negative finding worth pinning: four of
 its five players are not this ripper's engine at all (no `STA $D40x,Y` store
@@ -27,6 +31,8 @@ anchoring, and the test says which.
 """
 import pathlib
 import sys
+
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -156,7 +162,7 @@ def test_5_title_tunes_carries_five_players_each_with_its_own_tables():
                   p.pattern_lo_addr, p.pattern_hi_addr):
             assert lo <= a <= hi, f"player {p.index}: ${a:X} outside ${lo:X}-${hi:X}"
     # Player 0 IS the reading detect() has always taken from this file: the
-    # first match in the file is the first player's. Detection only.
+    # first match in the file is the first player's.
     p0 = det.players[0]
     assert sid.to_offset(p0.instr_addr) == det.instr_start
     assert p0.instr_used == det.instr_used
@@ -207,3 +213,332 @@ def test_census_exactly_two_corpus_files_carry_a_dispatch():
     assert ladder_init == ladder_play == {FIVE}
     assert table == {C64ME}
     assert players == {FIVE: 5, C64ME: 5}
+
+
+# --- Conversion: appending a song ----------------------------------------------
+
+from h2g import goatwriter as G  # noqa: E402
+
+GTS5_HEADER = b"GTS5" + bytes(G.HEADER_LEN - 4)
+
+
+def _rec(ad, sr, wave, pulse, filt, speed, name=b"x"):
+    return bytearray([ad, sr, wave, pulse, filt, speed, 0, 2, 0x09]
+                     + list(name.ljust(16, b"\x00")))
+
+
+def _song(tracks, instruments, tables, patterns):
+    return G._write_song(G._Song(b"GTS5", GTS5_HEADER, tracks, instruments,
+                                 tables, patterns))
+
+
+def _row(note, ins=0, cmd=0, data=0):
+    return bytes([note, ins, cmd, data])
+
+
+END_ROW = _row(0xFF)
+
+
+def _base_song():
+    return _song([bytes([0, 0xFF, 0])] * 3,
+                 [_rec(0x11, 0x22, 1, 1, 0, 0, b"base")],
+                 [[(0x41, 0x00), (0xFF, 0x00)],          # wave
+                  [(0x88, 0x00), (0xFF, 0x00)],          # pulse
+                  [],                                    # filter
+                  [(0x01, 0x02)]],                       # speed
+                 [bytearray(_row(0x60, 1) + END_ROW)])
+
+
+def test_append_song_renumbers_every_reference():
+    base = _base_song()
+    extra = _song(
+        [bytes([0, 0xD1, 1, 0xE2, 0, 0xFF, 1])] * 3,
+        [_rec(0x0A, 0x0B, 1, 1, 1, 1, b"one"),
+         _rec(0x0C, 0x0D, 3, 3, 0, 2, b"two")],
+        [[(0x21, 0x00), (0xFF, 0x01),                   # loops onto itself
+          (0xF9, 0x03), (0xF4, 0x02), (0xFF, 0x00)],    # names pulse, speed
+         [(0x84, 0x00), (0xFF, 0x00), (0x8C, 0xA0), (0xFF, 0x00)],
+         [(0x90, 0xF1), (0xFF, 0x00)],
+         [(0x07, 0x08), (0x09, 0x0A)]],
+        [bytearray(_row(0x61, 2, 0x1, 0x01) + END_ROW),
+         bytearray(_row(0x62, 1, 0x8, 0x03) + _row(0xBD, 0, 0x9, 0x03)
+                   + _row(0xBD, 0, 0xA, 0x01) + _row(0xBD, 0, 0x3, 0x00)
+                   + END_ROW)])
+    out = G.append_song(base, extra, tag="1/")
+    a, m = G._parse_song(base), G._parse_song(out)
+    # The base is a prefix of every list, untouched.
+    assert m.tracks[:3] == a.tracks
+    assert m.instruments[:1] == a.instruments
+    assert all(m.tables[t][:len(a.tables[t])] == a.tables[t] for t in range(4))
+    assert m.patterns[:1] == a.patterns
+    # Orderlist: patterns +1, the repeat/transpose/terminator/restart kept.
+    assert m.tracks[3] == bytes([1, 0xD1, 2, 0xE2, 1, 0xFF, 1])
+    # Tables: wave rows 3.., pulse 3.., filter 1.., speed 2..; the jumps and
+    # the wavetable's command operands follow their targets.
+    assert m.tables[0][2:] == [(0x21, 0x00), (0xFF, 0x03), (0xF9, 0x05),
+                               (0xF4, 0x03), (0xFF, 0x00)]
+    assert m.tables[1][2:] == [(0x84, 0x00), (0xFF, 0x00), (0x8C, 0xA0),
+                               (0xFF, 0x00)]
+    assert m.tables[2] == [(0x90, 0xF1), (0xFF, 0x00)]
+    assert m.tables[3] == [(0x01, 0x02), (0x07, 0x08), (0x09, 0x0A)]
+    one, two = m.instruments[1], m.instruments[2]
+    assert list(one[:6]) == [0x0A, 0x0B, 3, 3, 1, 2]
+    assert list(two[:6]) == [0x0C, 0x0D, 5, 5, 0, 3]
+    assert bytes(two[9:]).rstrip(b"\x00") == b"1/two"
+    # Patterns: instrument column +1; 1-4 speed, 8/9/A pointers moved; the
+    # toneportamento's 0 (tie) stays 0.
+    assert bytes(m.patterns[1]) == _row(0x61, 3, 0x1, 0x02) + END_ROW
+    assert bytes(m.patterns[2]) == (_row(0x62, 2, 0x8, 0x05)
+                                    + _row(0xBD, 0, 0x9, 0x05)
+                                    + _row(0xBD, 0, 0xA, 0x01)
+                                    + _row(0xBD, 0, 0x3, 0x00) + END_ROW)
+
+
+def test_append_song_points_at_rows_and_records_already_there():
+    """An identical song adds no table row and no instrument -- only its
+    patterns, naming the base's records."""
+    base = _base_song()
+    out = G.append_song(base, base)
+    m = G._parse_song(out)
+    assert len(m.instruments) == 1
+    assert [len(t) for t in m.tables] == [2, 2, 0, 1]
+    assert len(m.patterns) == 2 and m.patterns[1] == m.patterns[0]
+    assert m.tracks[3] == bytes([1, 0xFF, 0])
+
+
+def test_append_song_copies_no_row_nothing_reaches():
+    base = _base_song()
+    extra = _song([bytes([0, 0xFF, 0])] * 3,
+                  [_rec(0x0A, 0x0B, 3, 0, 0, 0)],
+                  [[(0x11, 0x00), (0xFF, 0x00), (0x21, 0x00), (0xFF, 0x00)],
+                   [], [], []],
+                  [bytearray(_row(0x60, 1) + END_ROW)])
+    m = G._parse_song(G.append_song(base, extra))
+    assert m.tables[0] == [(0x41, 0x00), (0xFF, 0x00), (0x21, 0x00), (0xFF, 0x00)]
+    assert m.instruments[1][2] == 3
+
+
+def test_append_song_refuses_past_the_instrument_cap():
+    base = _song([bytes([0, 0xFF, 0])] * 3,
+                 [_rec(k, 0, 1, 0, 0, 0) for k in range(G.GT_MAX_INSTRUMENTS)],
+                 [[(0x41, 0x00), (0xFF, 0x00)], [], [], []],
+                 [bytearray(_row(0x60, 1) + END_ROW)])
+    extra = _song([bytes([0, 0xFF, 0])] * 3, [_rec(0xEE, 0xEE, 1, 0, 0, 0)],
+                  [[(0x41, 0x00), (0xFF, 0x00)], [], [], []],
+                  [bytearray(_row(0x60, 1) + END_ROW)])
+    lines = []
+    assert G.append_song(base, extra, tag="9/", log=lines.append) is None
+    assert any("64 instruments > 63" in l for l in lines), lines
+
+
+def test_a_voice_that_opens_on_rests_is_pinned_to_its_own_first_record():
+    """Row 0 of the first pattern names instrument 1 -- in place where every
+    other play enters holding 1 anyway, in a copy where one does not."""
+    rest, note2 = _row(0xBD), _row(0x60, 2)
+    shared = bytearray(rest + _row(0x60, 1) + END_ROW)
+    other = bytearray(rest + note2 + END_ROW)
+    song = G._Song(b"GTS5", GTS5_HEADER,
+                   [bytes([0, 0xFF, 0]),          # voice 1: shared, alone
+                    bytes([1, 0, 0xFF, 0]),       # voice 2: other, then shared
+                    bytes([0, 0xFF, 0])],
+                   [_rec(1, 1, 0, 0, 0, 0), _rec(2, 2, 0, 0, 0, 0)],
+                   [[], [], [], []], [shared, other])
+    assert G._pin_start_instruments(song) is None
+    # Pattern 0 is entered holding 2 on voice 2 (after `other`), so voices 1
+    # and 3 get a copy; pattern 1 is only ever entered holding 1: in place.
+    assert song.patterns[1][1] == 1
+    assert song.patterns[0][1] == 0
+    assert len(song.patterns) == 3 and song.patterns[2][1] == 1
+    assert song.tracks[0][0] == 2 and song.tracks[2][0] == 2
+    assert song.tracks[1] == bytes([1, 0, 0xFF, 0])
+
+
+# --- Conversion: 5_Title_Tunes -------------------------------------------------
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _run(table, ptr):
+    """Rows from 1-based `ptr` to its `$FF`, the jump relative to `ptr`."""
+    rows, i = [], ptr - 1
+    while 0 <= i < len(table):
+        left, right = table[i]
+        if left == 0xFF:
+            rows.append((left, right - ptr if right else None))
+            break
+        rows.append((left, right))
+        i += 1
+    return tuple(rows)
+
+
+def _canon_wave(song, ptr):
+    out = []
+    for left, right in _run(song.tables[0], ptr):
+        if left == 0xF9 and right:
+            right = _run(song.tables[1], right)
+        elif left == 0xFA and right:
+            right = _run(song.tables[2], right)
+        elif left in (0xF1, 0xF2, 0xF3, 0xF4) and right:
+            right = song.tables[3][right - 1]
+        out.append((left, right))
+    return tuple(out)
+
+
+def _canon_instr(song, n):
+    r = song.instruments[n - 1]
+    return (r[0], r[1],
+            _canon_wave(song, r[2]) if r[2] else None,
+            _run(song.tables[1], r[3]) if r[3] else None,
+            _run(song.tables[2], r[4]) if r[4] else None,
+            song.tables[3][r[5] - 1] if r[5] else None,
+            r[6], r[7], r[8])
+
+
+def _canon(song, k):
+    """Subtune k as it plays: every row with the instrument the voice HOLDS
+    (Goattracker starts it on 1), every table reference replaced by the rows
+    it names. Numbering-free, so a merged subtune and the same player
+    converted alone compare equal exactly when they play the same."""
+    out = []
+    for v in range(3):
+        track = song.tracks[3 * k + v]
+        plays, restart = G._pattern_plays(track)
+        held, voice = 1, []
+        for _pos, x, times in plays:
+            for _ in range(times):
+                rows = []
+                p = song.patterns[x]
+                for r in range(0, len(p), 4):
+                    note, ins, cmd, data = p[r:r + 4]
+                    held = ins or held
+                    if cmd == 0x8 and data:
+                        data = _canon_wave(song, data)
+                    elif cmd in (0x9, 0xA) and data:
+                        data = _run(song.tables[cmd - 0x8], data)
+                    elif cmd in (0x1, 0x2, 0x3, 0x4, 0xE) and data:
+                        data = song.tables[3][data - 1]
+                    rows.append((note, _canon_instr(song, held), cmd, data))
+                voice.append(tuple(rows))
+        end = track.index(0xFF)
+        out.append((tuple(voice), tuple(x for x in track[:end] if x >= 0xE0),
+                    end, restart))
+    return out
+
+
+@pytest.fixture(scope="module")
+def five():
+    import json
+    import warnings
+    from h2g import convert as C
+    presets = REPO_ROOT / "presets.json"
+    if not (CORPUS.is_dir() and presets.is_file()):
+        pytest.skip("corpus or presets.json not available here")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import fidelity
+        opts = fidelity._preset_opts(json.loads(presets.read_text()), FIVE)
+    path = str(CORPUS / FIVE)
+    lines = []
+    merged = C.convert(path, log=lines.append, **opts)
+    real = C._append_players
+    C._append_players = lambda sng, *a, **k: sng
+    try:
+        alone = C.convert(path, log=_quiet, **opts)
+    finally:
+        C._append_players = real
+    return opts, merged, alone, lines
+
+
+@needs_corpus
+def test_5_title_tunes_carries_one_subtune_per_player(five):
+    _opts, merged, alone, lines = five
+    assert alone[G.HEADER_LEN] == 1 and merged[G.HEADER_LEN] == 5
+    assert any(l.startswith("Players.................: 4 of 4 further")
+               for l in lines), [l for l in lines if "layer" in l]
+    m = G._parse_song(merged)
+    assert len(m.instruments) <= G.GT_MAX_INSTRUMENTS
+    assert len(m.patterns) <= 0xD0
+    assert all(len(t) <= cap for t, cap in zip(
+        m.tables, (G.GT_MAX_TABLELEN, G.GT_MAX_TABLELEN, G.GT_MAX_FILT,
+                   G.GT_MAX_TABLELEN)))
+
+
+@needs_corpus
+def test_5_title_tunes_subtune_0_is_the_unmerged_conversion_byte_for_byte(five):
+    _opts, merged, alone, _lines = five
+    a, m = G._parse_song(alone), G._parse_song(merged)
+    assert m.tracks[:3] == a.tracks
+    assert m.instruments[:len(a.instruments)] == a.instruments
+    for t in range(4):
+        assert m.tables[t][:len(a.tables[t])] == a.tables[t], t
+    assert m.patterns[:len(a.patterns)] == a.patterns
+
+
+@needs_corpus
+def test_5_title_tunes_subtune_k_plays_what_player_k_converts_to_alone(five):
+    """Each appended subtune against the same player's view converted on its
+    own, at the level `_append_players` settled on (read off its log)."""
+    from h2g import convert as C
+    opts, merged, _alone, lines = five
+    level = next(l for l in lines
+                 if l.startswith("Players.................: 4 of 4"))
+    view_opts = dict(opts, real_firstwave_instruments=(),
+                     drop_unnamed_instruments=False)
+    if "without pulse_phase" in level or "without pulse sweeps" in level:
+        view_opts["pulse_phase"] = False
+    if "without pulse sweeps" in level:
+        view_opts["pulse"] = False
+    sid = load_sid(str(CORPUS / FIVE))
+    det = D.detect(sid, _quiet)
+    m = G._parse_song(merged)
+    for k in range(1, 5):
+        view = D.player_view(sid, det.players, k, 1)
+        alone = G._parse_song(C.convert(view, log=_quiet, **view_opts))
+        assert len(alone.tracks) == 3
+        assert _canon(m, k) == _canon(alone, 0), f"subtune {k}"
+
+
+@needs_corpus
+def test_a_player_view_is_its_window_and_its_own_header():
+    sid = load_sid(str(CORPUS / FIVE))
+    det = D.detect(sid, _quiet)
+    assert D.read_init_call(sid, 0x1FA9) == (0, 0x189D)
+    view = D.player_view(sid, det.players, 1, 1)
+    lo, hi = sid.to_offset(0x189D), sid.to_offset(0x1FF6)
+    assert view.data[lo:hi] == sid.data[lo:hi]
+    assert not any(view.data[HLEN - 1:lo]) and not any(view.data[hi:])
+    assert (view.init_addr, view.play_addr, view.subtunes, view.start_song) \
+        == (0x1FA9, 0x18A3, 1, 1)
+    assert view.speed == 0 and D.player_view(sid, det.players, 2, 1).speed == 1
+    assert view.pack_multiplier == 1 and view.player == 1
+    vdet = D.detect(view, _quiet)
+    assert vdet.players == ()                      # no dispatch, no recursion
+    assert vdet.instr_start == sid.to_offset(0x1D02)
+    assert vdet.pattern_lo == sid.to_offset(0x1D8E)
+
+
+@needs_corpus
+def test_a_view_is_converted_at_the_compilations_pack_factor():
+    """Player 1's rows want -S2 on their own; inside a -S1 file its tempo is
+    worked out at -S1, clamped to the fastest steady row, like any
+    non-starting subtune's."""
+    from h2g.convert import _detect_tables
+    sid = load_sid(str(CORPUS / FIVE))
+    det = D.detect(sid, _quiet)
+    view = D.player_view(sid, det.players, 1, 1)
+    vs, vdet = _detect_tables(view, _quiet)
+    speeds = G.find_song_speeds(vs, vdet)
+    assert G.recommended_multiplier(speeds, 0, True) == 2
+    assert G.file_multiplier(vs, speeds, True) == 1
+    values, mult, _ = G.derived_group_tempos(vs, vdet, 1, True)
+    assert (values, mult) == ([G.TEMPO_FASTEST_STEADY], 1)
+
+
+@needs_corpus
+def test_c64me_appends_nothing_because_its_subtune_0_is_not_player_0():
+    from h2g import convert as C
+    lines = []
+    sng = C.convert(str(CORPUS / C64ME), log=lines.append)
+    assert sng[G.HEADER_LEN] == 1
+    assert any("subtune 0 was not read from the first; nothing appended" in l
+               for l in lines)

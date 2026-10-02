@@ -309,3 +309,127 @@ def test_detects_own_freq_table_call_is_anchored_on_the_selected_engine():
     # Neither table carries a shift, so this file's own conversion bytes do
     # not move -- the corpus byte-hash covers every other file.
     assert det0.note_base == 0 and det1.note_base == 0
+
+
+# --- The fixed pitch is HELD where the player's vibrato never writes ---------
+#
+# Sanxion's handler past the countdown, `$B40B`: `LDA $B571,Y / BNE $B421`,
+# record +5 -- the vibrato byte -- so a record carrying vibrato gets no
+# `LDA note,X` restore, and only the vibrato writes the frequency after the
+# attack. Its vibrato is duration-gated (`$B257 ... CMP #$03 / BCC`), so a
+# note shorter than three rows is never written again: the original holds
+# C#6 ($49B8) from N+1 to the next attack on 60 of 60 voice-1 and 22 of 22
+# voice-3 six-frame notes, where the conversion wrote the note back at N+2.
+# Long notes vibrate around the note from N+2, so the instrument keeps the
+# restore and the short notes are pointed at a held copy
+# (C:/t/sanxion-c-sharp-6-hold, 2026-10-01).
+
+def test_the_held_attack_keeps_the_fixed_pitch_where_the_restore_drops_it():
+    """`hold_attack` changes one byte: the second stage's right side, `$00`
+    (the played note) -> `$80` (leave the frequency alone). Read through
+    gplay's loop, the held program still sounds the fixed note on every call
+    after the attack; the restore writes the played note on the third."""
+    from h2g.goatwriter import WAVE_NOTE_KEEP, _two_stage_entries
+    from test_call_rate import wave_timeline
+
+    c_sharp_6 = WAVE_NOTE_ABS + 73
+    restore = _two_stage_entries(0x17, 0x17, 1, 1, attack_note=c_sharp_6)
+    held = _two_stage_entries(0x17, 0x17, 1, 1, attack_note=c_sharp_6,
+                              hold_attack=True)
+    assert restore == ([0x17, 0x17, 0x17, 0xFF], [0x00, c_sharp_6, 0x00, 0x00])
+    assert held == ([0x17, 0x17, 0x17, 0xFF],
+                    [0x00, c_sharp_6, WAVE_NOTE_KEEP, 0x00])
+    notes = [n for _, _, n in wave_timeline(*held, calls=8)]
+    assert notes[0] == 0x00 and all(n == c_sharp_6 for n in notes[1:]), notes
+    notes = [n for _, _, n in wave_timeline(*restore, calls=8)]
+    assert notes[1] == c_sharp_6 and notes[2] == 0x00, notes
+    # No fixed pitch, nothing to hold: the flag is inert.
+    assert (_two_stage_entries(0x41, 0x81, 2, 1, hold_attack=True)
+            == _two_stage_entries(0x41, 0x81, 2, 1))
+
+
+@needs_corpus
+def test_sanxions_handler_yields_to_the_vibrato_byte():
+    """The branch is read out of the handler, not assumed: Sanxion's
+    `LDA $B571,Y / BNE` at $B40B is record +5, the same offset detection
+    found the vibrato at. Go Go Dash's family tests a per-voice cell
+    (`LDA abs,X`) there instead, which is not this rule."""
+    from h2g.goatwriter import _fixed_pitch_yield_field
+
+    sid, det = _load("Sanxion")
+    at = sid.to_offset(0xB40B)
+    assert bytes(sid.data[at:at + 4]) == bytes((0xB9, 0x71, 0xB5, 0xD0))
+    assert sid.to_address(det.instr_start) == 0xB56C
+    assert _fixed_pitch_yield_field(sid, det) == 5 == det.vibrato_offset
+    assert det.vibrato_gate.form == "duration" and det.vibrato_gate.gate == 3
+    sid, det = _load("Go_Go_Dash")
+    assert det.fixed_pitch_index >= 0
+    assert _fixed_pitch_yield_field(sid, det) is None
+
+
+@needs_corpus
+def test_sanxions_short_attack_notes_hold_c_sharp_6():
+    """End to end, under the shipped presets. Instrument 14 (record 13,
+    effect $44, vibrato byte $10) keeps its own note / C#6 / note program --
+    the long notes vibrate around the note -- and a second block holds C#6
+    on the third step. Every `CMD_SETWAVEPTR` in the song points at that
+    block, sits on a note row of instrument 14 no longer than the gate, and
+    no longer note of it carries one. Fails if the held step restores the
+    note (`$00`) or if the pass stops pointing short notes at it."""
+    import json
+
+    import fidelity
+    import songview as SV
+    from h2g.convert import convert
+    from h2g.goatwriter import (CMD_SETWAVEPTR, GT_REST, WAVE_NOTE_KEEP,
+                                _entry_instruments)
+
+    doc = json.loads((REPO_ROOT / "presets.json").read_text())
+    blob = convert(str(CORPUS / "Sanxion.sid"), log=lambda _m: None,
+                   **fidelity._preset_opts(doc, "Sanxion.sid"))
+    song = SV.parse_sng(blob)
+    wtbl = song.tables["WTBL"]
+    ins = song.instruments[13]
+    assert ins.name == "0F:10-00-44"
+    c_sharp_6 = WAVE_NOTE_ABS + 73
+    own = wtbl[ins.wave_ptr - 1:ins.wave_ptr + 3]
+    assert own == [(0x17, 0x00), (0x17, c_sharp_6), (0x17, 0x00), (0xFF, 0x00)]
+
+    entry = _entry_instruments(song.tracks, song.patterns)
+    pointed, short, long_ = set(), 0, 0
+    for number, pat in enumerate(song.patterns):
+        held = entry.get(number, set())
+        live = next(iter(held)) if len(held) == 1 else 0
+        for k in range(0, len(pat) - 3, 4):
+            if pat[k + 1]:
+                live = pat[k + 1]
+            if not 0x60 <= pat[k] <= 0xBC:
+                assert pat[k + 2] != CMD_SETWAVEPTR, (number, k)
+                continue
+            end = k + 4
+            while end + 3 < len(pat) and pat[end] == GT_REST and not pat[end + 1]:
+                end += 4
+            if pat[k + 2] == CMD_SETWAVEPTR:
+                assert live == 14, (number, k)
+                assert (end - k) // 4 <= 3, (number, k)
+                pointed.add(pat[k + 3])
+                short += 1
+            elif live == 14 and (end - k) // 4 > 3:
+                long_ += 1
+    assert short > 0 and long_ > 0
+    assert len(pointed) == 1
+    start = pointed.pop()
+    block = wtbl[start - 1:start + 3]
+    assert block == [(0x17, 0x00), (0x17, c_sharp_6), (0x17, WAVE_NOTE_KEEP),
+                     (0xFF, 0x00)], block
+
+
+def test_the_fixture_gets_no_held_attack():
+    """Commando's player has no bit-$40 handler, so no record qualifies and
+    the byte-exact fixture lays out no extra block."""
+    from h2g.goatwriter import _attack_hold_records
+
+    sid = load_sid(str(REPO_ROOT / "Commando.sid"))
+    det = detect(sid, lambda _m: None)
+    assert _attack_hold_records(sid, det, max(det.instr_used, 0), 1,
+                                True, True) == []

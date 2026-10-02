@@ -122,6 +122,66 @@ def test_the_first_frame_of_every_run_is_spent_on_a_waveform_below_ten():
         "the no_test_restart replacement is >= $10, which is why removing the "
         "test frame fixes the run length and blinds `melody`")
     assert FIRSTWAVE_TESTBIT != FIRSTWAVE_GATE_ONLY
-    # Neither is noise, so `noise_compare` counts neither on either setting --
-    # the frame is lost to the run regardless of which byte occupies it.
+    # $09 carries no noise bit, so the noise counts lose the frame. $FF DOES
+    # carry it (bit 7 is one of the four select bits), so under
+    # `no_test_restart` the frame is COUNTED as noise by `wave_compare` (bit 7
+    # alone) and by `noise_runs` (bit 7 AND gate) although the test bit keeps
+    # it silent -- which is why that setting closes the frame count exactly.
+    # An earlier comment here said "neither is noise"; that was wrong for $FF.
     assert not (FIRSTWAVE_TESTBIT & 0x80)
+    assert FIRSTWAVE_GATE_ONLY & 0x80 and FIRSTWAVE_GATE_ONLY & 0x01
+
+
+def _latched_noise(start: int, notes: int, length: int, first: int | None):
+    """One voice whose waveform SELECT stays on noise across `notes` notes.
+
+    The gate drops on each note's last frame (`$80`) and rises on the next
+    (`$81`) -- the select nibble never leaves noise, which is Confuzion's lead.
+    With `first` set, every note's first frame carries that byte instead,
+    which is what our conversion's firstwave entry does.
+    """
+    ev = []
+    for k in range(notes):
+        f = start + k * length
+        if first is None:
+            ev.append((f, 0x81))
+        else:
+            ev += [(f, first), (f + 1, 0x81)]
+        ev.append((f + length - 1, 0x80))
+    return ev
+
+
+def test_the_noise_frame_deficit_is_one_firstwave_frame_per_note_plus_startup():
+    """`our_noise_frames` short of `orig_noise_frames` is the firstwave frame,
+    not an emission defect -- as arithmetic, on a latched-noise voice.
+
+    The original latches noise on its first note and never leaves it; ours
+    breaks the latch for exactly the one `$09` frame that opens every note.
+    So the deficit is ``notes x 1 + startup``, where `startup` is the frames
+    our player starts later. Re-measured on the tree as found (HEAD 1dde44a,
+    dirty), under presets, `--no-window-floor` -t 180: Confuzion 8507/8998,
+    deficit 491 = 486 notes' `$09` + 5 frames of startup (the original's
+    noise opens at frame 2, ours' first `$09` at 7). See goatwriter's
+    firstwave comment for the three-file table and the `no_test_restart`
+    control.
+    """
+    from h2g.goatwriter import FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT
+
+    notes, length, start, startup = 40, 9, 2, 5
+    # The select stays latched after the last note's gate drops, so both
+    # sides count noise to the window's end -- as Confuzion's 8998 of 9000.
+    n = start + startup + notes * length + 20
+    orig = _voices((_latched_noise(start, notes, length, None), [(0, 0x0A99)]))
+    ours = _voices((_latched_noise(start + startup, notes, length,
+                                   FIRSTWAVE_TESTBIT), [(0, 0x0A99)]))
+    got = F.wave_compare(orig, ours, nframes=n, lag=startup)
+    assert got["orig_noise_frames"] == n - start
+    assert got["orig_noise_frames"] - got["our_noise_frames"] == notes + startup
+
+    # The control: the same emission with `no_test_restart`'s byte. $FF has
+    # the noise bit, so the column counts the frame and the deficit is the
+    # startup alone -- what Confuzion reads at 307 s (14388 vs 14383).
+    ours_ntr = _voices((_latched_noise(start + startup, notes, length,
+                                       FIRSTWAVE_GATE_ONLY), [(0, 0x0A99)]))
+    got = F.wave_compare(orig, ours_ntr, nframes=n, lag=startup)
+    assert got["orig_noise_frames"] - got["our_noise_frames"] == startup

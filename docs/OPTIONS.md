@@ -447,6 +447,33 @@ through `--presets` is compacted. Added in v0.5.161, after the listening
 session that established what the placeholder sounds like
 (`H2G-CONVERSION-METHOD.md` § 7.bbb).
 
+## `--drop-unnamed-instruments` (records no pattern plays)
+
+Leaves out every instrument record that no pattern row names, and renumbers
+the pattern instrument column to match. Instrument 1 is always kept, because
+both players start every voice on it (gplay.c:62, player.s mt_chninstr). It
+runs on the finished `.sng`, after every clone pass, so the clone instruments
+are renumbered rather than dropped. The packed `.sid` is unchanged, since
+gt2reloc already maps unreferenced instruments away. Off by default because
+the byte-exact Commando fixture carries one unnamed record (instrument 13).
+It is set in `presets.json`'s always block, where it moves the 71 corpus files
+that carry such a record (measured at v0.5.494). Knucklebusters' empty record
+27 was the case that opened it.
+
+## `--wave-alternate` (the derived alternate-noise dialect)
+
+For players whose bit `$02` derives an alternate noise waveform
+(`det.wave_alternate_noise`: Chicken Song, Hollywood or Bust), this emits that
+waveform as `(wave & 7) | $80`. Measured at -t 180 (v0.5.494):
+- Chicken_Song: wave 88.3 -> 83.5% for +1224 noise frames (original 4188),
+  with melody unchanged.
+- Hollywood_or_Bust: melody 60.5 -> 49.0%.
+
+The preset search refuses it on both files: on Chicken_Song the onset veto
+fires, and on Hollywood `keeps_notes` does. So it is listed in
+`presets.EXCLUDED_FROM_ALWAYS` rather than in the always block or the search
+toggles. Adopting it is a listening decision.
+
 ## `--rest-instrument` (the instrument change that clicked)
 
 An instrument change landing on a rest used to be emitted as a fake `C-0` on

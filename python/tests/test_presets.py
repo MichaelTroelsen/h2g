@@ -662,3 +662,11 @@ def test_every_boolean_always_flag_has_a_live_file_count():
         assert v is None or (isinstance(v, int) and 0 <= v <= 95), (k, v)
     assert P.LIVE_ON["reject_phantoms"] == 0 and P.LIVE_ON["compact_instruments"] == 89,         "the two anchoring facts the comment states must match the table"
 
+
+
+def test_presets_main_prints_the_preset_opts_miss_line():
+    # presets.py's own search never goes through fidelity._preset_opts, so the
+    # printed total is 0 by construction; the line must still be there under
+    # --fidelity so a future caller of it cannot miss silently.
+    src = (PYTHON_ROOT / "presets.py").read_text(encoding="utf-8")
+    assert "F.preset_opts_miss_report()" in src

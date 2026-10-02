@@ -205,6 +205,28 @@ def test_parse_keeps_the_dumped_value_and_sign_extended_marks_it_untrustworthy()
     assert v.freq == 0xFFD0 and V.sign_extended(v.freq)
 
 
+def _blk(pulse: str, adsr: str) -> str:
+    return (BLOCK.replace("0800 0400", f"{pulse} 0400")
+            .replace("0f00 0a05", f"{adsr} 0a05"))
+
+
+def test_parse_repairs_an_ff_high_byte_pulse_sweep_crossing_lo_7f_to_80():
+    # true pulse $087E, $087F, $0880, $0881: the dump prints $0880 as ff80
+    s = V.parse("".join(_blk(p, "0f00") for p in ("087e", "087f", "ff80", "0881")))
+    assert [x.voices[0].pulse for x in s] == [0x087E, 0x087F, 0x0880, 0x0881]
+
+
+def test_parse_repairs_an_ff_high_byte_adsr():
+    # true ADSR $0BF0 is printed fff0; neighbours say AD stays $0B
+    s = V.parse("".join(_blk("0800", a) for a in ("0b00", "fff0", "0b00")))
+    assert [x.voices[0].adsr for x in s] == [0x0B00, 0x0BF0, 0x0B00]
+
+
+def test_parse_leaves_freq_raw_for_the_siddump_oracle():
+    s = V.parse(BLOCK.replace("1168", "ffd0") * 3)
+    assert s[1].voices[0].freq == 0xFFD0
+
+
 def test_ff_hi_with_low_lo_is_not_called_sign_extension():
     v = V.parse(FF_BLOCK)[0].voices
     assert [x.freq for x in v] == [0xFF2B, 0xFF57, 0xFF03]

@@ -962,3 +962,1200 @@ def test_the_unticked_records_carry_the_residue_in_the_sng():
                                      (0xFF, 0x2E)]
     assert _wavetable_of(sng, 14) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
                                       (0xFF, 0x53)]
+
+
+# --- Rasputin's duty follows its tempo (v0.5.494+, `tempo_duty_split_plan`) --
+#
+# Rasputin's outer gate reloads from the cell its track's `$FE nn` writes,
+# so the `$02` mask's counter step is (R + 1) / R frames with R moving:
+# measured at -t 30 (C:/t/rasputin-tempo-duty/measure_duty.py) the original's
+# opening sounds `bbbuuubbbuuu` on 14 of 16 voice-0 octave onsets and the
+# unsplit conversion `bbuubbuubbuu` on all 16. The split gives the notes
+# played at tempo 6 (= R 2, 3 frames a row at -S2) a clone stepping 3 calls,
+# and leaves every other note on its record.
+
+from h2g.goatwriter import (CMD_SETTEMPO, CMD_TONEPORTA,      # noqa: E402
+                            SongSpeeds, apply_tempo_duty_edits,
+                            tempo_duty_split_plan)
+
+
+@needs_corpus
+def test_a_clone_steps_its_own_calls_a_counter_step():
+    """`arp_step_calls` replaces `_gate_calls(multiplier, gate_skip)` in the
+    duty call and nothing else: Rasputin's GT 7 at -S2 with 3 calls a step
+    sounds three frames base and three up (first octave call 6)."""
+    sid, det = _det(CORPUS / "Rasputin.sid")
+    mask = fixed_arp_mask(sid, det)
+
+    def entries(step):
+        return _wavetable_entries(sid, det, 6, True, "gts5", [], 2,
+                                  budget=255, start=6, arp_phase=0,
+                                  arp_mask=mask, arp_step_calls=step)
+    assert entries(None) == entries(2)
+    left, right = entries(3)
+    tl = wave_timeline(left, right, first=6, calls=40)
+    ups = [k for k, (_, _, note) in enumerate(tl) if note == 0x0C]
+    assert ups[:7] == [6, 7, 8, 9, 10, 11, 18], ups[:8]
+
+
+@needs_corpus
+def test_rasputin_splits_its_opening_by_tempo():
+    """Read back by songview (a second reader): every note of a duty record
+    played under tempo 6 sounds that record's clone and every other note
+    sounds the record -- 30 notes of GT 7 and 1 of GT 14 -- and each clone
+    is its record's bytes but for the wavetable start, whose shape steps 3
+    calls where the record's steps 2."""
+    import songview
+    from h2g.goatwriter import _orderlist_occurrences
+    from bisect import bisect_right
+    sng, _, _ = _converted("Rasputin")
+    s = songview.parse_sng(sng)
+    assert len(s.instruments) == 16
+    clones = {7: 15, 14: 16}
+    moved = {7: 0, 14: 0}
+    for g in range(s.subtunes):
+        ev, per = [], []
+        for v in range(3):
+            row, cur, notes = 0, 0, []
+            for _pos, p in _orderlist_occurrences(s.tracks[3 * g + v]):
+                pat = s.patterns[p]
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 2] == CMD_SETTEMPO and pat[r + 3] < 0x80:
+                        ev.append((row, pat[r + 3]))
+                    if pat[r + 1]:
+                        cur = pat[r + 1]
+                    if 0x60 <= pat[r] <= 0xBC:
+                        notes.append((row, cur))
+                    row += 1
+            per.append(notes)
+        ev.sort(key=lambda e: e[0])
+        rows = [e[0] for e in ev]
+        for notes in per:
+            for row, ins in notes:
+                k = bisect_right(rows, row) - 1
+                tempo = ev[k][1] if k >= 0 else None
+                if ins in clones.values():
+                    rec = next(r for r, c in clones.items() if c == ins)
+                    assert tempo == 6, (g, row, ins, tempo)
+                    moved[rec] += 1
+                elif ins in clones:
+                    assert tempo != 6, (g, row, ins, tempo)
+    assert moved == {7: 30, 14: 1}, moved
+    for rec, clone in clones.items():
+        a, b = s.instruments[rec - 1], s.instruments[clone - 1]
+        assert (a.ad, a.sr, a.pulse_ptr, a.filt_ptr, a.vib_ptr, a.vib_delay,
+                a.gatetimer, a.firstwave, a.name) == (
+                b.ad, b.sr, b.pulse_ptr, b.filt_ptr, b.vib_ptr, b.vib_delay,
+                b.gatetimer, b.firstwave, b.name)
+        assert a.wave_ptr != b.wave_ptr
+    # GT 7's own shape and its clone's, by the delay byte of the duty loop.
+    assert _wavetable_of(sng, 7)[4:7] == [(0x80, 0x0C), (0x03, 0x00),
+                                          (0x03, 0x0C)]
+    assert _wavetable_of(sng, 15)[4:7] == [(0x80, 0x0C), (0x05, 0x00),
+                                           (0x05, 0x0C)]
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", ["Game_Killer", "Zoids", "Commando",
+                                  "Master_of_Magic"])
+def test_no_constant_step_file_is_split(name):
+    """Game_Killer's gate has an immediate reload (one step all song), the
+    others no gate at all: the plan declines every one of them."""
+    import json
+    from h2g.goatwriter import _instruments_used
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    entry = doc["songs"].get(f"{name}.sid", {})
+    _, tracks, patterns = _converted(name)
+    sid, det = _det(CORPUS / f"{name}.sid")
+    for lead in (0, 1):
+        assert tempo_duty_split_plan(
+            sid, det, tracks, patterns, True, lead,
+            _instruments_used(det, None, lead),
+            entry.get("multiplier", 1)) is None
+
+
+def _fake_split(monkeypatch, tie=False):
+    """A one-subtune song on a fake duty file: voice 0 plays pattern 0 at
+    tempo 6 (record 1 named on row 0, row 1 sticky) and then pattern 1 at
+    tempo 4 (set by voice 1's pattern 3), whose row 0 inherits the
+    instrument and names none."""
+    import h2g.goatwriter as G
+    from types import SimpleNamespace
+    monkeypatch.setattr(G, "fixed_arp_mask", lambda sid, det: (0x02, 0xF0))
+    monkeypatch.setattr(G, "fixed_arp_counter_gated", lambda sid, det: True)
+    monkeypatch.setattr(G, "find_song_speeds",
+                        lambda sid, det: SongSpeeds((2,), 0, None))
+    det = SimpleNamespace(arp_fixed_up=0x0C, effect_arp=True,
+                          instr_start=0, instr_stride=8)
+    sid = SimpleNamespace(data=bytes([0, 0, 0x41, 0, 0, 0, 0, 0x04]),
+                          subtunes=1)
+    end = [0xFF, 0, 0, 0]
+    patterns = [
+        [0x70, 1, CMD_SETTEMPO, 6, 0x72, 0, 0, 0] + end,
+        [0x70, 0, CMD_TONEPORTA if tie else 0, 0, 0x72, 0, 0, 0] + end,
+        [0xBD, 0, 0, 0, 0xBD, 0, 0, 0] + end,
+        [0xBD, 0, CMD_SETTEMPO, 4, 0xBD, 0, 0, 0] + end,
+    ]
+    # The tempo 4 comes from voice 1 on row 2: rows advance in lockstep.
+    tracks = [[0, 1, 0xFF, 0], [2, 3, 0xFF, 0], [2, 2, 0xFF, 0]]
+    return tempo_duty_split_plan(sid, det, tracks, patterns, True, 0, 1, 2)
+
+
+def test_a_sticky_instrument_is_named_where_the_split_changes_it(monkeypatch):
+    """Pattern 1 relied on pattern 0's `instr 01`; once pattern 0 names the
+    clone, pattern 1's first note must name the record or it plays the
+    clone at tempo 4. No copies: each pattern has one spelling."""
+    split = _fake_split(monkeypatch)
+    assert split is not None
+    assert split.clones == [(1, 2, 3)]
+    assert split.edits == {0: {0: (1, 2)}, 1: {0: (0, 1)}}
+    assert len(split.patterns) == 4
+    out = apply_tempo_duty_edits(split.patterns, split)
+    assert out[0][1] == 2 and out[1][1] == 1
+
+
+def test_a_sticky_instrument_on_a_tie_drops_the_split(monkeypatch):
+    """A `CMD_TONEPORTA` row cannot take the instrument (both players skip
+    the instrument's init on it), so the plan declines rather than move it."""
+    assert _fake_split(monkeypatch, tie=True) is None
+
+
+
+# ---------------------------------------------------------------------------
+# Tie chains: the octave locked to the ROW (`fixed_arp_tie_row_entries`).
+#
+# Chimera's GT 5, 8 and 9 play almost nothing but tie rows, and a tie row's
+# `CMD_TONEPORTA $00` re-writes the note's base on every call whose
+# wavetable entry writes no note, tick 0 excepted (player.s `mt_effect_3`
+# -> `mt_effect_3_found` from `mt_wavedone`; no continuous effect on tick 0
+# under REALTIMEOPTIMIZATION). `_tied_calls` transcribes exactly that beside
+# the wavetable loop, and the shapes are checked against the original's
+# tie row: its fetch frame sounds the new note's base, the frames after it
+# the counter's octave (`C:/t/chimera-gk-duty`, v0.5.494).
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (fixed_arp_tie_row_entries,       # noqa: E402
+                            fixed_arp_tie_rows)
+
+
+def _tied_calls(left, right, row, frames, written=False, start=6):
+    """Per frame (m = 1): 'b'/'u' of the note sounding, for a chain whose
+    attack note is followed by a tie row every `row` frames, each tie to a
+    new note. Frame 0 is the audible attack; the wavetable's first entry
+    runs on tick 1 of the attack row (the init call runs none), so frame
+    `j` is tick `(j + 1) % row`, or `j % row` where `written` (the
+    firstwave owns frame 0 and the entries start on frame 1)."""
+    lt = {start + k: left[k] for k in range(len(left))}
+    rt = {start + k: right[k] for k in range(len(right))}
+    ptr, wavetime = start, 0
+    sounding = "b"                       # frame 0: the attack's own note
+    out = []
+    first = 1 if written else 0
+    for j in range(frames):
+        tick = (j % row) if written else ((j + 1) % row)
+        tied = j >= row - (0 if written else 1)   # a tie row is playing
+        wrote = None
+        if j >= first:
+            wave, note = lt[ptr], rt[ptr]
+            if wave <= 0x0F and wavetime != wave:
+                wavetime += 1            # an unfinished delay: no note
+            else:
+                wavetime = 0
+                ptr += 1
+                if lt.get(ptr) == 0xFF:
+                    ptr = rt[ptr]
+                if note != 0x80:
+                    wrote = "u" if note == 0x0C else "b"
+        if wrote is not None:
+            sounding = wrote
+        elif tied and tick != 0:
+            sounding = "b"               # the tie writes the new base
+        out.append(sounding)
+    return "".join(out)
+
+
+def _original_tied(mask, branch, phase, row, frames):
+    """The original's chain: frame 0 and every fetch frame (a multiple of
+    `row`) base, every other frame the counter's octave."""
+    return "".join("b" if j % row == 0 or not fixed_arp_up(mask, branch,
+                                                              phase + j)
+                   else "u" for j in range(frames))
+
+
+@pytest.mark.parametrize("row", [3, 4, 6])
+@pytest.mark.parametrize("phase", range(8))
+@pytest.mark.parametrize("tick", [None, (0x81, 2)])
+def test_a_tied_row_sounds_its_base_then_the_octave(row, phase, tick):
+    """Every frame of 60 against the original's tie chain: the only frames
+    allowed to differ are the counter's own base frames (one in eight,
+    not carried) and the attack row's tick 0, where the previous frame
+    holds. The duty shape under the same ties is wrong on most octave
+    frames -- the reason the row shape exists."""
+    got = fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, phase, 0x0C, 1,
+                                    6, 255, row, tick=tick)
+    assert got is not None
+    left, right = got
+    assert left[0] == 0x41 and right[0] == 0x00
+    assert left[-1] == 0xFF
+    frames = 60
+    ours = _tied_calls(left, right, row, frames)
+    want = _original_tied(0x07, BEQ, phase, row, frames)
+    bad = [j for j in range(frames) if ours[j] != want[j]]
+    allowed = {j for j in range(frames)
+               if not fixed_arp_up(0x07, BEQ, phase + j) or j == row - 1}
+    assert set(bad) <= allowed, (ours, want, bad)
+    # Every fetch frame is the new base.
+    for j in range(row, frames):
+        if j % row == 0:
+            assert ours[j] == "b", (j, ours)
+    duty = fixed_arp_duty_entries(0x41, 0x41, 0x07, BEQ, phase, 0x0C, 1,
+                                  start=6, budget=255, tick=tick)
+    old = _tied_calls(*duty, row, frames)
+    old_bad = sum(1 for j in range(frames) if old[j] != want[j])
+    # At most the counter's base frames (one in eight) and one more; the
+    # duty shape misses at least three times as many.
+    assert len(bad) <= frames // 8 + 1, bad
+    assert old_bad >= 3 * len(bad) and old_bad >= 20, (old, want)
+
+
+def test_the_tie_row_shape_on_a_written_record_starts_on_frame_one():
+    left, right = fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C,
+                                            1, 6, 255, 3, written=True)
+    ours = _tied_calls(left, right, 3, 48, written=True)
+    # Written: GT's tick 0 is the original's fetch frame, so the new base
+    # lands a frame late (tick 1); tick 2 carries the octave.
+    for j in range(3, 48):
+        if j % 3 == 2 and fixed_arp_up(0x07, BEQ, j):
+            assert ours[j] == "u", (j, ours)
+    assert ours[0] == "b"
+
+
+def test_the_tie_row_shape_declines_what_it_cannot_lock():
+    assert fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 2,
+                                     6, 255, 3) is None    # above -S1
+    assert fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 1,
+                                     6, 255, 2) is None    # no tick 2
+    assert fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 1,
+                                     6, 3, 3) is None      # no room
+    # ...and the duty shape answers in its place.
+    assert (fixed_arp_duty_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 2, 6, 255,
+                                   tie_row=3)
+            == fixed_arp_duty_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 2, 6,
+                                      255))
+
+
+@needs_corpus
+def test_only_chimeras_tied_records_take_the_row_shape():
+    """Read back by songview: Chimera's three tied records carry the row
+    loop -- `(2, octave)` and the jump -- and its GT 12 (5 tie notes of 7,
+    but 159 of its 166 rows held) keeps the duty. The corpus byte-hash at
+    v0.5.494 moved Chimera and nothing else."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sng, tracks, patterns = _converted("Chimera")
+    sid, det = _det(CORPUS / "Chimera.sid")
+    assert fixed_arp_tie_rows(sid, det, tracks, patterns) == {5: 3, 8: 3,
+                                                              9: 3}
+    for number in (5, 8, 9):
+        wt = _wavetable_of(sng, number)
+        assert wt[-2] == (0x02, 0x0C) and wt[-1][0] == 0xFF, (number, wt)
+    assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x81, 0x0C), (0x81, 0x80),
+                                     (0x41, 0x80), (0x00, 0x0C), (0x02, 0x0C),
+                                     (0xFF, 0x1D)]
+    assert _wavetable_of(sng, 12)[-2] != (0x02, 0x0C)
+    for name in ("Zoids", "One_Man_and_his_Droid", "Master_of_Magic",
+                 "Phantoms_of_the_Asteroid", "Battle_of_Britain",
+                 "Game_Killer", "Rasputin"):
+        sng, tracks, patterns = _converted(name)
+        sid, det = _det(CORPUS / f"{name}.sid")
+        assert fixed_arp_tie_rows(sid, det, tracks, patterns) == {}, name
+
+
+@needs_corpus
+@needs_siddump
+def test_chimeras_tie_rows_are_re_measured_against_the_original():
+    """The original's tied records (ADSR $0060, $BF00) over 60 s: every
+    re-pitch that is not an octave flip lands a multiple of 3 frames from
+    the chain's attack, and the frame after each sounds that note's
+    octave -- the `b u` the row shape writes."""
+    n = 60 * 50
+    trace = fidelity.run_siddump(CORPUS / "Chimera.sid", 60, 0, calls=1)
+    repitch = octave_after = 0
+    for v in trace:
+        fq = fidelity.register_timeline(v.freq_events, n + 4)
+        ad = fidelity.register_timeline(v.adsr_events, n + 4)
+        at = sorted(v.attack_frames)
+        for i, a in enumerate(at):
+            if ad[a] not in (0x0060, 0xBF00):
+                continue
+            end = at[i + 1] if i + 1 < len(at) else n
+            lo = fq[a]
+            for f in range(a + 1, min(end, n) - 1):
+                x, prev = fq[f], fq[f - 1]
+                if x == prev or not x or not lo:
+                    continue
+                if (abs(x / prev - 2) < 0.02 or abs(prev / x - 2) < 0.02
+                        or abs(x / lo - 2) < 0.02 or x == lo):
+                    continue             # an octave flip, not a re-pitch
+                repitch += 1
+                assert (f - a) % 3 == 0, (a, f)
+                lo = x
+                if abs(fq[f + 1] / x - 2) < 0.02:
+                    octave_after += 1
+    assert repitch > 300, repitch
+    assert octave_after / repitch > 0.8, (octave_after, repitch)
+
+
+
+# ---------------------------------------------------------------------------
+# The per-note phase (`fixed_arp_phase_split_plan`): METHOD 7.bbbbbb's
+# "two wavetables per record chosen by attack parity", built. A record whose
+# notes attack on a minority residue within a factor of two of the majority
+# gets a clone per such residue, and each note is renamed to its residue's.
+# Measured at build (C:/t/per-note-split-unticked): Hunter_Patrol's offset-1
+# octave up-fraction 0.32 -> 0.40 against the original's 0.40 (180 s);
+# Game_Killer's `vib` (reversal_ratio) 0.23 -> 0.53 at -t 60, melody 100%
+# both; the corpus byte-hash under presets moved exactly Chimera,
+# Game_Killer, Human_Race, Hunter_Patrol, One_Man_and_his_Droid and Zoids.
+# ---------------------------------------------------------------------------
+import ast                                                     # noqa: E402
+
+from h2g.goatwriter import (_orderlist_occurrences,           # noqa: E402
+                            _shared_loop_block,
+                            fixed_arp_note_residues,
+                            fixed_arp_phase_split_plan)
+
+SPLIT_FILES = {"Chimera", "Game_Killer", "Human_Race", "Hunter_Patrol",
+               "One_Man_and_his_Droid", "Zoids"}
+
+
+def _split_of(name):
+    """(sng, the clones `build_sng` logged as (record, clone, residue))."""
+    import json
+    import h2g.convert as C
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    opts = fidelity._preset_opts(doc, f"{name}.sid")
+    logs = []
+    sng = C.convert(str(CORPUS / f"{name}.sid"), log=logs.append, **opts)
+    clones = []
+    for line in logs:
+        if line.startswith("arp phase split:") and "clone(s) [" in line:
+            clones = ast.literal_eval(line[line.index("["):line.index("]") + 1])
+    return sng, clones
+
+
+def _sounding(name):
+    """(song, clones, {(record, note residue, residue the instrument plays):
+    untied notes}) over the finished song."""
+    import songview
+    from collections import Counter
+    sng, clones = _split_of(name)
+    s = songview.parse_sng(sng)
+    sid, det = _det(CORPUS / f"{name}.sid")
+    _, tracks, patterns = _converted(name)
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    _, res = fixed_arp_note_residues(sid, det, s.tracks, s.patterns)
+    clone = {c: (r, q) for r, c, q in clones}
+    split = {r for r, _, _ in clones}
+    tally = Counter()
+    for ti, track in enumerate(s.tracks):
+        cur, seen = 0, Counter()
+        for pos, p in _orderlist_occurrences(track):
+            pat = s.patterns[p]
+            rr = res.get((ti, pos, seen[pos]), {})
+            seen[pos] += 1
+            for k in range(len(pat) // 4):
+                if pat[4 * k] == 0xFF:
+                    break
+                if pat[4 * k + 1]:
+                    cur = pat[4 * k + 1]
+                if k not in rr or (pat[4 * k + 2] == CMD_TONEPORTA
+                                   and pat[4 * k + 3] == 0):
+                    continue
+                rec, plays = clone.get(cur, (cur, phases.get(cur)))
+                if rec in split:
+                    tally[(rec, rr[k], plays)] += 1
+    return s, clones, tally
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", ["Hunter_Patrol", "Game_Killer"])
+def test_every_split_note_sounds_its_own_residue(name):
+    """Read back by songview (a second reader): every untied note of a split
+    record, on the residue its clone was made for or the record's own,
+    sounds an instrument carrying that residue -- and the clones are their
+    records' bytes but for the wavetable start."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    s, clones, tally = _sounding(name)
+    assert clones, name
+    made = {(r, q) for r, _, q in clones}
+    wrong = {k: n for k, n in tally.items()
+             if ((k[0], k[1]) in made or k[2] == k[1]) and k[1] != k[2]}
+    assert not wrong, (name, wrong)
+    moved = sum(n for (r, nr, q), n in tally.items() if (r, nr) in made)
+    assert moved > 0, tally
+    for rec, c, _ in clones:
+        a, b = s.instruments[rec - 1], s.instruments[c - 1]
+        assert (a.ad, a.sr, a.pulse_ptr, a.filt_ptr, a.vib_ptr, a.vib_delay,
+                a.gatetimer, a.firstwave, a.name) == (
+                b.ad, b.sr, b.pulse_ptr, b.filt_ptr, b.vib_ptr, b.vib_delay,
+                b.gatetimer, b.firstwave, b.name)
+
+
+@needs_corpus
+def test_hunter_patrol_splits_by_parity():
+    """Rows of 3 frames alternate parity, so instrument 11's 60:36 vote
+    (METHOD 7.bbbbbb) splits; the parity mask has two residues, so each
+    clone carries the record's other one."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    _, clones = _split_of("Hunter_Patrol")
+    sid, det = _det(CORPUS / "Hunter_Patrol.sid")
+    _, tracks, patterns = _converted("Hunter_Patrol")
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    assert {r for r, _, _ in clones} >= {11}, clones
+    for rec, _, q in clones:
+        assert q == 1 - phases[rec], (rec, q, phases[rec])
+
+
+@needs_corpus
+def test_every_game_killer_clone_has_a_block_of_its_own():
+    """Eight clones at -S9 fit the 255-entry table only because each shares
+    its record's loop (`_shared_loop_block`): every clone's wavetable start
+    differs from its record's, and its block jumps into the record's."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sng, clones = _split_of("Game_Killer")
+    s = songview.parse_sng(sng)
+    assert len(clones) == 8, clones
+    for rec, c, _ in clones:
+        a, b = s.instruments[rec - 1], s.instruments[c - 1]
+        assert b.wave_ptr != a.wave_ptr, (rec, c)
+        block = _wavetable_of(sng, c)
+        assert block[-1][0] == 0xFF
+        own = _wavetable_of(sng, rec)
+        assert a.wave_ptr <= block[-1][1] < a.wave_ptr + len(own), (rec, c)
+
+
+@needs_corpus
+def test_only_files_with_a_split_vote_are_split():
+    """Every fixed-arp file in the corpus: the plan builds where a record's
+    minority residue is within a factor of two of its majority, and only
+    there (Rasputin's tempo split owns its instrument columns)."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    names = set(FIXED_ARP) | {
+        "5_Title_Tunes", "Crazy_Comets", "Devils_Galop",
+        "Geoff_Capes_Strongman_Challenge", "Gerry_the_Germ", "Gremlins",
+        "Hunter_Patrol", "Last_V8", "Monty_on_the_Run", "Thing_on_a_Spring"}
+    got = {n for n in names if _split_of(n)[1]}
+    assert got == SPLIT_FILES, got
+
+
+def test_a_clone_loop_jumps_into_its_records():
+    """The unticked parity shape: the record (start 6) loops octave/base,
+    the clone (start 20) base/octave -- the same two entries rotated, so the
+    clone is its frame-0 entry and a jump to the record's second loop
+    entry. A loop that is not a rotation is left whole."""
+    record = [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00), (0xFF, 7)]
+    entries = [(0, 0)] * 5 + record
+    clone = ([0x41, 0x41, 0x41, 0xFF], [0x00, 0x00, 0x0C, 21])
+    assert _shared_loop_block(clone, 20, entries, 6) == (
+        [0x41, 0xFF], [0x00, 8])
+    other = ([0x41, 0x41, 0x21, 0xFF], [0x00, 0x00, 0x0C, 21])
+    assert _shared_loop_block(other, 20, entries, 6) == other
+    # A shared block plays what the whole one plays, call for call: laid out
+    # with the clone at 6 and its record at 20, from the clone's start.
+    rec2 = [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00), (0xFF, 21)]
+    clone2 = ([0x41, 0x41, 0x41, 0xFF], [0x00, 0x00, 0x0C, 7])
+    shared = _shared_loop_block(clone2, 6, [(0, 0)] * 19 + rec2, 20)
+    assert shared == ([0x41, 0xFF], [0x00, 22])
+
+    def sounds(block):
+        left = block[0] + [0] * (14 - len(block[0])) + [b for b, _ in rec2]
+        right = block[1] + [0] * (14 - len(block[1])) + [b for _, b in rec2]
+        return [(w, n) for _, w, n in wave_timeline(left, right, first=6,
+                                                    calls=12)]
+    assert sounds(shared) == sounds(clone2)
+
+
+def _fake_phase(monkeypatch, track):
+    """A one-subtune parity-mask file whose rows are 3 frames (so row k
+    attacks on residue k & 1), one fixed-arp record (GT 1, lead 0), voice 0
+    playing `track` over pattern 0 (three notes, instrument named on row 0
+    only) and voices 1-2 a rest."""
+    import h2g.goatwriter as G
+    from types import SimpleNamespace
+    monkeypatch.setattr(G, "fixed_arp_mask", lambda sid, det: (0x01, 0xF0))
+    monkeypatch.setattr(G, "fixed_arp_counter_base", lambda sid, det: 0)
+    monkeypatch.setattr(G, "fixed_arp_first_fetch", lambda sid, det: 0)
+    monkeypatch.setattr(G, "find_song_speeds",
+                        lambda sid, det: SongSpeeds((3,), 0, None))
+    det = SimpleNamespace(arp_fixed_up=0x0C, effect_arp=True,
+                          instr_start=0, instr_stride=8)
+    sid = SimpleNamespace(data=bytes([0, 0, 0x41, 0, 0, 0, 0, 0x04]),
+                          subtunes=1)
+    end = [0xFF, 0, 0, 0]
+    patterns = [[0x70, 1, 0, 0, 0x72, 0, 0, 0, 0x74, 0, 0, 0] + end,
+                [0xBD, 0, 0, 0] + end]
+    tracks = [track, [1, 0xFF, 0], [1, 0xFF, 0]]
+    return tracks, patterns, (sid, det)
+
+
+def test_each_note_names_its_residues_instrument(monkeypatch):
+    """Two plays of pattern 0 at rows 0 and 3: the first attacks on residues
+    0, 1, 0 and the second on 1, 0, 1 -- a 3:3 tie, the record keeps 0 and
+    residue 1 gets clone 2. The second play wants other bytes, so it is a
+    copy (pattern 2), and the first play's last note names the record back
+    after the clone."""
+    tracks, patterns, (sid, det) = _fake_phase(monkeypatch, [0, 0, 0xFF, 0])
+    split = fixed_arp_phase_split_plan(sid, det, tracks, patterns, True, 0,
+                                       1, 2)
+    assert split is not None
+    assert split.clones == [(1, 2, 1)]
+    assert split.edits == {0: {1: (0, 2), 2: (0, 1)},
+                           2: {0: (1, 2), 1: (0, 1), 2: (0, 2)}}
+    assert split.tracks[0] == [0, 2, 0xFF, 0]
+    out = apply_tempo_duty_edits(split.patterns, split)
+    assert [out[0][1], out[0][5], out[0][9]] == [1, 2, 1]
+    assert [out[2][1], out[2][5], out[2][9]] == [2, 1, 2]
+
+
+def test_a_repeated_entry_keeps_its_first_spelling(monkeypatch):
+    """`$D1 00`: one orderlist entry played twice, whose plays want two
+    spellings. A repeat cannot be repointed, so the first play's stands --
+    and no copy is made."""
+    tracks, patterns, (sid, det) = _fake_phase(monkeypatch, [0xD1, 0, 0xFF, 0])
+    split = fixed_arp_phase_split_plan(sid, det, tracks, patterns, True, 0,
+                                       1, 2)
+    assert split is not None
+    assert split.edits == {0: {1: (0, 2), 2: (0, 1)}}
+    assert len(split.patterns) == len(patterns)
+
+
+def test_a_residue_whose_shape_ignores_it_gets_no_clone(monkeypatch):
+    """`distinct` says the clone's block would be the record's (the -S{m}
+    per-call loop ignores the phase): nothing is split."""
+    tracks, patterns, (sid, det) = _fake_phase(monkeypatch, [0, 0, 0xFF, 0])
+    assert fixed_arp_phase_split_plan(sid, det, tracks, patterns, True, 0,
+                                      1, 2, distinct=lambda r, q: False) is None
+    # And with `effects` off -- the VB6 reproduction -- nothing at all.
+    assert fixed_arp_phase_split_plan(sid, det, tracks, patterns, False, 0,
+                                      1, 2) is None
+
+
+# ---------------------------------------------------------------------------
+# The NIBBLE dialect's half-period, per record (nibble-arp-alternation-period).
+#
+# The nibble block self-modifies the mask it divides its counter by, chosen
+# from the record's own nibble: `LDY #$02 / CMP #$0C / BEQ / LDY #$01 / STY
+# and-operand` (Warhawk $13DE) -- an octave record alternates two counter
+# steps a half, every other record one (`#$04` for the octave in Proteus,
+# Chicken_Song, Hollywood_or_Bust and Formula_1_Simulator, whose spelling
+# also swaps the SBC for an ADC). The counter's `INC` sits behind the outer
+# gate, so a step is a passing call and a half spanning the skipped call is
+# a frame longer. Measured on the originals at 60 s (C:/t/nibble-arp-period/
+# orig_*.txt, runs of one sounding frequency inside a note): Warhawk
+# `$090E` {2: 159, 3: 65} and `$0F08` {1: 397, 2: 65}; International_Karate
+# `$0A08` {2: 103, 3: 25}, `$0F0B` {2: 128, 3: 32}, `$090A` {1: 1638,
+# 2: 168}. Every shape held a half for exactly one frame until then:
+# Warhawk `$090E` converted read {1: 519}, IK `$0A08` {1: 269}.
+# ---------------------------------------------------------------------------
+from h2g.detect import nibble_arp_period                     # noqa: E402
+from h2g.goatwriter import (_hold_run, _wave_hold_byte,      # noqa: E402
+                            nibble_arp_counter_gated, nibble_arp_entries,
+                            nibble_arp_half_calls)
+
+# name -> (interval, mask for it, mask otherwise, counter address), read off
+# the files (dis6502 at the `STA` into the SBC operand).
+NIBBLE_PERIODS = {
+    "Warhawk": (0x0C, 2, 1, 0x15BF),
+    "International_Karate": (0x0C, 2, 1, 0xB2F9),
+    "Thrust": (0x0C, 2, 1, 0x0CEA),
+    "Bump_Set_Spike": (0x0C, 2, 1, 0xB506),
+    "Spellbound": (0x0C, 2, 1, 0xC1),                 # zero page
+    "Kentilla": (0x0C, 2, 1, 0xAFEF),
+    "Las_Vegas_Video_Poker": (0x0C, 2, 1, 0x54F9),
+    "Samantha_Fox_Strip_Poker": (0x0C, 2, 1, 0xE8),   # zero page
+    "Proteus": (0x0C, 4, 1, 0x0DA3),
+    "Chicken_Song": (0x0C, 4, 1, 0x15C3),
+    "Hollywood_or_Bust": (0x0C, 4, 1, 0x09A2),
+    "Formula_1_Simulator": (0x0C, 4, 1, 0xC4F9),     # the ADC spelling
+}
+# The two with no outer gate in front of the counter's INC.
+NIBBLE_UNGATED = {"Chicken_Song", "Hollywood_or_Bust"}
+
+
+@needs_corpus
+def test_the_nibble_period_is_read_from_every_file():
+    for name, want in NIBBLE_PERIODS.items():
+        sid, det = _det(CORPUS / f"{name}.sid")
+        per = nibble_arp_period(sid, det)
+        assert per is not None, name
+        assert det.arp_nibble_period == per, name     # read once, at detect
+        got = (per.interval, per.on_interval, per.otherwise, per.counter)
+        assert got == want, (name, got)
+        assert per.half(0x0C) == want[1] and per.half(0x05) == 1
+        assert nibble_arp_counter_gated(sid, per) == (
+            name not in NIBBLE_UNGATED), name
+    # Mozart's nibble block masks with a constant `#$01`, and the fixed
+    # dialect has no nibble block at all.
+    for name in ("Mozart", "Commando", "Zoids"):
+        sid, det = _det(CORPUS / f"{name}.sid")
+        assert nibble_arp_period(sid, det) is None, name
+        assert det.arp_nibble_period is None, name
+
+
+@needs_corpus
+def test_the_nibble_half_is_per_record_and_per_passing_call():
+    """`m` calls a counter step, stretched by `(O + 1) / O` where the INC
+    is gated: Warhawk -S7 gate 7 -> 8 calls a step, IK -S10 gate 10 -> 11.
+    None where the answer is the old one-frame half."""
+    cases = [("Warhawk", 7, 7, 0x0C, 16), ("Warhawk", 7, 7, 0x09, 8),
+             ("International_Karate", 10, 10, 0x0C, 22),
+             ("International_Karate", 10, 10, 0x05, 11),
+             ("International_Karate", 10, None, 0x05, None),
+             ("International_Karate", 10, None, 0x0C, 20),
+             ("Formula_1_Simulator", 2, 4, 0x0C, 10),
+             ("Hollywood_or_Bust", 1, None, 0x0C, 4),
+             ("Mozart", 2, 2, 0x0C, None)]
+    for name, m, skip, nib, want in cases:
+        sid, det = _det(CORPUS / f"{name}.sid")
+        got = nibble_arp_half_calls(sid, det, nib, m, skip)
+        assert got == want, (name, m, skip, nib, got)
+
+
+@pytest.mark.parametrize("calls", range(1, 70))
+def test_a_hold_run_spends_exactly_its_calls(calls):
+    run = _hold_run(calls, 0x41)
+    spent = sum(1 if b == 0x41 else b + 1 for b in run)
+    assert spent == calls, run
+    assert all(b == 0x41 or 1 <= b <= 0x0F for b in run), run
+    if calls <= 16:                       # one entry, the byte it always was
+        assert run == [_wave_hold_byte(calls + 1, 0x41)]
+
+
+def _runs(notes):
+    runs = []
+    for x in notes:
+        if runs and runs[-1][0] == x:
+            runs[-1][1] += 1
+        else:
+            runs.append([x, 1])
+    return runs
+
+
+@pytest.mark.parametrize("m, half", [(2, 4), (3, 7), (7, 8), (7, 16),
+                                     (10, 11), (10, 22), (1, 2), (1, 4)])
+def test_the_ticked_nibble_shape_holds_each_half_for_its_period(m, half):
+    """The tick plays once, then base and alternate `half` calls each --
+    across delay entries split at `WAVE_MAX_DELAY` where `half` exceeds
+    17 -- and the loop target is the entry after the tick."""
+    from h2g.goatwriter import _first_frame_lead
+    wave, alt = 0x41, 0x74
+    noise = 0x81
+    frame0, frame0_r = _first_frame_lead(wave, m, force=True)
+    extra = m - 1
+    tl, tr = [noise], [0x00]
+    if extra == 1:
+        tl.append(noise)
+        tr.append(0x00)
+    elif extra > 1:
+        tl.append(min(extra - 1, 0x0F))
+        tr.append(0x80)
+    left, right = ticked_arp_entries(frame0, frame0_r, tl, tr, noise, wave,
+                                     alt, m, 6, 255, half_calls=half)
+    assert left[-1] == 0xFF and right[-1] == 6 + len(frame0) + len(tl)
+    calls = wave_timeline(left, right, first=6, calls=2 * m + 8 * half)
+    waves = [w for _, w, _ in calls]
+    assert waves[:m] == [wave] * m and waves[m:2 * m] == [noise] * m
+    body = [note for _, _, note in calls[2 * m:]]
+    runs = _runs(body)
+    assert [r[1] for r in runs[:-1]] == [half] * (len(runs) - 1), runs
+    assert [r[0] for r in runs[:4]] == [0x00, alt, 0x00, alt]
+
+
+def test_the_ticked_shape_is_unchanged_where_the_half_is_a_frame():
+    """A half of `m` calls is the unphased shape every fixed-dialect record
+    keeps (`half_calls=None`), byte for byte."""
+    from h2g.goatwriter import _first_frame_lead
+    for m in (2, 3, 7, 16):
+        frame0, frame0_r = _first_frame_lead(0x41, m, force=True)
+        args = (frame0, frame0_r, [0x81, m - 2 if m > 2 else 0x81],
+                [0x00, 0x80 if m > 2 else 0x00], 0x81, 0x41, 0x74, m, 6, 255)
+        assert (ticked_arp_entries(*args, half_calls=m)
+                == ticked_arp_entries(*args)), m
+
+
+@pytest.mark.parametrize("half", [2, 3, 7, 8, 11, 16, 17, 18, 22, 40])
+def test_the_unticked_nibble_shape_holds_each_half_for_its_period(half):
+    """Base `half` calls from the attack, the alternate `half`, and round
+    again through entry 0 -- where `half` is one frame it is the old -S{m}
+    shape byte for byte."""
+    left, right = nibble_arp_entries(0x41, 0x7B, half, 6, 255)
+    assert left[-1] == 0xFF and right[-1] == 6
+    notes = [n for _, _, n in wave_timeline(left, right, first=6,
+                                            calls=8 * half)]
+    runs = _runs(notes)
+    assert [r[1] for r in runs] == [half] * 8, runs
+    assert [r[0] for r in runs[:2]] == [0x00, 0x7B]
+    if half <= 17:
+        hold = _wave_hold_byte(half, 0x41)
+        assert (left, right) == ([0x41, hold, 0x41, hold, 0xFF],
+                                 [0x00, 0x00, 0x7B, 0x80, 6])
+    assert nibble_arp_entries(0x41, 0x7B, half, 6, 4) is None
+    assert nibble_arp_entries(0x41, 0x7B, 1, 6, 255) is None
+
+
+@needs_corpus
+def test_the_nibble_period_reaches_each_record():
+    """International_Karate at its preset -S10 behind a reload-10 gate:
+    the octave records `$0F0B` (3) and `$0A08` (4) alternate 22 calls a
+    half, `$090A` (1, nibble 5) 11 -- per record in one file -- and
+    Warhawk's `$090E` (10) 16 at -S7, its `$0F08` (7, nibble 9) 8."""
+    cases = [("International_Karate", 10, 10, {3: 22, 4: 22, 1: 11}),
+             ("Warhawk", 7, 7, {10: 16, 11: 16, 7: 8})]
+    for name, m, skip, want in cases:
+        sid, det = _det(CORPUS / f"{name}.sid")
+        for rec, half in want.items():
+            left, right = _wavetable_entries(sid, det, rec, True, "gts5", [],
+                                             m, budget=255, start=6,
+                                             gate_skip=skip)
+            nib = sid.data[det.instr_start + rec * det.instr_stride + 7] >> 4
+            alt = (0x80 - nib) & 0xFF
+            notes = [n for _, _, n in wave_timeline(left, right, first=6,
+                                                    calls=12 * half)]
+            k = notes.index(alt)
+            runs = _runs(notes[k:])
+            assert [r[1] for r in runs[:-1]] == [half] * (len(runs) - 1), (
+                name, rec, runs)
+
+
+def _nibble_runs(trace, n, adsr):
+    """Runs of one sounding frequency inside every note attacking with
+    `adsr`, from the first frame the note shows only its two values; the
+    first and last run of each note are cut by the attack and dropped."""
+    from collections import Counter
+    out = Counter()
+    for v in trace:
+        t = _timeline(v, n)
+        ad = dict(v.adsr_events)
+        cur, adsr_at = None, {}
+        for f in range(n):
+            if f in ad:
+                cur = ad[f]
+            adsr_at[f] = cur
+        at = v.attack_frames
+        for i, f in enumerate(at):
+            if adsr_at.get(f) != adsr:
+                continue
+            seg = t[f:at[i + 1] if i + 1 < len(at) else n]
+            while len(set(seg)) > 2:
+                seg = seg[1:]
+            if len(set(seg)) != 2 or len(seg) < 8:
+                continue
+            runs = [r[1] for r in _runs(seg)]
+            out.update(runs[1:-1])
+    return out
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name, records", [
+    ("International_Karate", (1, 3, 4)),
+    ("Warhawk", (7, 10, 11)),
+])
+def test_the_nibble_period_is_re_measured_against_the_original(name, records):
+    """The reader against the original: the commonest run of each record
+    is its half in frames, and every run is that half or one frame more
+    -- the skipped call. IK `$090A` {1, 2}, `$0A08`/`$0F0B` {2, 3}."""
+    sid, det = _det(CORPUS / f"{name}.sid")
+    per = nibble_arp_period(sid, det)
+    trace = fidelity.run_siddump(CORPUS / f"{name}.sid", 60, 0)
+    for rec in records:
+        base = det.instr_start + rec * det.instr_stride
+        adsr = sid.data[base + 3] << 8 | sid.data[base + 4]
+        half = per.half(sid.data[base + 7] >> 4)
+        runs = _nibble_runs(trace, 60 * 50, adsr)
+        assert sum(runs.values()) >= 50, (name, rec, runs)
+        assert runs.most_common(1)[0][0] == half, (name, rec, runs)
+        near = runs[half] + runs[half + 1]
+        assert near >= 0.97 * sum(runs.values()), (name, rec, runs)
+        assert runs[half + 1] > 0, (name, rec, runs)      # the stall
+
+
+# ---------------------------------------------------------------------------
+# The nibble dialect's ticked arpeggio runs THROUGH the noise tick
+# (ik-ticked-tick-first-toggle-two-frames-late).
+#
+# The drum block writes $D404 and the arpeggio block the frequency, every
+# frame, tick included -- so the original's alternation does not wait for the
+# tick to end. International_Karate at its preset -S10, 180 s, first frame
+# after the attack whose frequency is not the note's (C:/t/ik-first-toggle/
+# per_note.py; orig / before / after):
+#
+#   $090A  {2: 312, 3: 79}  /  {4: 320, ...}  /  {2: 313, 3: 16, ...}
+#   $0A08  {2: 116, 3: 30}  /  {5: 120, ...}  /  {2: 117, 3: 4, ...}
+#   $0F0B  {2: 58, 3: 15}   /  {5: 59, ...}   /  {2: 59, ...}
+#
+# `ticked_arp_entries` held the note over the tick's two frames and began its
+# loop after them: two frames late on every note, the tick's length. The
+# phase is the nibble counter's residue on the attack (`nibble_arp_phases`,
+# `fixed_arp_phases`' walk on the nibble block's counter); IK's notes vote 2,
+# which puts frame 1 on the note and frame 2 on the interval for both the
+# one-step and the two-step records. Warhawk (-S7) moved from 4/5 to the
+# original's 3 on `$080C`/`$090E`/`$0F4F` and from 3 to 1 on `$0F08`/`$0FDA`.
+# The corpus byte-hash under presets moved exactly the seven nibble files
+# with a ticked record: Bump_Set_Spike, Formula_1_Simulator,
+# International_Karate, Proteus, Spellbound, Thrust, Warhawk.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (BNE, nibble_arp_counter_test,     # noqa: E402
+                            nibble_arp_first_half, nibble_arp_phases,
+                            ticked_nibble_arp_entries)
+
+# name -> (base, branch) of the nibble counter: the reset reads 0, Thrust and
+# Las_Vegas_Video_Poker store nothing (the file's byte plus one), and
+# Samantha_Fox_Strip_Poker's zero-page counter has no byte in the file.
+NIBBLE_COUNTER_TESTS = {
+    "Warhawk": (0, BNE), "International_Karate": (0, BNE),
+    "Thrust": (192, BNE), "Bump_Set_Spike": (0, BNE),
+    "Spellbound": (0, BNE), "Kentilla": (0, BNE),
+    "Las_Vegas_Video_Poker": (146, BNE), "Samantha_Fox_Strip_Poker": None,
+    "Proteus": (0, BNE), "Chicken_Song": (0, BNE),
+    "Hollywood_or_Bust": (0, BNE), "Formula_1_Simulator": (0, BNE),
+}
+
+
+@needs_corpus
+def test_the_nibble_counter_test_is_read_from_every_file():
+    """The block's own `AND` is the one a `STY` writes: the counter is also
+    loaded by `AND #$03` (Warhawk, Thrust, Spellbound) and `AND #$01 / BEQ`
+    (Proteus), which must not vote on the branch."""
+    for name, want in NIBBLE_COUNTER_TESTS.items():
+        sid, det = _det(CORPUS / f"{name}.sid")
+        got = nibble_arp_counter_test(sid, det.arp_nibble_period)
+        assert got == want, (name, got)
+
+
+@pytest.mark.parametrize("residue, mask, want", [
+    (2, 1, (False, 1)), (1, 1, (True, 1)), (0, 1, (False, 1)),
+    (2, 2, (False, 1)), (0, 2, (True, 1)), (3, 2, (True, 2)),
+    (1, 2, (False, 2)), (7, 4, (True, 4)), (5, 4, (False, 2)),
+])
+def test_frame_one_plays_the_residues_half(residue, mask, want):
+    """`AND #mask / BNE` takes the interval where the masked counter is
+    zero, and frame `k` reads `residue + k`: IK's residue 2 puts frame 1 on
+    the note with one step left, at either mask."""
+    assert nibble_arp_first_half(residue, mask, BNE) == want
+
+
+def _frame_notes(left, right, m, frames, first=6):
+    calls = wave_timeline(left, right, first=first, calls=m * frames)
+    return ([calls[k * m + m - 1][1] for k in range(frames)],
+            [calls[k * m + m - 1][2] for k in range(frames)], calls)
+
+
+@pytest.mark.parametrize("m, tick, half, up, first_calls", [
+    (10, 17, 11, False, 11), (10, 17, 22, False, 11), (10, 17, 22, True, 22),
+    (7, 13, 8, False, 8), (7, 6, 16, True, 8), (3, 5, 7, False, 3),
+    (2, 3, 2, True, 1), (5, 9, 40, False, 20),
+])
+def test_the_alternation_runs_through_the_tick(m, tick, half, up, first_calls):
+    """Per call: the record's note for the lead, noise for `tick` calls, the
+    first run `first_calls` on `up`'s note, then halves of `half` alternating
+    -- across the tick's end and the loop's jump alike."""
+    from h2g.goatwriter import _first_frame_lead
+    wave, noise, alt = 0x41, 0x81, 0x74
+    frame0, frame0_r = _first_frame_lead(wave, m, force=True)
+    left, right = ticked_nibble_arp_entries(
+        frame0, frame0_r, tick, noise, wave, alt, half, up, first_calls,
+        6, 255)
+    assert left[-1] == 0xFF
+    n = m + tick + first_calls + 8 * half
+    calls = wave_timeline(left, right, first=6, calls=n)
+    waves = [w for _, w, _ in calls]
+    notes = [x for _, _, x in calls]
+    assert waves[:m] == [wave] * m and notes[:m] == [0x00] * m
+    assert waves[m:m + tick] == [noise] * tick
+    assert set(waves[m + tick:]) == {wave}
+    runs = _runs(notes[m:])
+    assert runs[0] == [alt if up else 0x00, first_calls], runs
+    assert [r[1] for r in runs[1:-1]] == [half] * (len(runs) - 2), runs
+    assert all(a[0] != b[0] for a, b in zip(runs, runs[1:])), runs
+    # The loop is the two halves after the unrolled run: its target is an
+    # entry at or after the tick's end, so the tick plays once.
+    target = right[-1] - 6
+    assert left[target] == wave and target >= len(frame0)
+    assert ticked_nibble_arp_entries(frame0, frame0_r, tick, noise, wave,
+                                     alt, half, up, first_calls, 6,
+                                     len(left) - 1) is None
+
+
+@needs_corpus
+def test_the_karate_records_toggle_on_frame_two():
+    """IK -S10 behind its reload-10 gate, residue 2: `$090A` (record 1,
+    one step a half) and `$0A08`/`$0F0B` (4 and 3, two steps) all sound the
+    note on frames 0-1 and the interval on frame 2 -- the original's modal
+    first toggle -- with the tick's noise on frames 1-2 as before."""
+    sid, det = _det(CORPUS / "International_Karate.sid")
+    m = 10
+    for rec, want in ((1, [0, 0, 1, 0, 1, 0]), (3, [0, 0, 1, 1, 0, 0]),
+                      (4, [0, 0, 1, 1, 0, 0])):
+        left, right = _wavetable_entries(sid, det, rec, True, "gts5", [], m,
+                                         budget=255, start=6, gate_skip=10,
+                                         arp_phase=2)
+        waves, notes, _ = _frame_notes(left, right, m, 6)
+        nib = sid.data[det.instr_start + rec * det.instr_stride + 7] >> 4
+        alt = (0x80 - nib) & 0xFF
+        assert [int(x == alt) for x in notes] == want, (rec, notes)
+        assert waves[1] == 0x81 and waves[3] != 0x81, waves         # the tick
+
+
+@needs_corpus
+def test_the_karate_conversion_carries_the_walked_phase():
+    """Through `build_sng`: the walk over IK's finished orderlists votes
+    residue 2 on the ticked records' instruments, and the .sng (read back
+    by songview) toggles them on frame 2."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sng, tracks, patterns = _converted("International_Karate")
+    sid, det = _det(CORPUS / "International_Karate.sid")
+    phases = nibble_arp_phases(sid, det, tracks, patterns)
+    for number, want in ((2, [0, 0, 1, 0, 1]), (4, [0, 0, 1, 1, 0]),
+                         (5, [0, 0, 1, 1, 0])):
+        assert phases[number] == 2, (number, phases)
+        wt = _wavetable_of(sng, number)
+        left, right = [w for w, _ in wt], [r for _, r in wt]
+        _, notes, _ = _frame_notes(left, right, 10, 5,
+                                   first=_wavetable_start(sng, number))
+        alt = next(r for r in right[:-1] if 0x60 <= r < 0x80)
+        assert [int(x == alt) for x in notes] == want, (number, wt)
+
+
+def _wavetable_start(sng, number):
+    import songview
+    s = songview.parse_sng(sng)
+    return next(i for i in s.instruments if i.number == number).wave_ptr
+
+
+@needs_corpus
+@needs_siddump
+def test_the_karate_first_toggle_is_re_measured_against_the_original():
+    """The phase against the original: the modal first frame whose
+    frequency leaves the note is `1 + steps` for residue 2 (frame 2) on
+    every ticked record, `$090A`, `$0A08` and `$0F0B` alike."""
+    from collections import Counter
+    sid, det = _det(CORPUS / "International_Karate.sid")
+    per = det.arp_nibble_period
+    n = 120 * 50
+    trace = fidelity.run_siddump(CORPUS / "International_Karate.sid", 120, 0)
+    for rec in (1, 3, 4):
+        base = det.instr_start + rec * det.instr_stride
+        adsr = sid.data[base + 3] << 8 | sid.data[base + 4]
+        up, steps = nibble_arp_first_half(
+            2, per.half(sid.data[base + 7] >> 4), BNE)
+        want = 1 if up else 1 + steps
+        firsts = Counter()
+        for v in trace:
+            t = _timeline(v, n)
+            ad = sorted(v.adsr_events)
+            for f in v.attack_frames:
+                cur = [a for g, a in ad if g <= f]
+                if not cur or cur[-1] != adsr or f + 8 > n:
+                    continue
+                seg = t[f:f + 8]
+                k = next((k for k, x in enumerate(seg) if x != seg[0]), None)
+                firsts[k] += 1
+        assert sum(firsts.values()) >= 20, (rec, firsts)
+        assert firsts.most_common(1)[0][0] == want == 2, (rec, firsts)
+
+
+# ---------------------------------------------------------------------------
+# Formula_1_Simulator's residual `reversal_ratio`, and its octave's sign
+# (formula-1-simulator-reversal-doubles-under-the-ticked-hold).
+#
+# The doubling the task was opened on (2.10x at v0.5.493) was the one-frame
+# hold on the octave records, whose half is four counter steps: the original's
+# `$0909` alternates in runs of 4, the conversion read {1: 940}
+# (C:/t/nibble-arp-period/base_f1.txt). `nibble_arp_half_calls` (10 calls,
+# -S2 behind gate 4) took that to 1.21x -- and the whole residual is the
+# ONE-step records: split by ADSR (C:/t/f1-ticked-reversal/
+# rba_base_Formula_1_Simulator.txt) `$086A` 560 -> 705, `$0900` 240 -> 300,
+# `$0908` 672 -> 840, `$0A0A` 276 -> 345, `$3960` 1438 -> 1803, each 1.25x,
+# while `$0909`/`$0F0A` read 50/50 and 16/16. Their half is 2 x 5/4 = 2.5
+# calls, which `_gate_calls` rounds to 2 -- the old one-frame half, 25% fast.
+# `nibble_arp_half_cycle` loops (2, 3); after it the same records read 564,
+# 240, 672, 276, 1441 and the file 4279 / 4193 = 1.02x. The corpus byte-hash
+# under presets moved exactly the three files whose gated half is not whole:
+# Formula_1_Simulator (2.5), Thrust (10/3 and 20/3) and Spellbound (5.5);
+# reversal_ratio 1.211 -> 1.021, 1.172 -> 1.078 and 0.982 -> 1.051 --
+# Spellbound's aggregate moved AWAY from 1 although every one-step record of
+# it moved toward the original ($0709 523 -> 591 of 593, $180A 1965 -> 2190
+# of 2150, $AFFF 1151 -> 1257 of 1226): its `$0F0A` already alternated 336
+# times against 228 (more alternating notes, its runs' shape now matching),
+# and the rounding had been cancelling it. Last_V8 and Monty_on_the_Run do
+# not move (fixed dialect).
+#
+# The sign: the corpus's one opcode-spelled block (`nibble_arp_up`) ADDS the
+# octave. A `$0909` note on $45A0 plays $8B40 in the original and played
+# $22D0 here; it now plays $8B42.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (_arp_relative, nibble_arp_half_cycle,  # noqa: E402
+                            nibble_arp_up)
+
+# Formula_1_Simulator's arpeggio records by number (C:/t/f1-ticked-reversal).
+F1_OCTAVE = (3, 4)                       # `$0F0A`, `$0909`: nibble $C
+F1_ONE_STEP = (0, 6, 7, 8, 11)           # `$0A0A` `$0900` `$086A` `$3960` `$0908`
+
+
+@needs_corpus
+def test_only_formula_1s_octave_records_add_the_interval():
+    sid, det = _det(CORPUS / "Formula_1_Simulator.sid")
+    assert nibble_arp_up(sid, det, 0x0C) is True
+    for nib in (2, 3, 4, 5, 7):
+        assert nibble_arp_up(sid, det, nib) is False, nib
+    for name in list(NIBBLE_PERIODS) + ["Mozart", "Commando", "Zoids"]:
+        if name == "Formula_1_Simulator":
+            continue
+        sid2, det2 = _det(CORPUS / f"{name}.sid")
+        assert nibble_arp_up(sid2, det2, 0x0C) is None, name
+    assert _arp_relative(0, 0x0C, True) == 0x0C
+    assert _arp_relative(0, 0x0C, False) == _arp_relative(0, 0x0C) == 0x74
+    assert _arp_relative(0x0C, 0x0C) == 0x0C
+    for rec, want, never in ((4, 0x0C, 0x74), (3, 0x0C, 0x74),
+                             (6, 0x7E, 0x02)):
+        left, right = _wavetable_entries(sid, det, rec, True, "gts5", [], 2,
+                                         budget=255, start=6, gate_skip=4,
+                                         arp_phase=0)
+        assert want in right[:-1] and never not in right[:-1], (rec, right)
+
+
+@needs_corpus
+@needs_siddump
+def test_formula_1s_octave_is_re_measured_against_the_original():
+    """On the original every `$0909`/`$0F0A` note that alternates sounds its
+    own note on the attack frame and twice that frequency as the other
+    value: the octave is above it."""
+    from collections import Counter
+    sid, det = _det(CORPUS / "Formula_1_Simulator.sid")
+    n = 60 * 50
+    trace = fidelity.run_siddump(CORPUS / "Formula_1_Simulator.sid", 60, 0)
+    for rec in F1_OCTAVE:
+        base = det.instr_start + rec * det.instr_stride
+        adsr = sid.data[base + 3] << 8 | sid.data[base + 4]
+        up = down = 0
+        for v in trace:
+            t = _timeline(v, n)
+            ad = sorted(v.adsr_events)
+            for f in v.attack_frames:
+                cur = [a for g, a in ad if g <= f]
+                if not cur or cur[-1] != adsr or f + 10 > n:
+                    continue
+                common = Counter(t[f + 1:f + 12]).most_common(2)
+                if len(common) != 2 or not t[f]:
+                    continue
+                lo, hi = sorted(x for x, _ in common)
+                if abs(hi - 2 * lo) <= 0x10:
+                    up += t[f] == lo
+                    down += t[f] == hi
+        assert up >= 20 and down == 0, (rec, up, down)
+
+
+@needs_corpus
+def test_a_fractional_half_is_spread_over_an_even_loop():
+    """`m * steps * (O + 1) / O` calls a half: whole -> None (the rounded
+    `nibble_arp_half_calls` is exact), otherwise the shortest even loop of
+    halves summing to it, as even as integers allow."""
+    from fractions import Fraction
+    cases = [("Formula_1_Simulator", 2, 4, 0x05, (2, 3)),
+             ("Formula_1_Simulator", 2, 4, 0x0C, None),
+             ("Formula_1_Simulator", 2, None, 0x05, None),
+             ("Thrust", 3, 9, 0x05, (3, 3, 4, 3, 3, 4)),
+             ("Thrust", 3, 9, 0x0C, (6, 7, 7, 6, 7, 7)),
+             ("Spellbound", 5, 10, 0x05, (5, 6)),
+             ("Spellbound", 5, 10, 0x0C, None),
+             ("International_Karate", 10, 10, 0x05, None),
+             ("Warhawk", 7, 7, 0x0C, None),
+             ("Hollywood_or_Bust", 1, None, 0x05, None),
+             ("Mozart", 2, 2, 0x05, None)]
+    for name, m, skip, nib, want in cases:
+        sid, det = _det(CORPUS / f"{name}.sid")
+        got = nibble_arp_half_cycle(sid, det, nib, m, skip)
+        assert got == want, (name, m, skip, nib, got)
+        if got is None:
+            continue
+        per = det.arp_nibble_period
+        exact = Fraction(m * per.half(nib)) * (skip + 1) / skip
+        assert len(got) % 2 == 0 and sum(got) == exact * len(got), got
+        assert max(got) - min(got) == 1, got
+
+
+@pytest.mark.parametrize("cycle", [(2, 3), (3, 3, 4, 3, 3, 4), (5, 6),
+                                   (6, 7, 7, 6, 7, 7)])
+def test_every_shape_plays_a_cycle_at_its_exact_rate(cycle):
+    """All three nibble shapes take a cycle for `half_calls`: the halves
+    after the first run follow it in order, the notes alternate, and the
+    jump keeps both going round."""
+    from h2g.goatwriter import _first_frame_lead
+    wave, noise, alt = 0x41, 0x81, 0x74
+    reps = 4 * len(cycle)
+    want = [cycle[k % len(cycle)] for k in range(reps)]
+    # Unticked: base note from the attack, through entry 0 again.
+    left, right = nibble_arp_entries(wave, alt, cycle, 6, 255)
+    assert right[-1] == 6
+    notes = [x for _, _, x in wave_timeline(left, right, first=6,
+                                            calls=sum(want) + 1)]
+    runs = _runs(notes)
+    assert [r[1] for r in runs[:-1]] == want, runs
+    assert [r[0] for r in runs[:2]] == [0x00, alt]
+    # Ticked, phase walked: first run, then the cycle from its start.
+    m, tick = 2, 3
+    frame0, frame0_r = _first_frame_lead(wave, m, force=True)
+    left, right = ticked_nibble_arp_entries(
+        frame0, frame0_r, tick, noise, wave, alt, cycle, True, 1, 6, 255)
+    notes = [x for _, _, x in wave_timeline(
+        left, right, first=6, calls=m + 1 + sum(want) + 1)][m:]
+    runs = _runs(notes)
+    assert runs[0] == [alt, 1], runs
+    assert [r[1] for r in runs[1:-1]] == want, runs
+    assert all(a[0] != b[0] for a, b in zip(runs, runs[1:])), runs
+    # Ticked, phase unknown.
+    tl, tr = [noise, noise], [0x00, 0x00]
+    left, right = ticked_arp_entries(frame0, frame0_r, tl, tr, noise, wave,
+                                     alt, m, 6, 255, half_calls=cycle)
+    calls = wave_timeline(left, right, first=6, calls=2 * m + sum(want) + 1)
+    runs = _runs([x for _, _, x in calls[2 * m:]])
+    assert [r[1] for r in runs[:-1]] == want, runs
+    assert [r[0] for r in runs[:2]] == [0x00, alt]
+
+
+@needs_corpus
+@needs_siddump
+def test_formula_1s_one_step_half_is_re_measured_against_the_original():
+    """The original's one-step records hold a half one frame, and two over
+    the outer gate's skipped call: 180 s of interior runs average 1.20-1.24
+    frames -- neither the rounded 2 calls (1.0 frame at -S2) nor 3 (1.5).
+    Every such record's wavetable now averages 2.5 calls, 1.25 frames."""
+    sid, det = _det(CORPUS / "Formula_1_Simulator.sid")
+    n = 180 * 50
+    trace = fidelity.run_siddump(CORPUS / "Formula_1_Simulator.sid", 180, 0)
+    for rec in F1_ONE_STEP:
+        base = det.instr_start + rec * det.instr_stride
+        adsr = sid.data[base + 3] << 8 | sid.data[base + 4]
+        runs = _nibble_runs(trace, n, adsr)
+        count = sum(runs.values())
+        mean = sum(k * v for k, v in runs.items()) / count
+        assert count >= 200 and 1.15 < mean < 1.30, (rec, runs)
+        for phase in (0, None):
+            left, right = _wavetable_entries(sid, det, rec, True, "gts5", [],
+                                             2, budget=255, start=6,
+                                             gate_skip=4, arp_phase=phase)
+            notes = [x for _, _, x in wave_timeline(left, right, first=6,
+                                                    calls=400)]
+            body = [r[1] for r in _runs(notes)][2:-1]
+            assert set(body) == {2, 3}, (rec, phase, body)
+            assert sum(body) / len(body) == pytest.approx(2.5, abs=0.05), (
+                rec, phase, body)

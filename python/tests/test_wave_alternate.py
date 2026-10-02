@@ -110,3 +110,76 @@ def test_the_block_is_anchored_on_this_instrument_tables_own_plus_two():
     # the aux record's fields line up: +0 attack, +1 alternate, +2 frames.
     assert det.wave_alternate == det.two_stage_wave + 1
     assert _find_wave_alternate(sid, det) == det.wave_alternate
+
+
+# --- the derived dialect: `det.wave_alternate_noise`, per song ---------------
+#
+# Hollywood or Bust and Chicken Song do not table the alternate: the player
+# derives it from the voice's own waveform, `AND #$07 / ORA #$80`
+# (detect.WAVE_ALT_NOISE_SHAPE). Emitted only under `wave_alternate`, default
+# off, because the two files are two populations -- see the comment beside the
+# emission in goatwriter and the option's entry in presets.EXCLUDED_FROM_ALWAYS.
+
+def _chicken_song():
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+    path = CORPUS / "Chicken_Song.sid"
+    if not path.is_file():
+        pytest.skip(f"{path} not found")
+    sid = load_sid(str(path))
+    return sid, detect(sid, log=lambda m: None)
+
+
+def test_the_derived_alternate_keeps_the_voices_control_bits():
+    """Chicken Song record 17: `+2` is $15 (triangle | ring | gate) and the
+    player's alternate is `($15 & $07) | $80` = $85 -- noise with ring and
+    gate kept. A bare $81 or a missing $80 (= $05, a delay entry) are both
+    wrong, and the second is declined outright."""
+    sid, det = _chicken_song()
+    assert det.wave_alternate_noise and det.wave_alternate < 0
+    rec = 17
+    o = det.instr_start + rec * det.instr_stride
+    assert sid.data[o + 2] == 0x15 and sid.data[o + 7] & 0x02
+    on = _wavetable_entries(sid, det, rec, True, "gts5", [], 1, start=6,
+                            budget=12, wave_alternate=True)
+    assert on == ([0x15, 0x15, 0x85, 0xFF], [0x00, 0x00, 0x00, 7])
+
+
+def test_the_derived_alternate_is_off_by_default():
+    sid, det = _chicken_song()
+    for rec in (3, 4, 17):
+        off = _wavetable_entries(sid, det, rec, True, "gts5", [], 1, start=6,
+                                 budget=12)
+        assert not any(b & 0x80 for b in off[0][:-2] if b != 0xFF), rec
+
+
+def test_the_option_moves_only_a_derived_dialect_file():
+    """Byte-inert where the dialect is absent: W_A_R TABLES its alternate, so
+    its bit $02 records are emitted the same with the option on or off."""
+    import json
+    from fidelity import _preset_opts
+    from h2g.convert import convert
+    presets_json = Path(__file__).resolve().parents[2] / "presets.json"
+    if not presets_json.is_file():
+        pytest.skip("presets.json not generated")
+    doc = json.loads(presets_json.read_text(encoding="utf-8"))
+    for name, moves in (("Chicken_Song.sid", True), ("W_A_R.sid", False)):
+        path = CORPUS / name
+        if not path.is_file():
+            pytest.skip(f"{path} not found")
+        opts = {**_preset_opts(doc, name), "wave_alternate": False}
+        off = convert(str(path), log=lambda m: None, **opts)
+        on = convert(str(path), log=lambda m: None,
+                     **{**opts, "wave_alternate": True})
+        assert (on != off) is moves, name
+
+
+def test_it_is_per_song_and_not_searched():
+    """The search refuses it on both files it reaches (presets.py records the
+    run), so it is a hand-recorded song-entry option: excluded from `always`,
+    carried across regenerations, and outside the boolean walk."""
+    import presets
+    assert "wave_alternate" in presets.EXCLUDED_FROM_ALWAYS
+    assert "wave_alternate" in presets.CARRIED_PER_SONG
+    assert "wave_alternate" not in presets.FIDELITY_TOGGLES
+    assert "wave_alternate" not in presets.FIXED

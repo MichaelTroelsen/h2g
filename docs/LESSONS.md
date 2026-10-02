@@ -2644,6 +2644,27 @@ place (grep it for `RETRACTED`); no behaviour changed, since the function's
 byte-level rule (`$00 $00` in the file, uncited by any operand) is unaffected
 by which channel or waveform the cell happens to sound on.
 
+## Retraction: Sanxion's post-gate-off frequency write is vibrato, not an early note fetch
+
+An orchestrator note on `sanxion-instr-0e-freq-write-after-gate-off` (partial
+record at 59fbe1b, in `.claude/tasks/runs.jsonl`, which is gitignored and so not
+durable) read the write one frame after gate-off on voice 3 (ours frame 4140,
+`41B8` after `3E08`) as
+"the packed player's EARLY NOTE FETCH under the 2-call hard-restart hold", i.e. `mt_getnewnote` fetching the next row's pitch
+`gatetimer` calls early. **RETRACTED.** Measured at 57c086e (convert sha1
+`c15cf6f387f4`, siddump `-a0 -t100`, multiplier 1): the value is the OLD note
+plus one semitone (A#5 -> B-5 at 4140, F-5 -> F#5 at 4044, C-6 -> C#6 at 4280),
+not the next row's pitch (at 4044 the next gate-on is F-5, not F#5), and
+`mt_getnewnote` writes no frequency. The cause is instrument 0E's vibrato
+(`vib_ptr` 28, `vib_delay` 2, packed as 1): the wave program (note / C#6 / note
+/ stop) owns frames N..N+2, the delay reaches 0 at N+3, and `mt_effect_4` steps
+the old note up a semitone at N+4. `convert(vibrato=False)` removes the write:
+24 of 24 instr-0E notes write at gate-off+1 in ours, 0 of 24 with vibrato off
+and 0 of 24 in the original. Voice 1's apparent match (F#4 at 4140) was a
+coincidence of a chromatic ascent. Audible for about 20 ms in release. The
+original gates vibrato on a per-note duration test (`$B257`: `CMP #$03`), so it
+vibrates only notes of 3+ frames -- handed to the classic-vibrato gate task.
+
 ## `-t` became a floor at v0.5.489: the figures behind the rule
 
 Measured from a `git archive HEAD` (04fdcb5) tree with the change applied,
@@ -2774,3 +2795,48 @@ The other five unreachable commits (`0b105b7`, `361f059`, `e3adfaa`,
 `ed91dd2`, `96bb685`, all 2026-08-17 `v0.5.309`-`v0.5.311: LISTENING.md
 states the renderer...`) are version commits rewritten before they landed,
 not stash-shaped, and outside this entry. No branch was created.
+
+## RETRACTED: "THE SWEEP STEPS PER FRAME, MEASURED AT v0.5.460" -- for the triangle engine it steps per CALL (2026-10-01, at 1dde44a)
+
+convert.py's pulse-phase block opens with **"THE SWEEP STEPS PER FRAME,
+MEASURED AT v0.5.460, three ways that agree"**, and its first bullet says the
+triangle engine's `DEC counter,X / BPL` has "one ENTRY to that routine" as its
+unit. For the triangle engine that is retracted. On Game_Killer (`-S9`, the
+one multispeed triangle carrier whose first pass the trace covers) the walk's
+planned onset buckets agree with the original's 63% / 61% over the first
+100 / 200 sweeping notes on the CALL clock and 19% / 21% on the frame clock
+(chance ~14% on the 7-bucket alphabet), pinned by
+`tests/test_pulse_phase.py::test_game_killers_onsets_put_the_triangle_sweep_on_the_call_clock`.
+The counter sits inside the multispeed core that the once-a-frame entry runs
+`multiplier` times. `PulsePhaseSim` (per call) and `PulseBoundsSim` (per
+frame, Saboteur_II) are placed on different clocks by measurement.
+
+What survives from v0.5.460 is the ENTRY half: 10 of 11 multispeed triangle
+carriers declare VBI, so the play routine is ENTERED once per displayed frame.
+"A rate read out of a player is per frame" is a rule about that entry. Where a
+counter runs inside the core is a separate question, answered per engine by
+measurement, never by reading the entry. Still open: convert.py's block header
+keeps the retracted wording (that file was read-only to the task that wrote
+this), and the v0.5.460 claim that `_pulse_tri_program`'s division by
+`multiplier` is "the correct treatment rather than a guess" rests on the
+retracted bullet and is unverified against Game_Killer's call clock.
+
+### AND THAT REPLACEMENT IS ITSELF RETRACTED (2026-10-02, same uncommitted tree)
+
+The section above replaced the frame-clock reading with **"for the triangle
+engine it steps per CALL"**, citing Game_Killer's **"63% / 61% over the first
+100 / 200 sweeping notes on the CALL clock and 19% / 21% on the frame clock"**.
+That figure is a one-note pairing slip: the old probe paired the plan's i-th
+entry with the i-th original attack whose width one frame on is $800 or more,
+and that list opens with a static $84D note (frame 641, record 2) the walk never
+plans, so every pair compared planned note i+1 with original note i. Paired by
+note identity the plan agrees **0.135 on the call clock and 0.215 on the frame
+clock at the attack, chance ~0.14** -- neither clock is supported, and the
+triangle counter's clock is unmeasured. The plan does reach the packed output
+(200 of 200 planned phases), so the loss is in `PulsePhaseSim`'s model, not the
+table. Measured by pulse-phase-plan-does-not-reach-the-packed-output-on-game-killer
+(`C:/t/game-killer-plan-reach/gk_align.py`), pinned by
+`tests/test_pulse_phase.py::test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks`.
+What survives is only the ENTRY half (10 of 11 multispeed triangle carriers
+declare VBI). convert.py's `calls_per_frame` comment still states the 63%/61%
+as a measurement and is owed the same retraction.

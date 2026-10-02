@@ -148,6 +148,11 @@ class Detection:
     # hardcoded in the routine rather than taken from the record's high
     # nibble. 0 means the nibble form above. See _find_effect_routines.
     arp_fixed_up: int = 0
+    # The nibble form's per-record half-period code (`nibble_arp_period`):
+    # an octave record divides the counter by `#$02` or `#$04`, every other
+    # record by `#$01`. None where the block has no such code (Mozart), for
+    # the fixed form, and where there is no nibble block.
+    arp_nibble_period: Optional["NibbleArpPeriod"] = None
     effect_drum: bool = False   # bit $01: pitch sweep down, then noise
     # Instrument-record offset of the byte that enables the player's per-call
     # re-assert of $D400/$D401 from its own note table, or None where the
@@ -266,6 +271,18 @@ class Detection:
     pulse_tri_lo: int = -1
     pulse_tri_hi: int = -1
     pulse_tri_gated: bool = False
+    # The triangle's MASK DIALECT, read from the routine's two AND operands:
+    # step = rate & step_mask, frames between steps = (rate & delay_mask) + 1.
+    # $E0 / $1F in the absolute-address dialect (PULSE_TRI_SHAPE, Commando,
+    # where the signature fixes them); $F0 / $0F in the zero-page per-voice
+    # one (PULSE_TRI_ZP_SHAPE, Samantha Fox and Spellbound, where they are
+    # read off the routine). `per_voice` is that second dialect's other half:
+    # its accumulator is a per-voice zero-page pair RESEEDED from record
+    # +0/+1 at every note fetch, so it does not free-run and a Goattracker
+    # pulse program restarting with the note models it exactly.
+    pulse_tri_step_mask: int = 0xE0
+    pulse_tri_delay_mask: int = 0x1F
+    pulse_tri_per_voice: bool = False
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -1080,9 +1097,11 @@ def find_music_subtunes(sid: SidFile) -> Optional[int]:
 # per distinct play routine in ascending address order, and runs the four
 # table chains again with `find` anchored to player k's range -- from its
 # play routine up to the next player's, the last running to the end of the
-# file. **Detection only**: the tables are carried in `Detection.players`
-# and nothing converts from them yet; the corpus byte-hash is unchanged by
-# construction, because `detect()`'s own reading is untouched.
+# file. `detect()`'s own reading is untouched: it stays the first player's,
+# and the file's subtune 0 converts from it exactly as before. Players 1..N-1
+# are converted by `convert` from a `player_view` each -- the file with every
+# byte outside that player's window zeroed -- and appended as subtunes
+# (`goatwriter.append_song`); see `convert._append_players` for the gates.
 #
 # The census is pinned in tests/test_multi_player.py: exactly those two files
 # carry a dispatch, five players each, and no single-player file matches
@@ -1258,6 +1277,87 @@ def find_players(sid: SidFile, det: Detection) -> Tuple[PlayerTables, ...]:
             pattern_hi_addr=addr(pdet.pattern_hi),
             pattern_used=pdet.pattern_used))
     return tuple(out)
+
+
+def read_init_call(sid: SidFile, init: int) -> Optional[Tuple[int, int]]:
+    """`[NOP...] LDA #n / JSR entry` at `init`, as (n, entry), or None.
+
+    Every 5_Title_Tunes rung lands on this shape -- $1FA9 is `EA / A9 00 /
+    20 9D 18 / A9 0F / 8D 18 D4 / 60` -- so the player is entered at `entry`
+    with A = n, whatever subtune number the dispatch was called with. `entry`
+    is the player's own `JMP init / JMP stop` pair, six bytes BELOW its play
+    routine ($189D against $18A3), which is why a window opening at the play
+    routine would cut the player's first instructions off.
+    """
+    data = sid.data
+    p = sid.to_offset(init)
+    if not 0 <= p < len(data):
+        return None
+    while p < len(data) and data[p] == 0xEA:
+        p += 1
+    if p + 5 > len(data) or data[p] != 0xA9 or data[p + 2] != 0x20:
+        return None
+    entry = _addr16(data, p + 3, p + 4)
+    if not 0 <= sid.to_offset(entry) < len(data):
+        return None
+    return data[p + 1], entry
+
+
+@dataclass
+class PlayerView(SidFile):
+    """One player of a compilation, as a single-player file of its own.
+
+    The image is the compilation's with every byte outside the player's window
+    zeroed, so that every first-match probe in `detect()` -- not only the four
+    table chains `find_players` anchors -- reads THIS player's code. The
+    header is the player's: its init routine and play routine, one subtune.
+
+    `pack_multiplier` is the compilation's `gt2reloc -S` factor. A packed file
+    has one call rate, chosen from the subtune it starts on
+    (`goatwriter.pack_subtune`), so a player whose own rows want another rate
+    is converted at the file's and its tempo clamps -- the same compromise a
+    single player's non-starting subtunes already get
+    (`goatwriter.file_multiplier`).
+    """
+    pack_multiplier: int = 0
+    player: int = -1
+
+
+def player_view(sid: SidFile, players: Tuple[PlayerTables, ...], k: int,
+                pack_multiplier: int) -> Optional[PlayerView]:
+    """Player k of `players` as a `PlayerView`, or None where it cannot be cut.
+
+    Declines unless the player owns exactly one subtune and its init is the
+    `LDA #0 / JSR entry` shape: the view is a one-subtune file whose orderlist
+    is read at index 0, which is only the player's real subtune when the
+    original enters the player with A = 0. The window opens at the lower of
+    the player's entry and its play routine and runs to the next player's
+    opening (the last to the end of the file).
+    """
+    if not 0 <= k < len(players) or len(players[k].inits) != 1 \
+            or len(players[k].subtunes) != 1:
+        return None
+    opens = []
+    for p in players:
+        call = read_init_call(sid, p.inits[0]) if p.inits else None
+        opens.append(min(sid.to_offset(p.play),
+                         sid.to_offset(call[1]) if call else len(sid.data)))
+    call = read_init_call(sid, players[k].inits[0])
+    if call is None or call[0] != 0:
+        return None
+    lo = opens[k]
+    hi = opens[k + 1] if k + 1 < len(opens) else len(sid.data)
+    if not HLEN - 1 <= lo < hi <= len(sid.data):
+        return None
+    image = bytearray(len(sid.data))
+    image[:HLEN - 1] = sid.data[:HLEN - 1]
+    image[lo:hi] = sid.data[lo:hi]
+    n = players[k].subtunes[0]
+    fields = {f: getattr(sid, f) for f in SidFile.__dataclass_fields__}
+    fields.update(data=bytes(image), init_addr=players[k].inits[0],
+                  play_addr=players[k].play, subtunes=1, start_song=1,
+                  speed=(sid.speed >> min(n, 31)) & 1)
+    return PlayerView(**fields, pack_multiplier=pack_multiplier, player=k)
 
 
 def _silent(_msg: str) -> None:
@@ -1809,6 +1909,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
+    if det.effect_arp and not det.arp_fixed_up:
+        det.arp_nibble_period = nibble_arp_period(sid, det)
     if any((det.effect_rise, det.effect_arp, det.effect_drum,
             det.effect_pulse_lo)):
         found = ", ".join(n for n, ok in (("drum", det.effect_drum),
@@ -1854,10 +1956,21 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.pulse_bounds < 0:
         (det.pulse_tri_lo, det.pulse_tri_hi,
          det.pulse_tri_gated) = _find_pulse_tri(sid, det)
+        if det.pulse_tri_hi < 0:
+            # Fallback, consulted only where the absolute dialect matched
+            # nothing: see PULSE_TRI_ZP_SHAPE.
+            zp = _find_pulse_tri_zp(sid, det)
+            if zp is not None:
+                (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
+                 det.pulse_tri_step_mask, det.pulse_tri_delay_mask) = zp
+                det.pulse_tri_per_voice = True
         if det.pulse_tri_hi >= 0:
             log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
                 f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
-                f"(step & $E0, delay & $1F)"
+                f"(step & ${det.pulse_tri_step_mask:02X}, "
+                f"delay & ${det.pulse_tri_delay_mask:02X})"
+                + (", per-voice accumulator reseeded at note"
+                   if det.pulse_tri_per_voice else "")
                 + ("" if det.pulse_tri_gated
                    else " -- every record, no bit $08 test"))
 
@@ -4273,6 +4386,110 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     return rise, arp, drum, pulse_lo, arp_up
 
 
+# **The nibble arpeggio's half-period is PER RECORD, chosen by the interval.**
+# The block self-modifies the mask its counter is divided by, and picks the
+# mask from the nibble it has just stored into the `SBC` operand (Warhawk
+# $13DB, International_Karate $B1AA byte for byte):
+#
+#     13DB  8D F5 13  STA $13F5     ; the nibble -> the SBC operand
+#     13DE  A0 02     LDY #$02      ; mask for an interval of an OCTAVE
+#     13E0  C9 0C     CMP #$0C
+#     13E2  F0 02     BEQ +2
+#     13E4  A0 01     LDY #$01      ; mask for every other interval
+#     13E6  8C ED 13  STY $13ED     ; -> the AND operand below
+#     13E9  AD BF 15  LDA $15BF     ; the play routine's call counter
+#     13EC  29 01     AND #$01      ; (self-modified)
+#     13EE  D0 09     BNE base      ; zero -> note minus the nibble
+#
+# `counter & mask` with a power-of-two mask holds each value for `mask`
+# counter steps, so an octave record alternates two frames a half and every
+# other record one. Read on the original (siddump, 60 s): Warhawk's two
+# nibble-$C records ($090E, $080C) run in 2s and 3s, its others in 1s and
+# 2s; International_Karate's $0A08 and $0F0B in 2s and 3s and $090A in 1s
+# and 2s -- the extra frame being the outer gate's skipped call
+# (`goatwriter._gate_calls`), where the counter's `INC` does not run.
+#
+# Two spellings, both read off the files rather than assumed:
+#
+# * `NIBBLE_ARP_PERIOD_SHAPE` (above): Warhawk, International_Karate, Thrust,
+#   Bump_Set_Spike, Spellbound, Kentilla, Las_Vegas_Video_Poker and
+#   Samantha_Fox_Strip_Poker load `#$02` for the octave; Proteus,
+#   Chicken_Song and Hollywood_or_Bust `#$04`.
+# * `NIBBLE_ARP_PERIOD_OPCODE_SHAPE`: Formula_1_Simulator ($C3B5) also swaps
+#   the OPCODE -- `LDA #$69 / CLC` (ADC) for the octave, `LDA #$E9 / SEC`
+#   (SBC) otherwise, stored over $C3D6 -- with mask `#$04` for the octave.
+#   Its octave records therefore go UP, which `_arp_relative` does not yet
+#   read (the period is read here; the sign is a separate defect).
+#
+# Mozart's block has no such code: its `AND #$01` is constant, so it reads as
+# None and every record keeps the one-frame half it always had.
+NIBBLE_ARP_PERIOD_SHAPE = "A0 ?? C9 ?? F0 02 A0 ?? 8C"
+NIBBLE_ARP_PERIOD_OPCODE_SHAPE = (
+    "C9 ?? F0 08 A0 ?? A9 E9 38 4C ?? ?? A0 ?? A9 69 18 8D")
+
+
+@dataclass(frozen=True)
+class NibbleArpPeriod:
+    """The nibble arpeggio's per-record mask choice, and its counter.
+
+    A record whose high nibble is `interval` divides the counter by
+    `on_interval`, every other record by `otherwise`; `half(nibble)` is the
+    number of counter steps each half of the alternation lasts. `counter` is
+    the address the block's `LDA` reads (absolute or zero page), so the
+    caller can ask whether its `INC` sits behind an outer gate.
+    """
+    interval: int
+    on_interval: int
+    otherwise: int
+    counter: int
+
+    def half(self, nibble: int) -> int:
+        # `counter & mask` for a one-bit mask holds each value for `mask`
+        # steps; `nibble_arp_period` returns None for any other mask.
+        return self.on_interval if nibble == self.interval else self.otherwise
+
+
+def nibble_arp_period(sid: SidFile, det: Detection) -> Optional[NibbleArpPeriod]:
+    """The nibble arpeggio's period code, or None where the block has none.
+
+    Re-finds the block `_find_effect_routines` reports as `arp` (the `LSR x4
+    / STA` into the `SBC` operand) and reads the code that follows its store.
+    None for the fixed-interval dialect, for a player with no nibble block,
+    and for a nibble block with a constant mask (Mozart).
+    """
+    if det.arp_fixed_up:
+        return None
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    at = search_file(sid.data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D")
+    if at < 1:
+        return None
+    lead = 2 if zp else 3
+    d = sid.data
+    p = at + 2 * lead + 4 + 4 + 3        # past the `STA` into the SBC operand
+    if match_at(d, p, NIBBLE_ARP_PERIOD_SHAPE):
+        interval, on, other = d[p + 3], d[p + 1], d[p + 7]
+        q = p + 11                        # past `STY` into the AND operand
+    elif match_at(d, p, NIBBLE_ARP_PERIOD_OPCODE_SHAPE):
+        interval, on, other = d[p + 1], d[p + 13], d[p + 5]
+        q = p + 17 + 6                    # past both `STA` and `STY`
+    else:
+        return None
+    if any(m == 0 or m & (m - 1) for m in (on, other)):
+        return None                       # not a one-bit mask: no plain half
+    # The counter load the self-modified `AND` divides: absolute or zp.
+    if q + 3 < len(d) and d[q] == 0xAD and d[q + 3] == 0x29:
+        counter = d[q + 1] | d[q + 2] << 8
+    elif q + 2 < len(d) and d[q] == 0xA5 and d[q + 2] == 0x29:
+        counter = d[q + 1]
+    else:
+        return None
+    return NibbleArpPeriod(interval, on, other, counter)
+
+
 def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
     """File offset of the pulse-lo state array, or -1.
 
@@ -4401,10 +4618,145 @@ def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
     if hi <= lo:
         return -1, -1, False
     entry = off - _TRI_ENTRY
-    gated = any(d[k] == 0x29 and d[k + 1] == 0x08 and d[k + 2] == 0xF0
-                and k + 4 + d[k + 3] == entry
-                for k in range(max(0, off - 64), entry))
-    return lo, hi, gated
+    return lo, hi, _tri_gated(d, entry, off)
+
+
+def _tri_gated(d: bytes, entry: int, below: int) -> bool:
+    """Whether an `AND #$08 / BEQ` within 64 bytes above `below` lands on
+    `entry` -- the effect-bit-$08 test choosing the triangle over the
+    accumulate engine. Shared by both dialects of the triangle."""
+    return any(d[k] == 0x29 and d[k + 1] == 0x08 and d[k + 2] == 0xF0
+               and k + 4 + d[k + 3] == entry
+               for k in range(max(0, below - 64), entry))
+
+
+# The same triangle in a SECOND DIALECT, consulted only where PULSE_TRI_SHAPE
+# matched nothing. Samantha Fox $7238 (Spellbound $E27D is the same bytes but
+# for its operands and an absolute rate cell):
+#
+#     7231  A5 BD     LDA rate       ; record +6, copied at $717A (LDA $740D,Y)
+#     7233  F0 4A     BEQ done
+#     7235  AC F6 73  LDY sidoff     ; the voice's $D400 offset
+#     7238  29 0F     AND #$0F       ; LOW FOUR bits: frames between steps
+#     723A  D6 C3     DEC counter,X
+#     723C  10 41     BPL done
+#     723E  95 C3     STA counter,X
+#     7240  A5 BD     LDA rate
+#     7242  29 F0     AND #$F0       ; HIGH FOUR bits: the step   <- match
+#     7244  85 E7     STA step
+#     7246  B5 C6     LDA dir,X
+#     7248  D0 16     BNE descend
+#     724A  A5 E7     LDA step
+#     724C  18        CLC
+#     724D  75 DC     ADC acc_lo,X   ; a per-VOICE zero-page accumulator...
+#     724F  48        PHA
+#     7250  B5 E0     LDA acc_hi,X
+#     7252  69 00     ADC #$00
+#     7254  29 0F     AND #$0F
+#     7256  48        PHA
+#     7257  C9 0E     CMP #$0E       ; upper turnaround
+#     ...             descend: SBC step, ending CMP #$08
+#
+# Two differences from the absolute dialect, and both matter to the emitter:
+#
+# * **The masks are $F0 / $0F, not $E0 / $1F.** A rate of $24 is a step of
+#   $20 every five frames here and of $20 every five there, but a rate of $34
+#   is $30 every five here and $20 every 21 there. Read off the two AND
+#   operands, never assumed from the dialect.
+# * **The accumulator is per voice and RESEEDED at every note fetch**:
+#   `LDA instr+0,X / STA $D402,Y / PHA / LDA instr+1,X / STA $D403,Y / PHA
+#   ... PLA / STA acc_hi,X / PLA / STA acc_lo,X` (Samantha Fox $7110-$7136).
+#   That is what anchors the match on the instrument table, since the ADC
+#   operand here is the accumulator rather than the record; and it means the
+#   sweep restarts with the note exactly as a Goattracker pulse program
+#   does, so this dialect has none of the absolute one's free-running loss.
+PULSE_TRI_ZP_SHAPE = (
+    "29 ?? 85 ?? B5 ?? D0 ?? A5 ?? 18 75 ?? 48 B5 ?? 69 00 29 0F 48 C9 ?? "
+    "D0 ?? F6 ?? 4C ?? ?? 38 B5 ?? E5 ?? 48 B5 ?? E9 00 29 0F 48 C9 ??")
+_TRIZ_STEP_MASK = 1     # operand of AND #step_mask
+_TRIZ_HI = 22           # operand of CMP #hi
+_TRIZ_LO = 44           # operand of CMP #lo
+# The head above the match: `AND #delay_mask / DEC counter,X / BPL / STA
+# counter,X`, then the rate reload (2 or 3 bytes) the match follows.
+PULSE_TRI_ZP_HEAD = "29 ?? D6 ?? 10 ?? 95 ??"
+PULSE_TRI_ZP_SEED = "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+
+
+def _rate_loads(d: bytes, at: int) -> list:
+    """Each `LDA rate` that could end just before `at` -- absolute, zero-page,
+    or both where the bytes allow either reading; the caller's checks pick."""
+    out = []
+    if at >= 3 and d[at - 3] == 0xAD:
+        out.append(bytes(d[at - 3:at]))
+    if at >= 2 and d[at - 2] == 0xA5:
+        out.append(bytes(d[at - 2:at]))
+    return out
+
+
+def _find_pulse_tri_zp(sid: SidFile, det: Detection):
+    """(lo, hi, gated, step_mask, delay_mask) for the zero-page dialect of the
+    triangle (PULSE_TRI_ZP_SHAPE), or None.
+
+    Every field is read and every one is cross-checked, because this match's
+    own operands do not name the instrument table:
+
+    * the step cell, direction flag and accumulator pair must be the same
+      cells in the ascent and the descent;
+    * the rate must be loaded identically at the routine's entry and at the
+      reload, and that rate cell must be filled from record +6 (`LDA
+      instr+6,Y / STA rate`);
+    * the accumulator pair must be seeded from record +0/+1 by the note
+      fetch (PULSE_TRI_ZP_SEED, then `PLA / STA acc_hi,X / PLA / STA
+      acc_lo,X` within 64 bytes);
+    * the two masks must be disjoint and the step mask non-zero.
+    """
+    d = sid.data
+    off = search_file(d, PULSE_TRI_ZP_SHAPE)
+    if off < 0:
+        return None
+    step_cell, dir_cell = d[off + 3], d[off + 5]
+    acc_lo, acc_hi = d[off + 12], d[off + 15]
+    if not (d[off + 9] == d[off + 34] == step_cell and d[off + 26] == dir_cell
+            and d[off + 32] == acc_lo and d[off + 37] == acc_hi):
+        return None
+    for load in _rate_loads(d, off):
+        head = off - len(load) - 8
+        entry = head - len(load) - 5
+        if (entry >= 0 and match_at(d, head, PULSE_TRI_ZP_HEAD)
+                and d[head + 3] == d[head + 7]
+                and bytes(d[entry:entry + len(load)]) == load
+                and match_at(d, entry + len(load), "F0 ?? AC ?? ??")):
+            break
+    else:
+        return None
+    step_mask, delay_mask = d[off + _TRIZ_STEP_MASK], d[head + 1]
+    if not step_mask or step_mask & delay_mask:
+        return None
+    # The rate cell is record +6.
+    rate_at = sid.to_address(det.instr_start + 6)
+    fill = bytes([0xB9, rate_at & 0xFF, rate_at >> 8]) + (
+        bytes([0x85]) if len(load) == 2 else bytes([0x8D])) + load[1:]
+    if d.find(fill) < 0:
+        return None
+    # The accumulator is seeded from record +0/+1 at the note fetch.
+    base = sid.to_address(det.instr_start)
+    pulls = bytes([0x68, 0x95, acc_hi, 0x68, 0x95, acc_lo])
+    seeded = False
+    at = d.find(pulls)
+    while at >= 0 and not seeded:
+        for k in range(max(0, at - 64), at):
+            if (match_at(d, k, PULSE_TRI_ZP_SEED)
+                    and (d[k + 1] | (d[k + 2] << 8)) == base
+                    and (d[k + 8] | (d[k + 9] << 8)) == base + 1):
+                seeded = True
+                break
+        at = d.find(pulls, at + 1)
+    if not seeded:
+        return None
+    lo, hi = d[off + _TRIZ_LO] & 0x0F, d[off + _TRIZ_HI] & 0x0F
+    if hi <= lo:
+        return None
+    return lo, hi, _tri_gated(d, entry, head), step_mask, delay_mask
 
 
 # A per-instrument BYTE-CODE WAVE PROGRAM, and the most widespread instrument

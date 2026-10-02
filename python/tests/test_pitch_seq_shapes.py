@@ -389,7 +389,9 @@ def test_a_divided_step_at_s1_opens_on_the_zero_step():
     (siddump.c:436, `$09` is below `$10`). Keyed on the multiplier alone the
     table opened `24 x4` and siddump named every attack C-6; keyed on calls
     per step it opens `0 x4` and names them C-4, as the same record does at
-    -S3. With no divider at -S1 a step is one call and nothing changes.
+    -S3. With no divider at -S1 a step is one call, and entry 0 is rotated
+    to the zero step on its own rule -- see
+    `test_at_s1_every_record_opens_on_the_zero_step`.
     """
     from h2g import goatwriter as G
     rel = [_arp_relative(1, s) for s in (0, 12, 24)]
@@ -400,6 +402,180 @@ def test_a_divided_step_at_s1_opens_on_the_zero_step():
     # -S3: the rotation it always had, twelve calls a step
     left, right = G._pitch_seq_entries(sid, det, 0, 0x11, 3)
     assert right == [rel[0]] * 12 + [rel[1]] * 12 + [rel[2]] * 12, right
-    # -S1 without a divider: one call a step, `_pitch_seq_notes`' order as is
+    # -S1 without a divider: one call a step, and still opening on the zero
+    # step. `_pitch_seq_notes` alone gives `24, 0, 12`, which siddump read as
+    # C-6 on every C-4 attack (C:/t/pitch-seq-divider-s1-rotation/synth/
+    # siddump_S1_fps1.txt).
     sid, det = _pair_record((12, 24), 1)
-    assert G._pitch_seq_entries(sid, det, 0, 0x11, 1)[1] ==         [rel[2], rel[0], rel[1]]
+    assert G._pitch_seq_notes(sid, det, 0) == [rel[2], rel[0], rel[1]]
+    assert (G._pitch_seq_entries(sid, det, 0, 0x11, 1)[1]
+            == [rel[0], rel[1], rel[2]])
+
+
+# Nineteen's -S1 bit-$10 records, as `_pitch_seq_entries` emits them: rotated
+# from `_pitch_seq_notes`' `(12, 0, 7)`, `(9, 0, 4)`, `(8, 0, 5)` to open on the
+# zero step; records 3 and 14 already opened on it and keep their bytes.
+# Records 14 and 15 reach the function called alone but not in Nineteen's
+# shipped conversion (a spy on it there saw only 1, 3, 9 and 10), which is
+# why 15's `(-6, 0, 0)` rotating here moves none of the file's bytes.
+_NINETEEN_S1 = {1: [0x00, 0x07, 0x0C], 3: [0x00, 0x00, 0x18],
+                9: [0x00, 0x04, 0x09], 10: [0x00, 0x05, 0x08],
+                14: [0x00, 0x00, 0x05], 15: [0x00, 0x00, 0x7A]}
+
+
+@needs_corpus
+def test_at_s1_every_record_opens_on_the_zero_step():
+    """With no divider at -S1, entry 0 is the frame siddump names the attack
+    from, so it must be the step that leaves the note alone.
+
+    The firstwave call is `$09`, below `$10` (siddump.c:436), so siddump
+    names the note from call 1 -- wavetable entry 0 -- and the old rotation
+    (the modal step at index 1) put a transposing step there on every -S1
+    record whose sequence is `(0, a, b)`. A/B at -t 180, melody before ->
+    after: Nineteen (shipped) 97.28 -> 98.05, and forced Bangkok_Knights
+    83.73 -> 96.88, IK_plus 88.06 -> 99.89, I_Ball 93.38 -> 96.45,
+    Mega_Apocalypse 88.83 -> 93.28, Pygmies_Revenge 89.93 -> 91.74
+    (C:/t/pitch-seq-s1-entry0/ab_table.txt, arms A and Cc).
+
+    Corpus-wide over every record the standalone emitter reaches at -S1 on a
+    file whose phase steps once a frame, then pinned on the one shipped file.
+    """
+    from h2g import goatwriter as G
+    opened_off_zero = []
+    reached = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+        if det is None or det.pitch_seq is None:
+            continue
+        if det.pitch_seq.frames_per_step != 1:
+            continue
+        for i in range(det.instr_used):
+            rec = det.instr_start + i * det.instr_stride
+            if rec + 7 >= len(sid.data):
+                continue
+            got = G._pitch_seq_entries(sid, det, i, sid.data[rec + 2], 1)
+            if got is None:
+                continue
+            reached += 1
+            right = got[1]
+            if right[0] != 0x00 and 0x00 in right:
+                opened_off_zero.append((path.stem, i, right))
+    assert reached >= 40, f"the walk reached only {reached} records"
+    assert opened_off_zero == []
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Nineteen.sid")),
+                              lambda *a, **k: None)
+    got = {}
+    for i in range(det.instr_used):
+        rec = det.instr_start + i * det.instr_stride
+        out = G._pitch_seq_entries(sid, det, i, sid.data[rec + 2], 1)
+        if out is not None:
+            assert out[0] == [sid.data[rec + 2]] * 3
+            got[i] = out[1]
+    assert got == _NINETEEN_S1, got
+
+
+# ---------------------------------------------------------------------------
+# The divided phase is GLOBAL, and `pitch_seq_phases` carries it per
+# instrument (task pitch-seq-global-phase-per-instrument). Food_Feud's cell
+# never restarts at a note: with the divider honoured a per-note wavetable
+# opening on the zero step first moved at attack + 5, while the original
+# moves at + 1 (393 of the 466 voice-2 notes under ADSR $29F9 in 180 s) or
+# + 3 (73). The 3-frame note at frames 1512-1515 reads 2 ties in the original
+# and read 0 in ours. Measured on the clock simulation below, then on the
+# conversion (C:/t/pitch-seq-phase/by_instr.py, -t 180, `pitch_seq` forced):
+# the 29F9 notes' attack-relative pitch agreement 55.8% -> 64.3%, voice 2's
+# ties 3907 -> 5239 against the original's 5139.
+# ---------------------------------------------------------------------------
+import subprocess                                              # noqa: E402
+
+import pytest                                                  # noqa: E402
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import fidelity                                                # noqa: E402
+
+needs_siddump = pytest.mark.skipif(
+    not pathlib.Path(fidelity.SIDDUMP).exists(),
+    reason="no siddump on this machine (tools/siddump-rt, see its README)")
+
+
+@needs_corpus
+def test_the_divided_clock_is_read_on_food_feud_and_nowhere_else():
+    """Every cell's initial byte and both reloads, from the bytes; None on
+    every other corpus file, because no other player has a divider and a
+    clock assumed rather than read would put a wrong phase on every note."""
+    from h2g import goatwriter as G
+    got = {}
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+        if det is None:
+            continue
+        clock = G._pitch_seq_clock(sid, det)
+        if clock is not None:
+            got[path.stem] = clock
+    assert got == {"Food_Feud": G.PitchSeqClock(
+        divider=1, divider_reload=3, phase=1, phase_reload=1,
+        outer=1, inner=1)}, got
+
+
+@needs_corpus
+@needs_siddump
+def test_the_simulated_clock_is_re_measured_against_the_original():
+    """`siddump -w955d,955e` samples Food_Feud's phase and divider cells after
+    every call. The simulation must equal them on every frame, and every
+    attack the original plays (all three voices) must land on a call the
+    simulated row clock fetches on -- 60 s here, 180 s when it was written
+    (C:/t/pitch-seq-phase/model_probe.py: all 8999 frames, 1227 attacks)."""
+    from h2g import goatwriter as G
+    path = CORPUS / "Food_Feud.sid"
+    sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+    clock = G._pitch_seq_clock(sid, det)
+    speeds = G.find_song_speeds(sid, det)
+    out = subprocess.run([str(fidelity.SIDDUMP), str(path), "-a0", "-t60",
+                          f"-v{fidelity.PAL_FLAG}", "-w955d,955e"],
+                         capture_output=True, text=True, timeout=180,
+                         stdin=subprocess.DEVNULL).stdout
+    cells = {}
+    for line in out.splitlines():
+        c = line.split("|")
+        if len(c) >= 8:
+            try:
+                f = int(c[1])
+            except ValueError:
+                continue
+            phase, div = c[6].split()
+            cells[f] = (int(div, 16), int(phase, 16))
+    assert len(cells) == 3000
+    trace = fidelity.parse_dump(out)
+    calls = G._pitch_seq_calls(clock, speeds.frames_for(0), speeds.skip_for(0))
+    fetches = set()
+    for frame in range(1, 3000):
+        _seen, fetched, after = next(calls)
+        assert after == cells[frame], frame
+        if fetched:
+            fetches.add(frame)
+    attacks = set()
+    for v in trace:
+        attacks |= set(v.attack_frames)
+    assert len(attacks) > 300
+    assert attacks <= fetches, sorted(attacks - fetches)[:10]
+
+
+def test_the_standalone_phased_block_spells_frame_0_then_the_period():
+    """`_pitch_seq_phased_entries`: entry `e` is frame `(e + 1) // m`, so
+    `m - 1` entries of the attack frame's own note, then the counter's whole
+    period one frame per `m` entries, looped onto the period's first entry.
+    No corpus record reaches this path (Food_Feud's two clocked records both
+    carry bit $04 and take the two-stage block), so it is pinned here."""
+    from h2g import goatwriter as G
+    notes, phases = [0x00, 124], (1, 0, 0, 0, 0, 1, 1, 1)
+    left, right = G._pitch_seq_phased_entries(notes, phases, 0x11, 3,
+                                              start=5, budget=200)
+    assert left == [0x11] * 26 + [0xFF]
+    assert right == [0, 0] + [124] * 3 + [0] * 12 + [124] * 9 + [5 + 2]
+    left, right = G._pitch_seq_phased_entries(notes, phases, 0x11, 1,
+                                              start=5, budget=200)
+    assert right == [124, 0, 0, 0, 0, 124, 124, 124, 5]
+    # a cell value with no step behind it declines rather than guessing
+    assert G._pitch_seq_phased_entries(notes, (2,) * 8, 0x11, 1, 5, 200) is None
+    # and a block that does not fit its budget declines
+    assert G._pitch_seq_phased_entries(notes, phases, 0x11, 3, 5, 26) is None
