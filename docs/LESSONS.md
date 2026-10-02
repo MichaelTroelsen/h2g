@@ -1536,10 +1536,10 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **68 zero / 19 drifting of 87 rows** (89
-    measured, 2 without a fit; re-graded at v0.5.489, when one more row
-    gained a fit -- it read 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86
-    at 60 s.** One file crossed. `drift_per_1000` is an INTEGRATED offset and so the most
+  * **The drift split at 180 s is **69 zero / 20 drifting of 89 rows** (95
+    traced, 89 measured, all 89 with a fit; re-graded at v0.5.495, whose
+    refresh gave the last two rows a fit -- it read 68 / 19 / 87 from
+    v0.5.489 and 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86 at 60 s.** One file crossed. `drift_per_1000` is an INTEGRATED offset and so the most
     window-sensitive number the report carries, which is exactly why the two
     windows disagree here and not on `melody`.
   * **Skate or Die intro at 180 s is 3151 attacks against the original's
@@ -2562,6 +2562,26 @@ and a lookup that missed.
 
 ## The pulse-phase table overflows on four VBI carriers, and what the degrade keeps
 
+**RE-GRADED AT v0.5.495 (2026-10-02, `one-records-phase-set-costs-130-rows-and-could-share-its-ramps`):
+"four" no longer holds, and the four no longer degrade.** On the tree at
+1dde44a plus the drain, a corpus byte-hash under forced `pulse_phase` names
+**eight** overflowing files, not four: the four below plus Battle_of_Britain,
+Crazy_Comets, Gremlins and Human_Race, each named by its own log line (Crazy_Comets
+`PULSE PHASE NEEDS 178 TABLE ROWS FOR INSTRUMENT 17`, Human_Race `139 ...
+INSTRUMENT 20`). And the shared-ramp layout (a ramp segment one tick short of
+each phase's set row, so every phase on the speed lattice enters one shared leg;
+`gplay.c:874-879`) cuts the row cost of the four records named here -- Last_V8
+instrument 7 130 -> 87, instrument 9 64 -> 43, Master_of_Magic 14 112 -> 76,
+Phantoms 17 70 -> 47 -- so all four sweep instead of falling to a static width,
+with every planned phase kept. Shipped presets move 0 files (none carries
+`pulse_phase`). Merging phases within one speed step merges nothing: on all four
+records same-direction phases sit exactly 4 speed steps apart. The table below
+is HISTORY, the v0.5.488 state the re-grade replaces. The off-lattice remainder
+(Gremlins 10 and 20, Human_Race 20 and 21) was measured at d52a1bf by
+`off-lattice-phase-records`: one block over the union of phase sets per (speed,
+lo, hi, wrap) fits all five Gremlins records (196 rows against 227 of room) and
+leaves only Human_Race 21 degraded; not built.
+
 **Measured at v0.5.488 (04fdcb5), on a `git archive HEAD` tree with
 `siddump.exe` copied in, each file converted under its own `presets.json`
 options plus `pulse_phase` forced** (`C:/t/pulse-phase-overflow/measure.py`;
@@ -2840,3 +2860,74 @@ table. Measured by pulse-phase-plan-does-not-reach-the-packed-output-on-game-kil
 What survives is only the ENTRY half (10 of 11 multispeed triangle carriers
 declare VBI). convert.py's `calls_per_frame` comment still states the 63%/61%
 as a measurement and is owed the same retraction.
+
+## The 0.5.495 drain (2026-10-02, at 1dde44a, committed as 7418932)
+
+Figures dated 0.5.495, each from the run record of the task named; every one
+is historical. The mechanisms are in `H2G-CONVERSION-METHOD.md` § 7.mmmmmm.
+
+* **Nibble period** (`nibble-arp-alternation-period`): the originals' run
+  lengths at 60 s are Warhawk `$090E` {2:159, 3:65}, `$080C` {2:79, 3:33},
+  `$0F08` {1:397, 2:65}; IK `$0A08` {2:103, 3:25}, `$0F0B` {2:128, 3:32},
+  `$090A` {1:1638, 2:168} -- periods 2/2/1, each plus one frame at the stall.
+  Exactly the 11 nibble files with period code move under presets.
+* **Ticked nibble** (`ik-ticked-tick-first-toggle-two-frames-late`): IK's first
+  toggle frame 4-5 -> 2 (the original's 2), Warhawk's 3/1; exactly the 7 nibble
+  files with ticked records move. Warhawk `$0F0A` and Proteus `$090A`, read as
+  not reaching that path, are drum-only records (`+7 = $01`) whose "toggle" was
+  the drum's pitch sweep -- refuted at d52a1bf (`nibble-ticked-records-not-reached`).
+* **Formula_1 half rounding** (`formula-1-simulator-reversal-doubles-under-the-ticked-hold`):
+  the gated one-step half was rounded from 2.5 calls to 2; spread over an even
+  loop, reversal_ratio F1 1.211 -> 1.021, Thrust 1.172 -> 1.078.
+* **Per-note split** (`per-note-split-unticked`): Hunter_Patrol offset-1 up-fraction
+  0.32 -> 0.40 (original 0.40); Game_Killer reversal_ratio 0.234 -> 0.527 at
+  -t 60, melody 1.0 both runs; exactly the six split-vote files move. Zoids' and
+  Hunter_Patrol's `tie` dipped (0.853 -> 0.837, 0.682 -> 0.669 at -t 60): refuted
+  as a regression at d52a1bf (`zoids-hunter-tie-dip`) -- the split removed
+  wrong-phase ties the original never plays, which the count ratio had credited;
+  no same-frame tie was lost.
+* **Chimera tie rows** (`chimera-and-game-killer-duty-reversals-fall-under-one`):
+  of 3091 missing reversals at -t 180, 1620 were GT 5 (original 2763, ours 1143)
+  and 778 vs 394 GT 8, both playing tie rows on 377/380 and 157/161 note rows; the
+  original re-pitches a multiple of 3 frames after the chain's attack on 1707 of
+  1707. Row-locked shape: vib 0.48 -> 0.85, tie 0.66 -> 0.80, frame agreement on
+  the two records 0.457 -> 0.870; octave-every-call arm rejected (0.457 -> 0.309).
+* **Food_Feud pitch-seq phase** (`pitch-seq-global-phase-per-instrument`): under
+  `pitch_seq` forced, voice-2 ties 3907 -> 5239 against the original's 5139, and
+  the `$29F9` records' first moves land at +1 as the original's do. No preset arm.
+* **`$68` stored wave** (`any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture`):
+  exactly the nine authorised files move, Commando byte-exact; every predicted
+  frequency appears in the originals' 900 s traces. Eight change only note bytes
+  (`$BC` G#7 -> `$A7` B-5, `$B3` B-6 or `$93` D#4). Devils_Galop's earlier
+  "silence" was the 180 s window: its one `$68` fetch comes later. Crazy_Comets'
+  `$7F` (entry `$1B`) still clamps to G#7: at d52a1bf its landing cell `$550D`
+  holds a constant `$2003` (B-4) written only on the SFX path, not a global
+  counter (`crazy-comets-7f-global-counter`, partial; the fix needs `patterns.py`).
+* **Zero-page triangle** (`detect-the-zero-page-per-voice-triangle-pulse-engine-on-samantha-fox-and-spellbound`):
+  `pul` Samantha Fox 209 -> 13363 (original 10706), Spellbound 536 -> 10015
+  (original 9154); melody, attacks and `pphase` unmoved; exactly those two move.
+  The v0.5.495 refresh confirms both rows.
+* **Sanxion past-table drum** (`sanxion-past-table-drum-keeps-its-noise-frame`, partial):
+  0 -> 42 noise-drum hits in 100 s against the original's 41 (the extra one is
+  tempo drift); only Sanxion moves; melody 98 -> 97% by siddump's naming of a
+  test-bit frame (`siddump.c:434` names no note at a frequency of `$0000`; the
+  decision that the melody/seq columns should name such an attack from the
+  next nonzero tie is `siddump-testbit-attack-naming`, d52a1bf, not built).
+* **5_Title_Tunes** (`multi-player-conversion`): the subtune matrix pairs on the
+  diagonal at 99.7 / 80.6 / 100 / 100 / 81.7, each equal to its player converted
+  alone at -S1; only 5_Title_Tunes moves.
+* **The refresh at v0.5.495** (`refresh-the-fidelity-artefacts-at-v0-5-493`,
+  d52a1bf): converted bytes differ on 84 of 89 files against 0.5.493, every one
+  attributed by a three-step byte-hash -- 24 at 0.5.494, 30 in this drain with
+  the drop off, 71 from `drop_unnamed_instruments` -- and 0 unattributed. The
+  subtune pins lift Commodore_64_Music_Examples' melody 7% -> 96% (s1/o0) and
+  Dragons_Lair_Part_II's 9% -> 95% (s0/o9).
+* **What the commit got wrong.** 7418932 turned `drop_unnamed_instruments` on in
+  the always block and shipped with seven tests failing that quote the player's
+  own instrument numbers (`test_instrument_drop` x5, `test_arp_octave`'s split
+  residue, `test_note_alternate`'s coincident record) plus Sanxion's held-attack
+  test: the suite was not green at the commit, and why the pre-commit run missed
+  them is not established. Repaired
+  after the push by pinning the option off in those tests, as
+  `test_instrument_bound`'s had been. The rule it re-teaches is CLAUDE.md's own:
+  an always-block change is an output change, and the suite is its check.

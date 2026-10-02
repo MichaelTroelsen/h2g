@@ -7553,6 +7553,14 @@ of this section — a global frame counter rather than a per-voice one, and an
 alternate *derived* from the waveform rather than read from a table. A grep for
 the helper cannot see that difference, which is why it is written here.
 
+**RE-GRADED AT v0.5.495: the option now exists.** `convert(wave_alternate=)` and
+`--wave-alternate` emit this derived dialect as `(wave & 7) | $80`; it is in
+`presets.EXCLUDED_FROM_ALWAYS`, not the always block, because the preset search
+refuses it on both files (Chicken_Song: wave 88.3 -> 83.5% for +1224 noise
+frames, the onset veto; Hollywood_or_Bust: melody 60.5 -> 49.0%, `keeps_notes`),
+and adopting it is a listening decision (`docs/OPTIONS.md`). The paragraph that
+follows is HISTORY, true at f0fd20c, and kept so a grep for its words lands here:
+
 **And there is no `wave_alternate` option to adopt.** `convert()` has no such
 parameter, it appears in no toggle list, and it is absent from `presets.json`'s
 `always` block — so "adopted on 0 songs" is *not* the selection gap that
@@ -11648,7 +11656,15 @@ instrument's notes sit on rows of one parity — and wrong on the minority
 otherwise: Hunter_Patrol instrument 11 attacks 60:36 across the two parities,
 and the 36 get the other file's phase. A per-note split, two wavetables per
 record chosen by attack parity, is the shape that would fix those, at the
-cost of instrument budget; it is opened, not built.
+cost of instrument budget. ~~It is opened, not built.~~ **Built at v0.5.495**
+(`fixed_arp_phase_split_plan`): a record whose untied-note vote splits within
+`FIXED_ARP_SPLIT_FACTOR` (2x) gets a clone instrument per minority residue, each
+untied note is renamed to its residue's clone, and a clone's wavetable is its
+own prefix plus a jump into the record's loop wherever the loops are equal up
+to rotation (`_shared_loop_block`). It declines past instrument 62 or 208
+patterns. Hunter_Patrol's offset-1 octave up-fraction reads 0.40 against the
+original's 0.40, and Game_Killer's reversal_ratio 0.234 -> 0.527 at -t 60 with
+melody 1.0; exactly the six split-vote files move (§ 7.mmmmmm).
 
 **The trap that cost the first attempt.** The phase was first read off a
 siddump of `Commando.sid` — the repo fixture, not the corpus file — and the
@@ -12046,3 +12062,110 @@ is what "from a clean tree" costs when a sibling is editing the harness in
 the same checkout; and its `--baseline` table went to a stdout that a
 detached launch dropped, so pass `--ab-output PATH` and keep the A/B where
 the report is.
+
+### 7.mmmmmm The 0.5.495 drain: read from the player, per record and per note
+
+Thirty `/runqueue` cycles landed together as v0.5.495. Each item below was read
+off the player's own bytes first and then emitted; the figures and the A/Bs
+behind them are in `docs/LESSONS.md` § "The 0.5.495 drain".
+
+**The nibble arpeggio's period is per record, and the player says so by
+self-modifying a mask.** Warhawk `$13DB`, `STA $13F5` / `LDY #$02 / CMP #$0C /
+BEQ / LDY #$01 / STY $13ED`, rewrites the `AND` operand that tests the
+alternation counter: an octave record (`$C` nibble) holds each half for two
+counter steps, every other record for one. IK `$B1AA` is the same code byte for
+byte; Proteus, Chicken_Song and Hollywood_or_Bust load `#$04` for the octave,
+and Formula_1_Simulator `$C3B5` swaps the opcode as well (ADC with `#$04` for
+`$C`, SBC with `#$01` otherwise). The counter is stepped behind the play
+entry's outer gate, so one step is one *passing* call, `(O+1)/O` frames
+(`_gate_calls`). `detect.nibble_arp_period` reads both spellings into
+`Detection.arp_nibble_period`, and the emitter spends the run with `_hold_run`.
+Ticked nibble records unroll the alternation through the noise tick from the
+walked counter residue (`ticked_nibble_arp_entries`), so IK's first toggle lands
+on frame 2 as the original's does.
+
+**The fixed-arp phase can split per note** -- § 7.bbbbbb, built.
+
+**A tie row rewrites the base on every call that writes no note.** Chimera's
+missing reversals were not the counter's: `player.s` `mt_effect_3` with speed 0
+reaches `mt_effect_3_found` from `mt_wavedone`, which rewrites the new note's
+base on every call whose wavetable entry writes no note (an unfinished delay or
+a `$80` right side), except on tick 0 where the realtime optimisation runs no
+continuous effect; `gplay.c`'s `CMD_TONEPORTA` `!cmddata` branch agrees. So a
+duty shape that holds its octave on delay entries sounds `b b b` under a tie,
+where the original sounds `b u u`. The tie-row shape locks the octave to the
+row: nothing on tick 0, the base on tick 1 (the tie writes it), the octave on
+ticks 2..R-1. Writing the octave on every call was measured and rejected: it
+re-pitches on tick 0, a frame early.
+
+**Food_Feud's divided pitch-sequence phase is a clock, read and carried per
+instrument.** `_pitch_seq_clock` reads the divider and phase cells with their
+reloads, the outer `JMP` gate and the `LDA outer / BEQ` fetch guard;
+`_pitch_seq_calls` simulates it one call at a time, and `pitch_seq_phases`
+gives each instrument the majority phase of its notes, walked with the same
+`_walk_note_rows` `fixed_arp_phases` now uses. It is reached only under
+`pitch_seq`, which Food_Feud's preset does not carry.
+
+**`$68` reads a stored waveform, not a note.** In ten players one instruction,
+`STA cell,X`, writes the voice's current waveform byte into the cell a `$68`
+fetch lands on, after the frequency lookup and in voice order 2,1,0 -- so the
+frequency a `$68` plays is `cell[v1] << 8 | cell[v0]` at that tick.
+`stored_wave.py` reads the landing and walks each subtune's orderlists tick by
+tick to name it. Commando is held by name (`stored_wave.HELD`): its `.sng` is
+the byte-exact fixture, and the recut was refused pending a listen. The earlier
+reading that Devils_Galop's `$68` falls silent was the 180 s window: its one
+fetch comes later.
+
+**The zero-page triangle pulse engine is the same engine in another spelling.**
+Samantha Fox `$7231` and Spellbound `$E275` run the triangle sweep with
+zero-page per-voice state and their own `$F0`/`$0F` masks; `_find_pulse_tri_zp`
+is consulted only when `_find_pulse_tri` finds nothing, and reads the masks off
+the two `AND` operands (`pulse_tri_step_mask`, `pulse_tri_delay_mask`,
+`pulse_tri_per_voice`). Samantha Fox's `pul` 209 -> 13363 frames against the
+original's 10706, Spellbound 536 -> 10015 against 9154.
+
+**Pulse-phase ramps are shared.** A set-width row costs the player one call
+(`gplay.c:874-879`; `player.s` `mt_setpulse` jumps to `mt_nextpulsestep`), so a
+ramp leg can be one chain whose set rows are entry points: every phase on the
+speed lattice enters the shared leg, and only off-lattice phases keep their own
+piece. The four records that degraded to a static width under `pulse_phase` now
+sweep.
+
+**5_Title_Tunes is five players, and now five songs.** `detect.player_view`
+windows player *k* as its own file (every byte outside its range zeroed, its own
+init/play and speed bit), and `goatwriter.append_song` appends the result,
+renumbering every reference and sharing identical table regions, under every
+Goattracker cap (63 instruments, 208 patterns, 255 rows a table). The subtune
+matrix pairs on the diagonal, each subtune equal to its player converted alone.
+
+**Sanxion's past-table drum keeps its noise frame.** A `KEYOFF` row carrying an
+instrument is the decoder's past-table rest; `past_table_drum_plan` re-emits it
+as `C-0` on a clone whose note-pitched frames are test-bit silence, so the
+absolute-pitch noise burst sounds where the original's does.
+
+**Two options, both reach the presets path.** `drop_unnamed_instruments` stops
+emitting records no pattern names and is in the `always` block (live on 71
+files); it renumbers instruments, which is why the tests that quote the
+player's own instrument numbers pin it off. `wave_alternate` is wired to the CLI and stays
+out of the presets (§ 7.iiii).
+
+**Landed with v0.5.496, the second drain.**
+- *A self-modified vibrato gate is read per instrument.* On seven players the
+  classic gate's `CMP #n` operand is rewritten every frame by `LDA table,Y /
+  STA operand` with `Y = instrument*8` (Thundercats `EEE8 LDA $F787,Y / EEEB
+  STA $EF77`), so the static byte is the last instrument's leftover.
+  `detect._gate_store_table` reads the table and `VibratoGate.gate_for(record)`
+  gives each record its own `vibdelay`; a py65 trace of Thundercats, Star_Paws
+  and Mega_Apocalypse checked every compare against the table with 0 mismatches.
+- *The vibrato pass carries the live instrument across the orderlist*, as
+  `patterns._entry_instruments` does, so a pattern naming no instrument is no
+  longer treated as unknown. It changes the commands and the log, not the sound:
+  a note without the command already vibrated through the instrument's own
+  pointer, and no siddump trace moved.
+- *C64ME's gate hold has a second spelling*: `LDA cell,X / LSR A / CMP cell,X /
+  BNE`, consulted only where the primary shape matches nothing
+  (`GATE_HOLD_LSR_SHAPE`); its zero-wait ties now hold the gate (voice 3 ties
+  0 -> 72, the original's 72).
+- *The unticked nibble arpeggio starts from the walked residue*, the way the
+  ticked shape already did (`nibble_arp_entries(phase=)`); a record keeps the
+  unphased bytes where the phased shape would sound the same.

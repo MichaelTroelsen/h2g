@@ -446,6 +446,68 @@ def test_the_row_masks_the_release_only_when_cut_release_is_on():
             'mask_release=bool(opts.get("cut_release")))') in src
 
 
+def _vice_adsr(*per_frame, voices=3):
+    """A VICE trace, one entry per frame; an entry is an ADSR value held for
+    the whole frame, or a list of (value, lines) splitting it. Voice 0 only;
+    the others carry no envelope and so weigh nothing."""
+    import vicetrace as VT
+    out = []
+    for cell in per_frame:
+        runs = cell if isinstance(cell, list) else [(cell, VT.PAL_LINES_PER_FRAME)]
+        assert sum(n for _, n in runs) == VT.PAL_LINES_PER_FRAME
+        for value, n in runs:
+            for _ in range(n):
+                out.append(VT.Sample(voices=[VT.VoiceLine(adsr=value)]
+                                     + [VT.VoiceLine() for _ in range(voices - 1)]))
+    return out
+
+
+def test_vice_mask_release_ignores_only_the_release_nibble():
+    """vice-adsr-release-mask: the --vice path's histogram compare scored a
+    correct AD/S as wrong under cut_release ($xx?F against $xx?0), because
+    `vice_register_compare` had no mask. Same contract as the siddump test
+    above, for every reduction rule."""
+    orig = _vice_adsr(*[0x09AF] * 4)
+    cut = _vice_adsr(*[0x09A0] * 4)
+    for mode in ("overlap", "last", "majority", "any"):
+        off = fidelity.vice_register_compare(orig, cut, mode)
+        on = fidelity.vice_register_compare(orig, cut, mode, mask_release=True)
+        assert off["adsr"] == 0.0 and on["adsr"] == 1.0, mode
+        assert on["adsr_exact"] == 0.0 and on["adsr_release_masked"] is True
+        assert off["adsr_release_masked"] is False and off["adsr_exact"] == 0.0
+        assert on["adsr_frames"] == off["adsr_frames"] == 4
+        for wrong in (0x09BF, 0x19A0):        # sustain, then attack
+            got = fidelity.vice_register_compare(
+                orig, _vice_adsr(*[wrong] * 4), mode, mask_release=True)
+            assert got["adsr"] == 0.0, (mode, hex(wrong))
+
+
+def test_vice_mask_release_judges_silence_on_the_whole_pair():
+    """`adsr_compare` skips a frame only when the whole pair is $0000 on both
+    sides; masking first would make $000F silence and drop the frame."""
+    on = fidelity.vice_register_compare(_vice_adsr(*[0x000F] * 3),
+                                        _vice_adsr(*[0x0000] * 3),
+                                        mask_release=True)
+    assert on["adsr_frames"] == 3 and on["adsr"] == 1.0
+    assert on["adsr_exact"] == 0.0
+    # Graded: half a frame of shared silence leaves, the other half -- $09AF
+    # against $09A0 -- now agrees instead of costing it.
+    half = [(0, 156), (0x09AF, 156)]
+    got = fidelity.vice_register_compare(
+        _vice_adsr(half), _vice_adsr([(0, 156), (0x09A0, 156)]),
+        mask_release=True)
+    assert got["adsr"] == pytest.approx(1.0)
+    assert got["adsr_exact"] == pytest.approx(0.0)
+
+
+def test_the_vice_row_masks_the_release_only_when_cut_release_is_on():
+    """The --vice wiring, pinned at the same seam as the siddump one."""
+    import inspect
+    src = " ".join(inspect.getsource(fidelity._measure).split())
+    assert ('vice_register_compare( vo, vu, args.vice_reduce, '
+            'mask_release=bool(opts.get("cut_release")))') in src
+
+
 def test_adsr_dimension_and_report_declare_the_release_blindness():
     dim = next(d for d in fidelity.DIMENSIONS if d.key == "adsr")
     assert "release nibble is NOT compared" in dim.of

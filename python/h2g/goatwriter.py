@@ -3908,7 +3908,8 @@ def _effect_call_list(entries: Optional[List[tuple]], ptr: int, calls: int,
 
 def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
                         entries: Optional[List[tuple]] = None,
-                        ptr: int = 0, attack_call: int = 1) -> Optional[int]:
+                        ptr: int = 0, attack_call: int = 1,
+                        record: Optional[int] = None) -> Optional[int]:
     """`vibdelay` the classic loop's own gate asks for, or None.
 
     detect._find_vibrato_gate reads the compare in front of the store. Its
@@ -3954,11 +3955,27 @@ def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
     (0, 240, 254: Ricochet, Skate_or_Die_intro, Thundercats). Those are not a
     gate of 0 and not a default, and must not become either until the
     players are disassembled past the compare.
+
+    **Per record where the player rewrites the operand** (detect's
+    VIBRATO_GATE_STORE_SHAPE: Thundercats, Mega_Apocalypse, Star_Paws, and
+    the held Arcade_Classics, BMX_Kidz, Ricochet, Skate_or_Die_intro): the
+    gate is `vg.gate_for(record)`, record `i` counted from instr_start, and
+    None without a record. **A per-record gate of 0 is a gate of 1**: the
+    age the compare sees was never below 1 in the trace, so `CMP #0` and
+    `CMP #1` skip the same frames -- on Star_Paws record 10 (gate 0) every
+    compare passes and the lowest age among them is 1, the same first age
+    as record 4 (gate 1) (C:/t/selfmod-vibrato-gate/runtime_trace.txt).
+    No static operand is 0 (detect reads it as UNREAD), so this reaches
+    only the stored table.
     """
     vg = det.vibrato_gate
-    if vg is None or vg.gate is None or vg.form != "counter":
+    if vg is None or vg.form != "counter":
         return None
-    target = vg.gate * multiplier + attack_call
+    gate = vg.gate_for(record)
+    if gate is None:
+        return None
+    gate = max(1, gate)
+    target = gate * multiplier + attack_call
     # **Nearest effect call, not the next one.** vibdelay can only start the
     # oscillator ON an effect call, and a program that holds the frequency
     # over the target (a wavetable step, a tick 0) leaves no call there. The
@@ -3987,12 +4004,15 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
     wavetable is laid out after it. Unchanged where no counter gate was read.
 
     No frame-1 floor here: the target is frame `gate`, which is past frame 0
-    by construction for every operand read (3..19), so the floor's reason --
+    by construction for every operand read (3..19 static; 1 and up from a
+    per-instrument table, its 0 read as 1), so the floor's reason --
     keep the oscillator off the attack frame -- is already met, and applying
     it on top would postpone a record whose program withholds the calls.
     """
     mult = max(1, multiplier)
-    if _classic_gate_delay(det, mult) is None or not vib_ptrs:
+    vg = det.vibrato_gate
+    if (vg is None or vg.form != "counter" or not vib_ptrs
+            or (vg.gate is None and vg.table is None)):
         return vib_ptrs
     out = {}
     for i, (idx, delay) in vib_ptrs.items():
@@ -4002,13 +4022,14 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
         # Same test as `_write_instruments`' firstwave byte.
         real = no_test_restart or (i + lead + 1) in real_firstwave_instruments
         got = _classic_gate_delay(det, mult, own, entries, ptr,
-                                  attack_call=0 if real else 1)
+                                  attack_call=0 if real else 1, record=i)
         out[i] = (idx, delay if got is None else max(1, got))
     return out
 
 
 def _vibrato_delay(det: Detection, multiplier: int,
-                   commanded: bool = False, row_calls: int = 0) -> int:
+                   commanded: bool = False, row_calls: int = 0,
+                   record: Optional[int] = None) -> int:
     """Goattracker `vibdelay` for this player's vibrato, in play calls.
 
     `vibdelay` is a countdown, not a flag: gplay.c:769-776 is a fallthrough
@@ -4121,7 +4142,8 @@ def _vibrato_delay(det: Detection, multiplier: int,
         # (tests/test_table_vibrato.py::test_the_entry_is_note_relative_and_starts_on_the_note).
         if det.vibrato_offset is not None:
             floor = max(VIBRATO_DELAY, multiplier + 1)
-            gate = _classic_gate_delay(det, multiplier, row_calls)
+            gate = _classic_gate_delay(det, multiplier, row_calls,
+                                       record=record)
             return floor if gate is None else min(0xFF, max(floor, gate))
         return VIBRATO_DELAY
     if commanded:
@@ -4340,6 +4362,10 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         return {}
     delay = _vibrato_delay(det, mult, commanded=vibrato_command,
                            row_calls=row_calls)
+    # A gate the player stores per instrument (detect.VibratoGate.table) is
+    # a delay per record; every other file has one delay for all of them.
+    per_record = (det.vibrato_gate is not None
+                  and det.vibrato_gate.table is not None)
     data = sid.data
     duty_mask = (fixed_arp_mask(sid, det)
                  if effects and det.arp_fixed_up and det.effect_arp else None)
@@ -4363,7 +4389,10 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
             if len(speed_table) >= GT_MAX_TABLELEN:
                 continue
             speed_table.append(entry)
-        out[i] = (speed_table.index(entry) + 1, delay)
+        out[i] = (speed_table.index(entry) + 1,
+                  _vibrato_delay(det, mult, commanded=vibrato_command,
+                                 row_calls=row_calls, record=i)
+                  if per_record else delay)
     if log and out:
         log(f"Instrument vibrato......: {len(out)} of "
             f"{max(instr_used - lead, 0)} record(s), "
@@ -4590,7 +4619,8 @@ def _tied_instrument_envelopes(patterns: List[List[int]], envelopes: dict,
 
 
 def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
-                          vib_ptrs: dict, lead: int, log=None) -> dict:
+                          vib_ptrs: dict, lead: int, log=None,
+                          tracks: Optional[List[List[int]]] = None) -> dict:
     """Move the global-triangle dialect's vibrato from the instrument to the
     pattern rows, which is the only way to express its per-note length gate.
 
@@ -4675,18 +4705,33 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
     is the warning: the per-file gate is an improvement here and a regression as
     a plain delay. See `_vibrato_delay`.
 
+    **The live instrument is carried across the orderlist.** Before any row
+    of a pattern names an instrument, the channel holds what the orderlists
+    carried INTO it (`_entry_instruments`, the walk `_tied_instrument_envelopes`
+    already uses, and the state `fidelity.triangle_gate_records` and
+    `patterns._entry_instruments` carry for the same reason: the instrument
+    register is sticky in both players, gplay.c:914) -- taken only when every
+    orderlist entry into the pattern agrees. A per-pattern reset was the
+    whole of Commodore_64_Music_Examples' vibrato: its long notes sit in
+    patterns that name no instrument, and the log read `0 note(s) vibrated,
+    512 damped by length, 43 with the column in use, 31 on an unnamed
+    instrument` while the original oscillates on all nine vibrato records.
+
     Skipped, and counted rather than silently dropped: a note whose command
     column is already spoken for (a portamento or a tempo change -- one column
     per row, and the slide is the more audible of the two), and a *qualifying*
     note whose live instrument is not known because no row has named one yet in
-    this pattern. A short note needs no index to damp, so an unnamed instrument
-    does not stop it.
+    this pattern and the orderlists do not settle it (no `tracks`, or two
+    entries disagreeing). A short note needs no index to damp, so an unnamed
+    instrument does not stop it.
     """
     gate = det.triangle_gate or TRIANGLE_VIBRATO_GATE
     by_slot = {rec + 1 + lead: idx for rec, (idx, _delay) in vib_ptrs.items()}
     placed = damped = busy = unknown = 0
-    for pat in patterns:
-        live = 0
+    entry = _entry_instruments(tracks, patterns) if tracks else {}
+    for pn, pat in enumerate(patterns):
+        held = entry.get(pn, set())
+        live = next(iter(held)) if len(held) == 1 else 0
         i = 0
         while i + 3 < len(pat):
             note, instr = pat[i], pat[i + 1]
@@ -7442,7 +7487,8 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
 
 
 def nibble_arp_entries(wave: int, arp_rel: int, half_calls: int,
-                       start: int, budget: int) -> Optional[tuple]:
+                       start: int, budget: int,
+                       phase: Optional[tuple] = None) -> Optional[tuple]:
     """The unticked nibble shape with each half `half_calls` calls long.
 
     The unticked -S{m} shape (`_wavetable_entries`) generalised from one
@@ -7454,11 +7500,42 @@ def nibble_arp_entries(wave: int, arp_rel: int, half_calls: int,
     == multiplier <= 17` it is that shape byte for byte. None below two
     calls a half or over `budget`. A `nibble_arp_half_cycle` for
     `half_calls` loops over all of its halves, base note first.
+
+    **That shape starts the alternation from the attack whatever the
+    counter reads there**, and the original's does not: frame `k` after the
+    attack reads `residue + k` (`nibble_arp_first_half`), so the first
+    interval frame is wherever the walked residue (`nibble_arp_phases`)
+    puts it -- exactly the defect `ticked_nibble_arp_entries` was written
+    for, without the tick. `phase` is `(frame0, frame0_r, first_up,
+    first_calls)`: the frame-0 lead (`_first_frame_lead`), then a first
+    run of `first_calls` on whichever half frame 1 plays, then the halves
+    of `half_calls` alternating, the loop over all of them and its target
+    the entry after the first run, so the lead and that run play once.
     """
     cycle = _half_cycle(half_calls)
     if min(cycle) < 2:
         return None
     left, right = [], []
+    if phase is not None:
+        frame0, frame0_r, first_up, first_calls = phase
+        if first_calls < 1:
+            return None
+        note = {True: arp_rel, False: 0x00}
+        holds = _hold_run(first_calls - 1, wave)
+        left = list(frame0) + [wave] + holds
+        right = list(frame0_r) + [note[first_up]] + [0x80] * len(holds)
+        loop = start + len(left)
+        up = not first_up
+        for h in cycle:
+            holds = _hold_run(h - 1, wave)
+            left += [wave] + holds
+            right += [note[up]] + [0x80] * len(holds)
+            up = not up
+        left.append(WAVE_JUMP)
+        right.append(loop & 0xFF)
+        if len(left) > budget:
+            return None
+        return left, right
     for j, h in enumerate(cycle):
         holds = _hold_run(h - 1, wave)
         left += [wave] + holds
@@ -8160,9 +8237,31 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             if shaped is not None:
                 return shaped
         if arp_half is not None and not tick and tail == wave:
-            shaped = nibble_arp_entries(
-                wave, _arp_relative(arp_fixed, arp_note, arp_up), arp_half,
-                base_entry, budget)
+            rel = _arp_relative(arp_fixed, arp_note, arp_up)
+            # The walked residue places the first interval frame, as it does
+            # for the ticked record above (`nibble_arp_first_half`); the run
+            # is in counter steps, converted at the half's own call rate.
+            # Where the attack's frame and that run make exactly one half on
+            # the base note, the unphased shape already plays it, and keeps
+            # its bytes. Over `budget` the unphased shape stands.
+            if arp_phase is not None and test is not None:
+                mask = per.half(arp_note)
+                first_up, steps = nibble_arp_first_half(arp_phase, mask,
+                                                        test[1])
+                cyc = _half_cycle(arp_half)
+                first_calls = max(1, round(steps * (sum(cyc) / len(cyc))
+                                           / mask))
+                frame0, frame0_r = _first_frame_lead(
+                    wave, multiplier, force=True, written=no_test_restart)
+                lead_calls = 0 if no_test_restart else max(1, multiplier)
+                if not (isinstance(arp_half, int) and not first_up
+                        and lead_calls + first_calls == arp_half):
+                    shaped = nibble_arp_entries(
+                        wave, rel, arp_half, base_entry, budget,
+                        phase=(frame0, frame0_r, first_up, first_calls))
+                    if shaped is not None:
+                        return shaped
+            shaped = nibble_arp_entries(wave, rel, arp_half, base_entry, budget)
             if shaped is not None:
                 return shaped
         if hold is None or tail != wave or tick:
@@ -11108,7 +11207,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # Triangle-dialect only: it is that player's length gate this expresses,
     # and the other two engines have no gate to express (_vibrato_delay).
     if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
-        vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)
+        vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log,
+                                         tracks=tracks)
     # The classic engine's age-growing variant, five files: the instrument
     # entry stays the shallow first-frames level and the hold rows carry the
     # swell as `4xy` commands. Behind `vibrato_command` because commands are
@@ -11129,8 +11229,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # shape and `ticked_arp_entries` above it read the same residue.
     # The nibble dialect's counter gets the same walk (`nibble_arp_phases`):
     # its ticked records run the alternation through the noise tick from it
-    # (`ticked_nibble_arp_entries`), and every other reader of `arp_phase`
-    # is gated on `arp_fixed`, so no other shape sees these residues.
+    # (`ticked_nibble_arp_entries`), its unticked ones start their first
+    # interval on the residue's frame (`nibble_arp_entries`' `phase`), and
+    # every other reader of `arp_phase` is gated on `arp_fixed`.
     arp_phases = (fixed_arp_phases(sid, det, tracks, patterns)
                   if effects and det.arp_fixed_up
                   else nibble_arp_phases(sid, det, tracks, patterns)

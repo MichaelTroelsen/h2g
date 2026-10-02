@@ -106,7 +106,8 @@ def test_the_gate_is_lifted_and_the_budget_stands_in_its_place():
     assert gw.count(call) == 1, "the budget is not called from build_sng"
     # Last of the command-column writers: the vibrato pass is what takes
     # Rasputin's four patterns across the line, so the budget must follow it.
-    vib = gw.index("vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)")
+    vib = gw.index("vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log,\n"
+                   "                                         tracks=tracks)")
     arps = gw.index("patterns = _resolve_arp_pointers(patterns, arp_starts, log)")
     assert vib < arps < gw.index(call)
     assert gw.index(call) < gw.index("_write_instruments(out, sid, det, instr_used, pulse_starts,")

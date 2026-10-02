@@ -1335,7 +1335,11 @@ def _split_of(name):
     import json
     import h2g.convert as C
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
-    opts = fidelity._preset_opts(doc, f"{name}.sid")
+    # drop_unnamed_instruments (always-on since v0.5.495) renumbers the
+    # records the split logs; the residues are checked in the player's own
+    # numbering.
+    opts = dict(fidelity._preset_opts(doc, f"{name}.sid"),
+                drop_unnamed_instruments=False)
     logs = []
     sng = C.convert(str(CORPUS / f"{name}.sid"), log=logs.append, **opts)
     clones = []

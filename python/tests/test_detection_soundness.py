@@ -361,9 +361,10 @@ _GATE_COUNTER = {
     "Kings_of_the_Beach_intro.sid", "Mega_Apocalypse.sid", "Mr_Meaner.sid",
     "Nemesis_the_Warlock.sid", "Nineteen.sid", "Off_the_Cuff.sid",
     "One_on_One_Jordan_vs_Bird.sid", "Pandora.sid",
-    "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid", "Rikky.sid",
-    "Rock_Tells_the_Tale.sid", "Saboteur_II.sid", "Shockway_Rider.sid",
-    "Star_Paws.sid", "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
+    "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid", "Ricochet.sid",
+    "Rikky.sid", "Rock_Tells_the_Tale.sid", "Saboteur_II.sid",
+    "Shockway_Rider.sid", "Skate_or_Die_intro.sid", "Star_Paws.sid",
+    "Thundercats.sid", "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
 }
 _GATE_DURATION = {
     "Bump_Set_Spike.sid", "Chain_Reaction.sid", "Deep_Strike.sid",
@@ -375,8 +376,18 @@ _GATE_DURATION = {
     "Spellbound.sid", "Tarzan.sid", "Thanatos.sid", "Thrust.sid",
     "W_A_R.sid", "W_A_R_Preview.sid", "Warhawk.sid", "Zoolook.sid",
 }
-_GATE_UNREAD = {"Ricochet.sid": 0x00, "Skate_or_Die_intro.sid": 0xF0,
-                "Thundercats.sid": 0xFE}
+# Since the per-instrument store was read (detect.VIBRATO_GATE_STORE_SHAPE),
+# no corpus operand is UNREAD: all three were operands the player rewrites
+# per instrument, as are Arcade_Classics', BMX_Kidz', Mega_Apocalypse's and
+# Star_Paws' -- whose static bytes had read as a gate. Pinned by name, with
+# the table each is stored from.
+_GATE_UNREAD: dict = {}
+_GATE_STORED = {
+    "Arcade_Classics.sid": 0x3868, "BMX_Kidz.sid": 0xB456,
+    "Mega_Apocalypse.sid": 0x54A8, "Ricochet.sid": 0x9A21,
+    "Skate_or_Die_intro.sid": 0x4BE0, "Star_Paws.sid": 0xBA18,
+    "Thundercats.sid": 0xF787,
+}
 _GATE_ABSENT = {"Sigma_Seven.sid"}
 
 
@@ -388,7 +399,7 @@ def test_classic_vibrato_gate_census_matches_pinned_population():
     from h2g.sidfile import load_sid
 
     got: dict = {"counter": set(), "duration": set(), "unread": set(),
-                 "absent": set()}
+                 "absent": set(), "stored": {}}
     for p in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(p))
         try:
@@ -403,7 +414,11 @@ def test_classic_vibrato_gate_census_matches_pinned_population():
             got["absent"].add(p.name)
             continue
         got[vg.form].add(p.name)
-        if vg.form == "unread":
+        if vg.table is not None:
+            got["stored"][p.name] = vg.table
+            assert vg.gate is None, f"{p.name}: a stored gate read as one value"
+            assert vg.per_record, p.name
+        elif vg.form == "unread":
             assert vg.gate is None, f"{p.name}: UNREAD operand read as {vg.gate}"
             assert vg.operand == _GATE_UNREAD.get(p.name), p.name
         else:
@@ -416,3 +431,4 @@ def test_classic_vibrato_gate_census_matches_pinned_population():
     assert got["duration"] == _GATE_DURATION, got["duration"] ^ _GATE_DURATION
     assert got["unread"] == set(_GATE_UNREAD), got["unread"]
     assert got["absent"] == _GATE_ABSENT, got["absent"]
+    assert got["stored"] == _GATE_STORED, got["stored"]

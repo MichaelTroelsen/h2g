@@ -1846,11 +1846,13 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.vibrato_offset is not None:
         log(f"Instrument vibrato......: record +{det.vibrato_offset} "
             "(bound $78>>3, depth shift $07, note-relative)")
-        det.vibrato_gate = _find_vibrato_gate(sid, vib_site[1])
+        det.vibrato_gate = _find_vibrato_gate(sid, vib_site[1], det)
         vg = det.vibrato_gate
         if vg is not None:
             log(f"Vibrato gate............: {vg.form} ${vg.cell:04X},X "
-                + (f"< {vg.gate} -> still" if vg.gate is not None else
+                + (f"< ${vg.table:04X},Y per instrument -> still"
+                   if vg.table is not None else
+                   f"< {vg.gate} -> still" if vg.gate is not None else
                    f"CMP #${vg.operand:02X}, operand not read"))
     else:
         det.table_vibrato = _find_table_vibrato(sid, det)
@@ -2726,6 +2728,9 @@ def _find_vibrato_site(sid: SidFile,
 #                           gate, or a cell some other code rewrites.
 #   240 Skate_or_Die_intro  the counter would have to reach 240 frames.
 #   254 Thundercats         likewise 254.
+# All three turned out to be operands the player rewrites per instrument
+# (VIBRATO_GATE_STORE_SHAPE below), and are read from that table now; the
+# UNREAD reading remains for a static operand with no such store.
 # Sigma_Seven is the fourth: `$8254 LDA $849B,X` (its counter, INC'd at
 # $835F) is followed by `LDY $8004,X` with no compare in between, so the load
 # is dead and nothing gates -- read as no match, the old behaviour, until the
@@ -2746,6 +2751,36 @@ VIBRATO_GATE_WINDOW = 160
 # Operands read as UNREAD (see above) -- never a gate of their own value.
 VIBRATO_GATE_UNREAD = frozenset({0x00, 0xF0, 0xFE})
 
+# --- ...and where the compare's operand is rewritten per instrument --------
+#
+# Three of the four UNREAD operands above, and two operands that read as a
+# number, are not constants at all: the player STOREs into the CMP's operand
+# byte from a per-instrument table, every frame, before the compare runs.
+# Thundercats, in the per-voice effect path:
+#
+#     EED2  BD B4 F2  LDA $F2B4,X       ; this voice's instrument
+#     EED5  0A 0A 0A  ASL A x3          ; x 8, the record stride
+#     EED8  A8        TAY
+#     EEDC  B9 A1 F6  LDA $F6A1,Y       ; a field of the instrument record
+#     EEE8  B9 87 F7  LDA $F787,Y       ; the gate, per instrument...
+#     EEEB  8D 77 EF  STA $EF77         ; ...into the operand of
+#     EF76  C9 FE     CMP #$FE          ; this compare (`$FE` is a leftover)
+#
+# so the gate of record `i` is the byte at `table + i * stride`, and the
+# static operand says nothing. Mega_Apocalypse ($4C2F/$4C32 into $4CB1, its
+# static `#$13`) and Star_Paws ($B1E2/$B1E5 into $B25A, `#$0F`) are the same
+# code. Measured at runtime (py65, C:/t/selfmod-vibrato-gate/runtime_trace.txt):
+# the operand each compare actually ran with equals `table[instrument * 8]`
+# on every compare traced in all three.
+#
+# Recognised as `LDA table,Y / STA operand` where Y is the record offset:
+# an `LDA record+n,Y` resolving inside the instrument record sits within
+# VIBRATO_GATE_STORE_REACH bytes in front of the pair (12, 11 and 23 bytes
+# in the three files). Without that, the Y is not known to be the record and
+# the static reading stands.
+VIBRATO_GATE_STORE_SHAPE = "B9 ?? ?? 8D %02X %02X"
+VIBRATO_GATE_STORE_REACH = 32
+
 
 @dataclass
 class VibratoGate:
@@ -2756,20 +2791,83 @@ class VibratoGate:
     where the compare was found but its operand is one of
     VIBRATO_GATE_UNREAD, and then `gate` is None. `operand` is the raw CMP
     immediate in every case, `cell` the C64 address compared.
+
+    Where the player rewrites the operand per instrument (see
+    VIBRATO_GATE_STORE_SHAPE), `table` is the C64 address it is loaded from,
+    `per_record[i]` the gate of record `i` (instr_start + i * stride), and
+    `gate` is None: there is no one gate, and the static operand is a
+    leftover. Read it through `gate_for`.
     """
     form: str
     gate: Optional[int]
     operand: int
     cell: int
+    table: Optional[int] = None
+    per_record: Tuple[int, ...] = ()
+
+    def gate_for(self, record: Optional[int]) -> Optional[int]:
+        """The gate record `record` runs under, or None if not known."""
+        if self.table is None:
+            return self.gate
+        if record is None or not 0 <= record < len(self.per_record):
+            return None
+        return self.per_record[record]
 
 
-def _find_vibrato_gate(sid: SidFile, at: int) -> Optional[VibratoGate]:
+def _gate_store_table(sid: SidFile, det: Detection,
+                      operand_at: int) -> Optional[Tuple[int, Tuple[int, ...]]]:
+    """(table address, gate per record) where the player stores the CMP
+    operand at file offset `operand_at` out of `LDA table,Y` with Y the
+    instrument record offset, else None. More than one such table: None.
+
+    Y is a byte, so the player can index at most 256 // stride records; that
+    many are read (bounded by the file), and the caller asks by record.
+    """
+    data = sid.data
+    if det is None or det.instr_start < 0 or det.instr_stride <= 0:
+        return None
+    op = sid.to_address(operand_at)
+    found = set()
+    for at in _shape_matches(data, VIBRATO_GATE_STORE_SHAPE
+                             % (op & 0xFF, op >> 8)):
+        fed = False
+        for k in range(at - 3, max(0, at - VIBRATO_GATE_STORE_REACH) - 1, -1):
+            if data[k] != 0xB9:     # LDA abs,Y
+                continue
+            rec = sid.to_offset(data[k + 1] | data[k + 2] << 8)
+            if 0 <= rec - det.instr_start < det.instr_stride:
+                fed = True
+                break
+        if fed:
+            found.add(data[at + 1] | data[at + 2] << 8)
+    if len(found) != 1:
+        return None
+    table = found.pop()
+    base = sid.to_offset(table)
+    if base < 0:
+        return None
+    gates = []
+    for i in range(256 // det.instr_stride):
+        off = base + i * det.instr_stride
+        if not 0 <= off < len(data):
+            break
+        gates.append(data[off])
+    return (table, tuple(gates)) if gates else None
+
+
+def _find_vibrato_gate(sid: SidFile, at: int,
+                       det: Optional[Detection] = None
+                       ) -> Optional[VibratoGate]:
     """The classic vibrato's gate after the split at file offset `at`.
 
     None where no spelling sits inside VIBRATO_GATE_WINDOW (Sigma_Seven), and
     None for a counter-form compare on a cell the player never increments --
     a counter that does not count is not this mechanism. The earliest
     position wins, as the first compare after the subtraction loop.
+
+    With `det` (the instrument table located), a compare whose operand the
+    player rewrites per instrument is read from that table instead
+    (`_gate_store_table`), whatever its static byte says.
     """
     data = sid.data
     for k in range(at, min(len(data), at + VIBRATO_GATE_WINDOW)):
@@ -2785,6 +2883,11 @@ def _find_vibrato_gate(sid: SidFile, at: int) -> Optional[VibratoGate]:
             if form == "counter" and search_file(data, inc) < 1:
                 return None
             operand = data[k + imm_at]
+            stored = (_gate_store_table(sid, det, k + imm_at)
+                      if det is not None else None)
+            if stored is not None:
+                return VibratoGate(form, None, operand, cell,
+                                   table=stored[0], per_record=stored[1])
             if operand in VIBRATO_GATE_UNREAD:
                 return VibratoGate("unread", None, operand, cell)
             return VibratoGate(form, operand, operand, cell)
@@ -3574,6 +3677,23 @@ GATE_HOLD_DEC = "DE {lo} {hi} 30"
 # Saboteur_II's two are 20 and 12 bytes before it; Human_Race's is 12.
 GATE_HOLD_CLOCK_WINDOW = 40
 GATE_HOLD_BRANCHES = (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)
+# A second spelling of the counter guard, consulted only where
+# GATE_HOLD_SHAPE matches nothing. Commodore_64_Music_Examples:
+#
+#     1219  BD 15 14  LDA $1415,X    ; status
+#     121C  29 20     AND #$20
+#     121E  D0 1E     BNE $123E      ; bit 5 set    -> no gate-off
+#     1220  BD 12 14  LDA $1412,X    ; the counter
+#     1223  4A        LSR A
+#     1224  DD 12 14  CMP $1412,X    ; c >> 1 == c only for c == 0
+#     1227  D0 15     BNE $123E      ; not zero yet -> no gate-off
+#
+# Same question, "is the counter zero", asked without a flag-setting load.
+# The cell must be the same at +8 and +12 (otherwise the compare is of two
+# different things) and both BNEs must skip to the same place.
+GATE_HOLD_LSR_SHAPE = "BD ?? ?? 29 20 D0 ?? BD ?? ?? 4A DD ?? ?? D0 ??"
+GATE_HOLD_LSR_CMP = 12      # offset of the CMP's operand low byte
+GATE_HOLD_LSR_BNE = 14      # offset of the second BNE
 
 
 def _rel_target(data: bytes, at: int) -> int:
@@ -3646,17 +3766,40 @@ def find_gate_hold(sid: SidFile) -> bool:
     the shape only means what it says when both guards bypass the same code.
     And the bypass scan is anchored on the located `DEC` and bounded to the
     40 bytes in front of it rather than run over the file.
+
+    GATE_HOLD_LSR_SHAPE (Commodore_64_Music_Examples' `LDA c,X / LSR A / CMP
+    c,X / BNE`) is read only where GATE_HOLD_SHAPE matches nothing at all, so
+    it can arm a file that read no guard and never disturbs one that did.
+    """
+    data = sid.data
+    if search_file(data, GATE_HOLD_SHAPE) > -1:
+        # Both guards must skip to the same place.
+        return _gate_hold_verdict(sid, GATE_HOLD_SHAPE, lambda i: (
+            _rel_target(data, i + 5) == _rel_target(data, i + 10)))
+    # The LSR/CMP spelling: the same cell twice, and both BNEs to one place.
+    return _gate_hold_verdict(sid, GATE_HOLD_LSR_SHAPE, lambda i: (
+        data[i + GATE_HOLD_COUNTER:i + GATE_HOLD_COUNTER + 2]
+        == data[i + GATE_HOLD_LSR_CMP:i + GATE_HOLD_LSR_CMP + 2]
+        and _rel_target(data, i + 5)
+        == _rel_target(data, i + GATE_HOLD_LSR_BNE)))
+
+
+def _gate_hold_verdict(sid: SidFile, shape: str, guards) -> bool:
+    """find_gate_hold's walk over one spelling of the guard pair.
+
+    `guards(i)` is the spelling's own same-place check on a match at `i`;
+    the counter cell is read at GATE_HOLD_COUNTER in every spelling, and the
+    DEC/BMI/JMP plus row-clock bypass check below is shared.
     """
     data = sid.data
     at = 0
     while True:
-        i = search_file(data[at:], GATE_HOLD_SHAPE)
+        i = search_file(data[at:], shape)
         if i <= -1:
             return False
         i += at
         at = i + 1
-        # Both guards must skip to the same place.
-        if _rel_target(data, i + 5) != _rel_target(data, i + 10):
+        if not guards(i):
             continue
         lo, hi = data[i + GATE_HOLD_COUNTER], data[i + GATE_HOLD_COUNTER + 1]
         dec = GATE_HOLD_DEC.format(lo=f"{lo:02X}", hi=f"{hi:02X}")

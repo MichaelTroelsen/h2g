@@ -39,9 +39,13 @@ From `python/`:
 python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N] [--terminate-patterns]
                           [--format {gts2,gts5}] [--tempo N|auto]
                           [--dedup-patterns] [--prune-patterns] [--pack-repeats]
-                          [--legal-restart]
+                          [--legal-restart] [--presets presets.json]
 python -m h2g --version
 ```
+
+`--presets FILE` applies the entry for this `.sid` (plus the file's `always` block): every option
+`fidelity._preset_opts` forwards to `convert()`, not only `--max-rows` and the pattern switches.
+Explicit command-line flags still win; see [Per-song presets](docs/OPTIONS.md#per-song-presets--presetsjson).
 
 Or from the repository root (PowerShell wrapper — resolves paths, then delegates):
 

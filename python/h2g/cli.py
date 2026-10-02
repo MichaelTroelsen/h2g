@@ -503,10 +503,15 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
-             "matching this .sid's filename supplies --max-rows, "
-             "--pack-repeats, --prune-patterns and --dedup-patterns; options "
-             "given explicitly on the command line still win. A song with no "
-             "entry converts at the defaults")
+             "matching this .sid's filename, over the file's `always` block, "
+             "supplies every option fidelity._preset_opts forwards to "
+             "convert(): --max-rows, --pack-repeats, --prune-patterns, "
+             "--dedup-patterns, --hard-restart-frames, the per-song "
+             "real-firstwave instruments and every on/off option "
+             "(--legal-restart, --slides, --vibrato, --pulse, --filter, ...); "
+             "`always` also sets --format and --tempo. Options given "
+             "explicitly on the command line still win. A song with no "
+             "entry converts at the `always` defaults")
     args = parser.parse_args(argv)
     # Per song and not a flag: which GT instruments get the real-waveform
     # firstwave byte (convert()'s docstring). Read from the preset entry
@@ -599,8 +604,11 @@ def main(argv=None) -> int:
             # Same shape as --max-rows: an int a song carries, where an
             # explicit flag still beats the stored value.
             if not _given("--hard-restart-frames"):
-                args.hard_restart_frames = entry.get(
-                    "hard_restart_frames", args.hard_restart_frames)
+                # 0 means "no override", the same as unset -- the mapping
+                # fidelity._preset_opts applies (`... or None`).
+                args.hard_restart_frames = (
+                    entry.get("hard_restart_frames", args.hard_restart_frames)
+                    or None)
             for flag, key in (("--pack-repeats", "pack"),
                               ("--prune-patterns", "prune"),
                               ("--dedup-patterns", "dedup")):

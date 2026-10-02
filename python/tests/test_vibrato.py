@@ -471,6 +471,61 @@ def test_a_qualifying_note_on_an_unnamed_instrument_is_not_guessed():
     assert [short[i + 3] for i in range(0, len(short), 4)] == [0, 0]
 
 
+def test_the_live_instrument_is_carried_into_a_pattern_naming_none():
+    """The instrument register is sticky across the orderlist (gplay.c:914),
+    so a pattern whose rows name no instrument plays what the previous one
+    left live. Commodore_64_Music_Examples' long notes all sit in such
+    patterns; resetting `live` per pattern logged `0 note(s) vibrated`.
+    Without `tracks` the pass cannot know, and still refuses to guess."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+
+    def fresh():
+        return [_pattern(_note(instr=2), _hold()),          # names slot 2
+                _pattern(_note(), _hold(), _hold())]         # names none
+    pats = fresh()
+    _vibrato_command_pass(det, pats, {0: (7, 8)}, lead=1, tracks=[[0, 1]])
+    long_ = pats[1]
+    assert [long_[i + 2] for i in range(0, len(long_), 4)] == [4, 4, 4]
+    assert [long_[i + 3] for i in range(0, len(long_), 4)] == [7, 7, 7]
+    pats = fresh()
+    _vibrato_command_pass(det, pats, {0: (7, 8)}, lead=1)
+    assert [pats[1][i + 2] for i in range(0, len(pats[1]), 4)] == [0, 0, 0]
+
+
+def test_a_carried_instrument_is_taken_only_when_every_entry_agrees():
+    """Pattern 1 is entered from slot 2 on one orderlist and slot 3 on the
+    other: two live instruments, so its long note is still unknown rather
+    than given either one's depth."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pats = [_pattern(_note(instr=2), _hold()),
+            _pattern(_note(), _hold(), _hold()),
+            _pattern(_note(instr=3), _hold())]
+    _vibrato_command_pass(det, pats, {0: (7, 8), 1: (9, 8)}, lead=1,
+                          tracks=[[0, 1], [2, 1]])
+    assert [pats[1][i + 2] for i in range(0, len(pats[1]), 4)] == [0, 0, 0]
+    # ...and a row naming an instrument still overrides what was carried.
+    pats = [_pattern(_note(instr=2), _hold()),
+            _pattern(_note(instr=3), _hold(), _hold())]
+    _vibrato_command_pass(det, pats, {0: (7, 8), 1: (9, 8)}, lead=1,
+                          tracks=[[0, 1]])
+    assert [pats[1][i + 3] for i in range(0, len(pats[1]), 4)] == [9, 9, 9]
+
+
+def test_build_sng_hands_the_orderlists_to_the_vibrato_pass():
+    """The carry is inert unless build_sng passes `tracks`; a behaviour test
+    would need a triangle-dialect file, so this pins the call's keyword."""
+    import inspect
+    import h2g.goatwriter as gw
+    src = inspect.getsource(gw.build_sng)
+    at = src.index("vib_ptrs = _vibrato_command_pass(")
+    call = src[at:src.index(")", at) + 1]
+    assert "tracks=tracks" in call, call
+
+
 def test_keyoff_and_keyon_end_a_block_rather_than_extending_it():
     """gplay.c:921-925 handles $BE/$BF before the `<= LASTNOTE` test, so
     neither is a note and neither continues one."""
@@ -543,7 +598,12 @@ def test_the_command_pass_reaches_commando_and_leaves_the_fixture_alone():
             vibrato_command=True)
     said = [l for l in lines if "Vibrato command" in l]
     assert said, lines[-5:]
-    assert "50 note(s) vibrated" in said[0], said[0]
+    # 50 until the pass carried the live instrument across the orderlist
+    # (`test_the_live_instrument_is_carried_into_a_pattern_naming_none`):
+    # 28 long notes in patterns naming no instrument were `unknown` and kept
+    # the instrument's own pointer. Ablated in-process at v0.5.495: 50 -> 78,
+    # unknown 73 -> 38.
+    assert "78 note(s) vibrated" in said[0], said[0]
     # The fixture is GTS2, where _vibrato_layout returns nothing at all, so
     # the whole mechanism is unreachable from it -- check the bytes, not len().
     got = convert(str(root / "Commando.sid"), log=lambda m: None)
@@ -883,6 +943,89 @@ def test_unread_operands_are_not_a_gate_of_their_value():
         assert g.gate is None, f"UNREAD operand {operand} became a gate"
 
 
+# --- ...and the operand the player rewrites per instrument -----------------
+#
+# detect.VIBRATO_GATE_STORE_SHAPE: `LDA table,Y / STA <the CMP operand>`
+# with Y the record offset (an `LDA record+n,Y` in front of it). Then the
+# static operand is a leftover and the gate of record i is table[i * stride].
+
+
+class _MappedSid(_Sid):
+    """A stub whose C64 address IS the file offset."""
+
+    def to_offset(self, addr):
+        return addr
+
+    def to_address(self, off):
+        return off
+
+
+_STORED_TABLE = 0x300
+_STORED_GATES = (0, 12, 18, 240)
+
+
+def _stored_gate(feed_record=True, store=True, with_det=True):
+    """The Thundercats shape in miniature: a counter compare `CMP #$FE`,
+    and `LDA record+1,Y / NOP / LDA table,Y / STA operand` after it."""
+    from h2g.detect import _find_vibrato_gate
+    blob = bytearray(_gate_blob("4C 34 92 BD 57 95 C9 FE 90 20",
+                                tail="FE 57 95"))
+    op = blob.index(bytes.fromhex("C9 FE 90 20")) + 1
+    instr = 0x200
+    rec = instr + 1 if feed_record else 0x3C0
+    blob += bytes([0xB9, rec & 0xFF, rec >> 8, 0xEA,
+                   0xB9, _STORED_TABLE & 0xFF, _STORED_TABLE >> 8,
+                   0x8D if store else 0xAD, op & 0xFF, op >> 8])
+    blob += bytes(0x400 - len(blob))
+    for i, g in enumerate(_STORED_GATES):
+        blob[_STORED_TABLE + i * 8] = g
+    det = Detection(instr_start=instr, instr_stride=8)
+    return _find_vibrato_gate(_MappedSid(bytes(blob)), 1,
+                              det if with_det else None)
+
+
+def test_a_stored_operand_is_read_per_record_from_its_table():
+    g = _stored_gate()
+    assert g is not None and (g.form, g.gate, g.operand) == ("counter", None, 0xFE)
+    assert g.table == _STORED_TABLE
+    assert g.per_record[:4] == _STORED_GATES
+    assert [g.gate_for(i) for i in range(4)] == list(_STORED_GATES)
+    # 256 // stride records are reachable through a byte Y.
+    assert len(g.per_record) == 32
+    assert g.gate_for(None) is None and g.gate_for(32) is None
+
+
+def test_a_store_only_counts_when_its_y_is_the_record():
+    # No store (an LDA where the STA was), no record load feeding Y, or no
+    # instrument table to resolve against: the static operand stands.
+    for kw in ({"store": False}, {"feed_record": False}, {"with_det": False}):
+        g = _stored_gate(**kw)
+        assert g is not None and g.table is None, kw
+        assert (g.form, g.gate, g.operand) == ("unread", None, 0xFE), kw
+
+
+def test_a_per_record_gate_delays_each_record_by_its_own():
+    from h2g.detect import VibratoGate
+    from h2g.goatwriter import _classic_gate_delay, _vibrato_delay
+    per = Detection(vibrato_offset=5, vibrato_gate=VibratoGate(
+        "counter", None, 0xFE, 0xF5AB, table=0xF787,
+        per_record=(0, 9, 4)))
+    static = lambda gate: Detection(vibrato_offset=5, vibrato_gate=VibratoGate(
+        "counter", gate, gate, 0xF5AB))
+    for m in (1, 2, 3):
+        assert _vibrato_delay(per, m, record=1) == _vibrato_delay(static(9), m)
+        assert _vibrato_delay(per, m, record=2) == _vibrato_delay(static(4), m)
+        # Gate 0 skips what gate 1 does: the compare never sees age 0.
+        assert (_classic_gate_delay(per, m, record=0)
+                == _classic_gate_delay(static(1), m) is not None)
+        # No record, a record past the table: the frame-1 floor.
+        for rec in (None, 3):
+            assert _classic_gate_delay(per, m, record=rec) is None, (m, rec)
+            assert _vibrato_delay(per, m, record=rec) == m + 1, (m, rec)
+    assert _vibrato_delay(per, 1, record=1) == 10
+    assert _vibrato_delay(per, 1, record=2) == 5
+
+
 def test_the_counter_gate_delays_by_the_operand_in_our_calls():
     """vibdelay reaches frame `gate` in OUR calls: gate x multiplier after the
     call the attack is seen on, less what tick 0 withholds (no wavetable)."""
@@ -940,18 +1083,33 @@ def test_duration_and_unread_gates_keep_the_frame_one_floor():
 # name -> (form, gate, operand, cell); every classic file the census names.
 CLASSIC_GATES = {
     "Food_Feud.sid": ("counter", 9, 9, 0x9557),
-    "Star_Paws.sid": ("counter", 15, 15, 0xB8AD),
+    "Star_Paws.sid": ("counter", None, 0x0F, 0xB8AD),
     "Saboteur_II.sid": ("counter", 4, 4, 0xF5A5),
-    "Mega_Apocalypse.sid": ("counter", 19, 19, 0xBC),
-    "BMX_Kidz.sid": ("counter", 12, 12, 0xB388),
+    "Mega_Apocalypse.sid": ("counter", None, 0x13, 0xBC),
+    "BMX_Kidz.sid": ("counter", None, 0x0C, 0xB388),
     "Powerplay_Hockey_USA_vs_USSR.sid": ("counter", 4, 4, 0x49A5),
     "Sanxion.sid": ("duration", 3, 3, 0xB51C),
     "Mozart.sid": ("duration", 2, 2, 0x0C0D),
     "Warhawk.sid": ("duration", 1, 1, 0x1579),
     "Spellbound.sid": ("duration", 1, 1, 0xC7),
-    "Ricochet.sid": ("unread", None, 0x00, 0x981F),
-    "Skate_or_Die_intro.sid": ("unread", None, 0xF0, 0x4B40),
-    "Thundercats.sid": ("unread", None, 0xFE, 0xF5AB),
+    "Ricochet.sid": ("counter", None, 0x00, 0x981F),
+    "Skate_or_Die_intro.sid": ("counter", None, 0xF0, 0x4B40),
+    "Thundercats.sid": ("counter", None, 0xFE, 0xF5AB),
+}
+
+# name -> (table, {record: gate}) where the player stores the operand per
+# instrument. The gates pinned for the three unheld files are the operands
+# their compares RAN with, per instrument, in a py65 trace
+# (C:/t/selfmod-vibrato-gate/runtime_trace.txt); the static operand above is
+# a leftover none of them compares against.
+STORED_GATES = {
+    "Thundercats.sid": (0xF787, {7: 18, 11: 12}),
+    "Mega_Apocalypse.sid": (0x54A8, {3: 6, 10: 12}),
+    "Star_Paws.sid": (0xBA18, {3: 15, 4: 1, 5: 5, 10: 0}),
+    "Arcade_Classics.sid": (0x3868, {}),
+    "BMX_Kidz.sid": (0xB456, {}),
+    "Ricochet.sid": (0x9A21, {}),
+    "Skate_or_Die_intro.sid": (0x4BE0, {}),
 }
 
 
@@ -963,9 +1121,33 @@ def test_the_classic_gate_is_read_in_both_dialects_from_the_corpus():
         vg = det.vibrato_gate
         assert vg is not None, name
         assert (vg.form, vg.gate, vg.operand, vg.cell) == want, (name, vg)
+        stored = STORED_GATES.get(name)
+        assert vg.table == (stored[0] if stored else None), (name, vg.table)
+        for record, gate in (stored[1] if stored else {}).items():
+            assert vg.gate_for(record) == gate, (name, record)
     sigma = detect(load_sid(str(CORPUS / "Sigma_Seven.sid")),
                    lambda *a, **k: None)
     assert sigma.vibrato_offset is not None and sigma.vibrato_gate is None
+
+
+@needs_corpus
+def test_a_stored_gate_reaches_vibdelay_per_record():
+    """goatwriter emits a vibdelay per record where the player stores the
+    gate per instrument: Thundercats' records 7 (gate 18) and 11 (gate 12)
+    get the delays a static gate of 18 and of 12 would give them."""
+    import dataclasses
+    from h2g.detect import VibratoGate, detect
+    sid = load_sid(str(CORPUS / "Thundercats.sid"))
+    det = detect(sid, lambda *a, **k: None)
+    got = _vibrato_layout(sid, det, det.instr_used, True, FORMAT_GTS5, 1, [],
+                          lead=0)
+    assert got[7][1] != got[11][1]
+    for record, gate in ((7, 18), (11, 12)):
+        fixed = dataclasses.replace(det, vibrato_gate=VibratoGate(
+            "counter", gate, gate, det.vibrato_gate.cell))
+        want = _vibrato_layout(sid, fixed, det.instr_used, True, FORMAT_GTS5,
+                               1, [], lead=0)
+        assert got[record][1] == want[record][1] == gate + 1, record
 
 
 @needs_corpus

@@ -19,6 +19,8 @@ from h2g.detect import find_gate_hold
 from h2g.patterns import GT_NO_NOTE, _build_raw_pattern
 from h2g.sidfile import SidFile, load_sid
 
+from corpus import CORPUS, needs_corpus
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 END = 0xFF          # ENDPATT status byte terminating a Hubbard pattern
@@ -111,7 +113,14 @@ TEST = 0x80         # offset of `LDA status,X / AND #$20 / ...`
 COUNTER = 0x1234    # the cell the DEC decrements and the second LDA reads
 
 
-def _player(bypass_into_test: bool) -> SidFile:
+def _player(bypass_into_test: bool, *, lsr: bool = False,
+            cmp_cell: int = COUNTER, split_target: bool = False,
+            stray_primary: bool = False) -> SidFile:
+    """`lsr` spells the counter guard as Commodore_64_Music_Examples does:
+    `LDA COUNTER,X / LSR A / CMP cmp_cell,X / BNE`. `split_target` sends that
+    second BNE somewhere other than the first; `stray_primary` adds a
+    GATE_HOLD_SHAPE match elsewhere whose two BNEs disagree, so the primary
+    spelling matches but reaches no verdict."""
     from h2g.sidfile import HLEN
     base = HLEN - 1                     # to_offset(LOAD) == base + 0
     data = bytearray(base + 0x200)
@@ -129,10 +138,21 @@ def _player(bypass_into_test: bool) -> SidFile:
 
     # The gate-off test: LDA status,X / AND #$20 / BNE out / LDA COUNTER,X /
     # BNE out / LDA wave,X / AND #$FE / STA $D404,Y
-    out = TEST + 12
-    put(TEST, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, rel(TEST + 5, out),
-        0xBD, COUNTER & 0xFF, COUNTER >> 8, 0xD0, rel(TEST + 10, out))
+    if lsr:
+        out = TEST + 16
+        put(TEST, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, rel(TEST + 5, out),
+            0xBD, COUNTER & 0xFF, COUNTER >> 8, 0x4A,
+            0xDD, cmp_cell & 0xFF, cmp_cell >> 8,
+            0xD0, rel(TEST + 14, out + 2 if split_target else out))
+    else:
+        out = TEST + 12
+        put(TEST, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, rel(TEST + 5, out),
+            0xBD, COUNTER & 0xFF, COUNTER >> 8, 0xD0, rel(TEST + 10, out))
     put(out, 0xBD, 0x10, 0x13, 0x29, 0xFE, 0x99, 0x04, 0xD4)
+    if stray_primary:
+        STRAY = 0xC0
+        put(STRAY, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, rel(STRAY + 5, 0xD0),
+            0xBD, COUNTER & 0xFF, COUNTER >> 8, 0xD0, rel(STRAY + 10, 0xD4))
 
     # DEC counter,X / BMI fetch / JMP test-entry
     put(DEC, 0xDE, COUNTER & 0xFF, COUNTER >> 8, 0x30, 0x08,
@@ -161,3 +181,40 @@ def test_bypass_into_the_test_is_not():
 
 def test_commando_is_a_gate_hold_player():
     assert find_gate_hold(load_sid(str(REPO_ROOT / "Commando.sid"))) is True
+
+
+# --- the LSR/CMP spelling (Commodore_64_Music_Examples) ---------------------
+
+def test_lsr_spelling_is_a_gate_hold_player():
+    assert find_gate_hold(_player(bypass_into_test=False, lsr=True)) is True
+
+
+def test_lsr_spelling_keeps_the_bypass_check():
+    assert find_gate_hold(_player(bypass_into_test=True, lsr=True)) is False
+
+
+def test_lsr_spelling_needs_the_same_cell_twice():
+    """`LDA a,X / LSR / CMP b,X` is not a zero test of anything."""
+    p = _player(bypass_into_test=False, lsr=True, cmp_cell=COUNTER + 3)
+    assert find_gate_hold(p) is False
+
+
+def test_lsr_spelling_needs_both_guards_to_skip_to_one_place():
+    p = _player(bypass_into_test=False, lsr=True, split_target=True)
+    assert find_gate_hold(p) is False
+
+
+def test_lsr_spelling_is_not_read_where_the_primary_shape_matches():
+    """A fallback, consulted only where GATE_HOLD_SHAPE matches nothing --
+    even a primary match that its own guards then reject."""
+    p = _player(bypass_into_test=False, lsr=True, stray_primary=True)
+    assert find_gate_hold(p) is False
+
+
+@needs_corpus
+def test_commodore_64_music_examples_is_a_gate_hold_player():
+    """`1220 LDA $1412,X / LSR A / CMP $1412,X / BNE $123E`, the counter
+    `113F DEC $1412,X / BMI / JMP $1216`, and the row clock's bypass
+    `1133 BNE $114A -> JMP $123E` landing past the gate-off."""
+    sid = load_sid(str(CORPUS / "Commodore_64_Music_Examples.sid"))
+    assert find_gate_hold(sid) is True

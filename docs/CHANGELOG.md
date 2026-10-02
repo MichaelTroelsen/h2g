@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.496 — 2026-10-02
+
+- runqueue drain 2: fidelity refresh at 0.5.495, self-modified vibrato gate per instrument, vibrato-pass instrument carry, C64ME LSR/CMP gate-hold spelling, unticked nibble counter phase, VICE adsr release mask, CLI preset parity, METHOD/LESSONS drain docs, and repaired tests that quoted pre-drop instrument numbers
+
 ## 0.5.495 — 2026-10-02
 
 - runqueue drain: 30 cycles -- nibble arp period/phase, per-note fixed-arp split, Chimera tie rows, stored-wave $68 pitch, 5_Title_Tunes multi-player, zero-page triangle pulse, shared pulse ramps, harness pins and masks

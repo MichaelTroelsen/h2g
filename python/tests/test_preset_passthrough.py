@@ -584,6 +584,20 @@ def test_the_cli_passes_every_preset_option_set_anywhere(monkeypatch, tmp_path):
                             _preset_opts(doc, name), name)
 
 
+def test_the_cli_maps_a_per_song_hard_restart_frames_of_zero_to_none(
+        monkeypatch, tmp_path):
+    """0 is "no override" in `_preset_opts` (`entry.get(...) or None`); the CLI
+    must hand convert() the same None, not a literal 0."""
+    doc = {"always": {}, "songs": {"z.sid": {"hard_restart_frames": 0},
+                                   "n.sid": {"hard_restart_frames": 3}}}
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    for name, want in (("z.sid", None), ("n.sid", 3)):
+        got = _cli_kwargs(monkeypatch, tmp_path, path, name)
+        assert got["hard_restart_frames"] is want
+        assert _preset_opts(doc, name)["hard_restart_frames"] is want
+
+
 def test_the_cli_passes_every_shipped_preset_as_preset_opts_does(
         monkeypatch, tmp_path):
     if not PRESETS.exists():

@@ -227,8 +227,11 @@ def test_the_coincident_record_is_played():
 
     doc = json.loads((REPO_ROOT / "presets.json").read_text())
     name = "Dragons_Lair_Part_II.sid"
+    # Instrument numbers below are the player's own: drop_unnamed_instruments
+    # (always-on since v0.5.495) would renumber them.
+    opts = dict(fidelity._preset_opts(doc, name), drop_unnamed_instruments=False)
     song = songview.parse_sng(convert(str(CORPUS / name), log=lambda _m: None,
-                                      **fidelity._preset_opts(doc, name)))
+                                      **opts))
     assert len(song.instruments) >= 25
     # `i + 2` in hex, the provenance stamp `_write_instruments` writes.
     assert song.instruments[24].name.startswith("1A:"), song.instruments[24].name

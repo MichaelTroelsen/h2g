@@ -1633,6 +1633,7 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     unmasked figure rides in the row as `adsr_exact`, and the mask is applied
     to every frame, not only the frames cut_release touches (it cannot be told
     from them here). `adsr_gated_off_audible` still reads the release nibble.
+    `vice_register_compare` applies the same mask under `--vice`.
 
     `lag` is the startup latency from `startup_lag`, applied for the reason
     given there: this walks the traces frame against frame, and a packed .sid
@@ -4005,30 +4006,48 @@ def _shared_silence(a, b, silent=0) -> float:
     return min(a.get(silent, 0) / na, b.get(silent, 0) / nb)
 
 
-def _graded_agreement(ha, hb, la, lb, mode: str, silent=0):
+def _masked_hist(hist, keep: int):
+    """`hist` with every value ANDed by `keep`, the shares of values that
+    collide summed. `keep == -1` returns `hist` itself."""
+    if keep == -1:
+        return hist
+    out = Counter()
+    for value, lines in hist.items():
+        out[value & keep] += lines
+    return out
+
+
+def _graded_agreement(ha, hb, la, lb, mode: str, silent=0, keep: int = -1):
     """(numerator, weight) for one frame, with shared silence removed.
 
     Returns a weight of 0 for a frame both sides spend entirely silent, which
     is the graded form of `continue`. For the non-graded rules the weight is
     0 or 1 so that `--vice-reduce last` reproduces siddump's own arithmetic
     exactly -- which is what makes the resolution and the rule separable.
+
+    `keep` masks the values before they are compared and NOT before silence
+    is judged -- `adsr_compare`'s order exactly: its `x == 0 and y == 0` skip
+    reads the whole pair and only the agreement reads `x & keep`. So under
+    `mask_release` an envelope of `$000F` is still an envelope, not silence.
     """
     if mode != "overlap":
         if la == silent and lb == silent:
             return 0.0, 0.0
-        cell_a = vicetrace.FrameCell(hist=ha, last=la)
-        cell_b = vicetrace.FrameCell(hist=hb, last=lb)
+        cell_a = vicetrace.FrameCell(hist=_masked_hist(ha, keep), last=la & keep)
+        cell_b = vicetrace.FrameCell(hist=_masked_hist(hb, keep), last=lb & keep)
         return vicetrace.agreement(cell_a, cell_b, mode), 1.0
     quiet = _shared_silence(ha, hb, silent)
     if quiet >= 1.0:
         return 0.0, 0.0
+    ha, hb = _masked_hist(ha, keep), _masked_hist(hb, keep)
     na, nb = sum(ha.values()), sum(hb.values())
     total = sum(min(ha[v] / na, hb.get(v, 0) / nb) for v in ha)
     return total - quiet, 1.0 - quiet
 
 
 def vice_register_compare(orig_samples: list, our_samples: list,
-                          mode: str = "overlap") -> dict:
+                          mode: str = "overlap",
+                          mask_release: bool = False) -> dict:
     """The register dimensions from two per-rasterline VICE traces.
 
     Same keys as wave_compare + adsr_compare + pulse_compare + filter_compare,
@@ -4052,6 +4071,15 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     value per frame. They take `FrameCell.representative`, which is the
     duration-weighted majority -- stable under the same shift where `last`
     aliases.
+
+    **`mask_release`** is `adsr_compare`'s, for the same reason and with the
+    same cost: the row passes `opts["cut_release"]`, which writes $xx?0 where
+    the original has $xx?F, and through v0.5.495 this path compared the whole
+    pair regardless, so every `--vice` row of a preset file scored a correct
+    AD and sustain as wrong for every frame the release differed. Each frame's
+    histograms are folded to `value & ~RELEASE_NIBBLE` before the overlap is
+    taken; shared silence is still judged on the whole pair. `adsr_exact` is
+    the unmasked figure over the same weights.
     """
     wave_cells_o = vicetrace.frame_cells(orig_samples, lambda v: v.ctrl)
     wave_cells_u = vicetrace.frame_cells(our_samples, lambda v: v.ctrl)
@@ -4101,15 +4129,21 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     })
 
     # --- adsr: the envelope pair, compared whole ----------------------------
-    agree, total = 0.0, 0.0
+    agree, total, exact = 0.0, 0.0, 0.0
+    keep = ~RELEASE_NIBBLE if mask_release else -1
     adsr_voices = []
     for vi in range(3):
         va, vt = 0.0, 0.0
         for f in range(nframes):
             a, b = adsr_cells_o[f][vi], adsr_cells_u[f][vi]
-            num, w = _graded_agreement(a.hist, b.hist, a.last, b.last, mode)
+            num, w = _graded_agreement(a.hist, b.hist, a.last, b.last, mode,
+                                       keep=keep)
             va += num
             vt += w
+            # The weight is judged on the whole pair either way, so the
+            # unmasked numerator shares `vt` as its denominator.
+            exact += _graded_agreement(a.hist, b.hist, a.last, b.last,
+                                       mode)[0]
         adsr_voices.append({"adsr": (va / vt) if vt else None,
                             "frames": round(vt)})
         agree += va
@@ -4117,6 +4151,8 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     out.update({
         "adsr": (agree / total) if total else None,
         "adsr_frames": round(total),
+        "adsr_exact": (exact / total) if total else None,
+        "adsr_release_masked": bool(mask_release),
         "adsr_voices": adsr_voices,
     })
 
@@ -4240,11 +4276,13 @@ def vice_freq_repair(raw: list[int], attacks: list[int],
     high byte rather than shifting it, so nothing in the dump itself says
     what it was.
 
-    That defect sits under EVERY 16-bit column `--vice` has ever reported --
-    `adsr`, `pul`, `pspan` -- and this function repairs only the frequency
-    stream `vib` and `depth` read, because `vicetrace.parse` is where the
-    repair belongs and this change does not reach it. A pulse sweep crossing
-    lo `$7F -> $80` under `--vice` still reads as a jump of `$FF00`.
+    That defect sat under EVERY 16-bit column `--vice` reported through
+    v0.5.495 -- `adsr`, `pul`, `pspan`. `vicetrace.parse` now repairs pulse
+    and ADSR by continuity alone (`vicetrace.repair_sign_extension`; no
+    oracle exists for them under `--vice`), so a pulse sweep crossing lo
+    `$7F -> $80` no longer reads as a jump of `$FF00`. THIS function repairs
+    only the frequency stream `vib` and `depth` read: `parse` leaves `.freq`
+    raw because siddump is an oracle for it, and that is what this uses.
 
     **SIDDUMP IS THE ORACLE, WHERE IT SAW THE VALUE.** `oracle` is siddump's
     per-frame frequency timeline for the same voice and side, `offset` how
@@ -4666,9 +4704,12 @@ NOT_MEASURED = (
     "frame-aligned dimensions, and `--vice` costs two emulator runs a row. "
     "**And the VICE dump sign-extends the low byte of every 16-bit field "
     "into the high one** (`vice_freq_repair`): `vib` and `depth` repair the "
-    "frequency against siddump before reading it, but `adsr`, `pul` and "
-    "`pspan` under `--vice` still read a pulse width or envelope whose low "
-    "byte is `$80` or more with `$FF` for its high byte",
+    "frequency against siddump before reading it, while `vicetrace.parse` "
+    "repairs pulse and ADSR by continuity (`repair_sign_extension`), so "
+    "`adsr`, `pul` and `pspan` under `--vice` no longer read `$FF` for the "
+    "high byte -- but continuity is a guess where a whole note's low byte "
+    "is `$80` or more, and the freq stream is left raw for the siddump "
+    "oracle",
     "**tempo and row rate** -- no column here scores how long a row "
     "*lasts*, and `--pace` is the mode that does: on this corpus it "
     "finds row-length errors of 10-33%. What the table now does see "
@@ -4875,7 +4916,7 @@ DIMENSIONS = (
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
-              "per-frame agreement of the envelope pair; the release nibble is NOT compared on a file converted with `cut_release` (every preset file), which zeroes it on our side, so a wrong release is invisible to this column (unmasked figure in the row's `adsr_exact`; the `--vice` path still compares the whole pair) (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte, so read with that blindness)"),
+              "per-frame agreement of the envelope pair; the release nibble is NOT compared on a file converted with `cut_release` (every preset file), which zeroes it on our side, so a wrong release is invisible to this column (unmasked figure in the row's `adsr_exact`; the `--vice` path masks it the same way) (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte; `vicetrace.parse` repairs that by continuity, which is a guess where a whole note's ADSR low byte is >= $80, so read with that residual blindness)"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
     # read. That exclusion is right for a timbre column and it made a whole
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
@@ -5183,7 +5224,7 @@ DIMENSIONS = (
     Dimension("release_tail_agreement", "tail", ("$D405/$D406",), "fraction",
               "instruments whose notes end with the original's release"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
-              "frames on which the duty cycle moved (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte)",
+              "frames on which the duty cycle moved (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte; `vicetrace.parse` repairs it by continuity)",
               source="our_pulse_changes"),
     # `pspan` is to `pul` what `cut` is to `filt`, and for the identical
     # reason. A count says whether the duty cycle moves at all; it cannot say
@@ -5193,7 +5234,7 @@ DIMENSIONS = (
     # and `pul` went from 3/236 to 338/236 on 5_Title_Tunes for a sweep that
     # covers slightly *less* of the band than the original's.
     Dimension("pulse_span", "pspan", ("$D402/$D403",), "ratio",
-              "how wide a band the duty cycle covers, over the original's (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte)"),
+              "how wide a band the duty cycle covers, over the original's (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte; `vicetrace.parse` repairs it by continuity)"),
     # `pphase` is to `pspan` what `pspan` is to `pul`, one question further
     # out: a count says whether the duty cycle moves, a span says how far it
     # gets, and NEITHER says where in the band a note opens. The player's
@@ -6275,7 +6316,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                exe=args.vice_exe,
                                out=workdir / "vice_ours.txt")
             if vo and vu:
-                row.update(vice_register_compare(vo, vu, args.vice_reduce))
+                row.update(vice_register_compare(
+                    vo, vu, args.vice_reduce,
+                    mask_release=bool(opts.get("cut_release"))))
                 row.update(vice_octave_split(vo, vu))
                 # `vib` and `depth` from the same two traces, at rasterline
                 # resolution -- the reading this mode exists for. Through

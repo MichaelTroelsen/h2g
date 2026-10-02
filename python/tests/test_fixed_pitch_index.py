@@ -385,8 +385,13 @@ def test_sanxions_short_attack_notes_hold_c_sharp_6():
                                 _entry_instruments)
 
     doc = json.loads((REPO_ROOT / "presets.json").read_text())
-    blob = convert(str(CORPUS / "Sanxion.sid"), log=lambda _m: None,
-                   **fidelity._preset_opts(doc, "Sanxion.sid"))
+    # drop_unnamed_instruments (always-on since v0.5.495) renumbers the
+    # instruments; this test is about the held-attack block in the
+    # player's own numbering, so it is pinned off as test_instrument_bound's
+    # are.
+    opts = dict(fidelity._preset_opts(doc, "Sanxion.sid"),
+                drop_unnamed_instruments=False)
+    blob = convert(str(CORPUS / "Sanxion.sid"), log=lambda _m: None, **opts)
     song = SV.parse_sng(blob)
     wtbl = song.tables["WTBL"]
     ins = song.instruments[13]
