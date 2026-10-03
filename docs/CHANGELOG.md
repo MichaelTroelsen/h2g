@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.502 — 2026-10-03
+
+- fidelity refresh at --jobs 16: 1m27s warm, 20 jobs no faster; memory no longer the limit
+
 ## 0.5.501 — 2026-10-03
 
 - sound.features frames renders in blocks: compare_sids peak 6 GB -> ~130 MB, warm --jobs 10 corpus pass 203 s -> 110 s, every fidelity row identical

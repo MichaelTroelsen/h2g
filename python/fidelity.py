@@ -9607,8 +9607,9 @@ def main(argv=None) -> int:
                         "in the same order as a serial run, so N changes only "
                         "the wall clock. Songs start slowest-first by the "
                         "previous run's measure_seconds. Each song can take "
-                        "1-3 GB: 16 jobs filled 32 GB and paged (v0.5.499), so "
-                        "size N to memory, not cores. Ignored for --pair, --ticks, --pace, "
+                        "about 130 MB since v0.5.501 (6 GB before), so N is "
+                        "bounded by cores: 16 on this machine. Ignored for "
+                        "--pair, --ticks, --pace, "
                         "--diagnose and --naming-census, and refused with "
                         "--workdir (a named directory is shared by "
                         "construction). Default 1")

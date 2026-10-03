@@ -1143,6 +1143,14 @@ test dependency).
   wall against 203 s, 997 s summed against 1958, with free RAM never below
   18.9 GB (sampled every 5 s). `sound.features_reference` keeps the unblocked
   form for the test that holds them together.
+  **AFTER THE FIX THE LIMIT IS CORES, AND 16 IS THE SETTING (v0.5.501).** Real
+  refreshes, warm, same command, one run each: `--jobs 16` 1m27s wall,
+  1251 s summed, slowest song 43.8 s, free RAM never under 16.7 GB; `--jobs
+  20` 1m24s, 1502 s summed, slowest 50.8 s, never under 15.5 GB. Three
+  seconds is inside one run's noise, and the summed time rising 20% says the
+  four extra workers contended for the same CPU rather than adding any: the
+  i9-12900KF has 16 P-core threads, and 17-20 land on E-cores beside the OS.
+  A cold refresh (renders of every moved file) will be slower than these.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26

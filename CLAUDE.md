@@ -138,7 +138,7 @@ lifts it:
 **On demand, not every commit:** `FIDELITY.md`, then `QUEUE.md` in the same pass,
 from `python/`:
 ```sh
-python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 10 \
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 16 \
     --census ../build/onset_census.md --hold-census ../build/hold_census.md \
     --json ../build/fidelity.json -o ../docs/FIDELITY.md
 python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json
@@ -154,11 +154,14 @@ v0.5.497); each row records its own `measure_seconds`. At `--jobs 16` the
 whole refresh took 5m18s, partly warm, about 15x over its own summed
 per-song time (v0.5.498; `docs/LESSONS.md`). **Size `--jobs` to MEMORY, not
 cores**: a song takes 0.4-2.7 GB, and a second 16-job run filled the 32 GB
-machine, paged, and took 954 s with every render cached (v0.5.499). Use 10.
+machine, paged, and took 954 s with every render cached (v0.5.499).
 Songs start slowest-first by the previous run's `measure_seconds`. The 6 GB
 was `sound.features` framing a whole render at once; it runs in blocks since
 v0.5.501 (~130 MB a render), and a warm `--jobs 10` pass went 203 s -> 110 s
-with free RAM never under 18.9 GB, every row identical.
+with free RAM never under 18.9 GB, every row identical. Since then the
+limit is cores: warm, `--jobs 16` took 1m27s and `--jobs 20` 1m24s (one run
+each, within noise) with 20% more summed per-song time -- use 16, the
+P-cores' thread count (v0.5.501).
 `--sound` and the two census flags are what the current artefact carries;
 `.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
 Regenerate after a commit that changes what the converter emits, and never from a
