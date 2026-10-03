@@ -1105,6 +1105,19 @@ test dependency).
   `-t 60` is HISTORY and is left saying so; nothing above was rewritten to the
   new window, because a figure re-labelled rather than re-measured is the
   decay this file's own grading rule exists to prevent.
+  **THE REPORT IN PARALLEL: 5m18s AT `--jobs 16`, MEASURED (v0.5.498, commit
+  `9bab8d4`).** The full `-t 180 --sound` refresh with both census flags ran
+  09:21:54 -> 09:27:12 on the i9-12900KF (24 threads) over all 95 files, 89
+  measured and 6 not converted. Each row's `measure_seconds` sums to 4771 s,
+  so the pool ran about 15x over the per-song work -- near-linear, unlike the
+  preset search's 75 -> 53 minutes at six shards above. The cache state is
+  PARTLY WARM: the originals' 180 s renders existed from earlier runs, and
+  ours were new on the 54 files whose bytes moved. So it is not comparable to
+  the cold 58 minutes as a speed-up figure; the 15x is the comparable one,
+  because both sides of it come from the same run. The slowest songs set the
+  tail: Confuzion 174 s, Battle_of_Britain, 5_Title_Tunes and
+  Auf_Wiedersehen_Monty about 167 s each, all measured under 16-way
+  contention, so a serial run would read each one lower.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26

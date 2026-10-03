@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.499 — 2026-10-03
+
+- record the first parallel fidelity refresh: --jobs 16 took 5m18s, ~15x over summed per-song time
+
 ## 0.5.498 — 2026-10-03
 
 - fidelity.py --jobs N measures songs in parallel processes with identical output; each row records measure_seconds; the listening index and tune pages show the tune's length and its measuring time
