@@ -138,7 +138,7 @@ lifts it:
 **On demand, not every commit:** `FIDELITY.md`, then `QUEUE.md` in the same pass,
 from `python/`:
 ```sh
-python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound \
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 16 \
     --census ../build/onset_census.md --hold-census ../build/hold_census.md \
     --json ../build/fidelity.json -o ../docs/FIDELITY.md
 python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json
@@ -147,6 +147,10 @@ python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md 
 `build/fidelity.json` keeps its old stamp and `QUEUE.md` and
 `tests/test_output_sha.py` read the stale one -- measured at v0.5.481, when the
 first regeneration left Powerplay's old sha in the JSON under a fresh header.
+`--jobs N` measures N songs at once, each in its own process and scratch
+directory, and writes the same rows in the same order as a serial run
+(byte-identical JSON and report on a 6-song subset, cold and warm cache, at
+v0.5.497); each row records its own `measure_seconds`.
 `--sound` and the two census flags are what the current artefact carries;
 `.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
 Regenerate after a commit that changes what the converter emits, and never from a

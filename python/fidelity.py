@@ -85,6 +85,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import typing
 import warnings
 from collections import Counter
@@ -9369,6 +9370,60 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     return "\n".join(out) + "\n"
 
 
+def _print_progress(sid: Path, row: dict) -> None:
+    note = (f"melody {_fmt_pct(row['melody'])} retrig "
+            f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
+            if row["status"] in ("measured", "silent")
+            and row["retrigger_ratio"] else row["status"])
+    print(f"  {sid.name:44} {note}", file=sys.stderr)
+
+
+def _timed_measure(sid: Path, workdir: Path, opts: dict, args,
+                   mult: int) -> dict:
+    # Wall clock for this one song: convert, pack, trace, render. Not a
+    # Dimension, so compare_runs never reads it as a moved column; it is what
+    # the listening pages print and what says which songs make a pass slow.
+    t0 = time.perf_counter()
+    row = measure(sid, workdir, opts, args, mult)
+    row["measure_seconds"] = round(time.perf_counter() - t0, 1)
+    return row
+
+
+def _worker_init(pal_flag) -> None:
+    # A spawned worker re-imports this module, so anything main() changed in
+    # the module's globals has to be put back here (--ntsc's PAL_FLAG).
+    globals()["PAL_FLAG"] = pal_flag
+
+
+def _measure_one(sid: Path, opts: dict, mult: int, args) -> dict:
+    # One private scratch directory per song: measure()'s intermediates have
+    # fixed names, so two songs in one directory would trace each other.
+    workdir, _owned = make_workdir(None)
+    try:
+        return _timed_measure(sid, workdir, opts, args, mult)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _measure_parallel(jobs_in: list, args) -> list[dict]:
+    """`measure` over `jobs_in` in `args.jobs` processes, rows in input order.
+
+    Options and multipliers are resolved by the caller, in this process, so
+    `PRESET_OPTS_MISSES` is filled here exactly as a serial run fills it.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    rows: list = [None] * len(jobs_in)
+    with ProcessPoolExecutor(max_workers=args.jobs, initializer=_worker_init,
+                             initargs=(PAL_FLAG,)) as ex:
+        futs = {ex.submit(_measure_one, sid, opts, mult, args): i
+                for i, (sid, opts, mult) in enumerate(jobs_in)}
+        for fut in as_completed(futs):
+            i = futs[fut]
+            rows[i] = fut.result()
+            _print_progress(jobs_in[i][0], rows[i])
+    return rows
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="fidelity", description=__doc__.splitlines()[0])
     p.add_argument("target", nargs="?", help=".sid file or directory of them")
@@ -9510,6 +9565,15 @@ def main(argv=None) -> int:
                         "guard against that is the report's `scored against a "
                         "subtune of ours` line, which names the files; read it "
                         "as a lead, and see that line's own text")
+    p.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
+                   help="measure N songs at once, each in its own process and "
+                        "its own private scratch directory. The report, --json "
+                        "and the censuses are written once from the same rows "
+                        "in the same order as a serial run, so N changes only "
+                        "the wall clock. Ignored for --pair, --ticks, --pace, "
+                        "--diagnose and --naming-census, and refused with "
+                        "--workdir (a named directory is shared by "
+                        "construction). Default 1")
     p.add_argument("--workdir", default=WORKDIR,
                    help="scratch path, kept short because gt2reloc's filename "
                         "buffer is 60 bytes. Default is a private directory "
@@ -9588,6 +9652,12 @@ def main(argv=None) -> int:
 
     if args.label is None:
         args.label = git_label()
+    if args.jobs < 1:
+        p.error("--jobs must be at least 1")
+    if args.jobs > 1 and args.workdir:
+        p.error("--jobs > 1 with --workdir: the files in a scratch directory "
+                "have fixed names, so parallel songs sharing one would "
+                "measure each other's files")
 
     workdir, owned = make_workdir(args.workdir)
     try:
@@ -9726,6 +9796,7 @@ def _run(p, args, workdir: Path) -> int:
             print(preset_opts_miss_report(), file=sys.stderr)
             return 0
         rows = []
+        jobs_in = []
         for sid in sids:
             opts = _preset_opts(doc, sid.name)
             if args.slides:
@@ -9750,13 +9821,14 @@ def _run(p, args, workdir: Path) -> int:
                 # which is exactly what made --skip-gate look like a
                 # regression in v0.5.119.
                 mult = _skip_gate_multiplier(sid) or mult
-            row = measure(sid, workdir, opts, args, mult)
+            if args.jobs > 1:
+                jobs_in.append((sid, opts, mult))
+                continue
+            row = _timed_measure(sid, workdir, opts, args, mult)
             rows.append(row)
-            note = (f"melody {_fmt_pct(row['melody'])} retrig "
-                    f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
-                    if row["status"] in ("measured", "silent")
-                    and row["retrigger_ratio"] else row["status"])
-            print(f"  {sid.name:44} {note}", file=sys.stderr)
+            _print_progress(sid, row)
+        if jobs_in:
+            rows = _measure_parallel(jobs_in, args)
 
     print(preset_opts_miss_report(), file=sys.stderr)
     text = report(rows, args)

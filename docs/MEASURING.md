@@ -79,8 +79,13 @@ python fidelity.py --pair original.sid ours.sid        # two files you already h
 ```
 
 It needs `siddump.exe` and `gt2reloc.exe` (`H2G_SIDDUMP` / `H2G_GT2RELOC`
-override the paths) and is otherwise stdlib-only. The whole 95-file corpus
-takes a few seconds.
+override the paths) and is otherwise stdlib-only. A serial `-t 180 --sound`
+pass over the corpus took 58 minutes with a cold render cache (v0.5.459,
+`docs/LESSONS.md`). `--jobs N` measures N songs at once, each in its own
+process and private scratch directory; the rows, report and censuses are
+written once, in the serial order, so N changes only the wall clock. Each row
+records `measure_seconds`, its own convert-pack-trace-render time, which the
+listening pages print beside the tune's length.
 
 ### The window is a prefix, and that limits what a single run can settle
 

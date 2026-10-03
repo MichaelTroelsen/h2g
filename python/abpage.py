@@ -897,6 +897,7 @@ td a { color:var(--ink); font-weight:600; }
 .staleaudio code { font-family:var(--mono); font-size:11.5px; }
 td.aud .old { color:var(--a); font-weight:600; }
 td.aud .cur { color:var(--muted); }
+td.len, td.mtime { white-space:nowrap; }
 td.appr { white-space:nowrap; }
 td.appr .y { color:var(--b); font-weight:600; }
 td.appr .i { color:var(--b); font-weight:600; font-style:italic; }
@@ -2107,9 +2108,55 @@ def write_launcher(port: int = 8730) -> tuple[Path, Path]:
     return ps1, cmd
 
 
-def facts_card(name: str, sv: dict, pre: dict) -> str:
+def _mmss(sec: float) -> str:
+    sec = int(round(sec))
+    return "%d:%02d" % (sec // 60, sec % 60)
+
+
+def length_text(fj: dict) -> tuple[str, str]:
+    """(short, long) of how long the tune plays, original against ours, from
+    the length probe `fidelity.py` ran (`length_compare`). The rule is
+    CLAUDE.md's: where the original ends, ours must end, within +-5 s.
+
+    `orig_ends_at` present: the original ends there; `ours_ends_at` None
+    means ours never stopped inside the probe's window (it loops).
+    `length_never_ends`: the original itself plays past the probe's window,
+    so it has no ending to match. Neither: not measured.
+    """
+    fj = fj or {}
+    if fj.get("orig_ends_at") is not None:
+        o = fj["orig_ends_at"]
+        u = fj.get("ours_ends_at")
+        win = fj.get("length_probe_seconds") or fj.get("seconds")
+        ours = _mmss(u) if u is not None else "loops"
+        d = fj.get("length_delta")
+        delta = ("" if d is None else
+                 " (ours %s%.1f s%s)" % ("+" if d >= 0 else "", d,
+                                         ", a floor" if fj.get("length_bounded")
+                                         else ""))
+        long_ = ("original ends at %s, ours %s%s" %
+                 (_mmss(o), ("at " + ours) if u is not None else
+                  "plays on past %s" % _mmss(win) if win else "loops", delta))
+        return "%s / %s" % (_mmss(o), ours), long_
+    if fj.get("length_never_ends"):
+        w = fj.get("length_never_ends_seconds")
+        return ("both loop", "the original plays on past %s, so there is no "
+                "ending to match" % _mmss(w) if w else "the original never "
+                "ends, so there is no ending to match")
+    return "&mdash;", "not measured"
+
+
+def measure_text(fj: dict) -> str:
+    """How long `fidelity.py` took on this song (convert, pack, trace,
+    render), or a dash for a run older than the field."""
+    v = (fj or {}).get("measure_seconds")
+    return "&mdash;" if v is None else "%.0f s" % v
+
+
+def facts_card(name: str, sv: dict, pre: dict,
+               fj: dict | None = None) -> str:
     """The "what this is" card: player, structure, packing, chosen options."""
-    if not sv and not pre:
+    if not sv and not pre and not fj:
         return ""
     cells = []
     for key, label in SURVEY_FIELDS:
@@ -2129,6 +2176,12 @@ def facts_card(name: str, sv: dict, pre: dict) -> str:
     if rows_:
         cells.append('<div><span class="k">pattern rows</span>'
                      '<span class="v">%s</span></div>' % f"{rows_:,}")
+    if fj:
+        _short, long_ = length_text(fj)
+        cells.append('<div><span class="k">length</span>'
+                     '<span class="v">%s</span></div>' % long_)
+        cells.append('<div><span class="k">measuring time</span>'
+                     '<span class="v">%s</span></div>' % measure_text(fj))
     if not cells:
         return ""
 
@@ -2742,7 +2795,7 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            b_audio=b_audio,
            a_rendered=a_rendered, b_rendered=b_rendered,
            voice_row=voice_row, voice_map=json.dumps(voice_map),
-           facts=facts_card(name, survey or {}, preset or {}),
+           facts=facts_card(name, survey or {}, preset or {}, fidjson or {}),
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
            notes_strip=notes_strip_card(name, fidjson),
@@ -2807,8 +2860,10 @@ def index(names: list[str], rows: dict, version: str,
           appr: dict | None = None, shas: dict | None = None,
           survey: dict | None = None,
           inherited: dict | None = None,
-          notes: dict | None = None) -> str:
+          notes: dict | None = None,
+          fidjson: dict | None = None) -> str:
     appr = appr or {}
+    fidjson = fidjson or {}
     shas = shas or {}
     survey = survey or {}
     notes = notes if notes is not None else listening_notes()
@@ -2920,7 +2975,9 @@ def index(names: list[str], rows: dict, version: str,
                  "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
                  "<td class=\"test\">%s</td>"
-                 "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                 "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+                 "<td class=\"len\" title=\"%s\">%s</td>"
+                 "<td class=\"mtime\">%s</td></tr>"
                  % (n, n.replace("_", " "), badge,
                     # Escaped the way this file already escapes (see md()),
                     # rather than importing `html` into a module that binds
@@ -2930,10 +2987,13 @@ def index(names: list[str], rows: dict, version: str,
                     verdict(n), audio(n), test(n),
                     r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
-                    r.get("hold", "&mdash;")))
+                    r.get("hold", "&mdash;"),
+                    _attr(length_text(fidjson.get(n, {}))[1]),
+                    length_text(fidjson.get(n, {}))[0],
+                    measure_text(fidjson.get(n, {}))))
 
     head = ("<thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th>"
-            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>")
+            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title='where the original ends / where ours ends (m:ss); both loop = the original has no ending to match'>length</th><th title='how long fidelity.py took on this song: convert, pack, trace, render'>measure</th></tr></thead>")
     held_card = ""
     if parked:
         held_card = ("""<div class="card held">
@@ -2960,7 +3020,7 @@ def index(names: list[str], rows: dict, version: str,
 <div class="card">
   <h2>Staged tunes</h2>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
+    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
@@ -3454,7 +3514,7 @@ def main() -> int:
     index_html = _stamp(build_id, index(names, rows, version, appr, now_shas,
                                         survey=survey,
                                         inherited=inherited,
-                                        notes=notes))
+                                        notes=notes, fidjson=fidjson))
 
     for n in names:
         _atomic_write(LISTEN / ("%s.html" % n), rendered[n])

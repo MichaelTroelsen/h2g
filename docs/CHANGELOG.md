@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.498 — 2026-10-03
+
+- fidelity.py --jobs N measures songs in parallel processes with identical output; each row records measure_seconds; the listening index and tune pages show the tune's length and its measuring time
+
 ## 0.5.497 — 2026-10-03
 
 - third runqueue drain -- tick-clocked triangle walk, Monty legato tie clones, ILV per-voice filter routing, row-0 attack hold, per-note pitch-seq phase, gated nibble phase, real-entry instruments lap, noise firstwave and depth census columns, and retractions of the per-frame reach

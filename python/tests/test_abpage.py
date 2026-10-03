@@ -176,8 +176,31 @@ def test_the_index_header_and_every_row_agree_on_the_column_count():
     head = re.search(r"<thead>.*?</thead>", got, re.S).group(0)
     widths = {len(re.findall(r"<td", r))
               for r in re.findall(r"<tr>(?:(?!</tr>).)*</tr>", got, re.S)[1:]}
-    assert len(re.findall(r"<th>", head)) == 9
-    assert widths == {9}
+    # `<th[ >]`: the length and measure headings carry a title attribute.
+    assert len(re.findall(r"<th[ >]", head)) == 11
+    assert widths == {11}
+
+
+def test_length_text_reads_the_length_probe():
+    short, long_ = A.length_text({"orig_ends_at": 59.54, "ours_ends_at": 59.68,
+                                  "length_delta": 0.14,
+                                  "length_bounded": False})
+    assert short == "1:00 / 1:00"
+    assert long_ == "original ends at 1:00, ours at 1:00 (ours +0.1 s)"
+    short, long_ = A.length_text({"orig_ends_at": 59.54, "ours_ends_at": None,
+                                  "length_delta": 120.46,
+                                  "length_bounded": True,
+                                  "length_probe_seconds": 180})
+    assert short == "1:00 / loops"
+    assert "plays on past 3:00" in long_ and "a floor" in long_
+    assert A.length_text({"length_never_ends": True,
+                          "length_never_ends_seconds": 1800})[0] == "both loop"
+    assert A.length_text({}) == ("&mdash;", "not measured")
+
+
+def test_measure_text_prints_seconds_or_a_dash():
+    assert A.measure_text({"measure_seconds": 41.6}) == "42 s"
+    assert A.measure_text({}) == "&mdash;"
 
 
 def test_the_index_is_well_formed_with_the_test_column():

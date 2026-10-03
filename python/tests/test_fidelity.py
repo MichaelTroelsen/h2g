@@ -5100,3 +5100,23 @@ def test_pace_traces_a_pinned_file_at_its_counterpart(name, monkeypatch):
     assert {s for f, s in traced if f != "o.sid"} == {our_sub}, traced
     assert (f"subtune {orig_sub} against our o{our_sub} (pinned)"
             in text.splitlines()[0]), text
+
+
+def test_jobs_refuses_a_named_workdir(tmp_path):
+    # The files in a scratch directory have fixed names, so parallel songs
+    # sharing one would trace each other's intermediates.
+    if not pathlib.Path(fidelity.SIDDUMP).exists():
+        pytest.skip("siddump not built")
+    with pytest.raises(SystemExit) as exc:
+        fidelity.main([str(tmp_path), "--jobs", "2", "--workdir", str(tmp_path)])
+    assert exc.value.code == 2
+
+
+def test_every_measured_row_carries_its_wall_clock(monkeypatch, tmp_path):
+    monkeypatch.setattr(fidelity, "measure", lambda *a, **k: {"status": "measured"})
+    row = fidelity._timed_measure(tmp_path / "x.sid", tmp_path, {}, None, 1)
+    assert row["status"] == "measured"
+    assert isinstance(row["measure_seconds"], float)
+    assert row["measure_seconds"] >= 0
+    # Not a Dimension, so an A/B never reads the clock as a moved column.
+    assert "measure_seconds" not in fidelity.dimensions_present(row)
