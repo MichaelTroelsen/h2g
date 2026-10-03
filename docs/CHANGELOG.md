@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.505 — 2026-10-03
+
+- whattask plan re-scoped to the goatwriter modules: worktree-isolated subtasks, merge-scoped writes, models re-graded, 8 tasks offloaded to qwen3-coder
+
 ## 0.5.504 — 2026-10-03
 
 - split goatwriter.py into the package python/h2g/goatwriter/ (17 modules, moves only; every converted byte, packed .sid, fidelity row and public name identical)
