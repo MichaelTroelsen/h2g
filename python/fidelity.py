@@ -9405,18 +9405,53 @@ def _measure_one(sid: Path, opts: dict, mult: int, args) -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _prior_seconds(*paths) -> dict[str, float]:
+    """`{file: measure_seconds}` from the first readable earlier `--json` run
+    among `paths`, or `{}`. Only a scheduling hint, so anything unreadable is
+    simply no hint."""
+    for p in paths:
+        if not p:
+            continue
+        try:
+            doc = json.loads(Path(p).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict):
+            doc = doc.get("rows", [])
+        got = {r["file"]: r["measure_seconds"] for r in doc
+               if isinstance(r, dict) and r.get("file")
+               and isinstance(r.get("measure_seconds"), (int, float))}
+        if got:
+            return got
+    return {}
+
+
+def _longest_first(names: list[str], prior: dict[str, float]) -> list[int]:
+    """Indices of `names` in the order to START them: the slowest songs of the
+    previous run first, so a 170 s song is not the last one picked up while
+    every other worker sits idle. Songs with no previous time go first of all
+    -- unknown is the riskier guess -- and ties keep the input order. Only the
+    start order changes: rows are written back in input order."""
+    return sorted(range(len(names)),
+                  key=lambda i: (names[i] in prior, -prior.get(names[i], 0.0), i))
+
+
 def _measure_parallel(jobs_in: list, args) -> list[dict]:
     """`measure` over `jobs_in` in `args.jobs` processes, rows in input order.
 
     Options and multipliers are resolved by the caller, in this process, so
     `PRESET_OPTS_MISSES` is filled here exactly as a serial run fills it.
+    Songs start longest-first by the previous run's `measure_seconds`, read
+    from the `--json` file about to be overwritten, else from `--baseline`.
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
     rows: list = [None] * len(jobs_in)
+    prior = _prior_seconds(getattr(args, "json", None),
+                           getattr(args, "baseline", None))
+    order = _longest_first([sid.name for sid, _o, _m in jobs_in], prior)
     with ProcessPoolExecutor(max_workers=args.jobs, initializer=_worker_init,
                              initargs=(PAL_FLAG,)) as ex:
-        futs = {ex.submit(_measure_one, sid, opts, mult, args): i
-                for i, (sid, opts, mult) in enumerate(jobs_in)}
+        futs = {ex.submit(_measure_one, *jobs_in[i], args): i for i in order}
         for fut in as_completed(futs):
             i = futs[fut]
             rows[i] = fut.result()
@@ -9570,7 +9605,10 @@ def main(argv=None) -> int:
                         "its own private scratch directory. The report, --json "
                         "and the censuses are written once from the same rows "
                         "in the same order as a serial run, so N changes only "
-                        "the wall clock. Ignored for --pair, --ticks, --pace, "
+                        "the wall clock. Songs start slowest-first by the "
+                        "previous run's measure_seconds. Each song can take "
+                        "1-3 GB: 16 jobs filled 32 GB and paged (v0.5.499), so "
+                        "size N to memory, not cores. Ignored for --pair, --ticks, --pace, "
                         "--diagnose and --naming-census, and refused with "
                         "--workdir (a named directory is shared by "
                         "construction). Default 1")

@@ -5120,3 +5120,22 @@ def test_every_measured_row_carries_its_wall_clock(monkeypatch, tmp_path):
     assert row["measure_seconds"] >= 0
     # Not a Dimension, so an A/B never reads the clock as a moved column.
     assert "measure_seconds" not in fidelity.dimensions_present(row)
+
+
+def test_parallel_songs_start_slowest_first():
+    names = ["a.sid", "b.sid", "c.sid", "new.sid", "d.sid"]
+    prior = {"a.sid": 5.0, "b.sid": 170.0, "c.sid": 40.0, "d.sid": 40.0}
+    order = fidelity._longest_first(names, prior)
+    # Unknown first, then slowest; the 40 s tie keeps input order.
+    assert [names[i] for i in order] == ["new.sid", "b.sid", "c.sid",
+                                         "d.sid", "a.sid"]
+    assert fidelity._longest_first(names, {}) == list(range(len(names)))
+
+
+def test_prior_seconds_reads_the_first_readable_run(tmp_path):
+    good = tmp_path / "f.json"
+    good.write_text('[{"file": "a.sid", "measure_seconds": 12.5},'
+                    ' {"file": "b.sid"}]', encoding="utf-8")
+    assert fidelity._prior_seconds(str(tmp_path / "missing.json"), None,
+                                   str(good)) == {"a.sid": 12.5}
+    assert fidelity._prior_seconds(None) == {}

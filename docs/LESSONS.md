@@ -1118,6 +1118,16 @@ test dependency).
   tail: Confuzion 174 s, Battle_of_Britain, 5_Title_Tunes and
   Auf_Wiedersehen_Monty about 167 s each, all measured under 16-way
   contention, so a serial run would read each one lower.
+  **AND 16 IS TOO MANY: THE LIMIT IS MEMORY, NOT CORES (v0.5.499).** A
+  second `--jobs 16` run of the same command, every render now CACHED, took
+  **954 s** wall and 15008 s of summed per-song time -- three times the first
+  run, with less work to do. During it the 16 workers held 23.6 GB of the
+  32 GB machine (0.4-2.7 GB each) with 1.9 GB free, and Claude Code killed
+  the follow-up run for low memory. Alone, Confuzion takes 8.4 s warm and
+  50.6 s cold (42 s of it the two renders), against 174 s inside the first
+  16-way run. The 15x of the first run held only because other load on the
+  machine left it room; it is not a property of 16 workers. Size `--jobs` to
+  RAM: 10 is the working figure (user, 2026-10-03), not yet timed.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26

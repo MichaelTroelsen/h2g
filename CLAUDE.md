@@ -138,7 +138,7 @@ lifts it:
 **On demand, not every commit:** `FIDELITY.md`, then `QUEUE.md` in the same pass,
 from `python/`:
 ```sh
-python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 16 \
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 10 \
     --census ../build/onset_census.md --hold-census ../build/hold_census.md \
     --json ../build/fidelity.json -o ../docs/FIDELITY.md
 python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json
@@ -152,7 +152,10 @@ directory, and writes the same rows in the same order as a serial run
 (byte-identical JSON and report on a 6-song subset, cold and warm cache, at
 v0.5.497); each row records its own `measure_seconds`. At `--jobs 16` the
 whole refresh took 5m18s, partly warm, about 15x over its own summed
-per-song time (v0.5.498; `docs/LESSONS.md`).
+per-song time (v0.5.498; `docs/LESSONS.md`). **Size `--jobs` to MEMORY, not
+cores**: a song takes 0.4-2.7 GB, and a second 16-job run filled the 32 GB
+machine, paged, and took 954 s with every render cached (v0.5.499). Use 10.
+Songs start slowest-first by the previous run's `measure_seconds`.
 `--sound` and the two census flags are what the current artefact carries;
 `.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
 Regenerate after a commit that changes what the converter emits, and never from a
