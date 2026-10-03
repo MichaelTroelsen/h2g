@@ -45,14 +45,17 @@ def _declined(*_a, **_k):
 @contextmanager
 def disabled(names=None):
     names = DISABLED if names is None else names
-    saved = {n: getattr(goatwriter, n) for n in names}
+    # Patch the DEFINING module: goatwriter is a package since v0.5.504, and a
+    # name set on the package itself reaches no caller.
+    home = {n: sys.modules[getattr(goatwriter, n).__module__] for n in names}
+    saved = {n: getattr(home[n], n) for n in names}
     try:
         for n in names:
-            setattr(goatwriter, n, _declined)
+            setattr(home[n], n, _declined)
         yield
     finally:
         for n, f in saved.items():
-            setattr(goatwriter, n, f)
+            setattr(home[n], n, f)
 
 
 def _sha(sid: Path, doc: dict) -> str:

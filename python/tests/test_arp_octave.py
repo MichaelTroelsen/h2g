@@ -1083,9 +1083,9 @@ def _fake_split(monkeypatch, tie=False):
     instrument and names none."""
     import h2g.goatwriter as G
     from types import SimpleNamespace
-    monkeypatch.setattr(G, "fixed_arp_mask", lambda sid, det: (0x02, 0xF0))
-    monkeypatch.setattr(G, "fixed_arp_counter_gated", lambda sid, det: True)
-    monkeypatch.setattr(G, "find_song_speeds",
+    monkeypatch.setattr(G.primitives, "fixed_arp_mask", lambda sid, det: (0x02, 0xF0))
+    monkeypatch.setattr(G.arpeggio, "fixed_arp_counter_gated", lambda sid, det: True)
+    monkeypatch.setattr(G.tempo, "find_song_speeds",
                         lambda sid, det: SongSpeeds((2,), 0, None))
     det = SimpleNamespace(arp_fixed_up=0x0C, effect_arp=True,
                           instr_start=0, instr_stride=8)
@@ -1596,10 +1596,10 @@ def _fake_phase(monkeypatch, track):
     only) and voices 1-2 a rest."""
     import h2g.goatwriter as G
     from types import SimpleNamespace
-    monkeypatch.setattr(G, "fixed_arp_mask", lambda sid, det: (0x01, 0xF0))
-    monkeypatch.setattr(G, "fixed_arp_counter_base", lambda sid, det: 0)
-    monkeypatch.setattr(G, "fixed_arp_first_fetch", lambda sid, det: 0)
-    monkeypatch.setattr(G, "find_song_speeds",
+    monkeypatch.setattr(G.primitives, "fixed_arp_mask", lambda sid, det: (0x01, 0xF0))
+    monkeypatch.setattr(G.arpeggio, "fixed_arp_counter_base", lambda sid, det: 0)
+    monkeypatch.setattr(G.arpeggio, "fixed_arp_first_fetch", lambda sid, det: 0)
+    monkeypatch.setattr(G.tempo, "find_song_speeds",
                         lambda sid, det: SongSpeeds((3,), 0, None))
     det = SimpleNamespace(arp_fixed_up=0x0C, effect_arp=True,
                           instr_start=0, instr_stride=8)

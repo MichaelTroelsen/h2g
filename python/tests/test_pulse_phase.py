@@ -101,8 +101,8 @@ def test_the_gate_is_lifted_and_the_budget_stands_in_its_place():
             "            and (det.pulse_tri_hi >= 0 or det.pulse_bounds >= 0)):") in src, (
         "the pulse_phase gate is neither the triangle engine's nor the "
         "bounds engine's; see test_the_bounds_engine_has_a_sim_and_a_walk")
-    gw = (PYTHON_ROOT / "h2g" / "goatwriter.py").read_text(encoding="utf-8")
-    call = "patterns = budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)"
+    gw = (PYTHON_ROOT / "h2g" / "goatwriter" / "build.py").read_text(encoding="utf-8")
+    call = "patterns = _gw_pulse.budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)"
     assert gw.count(call) == 1, "the budget is not called from build_sng"
     # Last of the command-column writers: the vibrato pass is what takes
     # Rasputin's four patterns across the line, so the budget must follow it.
@@ -611,7 +611,7 @@ def test_the_bounds_engine_has_a_sim_and_a_walk():
     """
     conv = (PYTHON_ROOT / "h2g" / "convert.py").read_text(encoding="utf-8")
     pats = (PYTHON_ROOT / "h2g" / "patterns.py").read_text(encoding="utf-8")
-    gw = (PYTHON_ROOT / "h2g" / "goatwriter.py").read_text(encoding="utf-8")
+    gw = (PYTHON_ROOT / "h2g" / "goatwriter" / "pulse.py").read_text(encoding="utf-8")
     assert "class PulseBoundsSim" in gw and "def pulse_bounds_sims" in gw
     assert "sims = pulse_phase_sims(sid, det, lead) or bounds_sims" in conv, (
         "convert.py no longer hands the walk the bounds sims")
@@ -829,12 +829,12 @@ def test_shared_ramps_play_the_widths_the_per_phase_ramps_played():
         entries, starts, index = table
         assert len(entries) <= G.GT_MAX_TABLELEN, (name, len(entries))
         limit = G.GT_MAX_TABLELEN
-        G.GT_MAX_TABLELEN = 10 ** 6
+        G.constants.GT_MAX_TABLELEN = 10 ** 6
         try:
             ref = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
                                            None, lead, False)
         finally:
-            G.GT_MAX_TABLELEN = limit
+            G.constants.GT_MAX_TABLELEN = limit
         ref_entries, ref_starts, ref_index = ref[0], ref[1], ref[2]
         assert ref[3] == 0, (name, "the unlimited reference degraded")
         tracked = {k[0] for k in index}

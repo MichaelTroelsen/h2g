@@ -490,7 +490,7 @@ def test_the_six_unmoved_files_carry_no_bit7_note_in_real_output(name, dialect, 
     # off legitimately changes Wiz's tie rows. Switch it off in both arms: this
     # test asks only whether the flag reaches a note byte.
     import h2g.goatwriter as gwmod
-    monkeypatch.setattr(gwmod, "legato_tie_family", lambda sid, det: False)
+    monkeypatch.setattr(gwmod.note_passes, "legato_tie_family", lambda sid, det: False)
 
     def forced_off(sid, log, engine=0):
         d = real_detect(sid, log, engine)

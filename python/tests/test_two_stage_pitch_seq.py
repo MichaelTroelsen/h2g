@@ -330,21 +330,21 @@ def test_food_feud_carries_the_majority_phase_per_instrument():
     def spy(*a):
         got.update(real(*a))
         return got
-    G.pitch_seq_phases = spy
+    G.arpeggio.pitch_seq_phases = spy
     try:
         convert(str(CORPUS / "Food_Feud.sid"), log=lambda *a, **k: None,
                 **opts)
     finally:
-        G.pitch_seq_phases = real
+        G.arpeggio.pitch_seq_phases = real
     assert got[3] == (1, 0, 0, 0, 0, 1, 1, 1), got
     assert got[4] == (1, 1, 1, 0, 0, 0, 0, 1), got
     # the shipped preset (no `pitch_seq`) computes none of this
     got.clear()
     opts["pitch_seq"] = False
-    G.pitch_seq_phases = spy
+    G.arpeggio.pitch_seq_phases = spy
     try:
         convert(str(CORPUS / "Food_Feud.sid"), log=lambda *a, **k: None,
                 **opts)
     finally:
-        G.pitch_seq_phases = real
+        G.arpeggio.pitch_seq_phases = real
     assert got == {}

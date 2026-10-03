@@ -110,7 +110,7 @@ def test_the_swallowed_row_is_not_one_file():
             seen.setdefault(current[0], set()).add((row_calls, ticks))
         return ticks
 
-    gw._hard_restart_ticks = spy
+    gw.hard_restart._hard_restart_ticks = spy
     try:
         converted = 0
         for path in sorted(CORPUS.glob("*.sid")):
@@ -123,7 +123,7 @@ def test_the_swallowed_row_is_not_one_file():
             if blob:
                 converted += 1
     finally:
-        gw._hard_restart_ticks = real
+        gw.hard_restart._hard_restart_ticks = real
 
     # A probe whose conversions nearly all failed would agree with anything.
     assert converted >= 80, converted

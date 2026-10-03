@@ -58,12 +58,12 @@ def _food_feud_split():
         cap.update(sid=sid, det=det, tracks=tracks, patterns=patterns,
                    plan=plan)
         return plan
-    G.pitch_seq_phase_split_plan = spy
+    G.arpeggio.pitch_seq_phase_split_plan = spy
     try:
         convert(str(CORPUS / "Food_Feud.sid"), log=lines.append,
                 **_opts("Food_Feud.sid", pitch_seq=True))
     finally:
-        G.pitch_seq_phase_split_plan = real
+        G.arpeggio.pitch_seq_phase_split_plan = real
     return (cap["sid"], cap["det"], cap["tracks"], cap["patterns"],
             cap["plan"], tuple(lines))
 

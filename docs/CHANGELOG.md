@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.504 — 2026-10-03
+
+- split goatwriter.py into the package python/h2g/goatwriter/ (17 modules, moves only; every converted byte, packed .sid, fidelity row and public name identical)
+
 ## 0.5.503 — 2026-10-03
 
 - plan to split goatwriter.py into a package; whattask plan regenerated at 8b86184

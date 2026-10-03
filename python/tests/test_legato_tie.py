@@ -44,12 +44,12 @@ def _preset_opts(name):
 def _convert(name, legato=True):
     real = G.legato_tie_family
     if not legato:
-        G.legato_tie_family = lambda sid, det: False
+        G.note_passes.legato_tie_family = lambda sid, det: False
     try:
         lines = []
         sng = convert(str(CORPUS / name), log=lines.append, **_preset_opts(name))
     finally:
-        G.legato_tie_family = real
+        G.note_passes.legato_tie_family = real
     return sng, lines
 
 

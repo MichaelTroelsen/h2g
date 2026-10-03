@@ -1,13 +1,14 @@
 {
   "generated_from": {
-    "head": "8b86184",
+    "head": "9382f02",
     "sources": [
-      ".claude/tasks/whattask.json (previous, at 3b1c66d)",
-      ".claude/tasks/runs.jsonl (whole file; the third drain's records at 3b1c66d)",
+      ".claude/tasks/whattask.json (previous, at 8b86184)",
+      ".claude/tasks/runs.jsonl (whole file; no records since 8b86184)",
       ".claude/tasks/decisions.jsonl (whole file; no new answers since 57c086e)",
-      "git log 3b1c66d..8b86184 (54d3b74, c43a7f3, 4772a0a, 9bab8d4, 7229c7b, 1903601, 6efcba3 and their stamp commits)",
-      "todo.md, whats-next.md, docs/BACKLOG.md (unchanged since the previous pass)",
-      "graphify-out/graph.json (updated at 8b86184)",
+      "git log 8b86184..9382f02 (e23776e, 9382f02)",
+      "docs/superpowers/plans/2026-10-03-split-goatwriter.md (new at e23776e)",
+      "todo.md, whats-next.md, docs/BACKLOG.md (unchanged since 8b86184)",
+      "graphify-out/graph.json (updated at 9382f02)",
       "gh issue list / gh pr list (both empty)"
     ],
     "focus": null
@@ -57,9 +58,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-saboteur-ii",
@@ -89,9 +92,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-zoolook",
@@ -121,9 +126,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-confuzion",
@@ -154,9 +161,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-las-vegas-video-poker",
@@ -187,9 +196,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-geoff-capes-strongman-challenge",
@@ -219,9 +230,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-action-biker",
@@ -253,9 +266,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-kings-of-the-beach-ingame",
@@ -285,9 +300,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-sigma-seven",
@@ -317,9 +334,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-samantha-fox-strip-poker",
@@ -349,9 +368,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-knucklebusters",
@@ -381,9 +402,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sign-off-sanxion",
@@ -413,9 +436,11 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and an approval record",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "action-biker-subtune-pairing-needs-an-ear",
@@ -438,11 +463,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "action-biker-noise-runs-want-a-listen-because-the-columns-disagree",
@@ -465,11 +492,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled",
@@ -504,11 +533,13 @@
       "verify": "AT 922c782 `build_pulse_phase_table` ships partial tables instead of reverting, so the search's 'nothing survived' revert case is rarer; re-read the gate before re-measuring. || pulse_phase is in FIDELITY_TOGGLES and the eight-toggle search runs over 89 songs at -t 180, with the result DIFFED against the shipped presets before adoption. TIME the run rather than extrapolating: seven toggles is 25m21s at -t 60 and about 75 minutes serial at -t 180. || BLOCKED at 4b5d7f0: **NOT RUN, AND DELIBERATELY SO.** The verify is an eight-toggle `--fidelity` search over 89 songs at 180 s writing `presets.json`, `docs/FIDELITY.md` and `build/fidelity.json` -- ~2.5 hours serial by the v0.5.459 timings, against a tree whose `presets.json` is being rewritten by another process this minute and whose HEAD will move within the hour. CLAUDE.md: *'Regenerate AFTER the tree is coherent and the tests pass, never while another change is half-applied: a run taken mid-edit records a state that never existed.'* **NOTHING WAS WRITTEN.** No lock record was claimed -- the gate fired before || RE-CHECKED at 04fdcb5: the precondition the earlier BLOCKED clause named is now MET -- the pulse-phase budget lifted the multiplier gate at v0.5.483, and presets.json, docs/SURVEY.md, docs/FIDELITY.md and build/fidelity.json were all re-taken at v0.5.488 on a coherent tree. READ THE BLOCKED CLAUSE ABOVE AS HISTORY, NOT AS A CURRENT REFUSAL. What stands unchanged is the done-condition and the cost: pulse_phase is in FIDELITY_TOGGLES, the search runs over the whole corpus at the artefact's own window from a tree with no unrelated edits, and the result is DIFFED against the shipped presets before any adoption -- a search that fails is not a search that says no, so read stderr for a refusal rather than reading a missing entry as a measured no. TIME the run rather than extrapolating a per-song cost. ORDERED at 74a0bb3: the triangle sim reads at chance on Rasputin and One_Man on either clock (runs.jsonl, triangle-pulse-walk record at 04fdcb5), so a search over those carriers before the model is fixed measures a plan that does not reach the original; wait for triangle-sim-model-fails-on-rasputin-and-one-man.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "rewrites three generated artefacts and runs for hours",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 161 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 182 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ab-7-presets-search-respects-approvals",
@@ -544,11 +575,13 @@
       "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. NOTE the design document writes `H2G-CONVERSION-METHOD.md` WITHOUT its `docs/` prefix and no such file exists at the repo root; the grant names the real path, `docs/H2G-CONVERSION-METHOD.md`, so a literal string comparison against the document will flag it forever. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "changes behaviour other tasks are measured against",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 163 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 184 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ab-9-drift-as-acceptance-term",
@@ -581,11 +614,13 @@
       "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. EDGE ADDED: the GATE above was recorded ONLY as prose, where /runtask's selector cannot see it -- it now also exists as a `depends_on` edge on `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace`. That gate is currently SATISFIED (that id reads done in runs.jsonl), so nothing was blocked by its absence; what was wrong is that a runner obeying the selection rule literally had no way to know it existed.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "changes behaviour other tasks are measured against",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 87 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 120 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-basing-hold-on-its-census-is-a-criterion-change-and-needs-the-search-re-run",
@@ -613,11 +648,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 157 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 178 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
@@ -640,11 +677,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "monty-firstwave-trade-needs-a-listen",
@@ -667,11 +706,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "mega-apocalypse-pitch-seq-is-a-near-exact-vib-fix-costing-twelve-points-of-pitch",
@@ -694,11 +735,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pandora-regresses-under-the-two-sided-attack-guard",
@@ -724,11 +767,13 @@
       "verify": "After a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings has run, presets.json's Pandora.sid entry equals what that search selected (compare against the search's own output, not a hand edit), and python/presets.py carries no Pandora-specific exception. Read-only check.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "it reads the artefact the main-lane search writes",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 44 other task(s) on a written path",
+      "why_lane": "overlaps 48 other task(s) on a written path",
       "effort": "low",
       "why_effort": "a read-only check of one entry once the search has run",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision",
@@ -751,11 +796,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings",
@@ -783,11 +830,13 @@
       "verify": "presets.json carries the refreshed hard-restart decisions, or the candidate is discarded with the reason recorded.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "adopting it rewrites the artefact every other measurement is taken against",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 158 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 179 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-render-check-should-be-re-run-once-the-calibration-passes-because-inherited-has-never-been-observed",
@@ -817,11 +866,13 @@
       "verify": "REWRITTEN at 59fbe1b: two premises moved. (1) The calibration reads FAIL again at v0.5.491 on its re-render floor (0.0183, docs/SOUND-CALIBRATION.md; see render-sidplayfp-should-pass-a-fixed-power-on-delay), so `inherited` cannot appear until recalibrate-after-the-delay-flag lands -- this task now depends on it. (2) build/approvals.json at v0.5.490 reads `exact` for Action_Biker and 5_Title_Tunes (current sha == approved sha) and `uncalibrated` for ACE_II / Devils_Galop, so the index's span set may legitimately hold `exact` rather than `inherited`. Done when build/listen/index.html's per-tune spans agree with build/approvals.json's status for every approved tune (C:/t/abpage-render-check/check_column.py compares them and refuses an empty span set) and at least one span reads `inherited` OR `exact` -- a run that shows only `uncalibrated` while the calibration passes is the failure. [main]",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "writes a hazard path and needs the calibration state in view",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 39 other task(s) on a written path",
+      "why_lane": "overlaps 40 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "max-hard-restart-should-perhaps-ignore-want",
@@ -857,9 +908,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a choice between two shipped-product routes, the cheaper of which silently re-converts 17 songs",
       "why_mode": "re-runs the preset search and rewrites two generated artefacts",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 165 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 188 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "five-title-tunes-gate-cannot-reach-100",
@@ -888,9 +941,11 @@
       "why_model": "writing down a limit already derived and quoted in a run record",
       "why_effort": "the derivation exists; the work is placing it in the archive with a grade",
       "why_mode": "a single doc edit with no measurement of its own",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 97 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 114 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "restage-the-listening-set-at-a-uniform-window",
@@ -921,10 +976,12 @@
       "verify": "Every tune in build/listen is the conversion build/fidelity.json measured -- for each, sha1 of <song>.h2g.sng truncated to 12 hex equals that file's output_sha -- AND every rendered pair is the same window, so a listener comparing two songs is comparing like with like. CHECK THE WAV HEADER, NOT THE FILE SIZE: these renders are MONO 16-bit 44.1 kHz, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and it chose the wrong window -- the set was read as 60/90 s when it was really 120/180 s, and 55 files were restaged at 90 s, shorter than everything else rather than matching it. Verify by sha and by wave.open(), never by exit code and never by st_size. || PARTIAL at 665939c: All 89 staged tunes are now the conversion their measurement describes -- 0 stale, verified by sha -- but the set is 66 at 180 s and 23 at 120 s, so the uniform-window half is unmet and named. RE-CHECKED at e362bd6: 'every rendered pair is the same window' no longer holds by design -- since b7a244d a tune whose original ends past -t is rendered for its own window (render_window); read 'uniform' as 'the window fidelity.json traced', i.e. each pair's length equals traced_window(row), and check the WAV header against that, not against -t.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the judgement is only which window; the work is a long render",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 136 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 156 other task(s) on a written path",
       "why_mode": "renders both sides of dozens of tunes into build/listen, a documented hazard, and outlives a delegated agent",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "corpus-firstwave-class-zero-frame",
@@ -958,9 +1015,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the same frame is read by three columns, so a change that satisfies one and breaks another is the easy wrong answer",
       "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 139 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 164 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-conversion-emits-no-rest-for-the-players-release",
@@ -992,9 +1051,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
       "why_mode": "a design decision about what the orderlist can express, not a measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 117 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 146 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-ilv-decoder-has-no-tie-parameter-and-drops-99-percent-of-the-originals-ties",
@@ -1021,11 +1082,13 @@
       "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line. || INCONCLUSIVE at 8b7b218: VERIFY NOT MET AND ITS PREMISE IS UNSOUND, which is why this is `inconclusive` rather than `partial`: there is no durable progress toward the stated goal, because the stated goal ('the six ilv files' tie counts move toward the originals' and their attack surplus falls') couples two quantities that are not causally linked by anything measured. Adding a `tie` parameter to `_build_raw_pattern_ilv` would emit `CMD_TONEPORTA` on gate-hold events; it would NOT move a metric that counts pitch changes under a held note. **CHECKS ACTUALLY RUN:** the `attacks + ties` conservation test on four voices (no || REWRITTEN at 04fdcb5, because the premise the INCONCLUSIVE record refuted is still sitting in the sentence above: the old done-condition coupled the tie deficit to the ATTACK SURPLUS, and nothing measured links them -- emitting a tone-portamento on a gate-hold event does not move a metric that counts pitch changes under a held note. There is now a `tie` Dimension in the artefact, a direct our-over-theirs tie COUNT ratio, which is the instrument this question actually needed. Re-derive against THAT: state the six files' tie ratios as the artefact reads them, decide on that evidence whether the ILV duration byte's tie bit should be emitted, and either emit it with a per-file A/B over the six or REFUTE it in writing in the decoder's own docstring. Do not restate the attack-surplus coupling as a done-condition. The priority note below still holds: these six are not identified as Rob Hubbard and sit behind the Rob Hubbard files.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "the diagnosis matters more than the measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "interleaved-record-plus-7-bit-20-is-an-unread-effect-bit-on-all-six-files",
@@ -1052,11 +1115,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -1082,11 +1147,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-interleaved-tie-flag-needs-a-command-column-decision-between-tone-porta-and-the-82-slide",
@@ -1113,11 +1180,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -1144,11 +1213,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -1174,11 +1245,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "go-go-dash-should-adopt-arpeggio-and-neither-route-to-recording-it-is-granted",
@@ -1204,11 +1277,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 157 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 174 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -1235,11 +1310,13 @@
       "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding context and a corpus measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 123 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 148 other task(s) on a written path",
       "effort": "xhigh",
       "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "narrowing-the-ilv-routing-nibble-is-correct-and-invisible-to-every-column",
@@ -1263,11 +1340,13 @@
       "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "small, but each touches a file other tasks read as ground truth",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 134 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 157 other task(s) on a written path",
       "effort": "low",
       "why_effort": "mechanical and cheap to redo if it comes out wrong",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-six-interleaved-classic-files-have-never-been-listened-to",
@@ -1293,11 +1372,13 @@
       "verify": "The user has listened to the six interleaved files and a verdict for each is recorded by approvals.py against that file's CURRENT output sha. BEFORE asking, check the material: sha1 of build/listen/<song>.h2g.sng truncated to 12 hex must equal that file's output_sha in build/fidelity.json, and restage with listen.py --files <song>.sid -t 180 if it does not. These six are SIDId Jason_Page/RobTracker, not Rob_Hubbard, and the user has put them behind the RH files -- do not raise this ahead of an RH sign-off. || BLOCKED at 4b5d7f0: **NOT RUN -- a `requires-user` task has no verify this session can execute.** The command's mode gate is explicit: *'STOP. Print `blocked_on` verbatim and ask for exactly the thing it names. Do not attempt a workaround; the blocker is the answer.'* **NOTHING WAS WRITTEN.** All three `touches` are `r:` (`presets.json`, `build/listen`, `docs/FIDELITY.md`) and all three were read only; the task has no host scratch grant, so this record's scratch is the claim script alone. `git status -- build/fidelity.json` is unchanged from before this run bar the run log.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 61 other task(s) on a written path",
+      "why_lane": "overlaps 60 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pacific-coast-no-test-restart-adoption-trades-melody-for-rendered-audio",
@@ -1320,11 +1401,13 @@
       "verify": "The human answers the question in blocked_on and /runhuman records it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_mode": "no amount of work resolves it",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 40 other task(s) on a written path",
+      "why_lane": "overlaps 44 other task(s) on a written path",
       "effort": "medium",
       "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
@@ -1353,11 +1436,13 @@
       "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "needs the surrounding ILV context and a per-file trace",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 130 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 156 other task(s) on a written path",
       "effort": "high",
       "why_effort": "the code has to be understood before it can be safely changed",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "go-go-dash-gives-up-a-measured-filter-gain-to-the-one-voice-gate",
@@ -1386,11 +1471,13 @@
       "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_mode": "the trade is per song and wants the surrounding ILV context",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 130 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 156 other task(s) on a written path",
       "effort": "high",
       "why_effort": "the code has to be understood before it can be safely changed",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "unblock-the-six-interleaved-classic-files-their-material-now-exists",
@@ -1419,9 +1506,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "needs the surrounding context or writes a shared artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path",
+      "why_lane": "overlaps 55 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "listen-to-whether-confuzion-loses-an-audible-release-tail-on-0909",
@@ -1447,9 +1536,11 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "blocked on a human verdict",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 73 other task(s) on a written path",
+      "why_lane": "overlaps 100 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "adopt-pulse-phase-for-confuzion",
@@ -1475,9 +1566,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "needs the surrounding context or writes a shared artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 156 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 172 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "restage-listening-md-after-the-multiplier-fix",
@@ -1512,9 +1605,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "needs the surrounding context or writes a shared artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 140 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 169 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "regenerate-the-vibrato-census-artefact-after-the-pitchseq-gate",
@@ -1542,9 +1637,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "needs the surrounding context or writes a shared artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 111 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 140 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "aud-voices-needs-the-artefact-grant-and-a-mute-aware-render-cache",
@@ -1580,9 +1677,11 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "code or a player that has to be understood before it can be safely changed",
       "why_mode": "needs the surrounding context or writes a shared artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 119 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 149 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "detect-the-static-global-pitch-sequence-form-and-feed-kings-of-the-beach-intros-writer",
@@ -1611,9 +1710,11 @@
       "why_model": "a plausible-but-wrong answer is cheap to produce here",
       "why_effort": "code or a player that has to be understood before it can be safely changed",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 161 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "adopt-pitch-seq-for-kings-of-the-beach-intro-once-detection-reads-its-static-table",
@@ -1642,9 +1743,11 @@
       "why_model": "on hold; the tier it would run on when released, opus, as its root-cause shape needs",
       "why_effort": "code or a player that has to be understood before it can be safely changed",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 159 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch",
+      "why_lane": "overlaps 176 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "why-does-the-static-arpeggio-overshoot-the-originals-reversals-by-ten-percent",
@@ -1672,9 +1775,11 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "bounded work needing ordinary judgement",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 25 other task(s) on a written path",
+      "why_lane": "overlaps 29 other task(s) on a written path",
       "fork": null,
-      "branch": null
+      "branch": null,
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-run-the-hold-delta-split-after-the-gate-aware-noise-runs",
@@ -1706,7 +1811,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a corpus re-measurement whose only judgement is reading which files moved",
       "why_mode": "whole-corpus pass on shared binaries",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 77 other task(s) on a written path"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "bmx-kidz-0878-vibrato-is-five-times-too-shallow",
@@ -1739,7 +1846,9 @@
       "why_model": "a per-call arithmetic derivation where a plausible constant is the failure mode",
       "why_effort": "a real diagnosis against the player's own loop",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "presets-search-pulse-phase-on-the-three-multispeed-carriers",
@@ -1774,7 +1883,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a measured adoption whose only judgement is reading the diff",
       "why_mode": "regenerates presets.json (a hazard) and serialises on the binaries",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 156 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 176 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "delta-mix-and-chicken-song-play-differently-on-their-second-pass",
@@ -1801,7 +1912,9 @@
       "why_model": "the decision is what a tune should sound like",
       "why_effort": "a listening-shaped decision",
       "why_mode": "blocked on a decision about what the tune should sound like",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 25 other task(s) on a written path"
+      "why_lane": "overlaps 29 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "tempo-alignment-rounding-decision",
@@ -1832,7 +1945,9 @@
       "why_model": "a decision",
       "why_effort": "a judgement between two measured costs",
       "why_mode": "blocked on a decision about which error a listener prefers",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 25 other task(s) on a written path"
+      "why_lane": "overlaps 29 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "implement-tempo-command-value-rounding",
@@ -1868,7 +1983,9 @@
       "why_model": "a bounded arithmetic change with the measurement already made",
       "why_effort": "ordinary judgement, the mechanism is named",
       "why_mode": "confined to goatwriter.py and its tempo tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-run-the-hold-census-after-the-tempo-rounding",
@@ -1902,7 +2019,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a corpus re-measurement whose only judgement is reading the split",
       "why_mode": "whole-corpus pass on the shared binary",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 35 other task(s) on a written path"
+      "why_lane": "overlaps 47 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "reject-phantoms-and-rest-instrument-are-live-on-zero-files",
@@ -1938,7 +2057,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a removal whose correctness is a zero-move byte-hash",
       "why_mode": "presets.json is a generated artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 163 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 187 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "keep-or-revert-the-tied-instrument-envelope-change-after-a-listen",
@@ -1965,7 +2086,9 @@
       "why_model": "a listening verdict is the human's",
       "why_effort": "the question is settled by ears, not reasoning",
       "why_mode": "a keep/revert decision about what a tune should sound like is [user] by CLAUDE.md",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 38 other task(s) on a written path"
+      "why_lane": "overlaps 43 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "tied-instrument-change-on-a-row-zero-boundary-tie-takes-the-late-spelling",
@@ -1997,7 +2120,9 @@
       "why_model": "a per-orderlist-position spelling decision in the emitter with a measured trade-off",
       "why_effort": "a plausible spelling that quietly worsens the freeze is the failure mode",
       "why_mode": "confined to goatwriter.py and one test file, verified by byte-hash plus an A/B",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "after-8s-fixed-pitch-is-still-not-emitted-under-its-pitch-seq-preset",
@@ -2028,7 +2153,9 @@
       "why_model": "an emitter change inside the two-stage/pitch-seq wavetable shape, where a wrong entry order is only visible in a trace",
       "why_effort": "the shape has three interacting mechanisms and a plausible wrong wiring traces cleanly on other files",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "listen-to-rock-tells-the-tale-gt16-against-gt9-after-the-usage-ordered-pulse-table",
@@ -2055,7 +2182,9 @@
       "why_model": "a listening verdict is the human's",
       "why_effort": "one A/B, one ear",
       "why_mode": "every listening verdict is [user] by CLAUDE.md",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 38 other task(s) on a written path"
+      "why_lane": "overlaps 43 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "classic-vibrato-players-gate-the-oscillator-on-a-per-note-frame-counter-and-vibdelay-can-say-so",
@@ -2090,7 +2219,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "applying a recorded verdict",
       "why_mode": "the remaining step applies a human listening verdict to uncommitted converter work",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "classic-vibrato-swing-is-two-thirds-of-the-players-bound-times-depth-on-food-feud",
@@ -2123,7 +2254,9 @@
       "why_model": "a derivation the repo has already got wrong once in a measured way, where the wrong answer is cheap to produce",
       "why_effort": "high",
       "why_mode": "one emitter function plus its two topic tests, verified by a named-file A/B",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-artefact-claim",
@@ -2155,7 +2288,9 @@
       "why_model": "a falsification pass against an explanation that already fits the symptom, which is exactly where a confident wrong answer is cheapest",
       "why_effort": "xhigh",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 126 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "read-game-killers-sweep-off-the-disassembly",
@@ -2182,7 +2317,9 @@
       "why_model": "reading a player is where a plausible wrong answer costs a rule",
       "why_effort": "the answer sets a repo-wide rule",
       "why_mode": "the opener tagged it [user]: the user wants to read or sign off the disassembly themselves",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 76 other task(s) on a written path"
+      "why_lane": "overlaps 92 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "silence-db-sits-below-the-packed-players-idle-floor",
@@ -2219,7 +2356,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a calibration change moves every sound column; a confident wrong floor is expensive and quiet",
       "why_mode": "writes the calibration artefact and moves a repo-wide measurement, from the invoking session",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 77 other task(s) on a written path"
+      "why_lane": "overlaps 101 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "the-digi-decoder-has-no-tie-and-rikky-re-attacks-the-note-after-every-slide",
@@ -2250,7 +2389,9 @@
       "why_model": "a player read plus a grammar change in a decoder shared by nine files",
       "why_effort": "a plausible tie rule that is wrong moves nine files",
       "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 119 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 143 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "listen-notes-no-legato-should-say-what-shape-the-ties-are",
@@ -2281,7 +2422,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one answer",
       "why_mode": "the cutoff is a judgement the verify cannot settle",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 82 other task(s) on a written path"
+      "why_lane": "overlaps 117 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-walk-the-ilv-83-arpeggio-now-that-tie-is-a-column",
@@ -2312,7 +2455,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a measured preset re-walk with a diff to read",
       "why_mode": "writes presets.json, a generated artefact",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 156 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 176 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ilv-instrument-level-per-frame-octave-and-drum-pitch-programs-are-not-read",
@@ -2345,7 +2490,9 @@
       "why_model": "a record-bit hunt in an engine three open tasks already circle",
       "why_effort": "an unverified candidate bit is the trap",
       "why_mode": "emitter-local with a byte-hash conclusion",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-walk-pitch-seq-for-food-feud",
@@ -2380,7 +2527,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a measured preset walk with a diff to read",
       "why_mode": "writes presets.json and SURVEY.md, generated artefacts",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 158 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 179 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "recalibrate-after-the-delay-flag",
@@ -2419,7 +2568,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "an artefact regeneration whose reading is the value",
       "why_mode": "regenerates two shared artefacts in the invoking session",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 114 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 133 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "food-feud-pitch-seq-preset",
@@ -2452,7 +2603,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "one song's A/B whose reading is the decision",
       "why_mode": "writes a generated artefact from the invoking session",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 158 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 179 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "re-run-approvals-after-recalibration",
@@ -2487,7 +2640,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "one artefact regeneration whose reading is the value",
       "why_mode": "regenerates a shared artefact in the invoking session",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 46 other task(s) on a written path"
+      "why_lane": "overlaps 48 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ace-ii-needs-a-fresh-listening-approval",
@@ -2515,7 +2670,9 @@
       "why_model": "the blocker is a human judgement, not a measurement",
       "why_effort": "the work either side of the verdict is a staging command and one hand edit",
       "why_mode": "no amount of work resolves it; the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 41 other task(s) on a written path"
+      "why_lane": "overlaps 42 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "classic-vibrato-gate-needs-a-listen",
@@ -2542,7 +2699,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "staging plus one verdict",
       "why_mode": "the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 41 other task(s) on a written path"
+      "why_lane": "overlaps 42 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "classic-duration-gate-per-note-command",
@@ -2574,7 +2733,9 @@
       "why_model": "a per-note emission design with a measured wrong alternative",
       "why_effort": "the player's call ordering decides it",
       "why_mode": "one emitter and its test",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "mega-apocalypse-age-gated-second-effect",
@@ -2604,7 +2765,9 @@
       "why_model": "a disassembly where a plausible effect name is cheap",
       "why_effort": "unfamiliar routine",
       "why_mode": "read-only finding",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 78 other task(s) on a written path"
+      "why_lane": "overlaps 95 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pygmies-slide-under-vibrato",
@@ -2634,7 +2797,9 @@
       "why_model": "root cause in an unread player effect",
       "why_effort": "unfamiliar routine",
       "why_mode": "read-only finding",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 78 other task(s) on a written path"
+      "why_lane": "overlaps 95 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-corpus-vice-sweep",
@@ -2666,7 +2831,9 @@
       "why_model": "a bounded sweep with an existing column",
       "why_effort": "ordinary judgement",
       "why_mode": "read-only measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 36 other task(s) on a written path"
+      "why_lane": "overlaps 47 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "mcp": [],
@@ -2693,7 +2860,9 @@
       "why_effort": "staging plus one verdict",
       "why_mode": "the ear is the instrument",
       "lane": "serial",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "mcp": [],
@@ -2725,7 +2894,9 @@
       "why_effort": "a plausible improvement can be noise",
       "why_mode": "one emitter and its test",
       "lane": "serial",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "monty-v3-plus-one-lag",
@@ -2758,7 +2929,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "counter-gate-fixed-attack-holds-to-the-gate",
@@ -2788,7 +2961,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "fidelity-triangle-docstring",
@@ -2818,7 +2993,9 @@
       "why_model": "a bounded text or count fix",
       "why_effort": "ordinary judgement",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 94 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "nibble-per-call-shape-above-s1",
@@ -2849,7 +3026,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "what remains is a judgement about which records give up wavetable room",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "listen-shared-ramp-movers",
@@ -2876,7 +3055,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear or a policy choice is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sanxion-pace-drift",
@@ -2907,7 +3088,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the mechanism is measured; what remains is adopting it through the supported path and re-measuring",
       "why_mode": "adopting a per-song preset writes presets.json",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 176 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "outlier-tail-commodore-64-music-examples",
@@ -2937,7 +3120,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "needs the shared artefacts or the human-maintained docs",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "real-firstwave-numbering-after-drop",
@@ -2966,7 +3151,9 @@
       "why_model": "a bounded text or count fix",
       "why_effort": "ordinary judgement",
       "why_mode": "read-only measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 101 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 122 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "orphaned-table-blocks-of-dropped-instruments",
@@ -2997,7 +3184,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "stored-wave-per-state-variants",
@@ -3028,7 +3217,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "crazy-comets-7f-global-counter",
@@ -3059,7 +3250,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "read-only measurement",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 135 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 159 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "note-104-listen",
@@ -3086,7 +3279,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear or a policy choice is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-loop-tail-sharing",
@@ -3117,7 +3312,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-full-log-miscount",
@@ -3148,7 +3345,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-tri-zp-voice3-overstep",
@@ -3179,7 +3378,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-tri-zp-change-count-overshoot",
@@ -3210,7 +3411,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-lo-zp-accumulate-dialect",
@@ -3241,7 +3444,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "listen-to-chicken-song-wave-alternate",
@@ -3268,7 +3473,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear or a policy choice is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "memoise-tune-by-fidelity-by-bytes",
@@ -3299,7 +3506,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "filter-note-end-hold-frame",
@@ -3330,7 +3539,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "confuzion-gate-opens-one-frame-early",
@@ -3361,7 +3572,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "confuzion-voice2-listen-presets-vs-rfw234",
@@ -3388,7 +3601,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear or a policy choice is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "depth-vice-envelope-gate",
@@ -3419,7 +3634,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "depth-sustain-zero-decay",
@@ -3450,7 +3667,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-octave-multiple-and-window",
@@ -3481,7 +3700,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-devils-residual-16",
@@ -3512,7 +3733,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "triangle-preroll-is-the-image-instrument",
@@ -3545,7 +3768,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "triangle-voices-still-at-chance-under-corrected-model",
@@ -3576,7 +3801,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "one-man-restrike-at-attack-856",
@@ -3607,7 +3834,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "5tt-multirate-subtunes",
@@ -3638,7 +3867,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "5tt-appended-pulse-budget",
@@ -3669,7 +3900,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "5tt-listen",
@@ -3696,7 +3929,9 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear or a policy choice is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path"
+      "why_lane": "overlaps 55 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "source": "drain 2026-10-02",
@@ -3713,7 +3948,7 @@
       "why_model": "the blocker is a human judgement",
       "why_effort": "one verdict",
       "why_mode": "the ear is the instrument",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 49 other task(s) on a written path",
+      "why_lane": "overlaps 55 other task(s) on a written path",
       "id": "sanxion-drum-variant-listen",
       "title": "Listen to Sanxion's past-table drum variant before keeping it (melody 98 -> 97% by siddump naming only)",
       "mode": "requires-user",
@@ -3723,7 +3958,9 @@
         "rw:host:C:/t/sanxion-drum-variant-listen"
       ],
       "blocked_on": "A listening verdict: Sanxion's six $60 drum rows now sound their absolute-B-5 noise burst (0 -> 42 hits in 100 s, original 41); the harness reads melody 98 -> 97% only because siddump names our test-bit attack frame differently. Keep or revert.",
-      "verify": "The verdict (keep or revert the variant) is recorded; heard with .\\play.ps1 -Presets presets.json against the original."
+      "verify": "The verdict (keep or revert the variant) is recorded; heard with .\\play.ps1 -Presets presets.json against the original.",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "vibrato-unknown-is-not-silent",
@@ -3753,7 +3990,9 @@
       "why_model": "a bounded log-text fix",
       "why_effort": "ordinary judgement",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "rasputin-fractional-row-tempo-drift",
@@ -3784,7 +4023,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "rasputin-drum-noise-blip-one-frame-early",
@@ -3814,7 +4055,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "monty-bit7-note-skips-drum-and-pulse",
@@ -3847,7 +4090,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "tie-placement-blind-count-ratio",
@@ -3877,7 +4122,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 94 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pre-attack-frame-swallows-arp-tie",
@@ -3907,7 +4154,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "drum-sweep-onset-and-depth-warhawk-proteus",
@@ -3937,7 +4186,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 137 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-phase-union-blocks",
@@ -3967,7 +4218,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "fidelity-zero-freq-attack-naming",
@@ -3997,7 +4250,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 94 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "classic-clear-gate-reads-record-mask",
@@ -4027,7 +4282,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "thrust-instr26-percall-octave",
@@ -4057,7 +4314,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 121 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 146 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-phase-self-report",
@@ -4088,7 +4347,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 95 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-window-covers-file",
@@ -4119,7 +4380,9 @@
       "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
       "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
       "why_mode": "confined to the named modules and their tests",
-      "why_lane": "derived at 3b1c66d (2026-10-02): overlaps 95 other task(s) on a written path -- conflicts with more than half the plan (python/h2g/goatwriter.py, python/tests and the shared artefacts); narrow on dispatch"
+      "why_lane": "overlaps 125 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sanxion-unpointed-short-notes",
@@ -4151,7 +4414,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-dimension-text-stale",
@@ -4164,7 +4429,8 @@
       "touches": [
         "rw:python/fidelity.py",
         "r:python/vicetrace.py",
-        "rw:python/tests/test_fidelity.py"
+        "rw:python/tests/test_fidelity.py",
+        "rw:ollama:gpu"
       ],
       "mcp": [],
       "needs_main": false,
@@ -4178,7 +4444,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "a doc-text correction against code already landed",
       "why_mode": "one file, mechanical",
-      "why_lane": "overlaps 109 other task(s) on a written path"
+      "why_lane": "overlaps 111 other task(s) on a written path",
+      "offload": "qwen3-coder",
+      "why_offload": "a Dimension text rewrite from the stated refusal rule, checked by the suite"
     },
     {
       "id": "osplit-blind-column",
@@ -4210,7 +4478,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "bounded plumbing with a test that must discriminate",
       "why_mode": "one harness module plus its test",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "osplit-siddump-oracle",
@@ -4243,7 +4513,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 150 other task(s) on a written path"
+      "why_lane": "overlaps 151 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "vicetrace-live-test-shared-dump-path",
@@ -4270,7 +4542,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "a one-argument fix to a test",
       "why_mode": "one test file",
-      "why_lane": "overlaps 66 other task(s) on a written path"
+      "why_lane": "overlaps 67 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "presets-instrmap-honour-subtune-pins",
@@ -4301,7 +4575,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "the same change listen.py already took, applied to two more callers",
       "why_mode": "two harness modules and their tests",
-      "why_lane": "overlaps 99 other task(s) on a written path"
+      "why_lane": "overlaps 100 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "restage-c64me-dl2-listening",
@@ -4330,7 +4606,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "one staging command for two files",
       "why_mode": "regenerates a build artefact",
-      "why_lane": "overlaps 62 other task(s) on a written path"
+      "why_lane": "overlaps 63 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "drum-tick-gate-bit-drop-reab",
@@ -4362,7 +4640,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "an adoption decision where a one-file win can hide corpus losses",
       "why_mode": "the diagnosis matters more than the measurement",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "retract-gate-bit-refusal-nrun-claim",
@@ -4374,7 +4654,8 @@
       "lane": "serial",
       "touches": [
         "rw:python/h2g/goatwriter.py",
-        "r:python/fidelity.py"
+        "r:python/fidelity.py",
+        "rw:ollama:gpu"
       ],
       "mcp": [],
       "needs_main": false,
@@ -4388,7 +4669,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "a dated retraction of a comment",
       "why_mode": "one comment in one file",
-      "why_lane": "overlaps 134 other task(s) on a written path"
+      "why_lane": "overlaps 136 other task(s) on a written path",
+      "offload": "qwen3-coder",
+      "why_offload": "a dated retraction comment from the stated facts, checked by grep"
     },
     {
       "id": "nrun-outer-gate-skip-floor",
@@ -4403,7 +4686,8 @@
         "rw:python/tests/test_fidelity.py",
         "r:python/h2g",
         "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-        "rw:host:C:/t/nrun-outer-gate-skip-floor"
+        "rw:host:C:/t/nrun-outer-gate-skip-floor",
+        "rw:ollama:gpu"
       ],
       "mcp": [],
       "needs_main": false,
@@ -4417,7 +4701,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "documenting a measured mechanism",
       "why_mode": "one docstring",
-      "why_lane": "overlaps 134 other task(s) on a written path"
+      "why_lane": "overlaps 135 other task(s) on a written path",
+      "offload": "qwen3-coder",
+      "why_offload": "a docstring paragraph from measured facts that fit in the prompt, checked by grep"
     },
     {
       "id": "skydive-bit02-dialect-undetected",
@@ -4450,7 +4736,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "tie-column-counts-silent-frames",
@@ -4481,7 +4769,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "food-feud-gate-fix-first",
@@ -4513,7 +4803,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a filter emitter change whose blast radius must be measured",
       "why_mode": "adoption decision",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "same-tick-filter-priority-census",
@@ -4545,7 +4837,9 @@
       "why_model": "a measurement sweep against an existing harness",
       "why_effort": "bounded census",
       "why_mode": "read-only measurement",
-      "why_lane": "overlaps 139 other task(s) on a written path"
+      "why_lane": "overlaps 140 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "mega-record-17-missing",
@@ -4578,7 +4872,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "expanding-vibrato-gate",
@@ -4611,7 +4907,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "expanding-vibrato-early-frames",
@@ -4646,7 +4944,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "rise-zp-inc-spelling",
@@ -4679,7 +4979,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "lvvp-vibrato-phase",
@@ -4711,7 +5013,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ab-9-independent-drift-measure",
@@ -4742,7 +5046,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "gateoff-nibble-listen",
@@ -4767,7 +5073,9 @@
       "why_model": "requires-user: the tier that picks the work back up once the human has answered",
       "why_effort": "one listen",
       "why_mode": "listening verdicts are the user's",
-      "why_lane": "overlaps 26 other task(s) on a written path"
+      "why_lane": "overlaps 26 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "pulse-phase-table-statics-starve-on-last-v8",
@@ -4800,7 +5108,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "triangle-lockstep-walk",
@@ -4834,7 +5144,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "decoder-event-start-rows",
@@ -4867,7 +5179,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "five-title-tunes-player2-extra-note",
@@ -4900,7 +5214,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "motr-family-tie-reruns-note-start",
@@ -4936,7 +5252,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 160 other task(s) on a written path"
+      "why_lane": "overlaps 162 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "greloc-multispeed-legato-slip",
@@ -4968,7 +5286,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "legato-tie-last-row-and-ambiguous-entry",
@@ -5001,7 +5321,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "gate-off-firstwave-option",
@@ -5039,7 +5361,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 160 other task(s) on a written path"
+      "why_lane": "overlaps 162 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "firstwave-preset-decision",
@@ -5072,7 +5396,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "the trade is wave/gate/hold against melody, and the search must not be read as a scalar",
       "why_mode": "writes presets.json",
-      "why_lane": "overlaps 178 other task(s) on a written path"
+      "why_lane": "overlaps 179 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "startup-lag-counts-the-stale-pitch-attack",
@@ -5103,7 +5429,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "monty-tie-false-voice3-plus-two",
@@ -5133,7 +5461,9 @@
       "why_model": "bounded read-only attribution",
       "why_effort": "one file, one voice",
       "why_mode": "measurement only",
-      "why_lane": "overlaps 139 other task(s) on a written path"
+      "why_lane": "overlaps 140 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "sun-never-shines-passband-restore",
@@ -5166,7 +5496,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "radio-ace-cut-after-clear",
@@ -5199,7 +5531,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "presets-two-stage-i-ball-star-paws",
@@ -5230,7 +5564,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "two songs through an existing search",
       "why_mode": "writes presets.json",
-      "why_lane": "overlaps 178 other task(s) on a written path"
+      "why_lane": "overlaps 179 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "after-8-counter-gate-hold-unreached",
@@ -5256,7 +5592,9 @@
       "why_model": "requires-user: the tier that picks the work back up once the human has answered",
       "why_effort": "a bounded check once allowed",
       "why_mode": "held by the user",
-      "why_lane": "overlaps 94 other task(s) on a written path"
+      "why_lane": "overlaps 95 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "attack-hold-row-before-guard-refuted",
@@ -5289,7 +5627,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "food-feud-retuned-note-table",
@@ -5323,7 +5663,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "food-feud-pitch-seq-preset-reassess",
@@ -5354,7 +5696,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "one song through an existing search",
       "why_mode": "writes presets.json",
-      "why_lane": "overlaps 178 other task(s) on a written path"
+      "why_lane": "overlaps 179 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "food-feud-voice2-row-grid-tie-deficit",
@@ -5387,7 +5731,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "triangle-leg-span-turns-on-the-nibble-lattice",
@@ -5420,7 +5766,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "rasputin-dynamic-outer-gate-pulse-rate",
@@ -5454,7 +5802,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "convert-py-tri-division-comment",
@@ -5466,7 +5816,8 @@
       "lane": "serial",
       "touches": [
         "rw:python/h2g/convert.py",
-        "r:python/h2g/goatwriter.py"
+        "r:python/h2g/goatwriter.py",
+        "rw:ollama:gpu"
       ],
       "mcp": [],
       "needs_main": false,
@@ -5480,7 +5831,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "a comment correction",
       "why_mode": "one comment",
-      "why_lane": "overlaps 121 other task(s) on a written path"
+      "why_lane": "overlaps 124 other task(s) on a written path",
+      "offload": "qwen3-coder",
+      "why_offload": "a comment rewrite from the named replacement, checked by grep"
     },
     {
       "id": "orphan-patterns-after-copy-remap",
@@ -5513,7 +5866,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "vibrato-damp-on-non-vibrato-instrument",
@@ -5546,7 +5901,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "tie-votes-in-fixed-arp-phases",
@@ -5579,7 +5936,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "chimera-bf00-retrigger-every-6-rows",
@@ -5612,7 +5971,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "skip-gate-song-call-phase",
@@ -5645,7 +6006,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "game-killer-0a9a-pitch-cycle",
@@ -5678,7 +6041,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "game-killer-voice2-residue-repeat",
@@ -5712,7 +6077,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "ik-kentilla-gate-long-half",
@@ -5745,7 +6112,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "lvvp-gate-phase-per-note-split",
@@ -5778,7 +6147,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "spellbound-sweep-note-gate-and-legato",
@@ -5811,7 +6182,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "fidelity-legato-start-attribution",
@@ -5842,7 +6215,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "fidelity-pace-ignores-regrid",
@@ -5868,7 +6243,9 @@
       "why_model": "bounded, mechanical work against an existing harness",
       "why_effort": "copying existing forcing into one branch",
       "why_mode": "one harness module",
-      "why_lane": "overlaps 109 other task(s) on a written path"
+      "why_lane": "overlaps 110 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "filter-absent-on-four-files",
@@ -5902,7 +6279,9 @@
       "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
       "why_effort": "the code must be understood against the 6502 player before it is changed",
       "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
-      "why_lane": "overlaps 159 other task(s) on a written path"
+      "why_lane": "overlaps 161 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "filter-placement-sanxion-saboteur-iball",
@@ -5934,7 +6313,9 @@
       "why_model": "a measurement against an existing census",
       "why_effort": "three files",
       "why_mode": "read-only measurement",
-      "why_lane": "overlaps 139 other task(s) on a written path"
+      "why_lane": "overlaps 140 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "nrun-gate-off-fallback",
@@ -5965,7 +6346,9 @@
       "why_model": "a harness change where a column can pass while examining nothing",
       "why_effort": "a measurement that must be shown to discriminate, not just to run",
       "why_mode": "confined to one harness module, verified by its own tests and a corpus A/B",
-      "why_lane": "overlaps 149 other task(s) on a written path"
+      "why_lane": "overlaps 150 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "refresh-command-depth-census",
@@ -5991,7 +6374,9 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a command-line and guard edit",
       "why_mode": "edits CLAUDE.md, which the main session owns",
-      "why_lane": "overlaps 5 other task(s) on a written path"
+      "why_lane": "overlaps 6 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
     },
     {
       "id": "document-the-third-drain-in-method-and-lessons",
@@ -6019,7 +6404,79 @@
       "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
       "why_effort": "a documentation pass against landed code",
       "why_mode": "edits hand-written docs including CLAUDE.md",
-      "why_lane": "overlaps 99 other task(s) on a written path"
+      "why_lane": "overlaps 101 other task(s) on a written path",
+      "offload": null,
+      "why_offload": null
+    },
+    {
+      "id": "split-goatwriter-into-a-package",
+      "title": "Split python/h2g/goatwriter.py (13,683 lines) into the package python/h2g/goatwriter/ of 17 modules, moving text only",
+      "source": "docs/superpowers/plans/2026-10-03-split-goatwriter.md (e23776e)",
+      "model": "session",
+      "effort": "xhigh",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g",
+        "rw:python/tests",
+        "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+        "r:presets.json",
+        "r:Commando.sng",
+        "r:Commando.sid",
+        "r:python/tools/siddump-rt/siddump.exe",
+        "rw:build/audio",
+        "r:python/fidelity.py",
+        "rw:host:C:/t/split-goatwriter"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "90 open tasks write goatwriter.py, so the move must run with nothing else in flight, and its gates are whole-corpus sweeps (every convert() option forced, a fidelity pass)",
+      "depends_on": [],
+      "fork": null,
+      "branch": null,
+      "blocked_on": null,
+      "decision": null,
+      "verify": "Follow docs/superpowers/plans/2026-10-03-split-goatwriter.md. Done when, in the WORKING TREE: python/h2g/goatwriter.py no longer exists and python/h2g/goatwriter/ holds the modules the plan names, with __init__.py re-exporting every name the old module held; and every check of the plan's gate G1 holds against the G0 baseline captured BEFORE the move -- 0 failed in the full suite plus the new facade-patch guard test, converted bytes identical for every corpus file under presets, defaults and each convert() option forced alone (same refusals, same exception text), conversion log lines identical, packed .sid hashes identical, Commando.sng byte-identical, fidelity rows identical in every field but measure_seconds/label/version, the public surface identical (names, types, inspect.signature, docstring hashes, and goatwriter.X is goatwriter.<module>.X), and each re-pointed monkeypatch test FAILS with its patch line removed (the removed line printed from disk). Any change beyond moving text, import lines and the nine patch-targeted call sites is out of scope: stop and re-plan rather than adapt code to a gate. Branching, committing and the version bump are the human's, after G1 passes. (grep for the quoted text rather than trusting any line number here)",
+      "offload": null,
+      "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+      "why_effort": "a 13.7k-line move whose failure mode is a silently dead test patch or a lost line that every gate must catch",
+      "why_mode": "needs the whole tree to itself and whole-corpus gates; never delegated",
+      "why_lane": "overlaps 163 other task(s) on a written path",
+      "why_offload": null
+    },
+    {
+      "id": "document-the-goatwriter-package",
+      "title": "After the split: name the goatwriter modules in CLAUDE.md and H2G-CONVERSION-METHOD.md, and re-point goatwriter.py:NNNN citations by name",
+      "source": "docs/superpowers/plans/2026-10-03-split-goatwriter.md#after-the-split (e23776e)",
+      "model": "session",
+      "effort": "medium",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:CLAUDE.md",
+        "rw:docs/H2G-CONVERSION-METHOD.md",
+        "rw:docs/RULES.md",
+        "rw:docs/LESSONS.md",
+        "r:python/h2g",
+        "rw:python/tests/test_claude_md_figures.py"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [
+        "split-goatwriter-into-a-package"
+      ],
+      "fork": null,
+      "branch": null,
+      "blocked_on": null,
+      "decision": null,
+      "verify": "Done when CLAUDE.md's module table lists python/h2g/goatwriter/ and its modules, the \"a new convert() option is inert until...\" rule names where the code now lives, and a grep for \"goatwriter\\.py:[0-9]\" in CLAUDE.md, docs/RULES.md and docs/H2G-CONVERSION-METHOD.md finds nothing (citations re-pointed by symbol name, per the repo's own grep-by-name rule); tests/test_claude_md_figures.py passes with 0 failed. (grep for the quoted text rather than trusting any line number here)",
+      "offload": null,
+      "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+      "why_effort": "a doc reconciliation against a layout the split fixes",
+      "why_mode": "edits CLAUDE.md, which the main session owns",
+      "why_lane": "overlaps 101 other task(s) on a written path",
+      "why_offload": null
     }
   ],
   "closed": [

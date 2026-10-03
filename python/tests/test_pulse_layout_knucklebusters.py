@@ -50,8 +50,8 @@ def _convert_capturing(monkeypatch):
         layouts.append((programs, statics, lead))
         return real_lay(programs, statics, lead, share, **k)
 
-    monkeypatch.setattr(gw, "pulse_usage", usage)
-    monkeypatch.setattr(gw, "_lay_out_pulse", lay)
+    monkeypatch.setattr(gw.pulse, "pulse_usage", usage)
+    monkeypatch.setattr(gw.pulse, "_lay_out_pulse", lay)
     out = convert(str(CORPUS / NAME), **opts)
     assert usages and layouts, "the pulse layout never ran"
     programs, statics, lead = layouts[-1]

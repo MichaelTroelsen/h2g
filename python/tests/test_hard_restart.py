@@ -233,10 +233,10 @@ def test_the_constant_cannot_move_a_four_call_row():
     old = G.HARD_RESTART_FRAMES
     try:
         for n in (2, 3, 4, 5, 8):
-            G.HARD_RESTART_FRAMES = n
+            G.constants.HARD_RESTART_FRAMES = n
             assert G._hard_restart_ticks(1, 4) == 2, n
     finally:
-        G.HARD_RESTART_FRAMES = old
+        G.constants.HARD_RESTART_FRAMES = old
 
 def test_the_gate_bound_is_per_instrument_over_the_subtunes_it_plays_in():
     """The minimum, never the median -- too large stops the song outright."""

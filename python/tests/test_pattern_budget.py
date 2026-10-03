@@ -189,7 +189,7 @@ def test_rasputin_packs_under_pulse_phase_at_S2_only_with_the_budget(monkeypatch
     assert max(sizes) <= PACKED_PATTERN_LIMIT
     assert pack(with_budget) is not None, "gt2reloc refused the budgeted file"
 
-    monkeypatch.setattr(G, "budget_pulse_phase_commands",
+    monkeypatch.setattr(G.pulse, "budget_pulse_phase_commands",
                         lambda patterns, command, log=None, limit=256: patterns)
     without = F.convert(str(path), log=lambda m: None, **opts)
     sizes = [packed_pattern_size(_pattern_rows(p))

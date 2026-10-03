@@ -44,7 +44,7 @@ def _det(**kw):
 
 def _speeds(frames, monkeypatch):
     monkeypatch.setattr(
-        G, "find_song_speeds",
+        G.tempo, "find_song_speeds",
         lambda sid, det: SongSpeeds(frames=tuple(frames), reload_addr=0,
                                     table_addr=None))
 
