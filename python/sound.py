@@ -173,7 +173,40 @@ def _mel_filterbank(rate: int) -> np.ndarray:
     return fb
 
 
+# Frames featurised per block. **THE WHOLE-RENDER FRAME MATRIX WAS 6 GB**: a
+# 307 s render is ~105k frames of N_FFT samples, and framing, windowing, the
+# complex128 rfft, its power and the RMS squares each held a full copy at
+# once -- `compare_sids` peaked at 6044 MB on Confuzion and 6655 MB on Sanxion
+# (tracemalloc, v0.5.500), which is what filled 32 GB at `fidelity.py --jobs
+# 10` and paged the disk. Every per-frame step is independent of the other
+# frames, so blocks change only the peak; `features_reference` is the
+# unblocked form, kept for the test that holds the two equal.
+FEATURE_BLOCK = 2048
+
+
 def features(samples: np.ndarray, rate: int) -> Features:
+    x = np.asarray(samples, dtype=np.float32)
+    if len(x) < N_FFT:
+        x = np.pad(x, (0, N_FFT - len(x)))
+    n = 1 + (len(x) - N_FFT) // HOP
+    win = np.hanning(N_FFT)[None, :]
+    fbt = _mel_filterbank(rate).T
+    cols = np.arange(N_FFT)[None, :]
+    logmel = np.empty((n, N_MELS))
+    rms = np.empty(n, dtype=np.float32)
+    for lo in range(0, n, FEATURE_BLOCK):
+        hi = min(n, lo + FEATURE_BLOCK)
+        raw = x[cols + HOP * np.arange(lo, hi)[:, None]]
+        power = np.abs(np.fft.rfft(raw * win, axis=1)) ** 2
+        logmel[lo:hi] = 10.0 * np.log10(power @ fbt + 1e-12)
+        rms[lo:hi] = np.sqrt(np.mean(raw ** 2, axis=1))
+    logmel -= logmel.max(axis=1, keepdims=True)               # level cancels
+    rms_db = 20.0 * np.log10(rms + 1e-9)
+    return Features(logmel, rms_db, HOP / rate)
+
+
+def features_reference(samples: np.ndarray, rate: int) -> Features:
+    """`features` without blocks: the form every published figure came from."""
     x = np.asarray(samples, dtype=np.float32)
     if len(x) < N_FFT:
         x = np.pad(x, (0, N_FFT - len(x)))

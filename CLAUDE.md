@@ -155,7 +155,10 @@ whole refresh took 5m18s, partly warm, about 15x over its own summed
 per-song time (v0.5.498; `docs/LESSONS.md`). **Size `--jobs` to MEMORY, not
 cores**: a song takes 0.4-2.7 GB, and a second 16-job run filled the 32 GB
 machine, paged, and took 954 s with every render cached (v0.5.499). Use 10.
-Songs start slowest-first by the previous run's `measure_seconds`.
+Songs start slowest-first by the previous run's `measure_seconds`. The 6 GB
+was `sound.features` framing a whole render at once; it runs in blocks since
+v0.5.501 (~130 MB a render), and a warm `--jobs 10` pass went 203 s -> 110 s
+with free RAM never under 18.9 GB, every row identical.
 `--sound` and the two census flags are what the current artefact carries;
 `.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
 Regenerate after a commit that changes what the converter emits, and never from a

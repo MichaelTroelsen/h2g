@@ -1128,6 +1128,21 @@ test dependency).
   16-way run. The 15x of the first run held only because other load on the
   machine left it room; it is not a property of 16 workers. Size `--jobs` to
   RAM: 10 is the working figure (user, 2026-10-03), not yet timed.
+  **THE MEMORY WAS ONE FUNCTION, AND IT IS FIXED (v0.5.501).** Timed at 10:
+  3m23s warm (v0.5.500), 1958 s summed, but free RAM sampled every 10 s still
+  hit 0.0 GB four times. tracemalloc per step on one song put the whole peak
+  in `sound.compare_sids` -- 6044 MB on Confuzion, 6655 MB on Sanxion, every
+  other step under 50 MB -- and inside it in `sound.features`, which framed
+  the whole render as one [frames x 2048] matrix and held the windowed copy,
+  the complex128 rfft, its power and the RMS squares at once: 3452 MB for a
+  180 s render, 7213 MB for 376 s. Framed in blocks of 2048 frames it peaks
+  at 127 / 160 MB and runs slightly faster. Not bit-identical: the mel matrix
+  multiply sums in a different order per block shape, so log-mel moves by at
+  most 1.4e-14 dB (RMS is exact). A whole-corpus `--jobs 10` pass, warm,
+  reproduced EVERY field of every row of the v0.5.500 fidelity.json, in 110 s
+  wall against 203 s, 997 s summed against 1958, with free RAM never below
+  18.9 GB (sampled every 5 s). `sound.features_reference` keeps the unblocked
+  form for the test that holds them together.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26

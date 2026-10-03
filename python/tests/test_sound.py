@@ -516,3 +516,18 @@ def test_prune_refuses_while_a_calibration_build_cannot_be_rebuilt(tmp_path, mon
     out = capsys.readouterr().out
     assert "NOT protected" in out and "moved 1 superseded" in out
     assert [p.name for p in d.iterdir()] == ["ours.aaaaaaaaaaaa.s0.t180.wav"]
+
+
+def test_blocked_features_match_the_unblocked_form(monkeypatch):
+    # Blocks change only the memory peak (6 GB -> ~130 MB a render). A short
+    # block forces several of them plus a ragged last one; the matrix multiply
+    # sums in a different order per block shape, so equality is to rounding.
+    monkeypatch.setattr(sound, "FEATURE_BLOCK", 37)
+    rng = np.random.default_rng(1)
+    x = (_sine(3.0, 440.0) + 0.1 * rng.standard_normal(3 * RATE)).astype(np.float32)
+    a, b = sound.features(x, RATE), sound.features_reference(x, RATE)
+    assert a.logmel.shape == b.logmel.shape and a.rms_db.shape == b.rms_db.shape
+    assert len(a.rms_db) > 3 * 37
+    np.testing.assert_allclose(a.logmel, b.logmel, rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(a.rms_db, b.rms_db)
+    assert a.hop_s == b.hop_s
