@@ -194,3 +194,21 @@ def _assert_atkpitch_family_row(name, effect_byte, name_prefix, note):
     window = song.tables["WTBL"][wp:wp + 4]
     assert (0x81, note) in window, (
         f"{name}: expected ($81, {note:#04x}) somewhere in {window}")
+
+
+@needs_corpus
+def test_the_instrument_list_is_subsumed_where_no_test_restart_is_on():
+    """`use_real_firstwave = no_test_restart or gt in real_firstwave_instruments`:
+    on a song whose preset carries `no_test_restart` (Sigma_Seven, one of the
+    11 the forced arm could not move), naming every instrument changes no
+    byte; on one without it (Action_Biker) the same list does."""
+    root = Path(__file__).resolve().parents[2]
+    doc = json.loads((root / "presets.json").read_text(encoding="utf-8"))
+    every = tuple(range(1, 64))
+    for name, subsumed in (("Sigma_Seven.sid", True), ("Action_Biker.sid", False)):
+        opts = fidelity._preset_opts(doc, name)
+        assert bool(opts.get("no_test_restart")) is subsumed, name
+        base = convert(str(CORPUS / name), log=lambda m: None, **opts)
+        forced = convert(str(CORPUS / name), log=lambda m: None,
+                         **dict(opts, real_firstwave_instruments=every))
+        assert (forced == base) is subsumed, name

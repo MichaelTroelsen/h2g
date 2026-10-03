@@ -487,17 +487,24 @@ def lost_to_floor(rows: list[dict]) -> list[str]:
             and r.get("seen_under_grid_floor") and not r.get("seen")]
 
 
-def score_pair(orig: Path, ours: Path, seconds: int, sub: int) -> tuple[dict, dict]:
+def score_pair(orig: Path, ours: Path, seconds: int, sub: int,
+               our_sub: int | None = None) -> tuple[dict, dict]:
     """`sound.compare_sids` on the prefix AND on the whole from one feature
     pass: (prefix, whole). The prefix is what checks 3 and 4 decide on; the
     whole is recorded beside it. Two `compare_sids` calls would featurise
     each 180 s render twice, and the features are the cost once the renders
     are cached. A failed render names its side on both, as `compare_sids`
-    does."""
+    does.
+
+    `sub` is the first side's subtune and `our_sub` the second's (default:
+    `sub`), because `fidelity.resolve_pair` pins two corpus files to
+    different indices per side -- C64ME s1/o0, Dragons_Lair_Part_II s0/o9."""
+    if our_sub is None:
+        our_sub = sub
     a = sound.render_cached(orig, seconds, sub, "orig")
     if a is None:
         return {"sound_failed": "orig"}, {"sound_failed": "orig"}
-    b = sound.render_cached(ours, seconds, sub, "ours")
+    b = sound.render_cached(ours, seconds, our_sub, "ours")
     if b is None:
         return {"sound_failed": "ours"}, {"sound_failed": "ours"}
     xa, ra = sound.read_wav_mono(a)
@@ -764,7 +771,7 @@ def convert_as_measured(version: str, sid: Path, workdir: Path,
 
 def clock_reading(orig: Path, ours: Path, multiplier: int, sub: int,
                   seconds: int, cal: int, exe: str = F.SIDDUMP,
-                  trace=F.run_siddump) -> dict:
+                  trace=F.run_siddump, our_sub: int | None = None) -> dict:
     """`len` and `drift` for one build, by `fidelity._measure`'s own rule.
 
     The length rule exactly as `_measure` applies it: where the original ends
@@ -775,13 +782,18 @@ def clock_reading(orig: Path, ours: Path, multiplier: int, sub: int,
     (`window_floor`). `drift` is then fitted over the resulting window. Ours
     is traced at `calls=multiplier` -- `pack_sid`'s rule for every trace of
     a file it packed. `trace` is injectable for the tests; nothing else is.
+
+    The original is traced at `sub`, ours at `our_sub` (default: `sub`) --
+    `fidelity.resolve_pair`'s two sides, which differ where a pin says so.
     """
+    if our_sub is None:
+        our_sub = sub
     a = trace(orig, seconds, sub, exe, cal)
     out: dict = {}
     ended = F.original_ended(a, seconds)
     if ended is not None and ended < seconds:
         out.update(F.length_compare(
-            a, trace(ours, seconds, sub, exe, calls=multiplier), seconds))
+            a, trace(ours, seconds, our_sub, exe, calls=multiplier), seconds))
         seconds = ended
         a = trace(orig, seconds, sub, exe, cal)
     elif ended is None and any(v.attack_frames for v in a):
@@ -791,12 +803,12 @@ def clock_reading(orig: Path, ours: Path, multiplier: int, sub: int,
             out["length_never_ends"] = True
         else:
             out.update(F.length_compare(
-                a_long, trace(ours, long_s, sub, exe, calls=multiplier), long_s))
+                a_long, trace(ours, long_s, our_sub, exe, calls=multiplier), long_s))
             widened = F.window_floor(a_long, long_s, seconds)
             if widened is not None:
                 seconds = widened
                 a = trace(orig, seconds, sub, exe, cal)
-    b = trace(ours, seconds, sub, exe, calls=multiplier)
+    b = trace(ours, seconds, our_sub, exe, calls=multiplier)
     dr = F.drift(a, b)
     out["window_seconds"] = seconds
     out["drift_per_1000"] = dr.get("per_1000")
@@ -878,7 +890,9 @@ def main(argv=None) -> int:
     repeats, repeats_whole = {}, {}
     for n in names:
         sid = sid_dir / f"{n}.sid"
-        sub = F.resolve_subtune(sid, "auto")
+        # The ORIGINAL's side of `resolve_pair` -- only the original is
+        # rendered here, so a pin's own index is the one that counts.
+        sub = F.resolve_pair(sid, "auto")[0]
         wav = sound.render_cached(sid, args.seconds, sub, "orig")
         if wav is None:
             continue
@@ -922,8 +936,9 @@ def main(argv=None) -> int:
         a = convert_at(v_old, sid, workdir, args.gt2reloc, mult)
         b = convert_at(v_new, sid, workdir, args.gt2reloc, mult)
         if a and b:
-            sub = F.resolve_subtune(sid, "auto")
-            got, whole = score_pair(a.sid, b.sid, args.seconds, sub)
+            # Both sides are OUR builds, so both render at our side of the pair.
+            our_sub = F.resolve_pair(sid, "auto")[1]
+            got, whole = score_pair(a.sid, b.sid, args.seconds, our_sub, our_sub)
             got.update(file=name, versions=[v_old, v_new],
                        whole={k: whole.get(k) for k in ("aud", "loud", "loud_ratio")})
             pairs.append(got)
@@ -935,14 +950,14 @@ def main(argv=None) -> int:
     for name, v_bad, v_good in KNOWN_BAD:
         sid = sid_dir / name
         mult = F._preset_multiplier(doc, name)
-        sub = F.resolve_subtune(sid, "auto")
+        sub, our_sub, _pinned = F.resolve_pair(sid, "auto")
         pb = convert_at(v_bad, sid, workdir, args.gt2reloc, mult)
         pg = convert_at(v_good, sid, workdir, args.gt2reloc, mult)
         if not (pb and pg):
             bad.append({"file": name, "error": "could not build both versions"})
             continue
-        gb, wb = score_pair(sid, pb.sid, args.seconds, sub)
-        gg, wg = score_pair(sid, pg.sid, args.seconds, sub)
+        gb, wb = score_pair(sid, pb.sid, args.seconds, sub, our_sub)
+        gg, wg = score_pair(sid, pg.sid, args.seconds, sub, our_sub)
         floor = checks["shift"]["noise_floor"]
         grid_floor = checks["shift"]["grid_floor"]
         why = comparable(gb, gg)
@@ -993,7 +1008,7 @@ def main(argv=None) -> int:
     clocks = []
     for name, v_bad, v_good in CLOCK_KNOWN_BAD:
         sid = sid_dir / name
-        sub = F.resolve_subtune(sid, "auto")
+        sub, our_sub, _pinned = F.resolve_pair(sid, "auto")
         cal, _ = F.table_calibration(sid, F._preset_opts(doc, name))
         mb = convert_as_measured(v_bad, sid, workdir, args.gt2reloc)
         mg = convert_as_measured(v_good, sid, workdir, args.gt2reloc)
@@ -1002,9 +1017,9 @@ def main(argv=None) -> int:
                            "error": "could not build both versions"})
             continue
         rb = clock_reading(sid, mb.sid, mb.multiplier, sub, args.seconds, cal,
-                           args.siddump)
+                           args.siddump, our_sub=our_sub)
         rg = clock_reading(sid, mg.sid, mg.multiplier, sub, args.seconds, cal,
-                           args.siddump)
+                           args.siddump, our_sub=our_sub)
         clocks.append({"file": name, "versions": [v_bad, v_good],
                        "multiplier": [mb.multiplier, mg.multiplier],
                        "bad": rb, "good": rg, **clock_verdict(rb, rg)})

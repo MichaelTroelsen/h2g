@@ -324,25 +324,55 @@ def test_detects_own_freq_table_call_is_anchored_on_the_selected_engine():
 # restore and the short notes are pointed at a held copy
 # (C:/t/sanxion-c-sharp-6-hold, 2026-10-01).
 
+def _held_writes_every_call(left, right, first, note, calls=12):
+    """Every call after the first is on a waveform entry WRITING `note`.
+
+    That is the property, not merely "the pitch is `note`": gplay's
+    WAVEEXEC jumps to PULSEEXEC after a frequency write and skips
+    TICKNEFFECTS, so only an entry that writes on every call keeps
+    GoatTracker's instrument vibrato off. A program that ends (`FF 00`) or
+    sits on `$80` or on a delay leaves the frequency to the vibrato, which
+    `gplay.c:351-353` re-arms on every new note."""
+    from test_call_rate import wave_timeline
+
+    for here, _, _ in wave_timeline(left, right, first=first,
+                                    calls=calls)[1:]:
+        if here is None:
+            return False
+        k = here - first
+        if left[k] <= 0x0F or right[k] != note:
+            return False
+    return True
+
+
 def test_the_held_attack_keeps_the_fixed_pitch_where_the_restore_drops_it():
-    """`hold_attack` changes one byte: the second stage's right side, `$00`
-    (the played note) -> `$80` (leave the frequency alone). Read through
-    gplay's loop, the held program still sounds the fixed note on every call
-    after the attack; the restore writes the played note on the third."""
-    from h2g.goatwriter import WAVE_NOTE_KEEP, _two_stage_entries
+    """`hold_attack` replaces the restore with a loop: the second stage's
+    right side is the fixed note instead of `$00` (the played note), and
+    the program jumps back to that entry instead of ending. Read through
+    gplay's loop, the held program WRITES the fixed note on every call
+    after the attack -- which is what keeps GoatTracker's vibrato off --
+    and the restore writes the played note on the third."""
+    import pytest
+
+    from h2g.goatwriter import _two_stage_entries
     from test_call_rate import wave_timeline
 
     c_sharp_6 = WAVE_NOTE_ABS + 73
     restore = _two_stage_entries(0x17, 0x17, 1, 1, attack_note=c_sharp_6)
     held = _two_stage_entries(0x17, 0x17, 1, 1, attack_note=c_sharp_6,
-                              hold_attack=True)
+                              hold_attack=True, start=6)
     assert restore == ([0x17, 0x17, 0x17, 0xFF], [0x00, c_sharp_6, 0x00, 0x00])
     assert held == ([0x17, 0x17, 0x17, 0xFF],
-                    [0x00, c_sharp_6, WAVE_NOTE_KEEP, 0x00])
-    notes = [n for _, _, n in wave_timeline(*held, calls=8)]
+                    [0x00, c_sharp_6, c_sharp_6, 6 + 2])
+    notes = [n for _, _, n in wave_timeline(*held, first=6, calls=8)]
     assert notes[0] == 0x00 and all(n == c_sharp_6 for n in notes[1:]), notes
+    assert _held_writes_every_call(*held, first=6, note=c_sharp_6)
     notes = [n for _, _, n in wave_timeline(*restore, calls=8)]
     assert notes[1] == c_sharp_6 and notes[2] == 0x00, notes
+    # The jump is absolute: no `start`, no loop -- refused, never guessed.
+    with pytest.raises(ValueError):
+        _two_stage_entries(0x17, 0x17, 1, 1, attack_note=c_sharp_6,
+                           hold_attack=True)
     # No fixed pitch, nothing to hold: the flag is inert.
     assert (_two_stage_entries(0x41, 0x81, 2, 1, hold_attack=True)
             == _two_stage_entries(0x41, 0x81, 2, 1))
@@ -372,17 +402,20 @@ def test_sanxions_short_attack_notes_hold_c_sharp_6():
     """End to end, under the shipped presets. Instrument 14 (record 13,
     effect $44, vibrato byte $10) keeps its own note / C#6 / note program --
     the long notes vibrate around the note -- and a second block holds C#6
-    on the third step. Every `CMD_SETWAVEPTR` in the song points at that
-    block, sits on a note row of instrument 14 no longer than the gate, and
-    no longer note of it carries one. Fails if the held step restores the
-    note (`$00`) or if the pass stops pointing short notes at it."""
+    on the third step, looping on it so the fixed note is written every
+    call. Every `CMD_SETWAVEPTR` in the song points at that block, sits on a
+    note row of instrument 14 no longer than the gate, and no longer note of
+    it carries one. Fails if the held step restores the note (`$00`), if it
+    ends the program (`FF 00`, which hands the pitch to GT's vibrato: C#6 ->
+    D-6 at N+4 on 81 short notes in 100 s at v0.5.496,
+    C:/t/sanxion-held-attack-loop), or if the pass stops pointing short
+    notes at it."""
     import json
 
     import fidelity
     import songview as SV
     from h2g.convert import convert
-    from h2g.goatwriter import (CMD_SETWAVEPTR, GT_REST, WAVE_NOTE_KEEP,
-                                _entry_instruments)
+    from h2g.goatwriter import CMD_SETWAVEPTR, GT_REST, _entry_instruments
 
     doc = json.loads((REPO_ROOT / "presets.json").read_text())
     # drop_unnamed_instruments (always-on since v0.5.495) renumbers the
@@ -425,8 +458,10 @@ def test_sanxions_short_attack_notes_hold_c_sharp_6():
     assert len(pointed) == 1
     start = pointed.pop()
     block = wtbl[start - 1:start + 3]
-    assert block == [(0x17, 0x00), (0x17, c_sharp_6), (0x17, WAVE_NOTE_KEEP),
-                     (0xFF, 0x00)], block
+    assert block == [(0x17, 0x00), (0x17, c_sharp_6), (0x17, c_sharp_6),
+                     (0xFF, start + 2)], block
+    assert _held_writes_every_call([l for l, _ in block],
+                                   [r for _, r in block], start, c_sharp_6)
 
 
 def test_the_fixture_gets_no_held_attack():

@@ -42,7 +42,8 @@ from typing import NamedTuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fidelity import (_preset_opts, _preset_multiplier, legalise_restarts,
-                      make_workdir, pack_sid, resolve_subtune, run_siddump,
+                      make_workdir, pack_sid, resolve_pair, resolve_subtune,
+                      run_siddump,
                       traced_window, GT2RELOC, SIDDUMP, WORKDIR)
 from h2g import __version__
 from h2g.convert import convert
@@ -216,7 +217,8 @@ def pick_renderer(sid: Path, args, probe_dir: Path | None = None) -> Choice:
     """
     # `--subtune auto` is per file, so the probe resolves it here rather than
     # reading a raw "auto" out of args and handing it to a `-o` switch.
-    sub = resolve_subtune(sid, getattr(args, "subtune", 0))
+    # The ORIGINAL's side of the pair, pin included (`pair_subtunes`).
+    sub = pair_subtunes(sid, {}, getattr(args, "subtune", 0))[0]
     if Path(args.sidplayfp).exists():
         out = (probe_dir or Path(args.outdir)) / "_probe.wav"
         if render_sidplayfp(sid, out, 1, sub, args.sidplayfp):
@@ -655,7 +657,20 @@ def pair_subtunes(src: Path, row: dict, requested, matched=None) -> tuple[int, i
     case apart from a genuine identity pairing. `main` counts how often this
     branch is taken and says so, because a listener who hears a mismatch
     should not have to re-derive that this is where it would come from.
+
+    **A `fidelity.SUBTUNE_COUNTERPART` pin wins over all of that.** C64ME's
+    row reads `{subtune: 1, matched_subtune: 0}`, and taking the original's
+    side from `resolve_subtune` alone staged s0/o0 -- two pieces of music
+    nobody compared. `resolve_pair` is the one place the pin is applied, so
+    the pinned pair (C64ME s1/o0, Dragons_Lair_Part_II s0/o9) comes from it,
+    and a row's `matched_subtune` cannot overrule it: a pinned row is never
+    searched, so its `matched_subtune` IS the pin, and a pre-pin row's is the
+    diagonal the pin exists to replace. Unpinned, `resolve_pair` returns
+    `resolve_subtune`'s index verbatim, and the rules above apply unchanged.
     """
+    orig, ours, pinned = resolve_pair(src, requested)
+    if pinned:
+        return orig, ours
     sub_orig = resolve_subtune(src, requested)
     if "matched_subtune" in row:
         return sub_orig, int(row["matched_subtune"])
@@ -947,7 +962,8 @@ def main(argv=None) -> int:
 
         sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
                                           matched_subtunes.get(name))
-        if "matched_subtune" not in r and name not in matched_subtunes:
+        if ("matched_subtune" not in r and name not in matched_subtunes
+                and not resolve_pair(src, args.subtune)[2]):
             paired_by_identity.append(name)
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 

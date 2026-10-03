@@ -2,6 +2,7 @@
 the render/trace plumbing is exercised by hand in Task 5 step 6."""
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -556,3 +557,68 @@ def test_main_reports_miss_total_and_names(tmp_path, monkeypatch, capsys):
 def test_main_reports_zero_when_all_present(tmp_path, monkeypatch, capsys):
     err = _run_main(tmp_path, monkeypatch, capsys, ["a", "b"], ["a", "b"])
     assert "preset-opts misses: TOTAL 0" in err
+
+
+# --- the traced-subtune pin: fidelity.SUBTUNE_COUNTERPART -----------------
+#
+# `assess` used to take ONE index from `resolve_subtune` and trace and render
+# both sides there. For Commodore_64_Music_Examples that is s0 on the
+# original against s0 of a .sng whose only subtune is the original's s1, and
+# for Dragons_Lair_Part_II s0 against s0 where the counterpart is s9 -- an
+# approval decided on two different pieces of music. SABOTAGE TARGET: trace
+# or render either packed build at `sub` instead of `our_sub` and this fails.
+
+@pytest.mark.parametrize("name,want_orig,want_ours", [
+    ("Commodore_64_Music_Examples.sid", 1, 0),
+    ("Dragons_Lair_Part_II.sid", 0, 9),
+])
+def test_assess_traces_and_renders_each_side_at_the_pinned_pair(
+        tmp_path, monkeypatch, name, want_orig, want_ours):
+    sid = tmp_path / name
+    sid.write_bytes(b"PSID" + b"\x00" * 200)     # startSong 0: the diagonal is 0
+    approved = tmp_path / "approved.sng"
+    approved.write_bytes(b"approved")
+    traces, renders = [], []
+    monkeypatch.setattr(AP.F, "run_siddump",
+                        lambda path, seconds, sub, *a, **k:
+                        traces.append((Path(path).name, sub)) or [])
+    monkeypatch.setattr(AP, "pack_into",
+                        lambda blob, workdir, tag, *a: workdir / f"{tag}.sid")
+    monkeypatch.setattr(AP, "_structure_of",
+                        lambda *a: {"attacks": 1, "melody": 1.0, "sequence": 1.0})
+    monkeypatch.setattr(AP.F, "startup_lag", lambda a, b: (0, 0))
+    monkeypatch.setattr(AP.sound, "compare_sids",
+                        lambda a, b, seconds, sa, sb, **k:
+                        renders.append((Path(a).name, sa, Path(b).name, sb)) or {})
+    monkeypatch.setattr(AP, "inherit", lambda *a, **k: {})
+    AP.assess(name[:-4], sid, "0" * 64, {"always": {}, "songs": {}}, 1, None,
+              "gt2reloc", "siddump", tmp_path, current_sng=b"current",
+              approved_sng=approved)
+    assert traces == [(name, want_orig), ("cur.sid", want_ours), ("app.sid", want_ours)]
+    assert renders == [(name, want_orig, "app.sid", want_ours),
+                       (name, want_orig, "cur.sid", want_ours),
+                       ("app.sid", want_ours, "cur.sid", want_ours)]
+
+
+def test_assess_keeps_the_diagonal_for_an_unpinned_file(tmp_path, monkeypatch):
+    """A file outside the pin table is traced exactly as before: both sides
+    at `resolve_subtune`'s index (startSong - 1)."""
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID" + bytes(200))
+    monkeypatch.setattr(AP.F, "resolve_subtune", lambda s, req: 4)
+    approved = tmp_path / "approved.sng"
+    approved.write_bytes(b"approved")
+    traces = []
+    monkeypatch.setattr(AP.F, "run_siddump",
+                        lambda path, seconds, sub, *a, **k: traces.append(sub) or [])
+    monkeypatch.setattr(AP, "pack_into",
+                        lambda blob, workdir, tag, *a: workdir / f"{tag}.sid")
+    monkeypatch.setattr(AP, "_structure_of",
+                        lambda *a: {"attacks": 1, "melody": 1.0, "sequence": 1.0})
+    monkeypatch.setattr(AP.F, "startup_lag", lambda a, b: (0, 0))
+    monkeypatch.setattr(AP.sound, "compare_sids", lambda *a, **k: {})
+    monkeypatch.setattr(AP, "inherit", lambda *a, **k: {})
+    AP.assess("Tune", sid, "0" * 64, {"always": {}, "songs": {}}, 1, None,
+              "gt2reloc", "siddump", tmp_path, current_sng=b"current",
+              approved_sng=approved)
+    assert traces == [4, 4, 4]

@@ -9,6 +9,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          file_multiplier, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
+                         triangle_start,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
                          HEADER_LEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
@@ -188,7 +189,8 @@ def convert(sid_path: str, log: Logger = print,
             tempo: int | str | None = None,
             real_firstwave_instruments: tuple = (),
             pulse_phase: bool = False,
-            drop_unnamed_instruments: bool = False) -> bytes:
+            drop_unnamed_instruments: bool = False,
+            ilv_filter_routing: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -328,6 +330,14 @@ def convert(sid_path: str, log: Logger = print,
     passes still number instruments as written. Off by default: the Commando
     fixture carries one such record (its instrument 13). See
     instrument_drop.
+
+    ilv_filter_routing writes the interleaved player's per-voice filter
+    routing as CMD_SETFILTERCTRL (B) commands at every row where the union of
+    the voices' routed bits changes, instead of routing all three voices from
+    every program's params row (`goatwriter.ILV_FILTER_ROUTING`) and the gated
+    instrument clear. Needs `filters`; reaches only files with
+    `det.ilv_filter` and a program with a passband. Off by default: it moves
+    the bytes of the files it reaches. See goatwriter.ilv_filter_routing_plan.
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -695,6 +705,21 @@ def convert(sid_path: str, log: Logger = print,
     # treatment rather than a guess, and the gate was NOT protecting against a
     # wrong rate unit.
     #
+    # **RETRACTED (2026-10-03): "THE SWEEP STEPS PER FRAME, MEASURED AT
+    # v0.5.460, three ways that agree"**, and with it "So
+    # `_pulse_tri_program`'s division by `multiplier` is the correct
+    # treatment rather than a guess". Only the ENTRY half above survives
+    # (VBI: the routine is entered once a displayed frame). The triangle
+    # engine's counter steps once per ORIGINAL TICK -- a play call that
+    # passes the player's outer gate (`goatwriter.PulsePhaseSim`, walked on
+    # that clock below) -- and the GT pulse speed is divided by our calls a
+    # tick, `multiplier * (O+1) / O` under an outer gate
+    # (`goatwriter._tri_speed`): Game_Killer's packed ramp 225 -> 198 a
+    # frame against the original's 200. The intermediate "per CALL"
+    # reading was itself a pairing slip. See docs/LESSONS.md's two
+    # RETRACTED sections for "THE SWEEP STEPS PER FRAME" and the 2026-10-03
+    # entry after them.
+    #
     # **THE `multiplier == 1` GATE THAT USED TO SIT HERE IS LIFTED (after 24b9f1d).**
     # It was kept past that measurement for a different and measured reason,
     # written down in `tests/test_pulse_phase.py`: lifting it reaches three
@@ -772,40 +797,63 @@ def convert(sid_path: str, log: Logger = print,
             and (det.pulse_tri_hi >= 0 or det.pulse_bounds >= 0)):
         lead = phase_lead
         sims = pulse_phase_sims(sid, det, lead) or bounds_sims
+        # THE TWO ENGINES' CLOCKS. The bounds engine's sim runs on the
+        # original's FRAME clock: our calls a row (the GT tempo), turned
+        # into frames by the multiplier (Saboteur_II, -S3: $756 planned
+        # where the original held $2B0 before it did). The triangle
+        # engine's runs on the original's TICK: a play call that passes the
+        # player's outer gate, `frames_for` of them a row -- read off the
+        # disassembly at 1dde44a, see goatwriter.PulsePhaseSim. Our tempo,
+        # the multiplier and the outer gate's skip all drop out of it:
+        # One_Man_and_his_Droid is 2 calls a tick at -S2 (tempo 4),
+        # Game_Killer 10 at -S9 (tempo 20, `$0826` skipping a frame in
+        # ten), Rasputin 3 at -S2 (tempo 6, an `R` its `$FE nn` moves
+        # mid-song). Its per-voice cells and preroll come from the image
+        # (`triangle_start`), and a player whose start cannot be read is
+        # not walked at all.
+        #
+        # RETRACTED (the comment this replaces, v0.5.488 to here): "The
+        # triangle engine's stays on OUR CALLS -- and that is now a
+        # MEASUREMENT ... the onsets place this engine's DEC/BPL counter
+        # inside the multispeed core that entry runs `multiplier` times";
+        # its 61% was an index slip, and the counter sits behind the outer
+        # gate, not inside a multispeed core. Also RETRACTED: "Rasputin and
+        # One_Man_and_his_Droid are at chance on BOTH clocks under the same
+        # probe -- their originals open notes on buckets the free-running
+        # sim never plans (One_Man: every note at $8xx), a model defect,
+        # not a clock one." The clock was the first defect on both; the
+        # $8xx notes are the ACCUMULATE engine (record 8, rate $07, bit
+        # $08: `$1226 LDA $151A / AND #$08 / BEQ`), which the walk
+        # correctly never plans. tests/test_pulse_phase.py pins the figures.
+        walk_tempos, calls_per_frame, start = group_tempos, multiplier, None
+        if sims and not bounds_sims:
+            tri = triangle_start(sid, det, lead)
+            speeds = find_song_speeds(sid, det)
+            groups = len(tracks) // 3
+            # Per header subtune while the numbering lines up; a split
+            # shifts it, and every group then takes subtune 0's -- the
+            # rule `derived_group_tempos`' caller applies above.
+            subs = (range(groups) if groups == subtunes_before
+                    else [0] * groups)
+            frames = ([speeds.frames_for(s) for s in subs]
+                      if speeds is not None else [None])
+            if tri is None or None in frames:
+                log("Pulse phase.............: the triangle player's start "
+                    "state or row clock cannot be read; not walked")
+                sims = {}
+            else:
+                walk_tempos, calls_per_frame = frames, 1
+                start = [(tri.prefetch(f), tuple(
+                    (tri.instruments[x],) + tri.cells[x] for x in range(3)))
+                    for f in frames]
         if sims:
             snapshot = [list(t) for t in tracks]
             free_rows = (inherit_free_rows(new_patterns, track_index.free_rows, log)
                          if bounds_sims else None)
             plan = collect_pulse_phases(
-                new_patterns, tracks, group_tempos, sims, log,
-                free_rows=free_rows,
-                # The bounds engine's sim runs on the original's FRAME
-                # clock (Saboteur_II, -S3: $756 planned where the original
-                # held $2B0 before it did). The triangle engine's stays on
-                # OUR CALLS -- and that is now a MEASUREMENT, not the
-                # leftover it was taken for: on Game_Killer (-S9, the one
-                # multispeed triangle carrier whose first pass the trace
-                # covers) the walk's planned onset buckets agree with the
-                # original's, index-paired, 63% / 61% over the first 100 /
-                # 200 sweeping notes on the call clock and 19% / 21% on the
-                # frame clock (26% / 25% at the best shift; 30% and 32% at
-                # 2 and 3 calls a frame), on a 7-bucket alphabet whose
-                # chance level is ~14%. The original's own sequence
-                # (8 8 9 12 11 10 13 14 9 12 11 10 ...) jumps by up to five
-                # buckets a note, which a $E0 step at 2.2 frames a row
-                # cannot do. So the v0.5.460 "sweeps per frame" reading
-                # above holds for the ENTRY to the play routine, and the
-                # onsets place this engine's DEC/BPL counter inside the
-                # multispeed core that entry runs `multiplier` times (an
-                # inference from the trace, not yet read off the
-                # disassembly). Rasputin and
-                # One_Man_and_his_Droid are at chance on BOTH clocks under
-                # the same probe -- their originals open notes on buckets
-                # the free-running sim never plans (One_Man: every note at
-                # $8xx), a model defect, not a clock one. See
-                # collect_pulse_phases on `calls_per_frame` and
-                # tests/test_pulse_phase.py's clock test.
-                calls_per_frame=multiplier if bounds_sims else 1)
+                new_patterns, tracks, walk_tempos, sims, log,
+                free_rows=free_rows, calls_per_frame=calls_per_frame,
+                tri_start=start)
             table = None
             if plan:
                 phases, writes = plan
@@ -855,7 +903,8 @@ def convert(sid_path: str, log: Logger = print,
                      compact_instruments=compact_instruments,
                      real_firstwave_instruments=real_firstwave_instruments,
                      arps=ilv_arps,
-                     pulse_plan=pulse_plan)
+                     pulse_plan=pulse_plan,
+                     ilv_filter_routing=ilv_filter_routing)
     sng = _append_players(sng, sid, det, multiplier, opts, log)
     if drop_unnamed_instruments:
         # Last, on the finished bytes: every pass that writes or renumbers

@@ -189,6 +189,7 @@ _HEX = re.compile(r"[0-9A-F]+\Z")
 # the lower nibble is gate/sync/ring/test, none of which is a timbre.
 WF_GATE = 0x01
 WF_NOISE = 0x80
+WF_TEST = 0x08
 
 # siddump.c:54-55, verbatim apart from the padding on "Hi ". The index is
 # ($D418 >> 4) & 7, so the name is losslessly reversible into the passband
@@ -1172,6 +1173,22 @@ def _median_or_zero(vals: list[int]) -> int:
     return sorted(vals)[len(vals) // 2] if vals else 0
 
 
+def _noise_firstwave_frames(t: list[int]) -> int:
+    """Frames that select no waveform with the test bit set and are followed
+    by a noise frame: the firstwave `$09` (FIRSTWAVE_TESTBIT) that opens a
+    note whose next frame is noise.
+
+    It carries no noise bit, so the noise count loses it -- one frame per such
+    note -- and with `no_test_restart` the replacement `$FF` carries bit 7 and
+    the frame is counted again. Measured at 1dde44a (`docs/LESSONS.md`,
+    runs.jsonl `the-noise-frames-column-charges-us-exactly-one-firstwave-
+    frame-per-note`): Confuzion's 491-frame deficit at 180 s is 486 such
+    frames plus 5 of startup.
+    """
+    return sum(1 for f in range(len(t) - 1)
+               if not t[f] & 0xF0 and t[f] & WF_TEST and t[f + 1] & WF_NOISE)
+
+
 def wave_compare(orig: list[Voice], ours: list[Voice],
                  nframes: int | None = None, lag: int = 0) -> dict:
     """Per-frame waveform-CLASS agreement, and noise-frame counts per side.
@@ -1202,7 +1219,7 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     if nframes is None:
         last = max((f for v in orig + ours for f, _ in v.wf_events), default=-1)
         nframes = last + 1
-    agree = total = tail = o_noise = u_noise = 0
+    agree = total = tail = o_noise = u_noise = o_fw = u_fw = 0
     # Pooled across voices and reduced ONCE at the end, never a median of
     # per-voice medians: `presets._noise_pitch` pools, and the whole point of
     # this field is that the two agree.
@@ -1217,6 +1234,7 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         tb = register_timeline(b.wf_events, nframes)
         vo_n = sum(1 for x in ta if x & WF_NOISE)
         vu_n = sum(1 for y in tb if y & WF_NOISE)
+        vo_fw, vu_fw = _noise_firstwave_frames(ta), _noise_firstwave_frames(tb)
         # The noise PITCH, off the same UNALIGNED timelines and for the same
         # reason. Taken before the alignment below, which would drop `lag`
         # frames from one side only.
@@ -1269,18 +1287,28 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
             "tail_frames": v_tail,
             "orig_noise_frames": vo_n,
             "our_noise_frames": vu_n,
+            "orig_noise_firstwave_frames": vo_fw,
+            "our_noise_firstwave_frames": vu_fw,
         })
         agree += va
         total += vt
         tail += v_tail
         o_noise += vo_n
         u_noise += vu_n
+        o_fw += vo_fw
+        u_fw += vu_fw
     return {
         "wave": (agree / total) if total else None,
         "wave_frames": round(total),
         "wave_tail_frames": tail,
         "orig_noise_frames": o_noise,
         "our_noise_frames": u_noise,
+        # Silent test-bit frames that open a noise run -- the firstwave `$09`
+        # our conversion spends on every attack (`_noise_firstwave_frames`).
+        # Not noise, so `our_noise_frames` loses each one; printed beside the
+        # deficit so it is not read as an emission defect.
+        "orig_noise_firstwave_frames": o_fw,
+        "our_noise_firstwave_frames": u_fw,
         # 0 rather than None where a side sounds no noise at all, which is the
         # convention `presets._noise_pitch` already uses and which
         # `fidelity_better` reads as "nothing to compare" via its own
@@ -2429,18 +2457,140 @@ def depth_census(orig: list[Voice], ours: list[Voice], nframes: int,
     Same reduction the column scored, for `onset_census`' reason: a second
     pipeline could resolve a different subtune and then disagree with the
     report for a reason that has nothing to do with the conversion.
+
+    **Split by cause, as `vib_census` splits `vib`.** `depth` and `bend` can
+    fall together for ONE reason that no rate census sees: Knucklebusters read
+    bend 0.5858 and depth 0.5266 while moving its pitch on the SAME frames
+    (8883 against 8920) and travelling 41% less -- an AMPLITUDE shortfall,
+    with `vib` at 1.0119 because more sign changes were counted, not fewer.
+    So each row carries two measured factors on the same segments
+    `oscillation_depths` reads:
+
+    * `ratio` -- our median cycle swing over the original's (the AMPLITUDE);
+    * `coverage` -- our frames whose frequency moves over the original's
+      (`moving_frames`), i.e. how much of the note the movement covers.
+
+    `cause` names whichever factor is further from 1 in log space --
+    `amplitude` or `coverage` -- with no threshold fitted to the corpus; read
+    the two numbers, not the word, before choosing a fix. `absent` is an
+    instrument the original oscillates on and ours does not (no pairing),
+    which `depth` itself cannot see because it is a median over PAIRED keys.
     """
+    import math
     if not keys:
         return []
     a = oscillation_depths(orig, nframes, keys)
     b = oscillation_depths(ours, nframes, keys)
+    ma = moving_frames(orig, nframes, keys)
+    mb = moving_frames(ours, nframes, keys)
     out = []
-    for o, u in paired_keys(a, b):
+    paired = paired_keys(a, b)
+    for o, u in paired:
+        ratio = (b[u] / a[o]) if a[o] else None
+        cov = (mb.get(u, 0) / ma[o]) if ma.get(o) else None
         rec = {"adsr": o, "orig_depth": a[o], "our_depth": b[u],
-               "ratio": (b[u] / a[o]) if a[o] else None}
+               "ratio": ratio, "orig_moving": ma.get(o, 0),
+               "our_moving": mb.get(u, 0), "coverage": cov}
+        if ratio and cov:
+            rec["cause"] = ("amplitude"
+                            if abs(math.log(ratio)) >= abs(math.log(cov))
+                            else "coverage")
+        else:
+            rec["cause"] = "unknown"
+        rec.update(stamp_for(stamps, o))
+        out.append(rec)
+    seen = {o for o, _ in paired}
+    for o in a:
+        if o in seen or not a[o]:
+            continue
+        rec = {"adsr": o, "orig_depth": a[o], "our_depth": 0.0, "ratio": 0.0,
+               "orig_moving": ma.get(o, 0), "our_moving": 0,
+               "coverage": None, "cause": "absent"}
         rec.update(stamp_for(stamps, o))
         out.append(rec)
     return sorted(out, key=lambda r: r["adsr"])
+
+
+def moving_frames(voices: list[Voice], nframes: int,
+                  keys: set[int] | None = None,
+                  skip_radius: int | tuple[int, int] = 1,
+                  audible_only: bool = True) -> dict:
+    """`{ADSR: frames whose frequency differs from the frame before}`, on
+    exactly the segments `oscillation_depths` reads -- same keys (masked as
+    there), same attack-adjacent skip, same `envelope_zero_frame` stop -- so
+    `depth_census`' coverage and its amplitude describe one population.
+    Blind to HOW FAR each move goes; that is `oscillation_depths`' half.
+    """
+    before, after = _skip_span(skip_radius)
+    masked = {instrument_key(k) for k in keys} if keys is not None else None
+    out: dict = {}
+    for v in voices:
+        fq = register_timeline(v.freq_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        wf = (register_timeline(v.wf_events, nframes)
+              if audible_only and v.wf_events else None)
+        skip = set()
+        for a in v.attack_frames:
+            skip |= set(range(a - before, a + after + 1))
+        atk = sorted(v.attack_frames)
+        for j, a in enumerate(atk):
+            key = adsr[a] if a < nframes else 0
+            if keys is not None and key not in keys \
+                    and instrument_key(key) not in masked:
+                continue
+            nxt = atk[j + 1] if j + 1 < len(atk) else nframes
+            stop = min(nxt, nframes)
+            if wf is not None and a < stop:
+                stop = envelope_zero_frame(wf, adsr, a, stop)
+            seg = [fq[f] for f in range(a, stop) if f not in skip]
+            n = sum(1 for k in range(1, len(seg)) if seg[k] != seg[k - 1])
+            if n:
+                out[key] = out.get(key, 0) + n
+    return out
+
+
+def depth_census_report(rows: list[dict]) -> str:
+    """The depth census over a run: which instrument carries the shortfall,
+    and whether it moves too little or too seldom."""
+    from collections import Counter
+    recs = [dict(r, file=row["file"])
+            for row in rows for r in row.get("depth_census") or []]
+    short = [r for r in recs if r["ratio"] is not None and r["ratio"] < 1]
+    out = ["# Depth census", "",
+           f"{len(recs)} instrument(s) across "
+           f"{len({r['file'] for r in recs})} file(s) on `depth`'s own "
+           "population (records carrying a vibrato byte the player opens). "
+           "`depth` is a median over the PAIRED instruments; this is the same "
+           "pairing split by instrument, plus the ones the original swings on "
+           "and ours does not (`absent`), which the median cannot see.", "",
+           "**Two factors, one cause each.** `amp` is our median cycle swing "
+           "over the original's; `cover` is our frames whose pitch moves over "
+           "the original's, on the same segments. `cause` is whichever is "
+           "further from 1 in log space -- Knucklebusters' depth shortfall "
+           "is the first kind (same frames, 41% less travel), which no "
+           "reversal census sees.", "",
+           "## Instruments swinging less than the original", "",
+           "| file | ADSR | GT | effect | cause | amp | cover | "
+           "moving orig/ours |",
+           "|---|---|---:|---|---|---:|---:|---:|"]
+    for r in sorted(short, key=lambda r: r["ratio"]):
+        eff = r.get("effect")
+        cov = r.get("coverage")
+        out.append(
+            f"| {r['file']} | `${r['adsr']:04X}` | {r.get('gt', '-')} | "
+            f"{('$%02X' % eff) if eff is not None else '-'} | {r['cause']} | "
+            f"{r['ratio']:.2f} | {'-' if cov is None else f'{cov:.2f}'} | "
+            f"{r.get('orig_moving', 0)}/{r.get('our_moving', 0)} |")
+    by = Counter(r["cause"] for r in short)
+    out += ["", "## By cause", "", "| cause | instruments |", "|---|---:|"]
+    out += [f"| {c} | {n} |" for c, n in by.most_common()]
+    out += ["", "**Blind spots.** The population is `vibrato_records`' -- an "
+            "arpeggio or a drum's sweep on a record with no vibrato byte is "
+            "not here. `cover` counts frames that move, not how far; `amp` is "
+            "a median over interior cycles, so a note too short for three "
+            "turning points contributes to `cover` and not to `amp`. A cause "
+            "is a direction to look, not a diagnosis.", ""]
+    return "\n".join(out)
 
 
 def noise_runs(voices: list[Voice], nframes: int) -> dict:
@@ -4093,10 +4243,14 @@ def vice_register_compare(orig_samples: list, our_samples: list,
 
     # --- wave: class agreement, and noise frames per side -------------------
     agree, total = 0.0, 0.0
-    o_noise = u_noise = 0
+    o_noise = u_noise = o_fw = u_fw = 0
     wave_voices = []
     for vi in range(3):
         va, vt, vo_n, vu_n = 0.0, 0.0, 0, 0
+        vo_fw = _noise_firstwave_frames(
+            [wave_cells_o[f][vi].representative() for f in range(nframes)])
+        vu_fw = _noise_firstwave_frames(
+            [wave_cells_u[f][vi].representative() for f in range(nframes)])
         for f in range(nframes):
             a, b = wave_cells_o[f][vi], wave_cells_u[f][vi]
             # The class is the waveform-select nibble; the gate and the other
@@ -4115,16 +4269,22 @@ def vice_register_compare(orig_samples: list, our_samples: list,
         wave_voices.append({
             "wave": (va / vt) if vt else None, "frames": round(vt),
             "orig_noise_frames": vo_n, "our_noise_frames": vu_n,
+            "orig_noise_firstwave_frames": vo_fw,
+            "our_noise_firstwave_frames": vu_fw,
         })
         agree += va
         total += vt
         o_noise += vo_n
         u_noise += vu_n
+        o_fw += vo_fw
+        u_fw += vu_fw
     out.update({
         "wave": (agree / total) if total else None,
         "wave_frames": total,
         "orig_noise_frames": o_noise,
         "our_noise_frames": u_noise,
+        "orig_noise_firstwave_frames": o_fw,
+        "our_noise_firstwave_frames": u_fw,
         "wave_voices": wave_voices,
     })
 
@@ -4914,7 +5074,12 @@ DIMENSIONS = (
               "Skate_or_Die_intro, Mega_Apocalypse, Pandora, Star_Paws) "
               "with no converter change"),
     Dimension("noise", "noise", ("$D404",), "count",
-              "frames whose waveform included noise", source="our_noise_frames"),
+              "frames whose waveform included noise (bit 7 alone); the silent "
+              "firstwave test-bit frame (`$09`) opening each of our noise "
+              "notes is not noise, so ours reads one frame per such note "
+              "short -- `our_noise_firstwave_frames` counts them and the "
+              "Summary prints each short file's deficit as firstwave + rest",
+              source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
               "per-frame agreement of the envelope pair; the release nibble is NOT compared on a file converted with `cut_release` (every preset file), which zeroes it on our side, so a wrong release is invisible to this column (unmasked figure in the row's `adsr_exact`; the `--vice` path masks it the same way) (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte; `vicetrace.parse` repairs that by continuity, which is a guess where a whole note's ADSR low byte is >= $80, so read with that residual blindness)"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
@@ -5100,7 +5265,7 @@ DIMENSIONS = (
               "register to read the gate from). "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
-              "understated; `--vice` reads it per play call"),
+              "understated; `--vice` reads it per play call. `--depth-census` splits the shortfall per instrument into AMPLITUDE (our swing over the original's) and COVERAGE (frames whose pitch moves, ours over theirs) and lists instruments the original swings on and ours does not (`absent`, which this median over paired keys cannot see); it reads only this column's vibrato-byte population, so an arpeggio or sweep on another record is outside it"),
     # See noise_run_agreement's own docstring for the measured population
     # behind the claims in `of` below (Zoolook's 100%-while-losing-199-
     # frames case, the 28-of-28 / 0-of-76 hold-minus-1 split, and the
@@ -6411,6 +6576,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row["vib_census"] = vib_census(a, best_dump, nframes,
                                                instrument_stamps(sng),
                                                pitch_effect_bits(sid))
+            if (getattr(args, "vib_census", None)
+                    or getattr(args, "depth_census", None)):
                 row["depth_census"] = depth_census(a, best_dump, nframes,
                                                    vib_keys,
                                                    instrument_stamps(sng))
@@ -7009,6 +7176,7 @@ def report(rows: list[dict], args) -> str:
             u_noise = sum(r.get("our_noise_frames", 0) for r in waved)
             invented = [r for r in waved
                         if r.get("our_noise_frames") and not r.get("orig_noise_frames")]
+            u_fw = sum(r.get("our_noise_firstwave_frames", 0) for r in waved)
             out += [
                 f"- mean wave agreement: **{_fmt_pct(sum(r['wave'] for r in waved) / len(waved))}**"
                 f" ({len(waved)} file(s))",
@@ -7016,6 +7184,26 @@ def report(rows: list[dict], args) -> str:
                 + (f"; **{len(invented)}** file(s) play noise where the "
                    "original never does (marked `!` above)" if invented else ""),
             ]
+            short = [r for r in waved
+                     if r.get("our_noise_frames", 0) < r.get("orig_noise_frames", 0)
+                     and r.get("our_noise_firstwave_frames")]
+            if short:
+                # The deficit is mostly the firstwave frame, which is not
+                # noise: say so, per file, so `ours < original` is not read as
+                # an emission defect. What is left is startup and placement.
+                out.append(
+                    f"  - **{u_fw}** of our frames are a silent firstwave "
+                    "test-bit frame opening a noise note (the `$09` every "
+                    "attack spends; not noise, so the count loses one frame "
+                    "per note -- `no_test_restart` replaces it with `$FF`, "
+                    f"which counts). Of the **{len(short)}** file(s) short of "
+                    "the original, deficit = firstwave + rest (startup, "
+                    "placement): "
+                    + "; ".join(
+                        f"{r['file']} {r['orig_noise_frames'] - r['our_noise_frames']}"
+                        f" = {r['our_noise_firstwave_frames']} + "
+                        f"{r['orig_noise_frames'] - r['our_noise_frames'] - r['our_noise_firstwave_frames']}"
+                        for r in sorted(short, key=lambda r: r["file"].lower())))
             # `nrun` reads `-` for a file whose noise the window CUT as well
             # as for one without noise, and the table cannot tell them apart.
             # Name the first kind: an original whose every noise run touched
@@ -7469,14 +7657,15 @@ def report(rows: list[dict], args) -> str:
                 continue
             out += ["", "## Per-voice detail", "",
                     "| voice | wave | frames counted | noise ours/orig "
-                    "| adsr | pulse moves ours/orig |",
-                    "|---|---:|---:|---:|---:|---:|"]
+                    "| firstwave ours | adsr | pulse moves ours/orig |",
+                    "|---|---:|---:|---:|---:|---:|---:|"]
             adsr_v = r.get("adsr_voices") or [{}] * len(r["wave_voices"])
             pulse_v = r.get("pulse_voices") or [{}] * len(r["wave_voices"])
             for i, v in enumerate(r["wave_voices"]):
                 p = pulse_v[i]
                 out.append(f"| {i} | {_fmt_pct(v['wave'])} | {v['frames']} | "
                            f"{v['our_noise_frames']}/{v['orig_noise_frames']} | "
+                           f"{v.get('our_noise_firstwave_frames', 0)} | "
                            f"{_fmt_pct(adsr_v[i].get('adsr'))} | "
                            f"{p.get('our_pulse_changes', 0)}/"
                            f"{p.get('orig_pulse_changes', 0)} |")
@@ -9239,6 +9428,10 @@ def main(argv=None) -> int:
                    help="classify every note-length disagreement by kind "
                         "(fetch / slot / sparse / short / long) and write the "
                         "work list here")
+    p.add_argument("--depth-census", metavar="PATH",
+                   help="split the `depth` shortfall by the instrument "
+                        "sounding it, classify each as amplitude or coverage "
+                        "(or absent), and write the work list here")
     p.add_argument("--vib-census", metavar="PATH",
                    help="split the `vib` ratio by the instrument sounding it "
                         "and classify each shortfall by the effect bit that "
@@ -9585,6 +9778,10 @@ def _run(p, args, workdir: Path) -> int:
         Path(args.gate_census).write_text(gate_census_report(rows),
                                           encoding="utf-8")
         print(f"wrote {args.gate_census}", file=sys.stderr)
+    if getattr(args, "depth_census", None):
+        Path(args.depth_census).write_text(depth_census_report(rows),
+                                           encoding="utf-8")
+        print(f"wrote {args.depth_census}", file=sys.stderr)
     if getattr(args, "vib_census", None):
         Path(args.vib_census).write_text(vib_census_report(rows),
                                          encoding="utf-8")

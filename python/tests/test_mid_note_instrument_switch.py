@@ -138,7 +138,9 @@ def test_a_row_zero_tie_is_settled_by_the_orderlist():
     p1 = [note, 8, CMD_TONEPORTA, 0, GT_NO_NOTE, 0, 0, 0,
           GT_NO_NOTE, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
     tracks = [[0, 1, 0xFF, 0]]
-    assert _entry_instruments(tracks, [p0, p1]) == {0: {1}, 1: {7}}
+    # Pattern 0 is also re-entered by the restart holding pattern 1's 8
+    # (gplay.c:966-968 leaves `instr` alone) -- test_entry_instruments_lap.py.
+    assert _entry_instruments(tracks, [p0, p1]) == {0: {1, 8}, 1: {7}}
     out = _tied_instrument_envelopes([p0, p1], ENVELOPES, tracks)
     # No row before the tie: the hold rows after it, SR re-latching first.
     assert out[1][0:4] == [note, 8, CMD_TONEPORTA, 0]

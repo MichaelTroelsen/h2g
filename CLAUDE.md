@@ -204,7 +204,8 @@ for a human listening check into gitignored `build/listen/`.
   (`gplay.c:697-704`); `tests/test_call_rate.py` transcribes that loop.
   The rule is about the play routine's ENTRY; where a counter inside the
   multispeed core steps is per engine and must be measured (`PulseBoundsSim`:
-  per frame; the triangle engine's clock is UNMEASURED -- see LESSONS).
+  per frame; the triangle engine: per ORIGINAL TICK, behind the outer gate,
+  measured 2026-10-03 -- see LESSONS).
 - **The multiplier belongs to our side only.** Trace the original at `-m1` and
   the conversion at `-m{multiplier}`.
 - **A new `convert()` option is inert until it is in three places**: the
@@ -236,6 +237,10 @@ now lives there.
   Read `greloc.c` beside it and settle on the packed bytes.
 - A byte copied into a Goattracker table is in Goattracker's encoding (`$F0`-`$FF`
   are commands); `tests/test_table_validation.py` walks the tables.
+- A past-table note index may land on a cell the player itself writes: `$68`
+  plays the stored waveforms of voices 1/0 (`stored_wave.py`), Crazy_Comets'
+  `$7F` a constant SFX cell. Read the writer, never clamp; Commando is held by
+  name (`stored_wave.HELD`) because its `.sng` is the fixture.
 - A signature encodes an addressing mode and so an instruction length; a new
   spelling is a **fallback** consulted only where the others matched nothing.
 - Anchor a signature on the instruction naming the address you want; ask which

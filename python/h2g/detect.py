@@ -4731,10 +4731,36 @@ PULSE_TRI_SHAPE = (
 _TRI_BASE = 28      # operand of the ADC record,Y that names the instrument table
 _TRI_HI = 40        # operand of CMP #hi
 _TRI_LO = 66        # operand of CMP #lo
+# The two per-VOICE cells the sweep keeps beside the per-record width: the
+# delay counter (`DEC counter,X`) and the direction (`LDA dir,X / BNE
+# descend`, INC'd at the top bound and DEC'd at the bottom). Nothing else in
+# the player writes either -- censused over the 23 files the walk reaches:
+# the sweep's own `STA counter,X` reload and `INC/DEC dir,X` are the only
+# stores -- so their image bytes are the state every subtune starts from.
+# goatwriter.triangle_start reads them.
+_TRI_COUNTER = 3    # operand of DEC counter,X
+_TRI_DIR = 19       # operand of LDA dir,X
 # The routine is entered eight bytes above the match, at `LDA rate / BEQ /
 # LDY idx`; a BEQ landing there is the effect-bit-$08 test that chooses between
 # this engine and the accumulate one.
 _TRI_ENTRY = 8
+# `LDY idx` is the entry's last instruction, so its operand sits two bytes
+# above the match: the cell holding the sweeping voice's record offset, which
+# the effects path fills from the voice's instrument number (`LDA instr,X /
+# ASL / ASL / ASL / TAY / STY idx`).
+_TRI_IDX = -2
+
+
+def pulse_tri_offset(sid: SidFile, det: Detection) -> int:
+    """File offset of the PULSE_TRI_SHAPE match that indexes `det`'s own
+    instrument table, or -1 -- `_find_pulse_tri`'s anchor, for the readers
+    that need the routine's other operands."""
+    off = search_file(sid.data, PULSE_TRI_SHAPE)
+    if off < 0:
+        return -1
+    d = sid.data
+    base = d[off + _TRI_BASE] | (d[off + _TRI_BASE + 1] << 8)
+    return off if sid.to_offset(base) == det.instr_start else -1
 
 
 def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:

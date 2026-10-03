@@ -375,35 +375,55 @@ OCTAVE_MINORITY_LINES = 120   # of 312: the -S2 call boundary sits at ~156
 OCTAVE_MIN_FREQ = 0x100       # below this an "octave" is 3 against 4, not a note
 
 
-def _octave_partner(a: int, b: int) -> bool:
-    """True when one dumped freq is (about) twice the other.
+def _octave_verdict(a: int, b: int) -> bool | None:
+    """Is one dumped freq (about) twice the other: True, False, or None when
+    the dump cannot say.
 
-    `sign_extended` values have a destroyed high byte, so one is rebuilt from
-    its partner's where the partner is whole (the tolerance is a flat 3 because a
-    wrong high byte leaves only the low byte to test, which passes ~2.7% of
-    random pairs; a real octave is off by 1); two sign-extended values are refused outright -- a low-byte
-    match admitted `$FFFD`/`$FFFC`, a ~1-unit wobble, as an octave. Both are
-    blindnesses of the dump, not of the octave test.
+    A `sign_extended` value's high byte is destroyed, and nothing in the dump
+    can recover it: VICE prints a freq whose low byte has bit 7 set as `$FFxx`
+    EVERY time (`sign_extended`), so no sighting of the same value elsewhere
+    in the trace is whole. Its low byte can still REFUTE an octave -- no high
+    byte makes it one -- but a match proves nothing, since the high byte that
+    makes it an octave is the one it was rebuilt to have. Through v0.5.496 such a
+    pair was accepted on that match alone: Formula_1_Simulator's held A#3
+    `$0F82` (dumped `$FF82`) against its own one-call drops `$0F02`/`$0D02`
+    rebuilt as `$0782`, half of `$0F02` within 1, and put 32 false frames on
+    ours at -t 180 (siddump reads `$0F82`). So a pair with a sign-extended
+    member is None unless its low byte refutes it, and so is a pair of two
+    (a low-byte match admitted `$FFFD`/`$FFFC`, a ~1-unit wobble). Both are
+    blindnesses of the dump, not of the octave test; the oracle that could
+    settle them is siddump's high byte (`fidelity.vice_freq_repair`).
     """
     ea, eb = sign_extended(a), sign_extended(b)
-    if ea and eb:
-        return False
     if any(x < OCTAVE_MIN_FREQ for x in (a, b) if not sign_extended(x)):
         return False
+    if ea and eb:
+        return None
     if ea or eb:
         ext, whole = (a, b) if ea else (b, a)
         lo = ext & 0xFF
         for want in (2 * whole, whole // 2):
+            # an octave above $8000 is not a 16-bit freq: Devils_Galop's
+            # `$817D` "matched" `$FFFA` as `$102FA` (16 frames through v0.5.496)
+            if want > 0xFFFF:
+                continue
             real = ((want >> 8) << 8) | lo
             if abs(real - want) <= 3:
-                return True
+                return None
         return False
     lo_v, hi_v = sorted((a, b))
     return lo_v > 0 and abs(hi_v - 2 * lo_v) <= 2 + (hi_v >> 10)
 
 
+def _octave_partner(a: int, b: int) -> bool:
+    """True only when the dump shows one freq is (about) twice the other --
+    `_octave_verdict` is True, never None."""
+    return _octave_verdict(a, b) is True
+
+
 def octave_split_frames(samples: list, voices: int = 3,
-                        minority: int = OCTAVE_MINORITY_LINES) -> list[int]:
+                        minority: int = OCTAVE_MINORITY_LINES,
+                        blind: list[int] | None = None) -> list[int]:
     """Per voice: frames that hold a note and its octave in two halves.
 
     All of: exactly two freq values (silent lines are not values) an octave
@@ -414,8 +434,15 @@ def octave_split_frames(samples: list, voices: int = 3,
     line of 133, reads 133/179 lines in every frame -- the same hist -- but
     changes value once a frame, where a per-call loop at `-S2` changes twice
     (a b | a b), whatever the frame's phase against the loop.
+
+    A frame of that shape whose interval the dump cannot read
+    (`_octave_verdict` None: a sign-extended member) is not counted; pass a
+    list as `blind` to have those frames tallied into it per voice instead of
+    lost silently.
     """
     counts = [0] * voices
+    if blind is not None:
+        blind[:] = [0] * voices
     n = PAL_LINES_PER_FRAME
     for v in range(voices):
         prev = 0
@@ -427,9 +454,12 @@ def octave_split_frames(samples: list, voices: int = 3,
                 (fa, na), (fb, nb) = h.items()
                 chain = ([prev] if prev else []) + [f for f in seq if f]
                 changes = sum(1 for x, y in zip(chain, chain[1:]) if x != y)
-                if (min(na, nb) >= minority and changes >= 2
-                        and _octave_partner(fa, fb)):
-                    counts[v] += 1
+                if min(na, nb) >= minority and changes >= 2:
+                    verdict = _octave_verdict(fa, fb)
+                    if verdict is True:
+                        counts[v] += 1
+                    elif verdict is None and blind is not None:
+                        blind[v] += 1
             last = [f for f in seq if f]
             prev = last[-1] if last else 0
     return counts

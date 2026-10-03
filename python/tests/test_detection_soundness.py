@@ -432,3 +432,76 @@ def test_classic_vibrato_gate_census_matches_pinned_population():
     assert got["unread"] == set(_GATE_UNREAD), got["unread"]
     assert got["absent"] == _GATE_ABSENT, got["absent"]
     assert got["stored"] == _GATE_STORED, got["stored"]
+
+
+# --- the triangle sweep's start state, per file -------------------------------
+#
+# `goatwriter.triangle_start` reads what the triangle walk seeds itself with
+# off the player: the per-voice direction and delay counter cells (operands
+# of PULSE_TRI_SHAPE at detect._TRI_DIR / _TRI_COUNTER), the instrument
+# each voice sweeps before a row names one (the cell `LDA instr,X / ASL /
+# ASL / ASL / TAY / STY idx` fills the sweep's own `LDY idx` from), and the
+# speed gate's counter, which `prefetch` turns into the ticks swept before
+# the first fetch. A start that cannot be read declines the walk, so a
+# signature or operand edit that silently loses or moves one of these
+# fails here by name rather than as a quietly different plan. Read with
+# lead 0 (`compact_instruments`, what presets.json's `always` sets);
+# (direction, counter) per voice, +1 up / -1 down.
+_TRIANGLE_START = {
+    "5_Title_Tunes.sid": (((1, 0), (1, 0), (-1, 1)), (1, 2, 3), 3),
+    "Action_Biker.sid": (((1, 0), (1, 0), (1, 0)), (8, 9, 3), 1),
+    "Battle_of_Britain.sid": (((-1, 0), (1, 0), (1, 1)), (10, 11, 3), 0),
+    "Chimera.sid": (((1, 0), (1, 0), (1, 0)), (5, 15, 3), 2),
+    "Commando.sid": (((1, 0), (1, 0), (1, 0)), (1, 10, 3), 0),
+    "Confuzion.sid": (((1, 0), (1, 0), (1, 0)), (1, 4, 3), 2),
+    "Crazy_Comets.sid": (((1, 0), (1, 0), (-1, 0)), (2, 20, 17), 1),
+    "Devils_Galop.sid": (((1, 0), (1, 0), (1, 0)), (1, 1, 3), 0),
+    "Game_Killer.sid": (((-1, 0), (1, 0), (1, 0)), (7, 10, 6), 1),
+    "Geoff_Capes_Strongman_Challenge.sid": (((1, 0), (1, 16), (-1, 0)), (17, 16, 4), 0),
+    "Gerry_the_Germ.sid": (((-1, 0), (1, 0), (1, 0)), (18, 5, 3), 1),
+    "Gremlins.sid": (((-1, 1), (1, 1), (-1, 1)), (22, 22, 4), 2),
+    "Human_Race.sid": (((1, 0), (1, 0), (1, 0)), (1, 1, 3), 0),
+    "Hunter_Patrol.sid": (((1, 0), (1, 0), (1, 0)), (5, 5, 11), 1),
+    "Last_V8.sid": (((-1, 0), (1, 18), (1, 1)), (7, 2, 4), 0),
+    "Last_V8_C128_version.sid": (((-1, 0), (-1, 25), (1, 0)), (5, 5, 9), 1),
+    "Master_of_Magic.sid": (((-1, 1), (1, 0), (-1, 0)), (8, 15, 4), 1),
+    "Monty_on_the_Run.sid": (((-1, 0), (1, 1), (1, 29)), (17, 3, 17), 0),
+    "Ninja.sid": (((1, 0), (1, 0), (1, 0)), (1, 10, 12), 1),
+    "One_Man_and_his_Droid.sid": (((1, 0), (1, 0), (1, 0)), (1, 1, 3), 0),
+    "Phantoms_of_the_Asteroid.sid": (((1, 0), (1, 0), (1, 0)), (1, 1, 3), 0),
+    "Rasputin.sid": (((1, 0), (1, 0), (1, 0)), (1, 7, 3), 0),
+    "Thing_on_a_Spring.sid": (((1, 1), (1, 1), (-1, 0)), (15, 6, 7), 1),
+    "Zoids.sid": (((1, 0), (1, 0), (1, 0)), (13, 4, 3), 1),
+}
+
+
+@corpus.needs_corpus
+def test_triangle_start_census_matches_pinned_population():
+    """Every presets.json file with the absolute-dialect triangle (24, the
+    population test_pulse_phase.py counts) yields a start state, and it is
+    the one pinned above."""
+    import json
+
+    from corpus import CORPUS
+    from h2g.detect import detect
+    from h2g.goatwriter import triangle_start
+    from h2g.sidfile import load_sid
+
+    presets_path = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
+    names = json.loads(presets_path.read_text(encoding="utf-8"))["songs"]
+    got = {}
+    for name in names:
+        p = CORPUS / name
+        if not p.exists():
+            continue
+        try:
+            sid = load_sid(str(p))
+            det = detect(sid, lambda *a, **k: None)
+        except Exception:
+            continue
+        if det.pulse_tri_hi < 0 or det.pulse_tri_per_voice:
+            continue
+        st = triangle_start(sid, det, lead=0)
+        got[name] = None if st is None else (st.cells, st.instruments,
+                                             st.counter)
+    assert got == _TRIANGLE_START

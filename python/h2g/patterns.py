@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
-from .goatwriter import CMD_SETTEMPO, CMD_SETWAVEPTR
+from .goatwriter import CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -88,6 +88,14 @@ ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # **12 of 19 files** -- ACE_II `drift` 0.00 -> 1250, Ricochet -7.81 ->
 # 1976.54, mean melody -47pp. Anything new that can land on row 0 belongs
 # in this set, not merely in ONE_SHOT_COMMANDS.
+#
+# DELIBERATELY IN NEITHER SET: `goatwriter.CMD_SETFILTERCTRL` (B) and
+# `CMD_SETFILTERPTR` (A), which `ilv_filter_routing_plan` writes. Both are
+# one-shot, but neither reaches the hold loop this module runs -- they are
+# written in `build_sng`, after the decoder and after `apply_tempos` -- and
+# neither can land on row 0: the plan refuses pattern row 0 outright (the
+# subtune's clock, above), so a CMD_SETTEMPO never meets one to overwrite.
+# `tests/test_filter.py` asserts no emitted A/B sits on a row 0.
 TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
@@ -142,9 +150,6 @@ GT_SPEEDTABLE_COMMANDS = (1, 2, 3)
 # tie block in _build_raw_pattern and _apply_boundary_ties.
 CMD_TONEPORTA = 3
 CMD_SETPULSEPTR = 9
-# Startup calls the classic engine's sweep has already run by the first
-# fetch -- see collect_pulse_phases. Measured, not derived.
-PULSE_PHASE_PREROLL = 7
 
 # Lowest byte value that is a *command* rather than a pattern number, used to
 # read a track that convert_tracks has produced but reindex_tracks has not yet
@@ -2528,6 +2533,37 @@ def scale_portamento_data(patterns: List[List[int]], multiplier: int) -> int:
     return changed
 
 
+class PatternList(list):
+    """`convert_patterns`' patterns, with each output pattern's bit-7 note
+    rows attached for `goatwriter.legato_tie_clones`.
+
+    A tie is spelled `CMD_TONEPORTA 00`, which skips Goattracker's whole new-
+    note init (gplay.c:353-389). That is right only where the player skips
+    its instrument start on the landing note too. In the legato-marker
+    family (`note_flag`; `goatwriter.legato_tie_family`) the start is
+    skipped by pitch-byte bit 7 and by nothing else -- status bit 5 only
+    holds the gate open at the old note's end -- so whether a tie's landing
+    restarts the instrument is a property of ITS note byte, and that byte's
+    bit 7 is gone by the time the writer sees the row. `note_bit7[p]` is the
+    set of rows of output pattern `p` whose note byte carried it, or None
+    where `dedup` shared one output pattern between two sources that
+    disagree (the dedup key is NOT changed for this, unlike
+    `TrackIndex.free_rows`, so the bytes stay what they were; a None
+    pattern keeps the old spelling). `decoded` is how many patterns this
+    call produced: later passes append copies to the SAME list object
+    (convert.py never rebinds it), and those are attributed by note column
+    the way `inherit_free_rows` does.
+
+    Only made where a tie is spelled and the decoder reads the flag; every
+    other caller gets the plain list it always got.
+    """
+
+    def __init__(self, items=(), note_bit7=None):
+        super().__init__(items)
+        self.note_bit7: Dict[int, Optional[frozenset]] = dict(note_bit7 or {})
+        self.decoded = len(self)
+
+
 class TrackIndex(list):
     """The per-entry slice lists, with each entry's exit tie state attached.
 
@@ -2643,6 +2679,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     exits: Dict[int, bool] = {}
     # Entry -> raw rows whose note byte carried bit 7 (only when asked for).
     free: Dict[int, List[int]] = {}
+    # The same rows for `PatternList.note_bit7`: read wherever a tie is
+    # spelled under the flag, whatever `free_rows` asked. The out-parameter
+    # is pure -- `_build_raw_pattern` only appends to it -- so collecting it
+    # moves no byte.
+    want_bit7 = tie and det.note_flag
+    collect = free_rows or want_bit7
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -2674,7 +2716,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_wave=rest_wave,
                               rest_envelope=rest_envelope, exits_tied=ex,
                               arps=arps,
-                              free_rows=fr if free_rows else None,
+                              free_rows=fr if collect else None,
                               wave_notes=(wave_notes or {}).get(i))
         exits[i] = bool(ex and ex[0])
         free[i] = fr
@@ -2708,7 +2750,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                                 rest_wave=rest_wave,
                                 rest_envelope=rest_envelope,
                                 exits_tied=ex, arps=arps,
-                                free_rows=fr if free_rows else None)
+                                free_rows=fr if collect else None)
             exits[src] = bool(ex and ex[0])
             free[src] = fr
         # A variant is the source's own event stream with its notes shifted, so
@@ -2730,6 +2772,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     reused = 0
 
     pattern_free: Dict[int, frozenset] = {}
+    note_bit7: Dict[int, Optional[frozenset]] = {}
 
     for i, events in enumerate(raw_patterns):
         if events is None:
@@ -2757,6 +2800,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             if key is not None and key in seen:
                 idx = seen[key]
                 reused += 1
+                if want_bit7 and note_bit7.get(idx) != flags:
+                    note_bit7[idx] = None     # two sources disagree
             else:
                 idx = len(new_patterns)
                 new_patterns.append(s)
@@ -2764,6 +2809,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                     seen[key] = idx
                 if free_rows:
                     pattern_free[idx] = flags
+                if want_bit7:
+                    note_bit7[idx] = flags
             indices.append(idx)
             if k < len(slices) - 1:
                 # idx+1 equals len(new_patterns) when nothing is shared, so the
@@ -2787,6 +2834,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         log(f"De-duplicated {reused} of {total} patterns "
             f"({100 * reused // total}%), {len(new_patterns)} remain")
 
+    if want_bit7:
+        new_patterns = PatternList(new_patterns, note_bit7)
     return new_patterns, TrackIndex(
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
@@ -4355,7 +4404,8 @@ def _phase_note_rows(pattern: List[int], live_instr: int, sims: dict):
 def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                          tempos: List[int], sims: dict, log=None,
                          free_rows: Optional[Dict[int, frozenset]] = None,
-                         calls_per_frame: int = 1):
+                         calls_per_frame: int = 1,
+                         tri_start: Optional[list] = None):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
@@ -4375,7 +4425,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
 
     * The triangle engine's accumulator is per RECORD and never reseeded.
       Every note is planned, at whatever phase the free-running sweep has
-      reached, and a record sounding on two voices declines the group.
+      reached, and a record sounding on two voices declines the group. Its
+      direction and delay counter are per VOICE -- see `tri_start` below.
     * The bounds engine's accumulator is per VOICE (Saboteur_II `$F59C,X` /
       `$F59F,X`, direction `$F572,X`, X the voice) and is RESEEDED to the
       record's width at every note whose note byte has bit 7 clear; only a
@@ -4393,47 +4444,74 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
       simulated. `free_rows` None reads as "no free rows": every note
       reseeds and nothing is planned, which is today's output exactly.
 
-    `calls_per_frame` is the song's multiplier, and it is what puts the sim
-    on the ORIGINAL's clock: `tempos` are in OUR play calls (a row of a
-    `-S3` file is 8 calls, 2.67 frames), while the player sweeps once per
-    frame -- it is entered once per displayed frame whatever we pack at
-    (see convert.py's block above the gate). So calls are turned into
-    frames here, with the remainder carried from row to row, and the sim
-    steps once per frame; at 1 the two clocks are the same and nothing
-    changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
-    planned $756 where the original held $2B0, every free note three times
-    too far along its sweep. **Passed as 1 for the triangle engine -- and
-    that is NO LONGER a measured choice.** Its sim was validated at `-S1`
-    (5_Title_Tunes), where the two clocks coincide. RETRACTED (measured at
-    04fdcb5 + the uncommitted tree): "on Game_Killer (`-S9`) the walk's
-    planned onset buckets agree with the original's 61% over the first 200
-    sweeping notes on the CALL clock against 21% on the frame clock". That
-    pairing slipped one note: it matched the plan's i-th entry against the
-    i-th original attack whose width a frame on is $800 or more, a list
-    opening with a static $84D note (frame 641) the walk never plans.
-    Paired by NOTE -- the attack index of each planned row in this walk's
-    own play order, ties excluded -- the plan agrees 0.135 at the attack
-    and 0.000 a frame on (call clock), 0.215 / 0.145 (frame clock), chance
-    ~0.14: neither clock predicts the original's onsets, and the inference
-    that placed the sweep's counter inside the multispeed core falls with
-    the figure. What the slip did measure (0.615) is the plan's phase for
-    note i+1 against the original's width a frame after note i -- a lead
-    for the sim's model, not a clock verdict.
+    `tempos` are the steps one row advances a sim, per group, and the two
+    engines are handed different units -- convert.py decides which:
 
-    **Where Game_Killer's phase is lost is HERE, not downstream.** Every
-    one of the first 200 planned voice-0 notes opens in the packed `-S9`
-    trace on its planned width plus 0..9 table ticks (25 a call) along its
-    planned direction, 200/200: `build_pulse_phase_table`'s set rows,
-    `budget_pulse_phase_commands` (it drops none on this file) and the
-    table step deliver the plan, and the packed trace's 0.11 against the
-    original is the plan's own agreement, delivered. The original's voice
-    0 meanwhile free-runs $E0 a frame through $8E0..$E20 with a one-frame
-    hold every ~9-10 frames, which neither clock's sim reproduces.
-    tests/test_pulse_phase.py pins both halves
-    (`test_game_killers_planned_phases_reach_the_packed_output`,
-    `test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks`).
-    Rasputin and One_Man_and_his_Droid read at chance on both clocks too.
-    `PULSE_PHASE_PREROLL` is in sim steps.
+    * **The bounds engine: OUR play calls a row (the GT tempo), with
+      `calls_per_frame` the song's multiplier.** The player sweeps once per
+      frame -- it is entered once per displayed frame whatever we pack at
+      -- so calls are turned into frames here, with the remainder carried
+      from row to row; at 1 the two clocks are the same and nothing
+      changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
+      planned $756 where the original held $2B0, every free note three
+      times too far along its sweep.
+    * **The triangle engine: the ORIGINAL's ticks a row
+      (`SongSpeeds.frames_for`), with `calls_per_frame` 1.** Read off the
+      disassembly at 1dde44a (goatwriter.PulsePhaseSim has the addresses):
+      the sweep steps once per TICK, a play call that passes the player's
+      outer gate, and a row is the speed gate's reload + 1 ticks -- so
+      neither our tempo, nor the multiplier, nor the outer gate's skip
+      (Game_Killer one frame in ten, Rasputin an `R` its orderlist's
+      `$FE nn` moves mid-song) enters the step count. RETRACTED (the
+      shipped state from v0.5.488 to this change): "Passed as 1 for the
+      triangle engine -- and that is NO LONGER a measured choice", with
+      the GT tempo as the steps a row. That was the CALL clock: right only
+      where a call is a tick, which is the `-S1` files without an outer
+      gate the sim was validated on (5_Title_Tunes). RETRACTED as well:
+      "Rasputin and One_Man_and_his_Droid read at chance on both clocks
+      too" -- on the tick clock with the voice cells below they do not
+      (`tests/test_pulse_phase.py` pins the figures).
+
+    The older record, kept because its pairing lesson stands: "on
+    Game_Killer (`-S9`) the walk's planned onset buckets agree with the
+    original's 61% over the first 200 sweeping notes on the CALL clock
+    against 21% on the frame clock" was an index slip (the plan's i-th
+    entry against the i-th original attack whose width a frame on is $800
+    or more, a list opening with a static $84D note the walk never plans);
+    paired by NOTE both clocks read at chance, 0.135 and 0.215. The plan
+    always reached the packed output -- every one of the first 200 planned
+    voice-0 notes opens in the packed `-S9` trace on its planned width
+    plus 0..9 table ticks along its planned direction -- so the loss was
+    in the walk, which is what this change repairs.
+
+    `tri_start` is the triangle engine's player state, one entry per group (a
+    `(prefetch, voices)` pair: the ticks the player sweeps before its first
+    fetch, and per voice X the `(instrument byte, direction, counter)` it
+    starts from -- goatwriter.triangle_start and its `prefetch`):
+
+    * **Direction and delay counter are per VOICE** (`dir,X` /
+      `counter,X`) while the width is per record, so every record a voice
+      sweeps is bound to one `PulseVoiceCell`, seeded from the image --
+      Game_Killer's voice 0 starts DOWN. The old walk cloned both into
+      each record, starting up at a zero count.
+    * **The preroll is read, not fitted.** Before its first fetch each
+      voice sweeps the instrument its image cell names, tick by tick in
+      the player's order (X = 2, 1, 0), on group-level copies of the
+      records -- so a record one voice prerolls and another later sounds
+      carries the moved width over. RETRACTED: "Seven calls reproduces
+      every one of 5_Title_Tunes voice 3's 188 measured onsets exactly
+      ... A record that is NOT the voice's opening instrument is frozen
+      until its first note and needs none" -- `PULSE_PHASE_PREROLL = 7`
+      was a fit on one voice: the player's counter reads 3 against a
+      reload of 3, so 3 ticks sweep before the first fetch, and seven up
+      from a zero count is that voice's three down from its image cell
+      (descending, count 1) mirrored. The rule that the preroll belongs
+      to the FIRST NOTE's instrument was wrong as well: it belongs to the
+      image's (Crazy_Comets' voice 2 sweeps record 16 from frame 0).
+
+    Without `tri_start` the triangle walk has no preroll and seeds every
+    voice's cell up at a zero count; convert.py always passes one, and
+    declines the triangle walk where `triangle_start` cannot read it.
     """
     groups = len(tracks) // 3
     if len(tempos) != groups:
@@ -4448,8 +4526,13 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
         # (the per-record engine only; a per-voice accumulator is not shared)
         owner: dict = {}
         clash = False
+        leads: dict = {}
         for v in range(3):
             live = 0
+            # The triangle engine's lead-in (see `lead_in` below): the
+            # record a voice sweeps before its first instrument byte.
+            lead = (tri_start[g][1][v][0] if tri_start is not None
+                    and v < len(tri_start[g][1]) else 0)
             for b in tracks[3 * g + v]:
                 if b == GT_ORDER_RESTART:
                     break
@@ -4461,6 +4544,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                     if kind == "note" and instr in sims:
                         if owner.setdefault(instr, v) != v and not per_voice:
                             clash = True
+                    if not instr and lead in sims:
+                        leads[v] = lead
                     if instr:
                         live = instr
         if clash:
@@ -4469,9 +4554,50 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                     f"of subtune {g}; the accumulator is shared and the plan "
                     "declines the subtune")
             continue
+        # A lead-in record no voice sounds is the leading voice's to sweep
+        # (Crazy_Comets subtune 0: voice 2 sweeps record 16 for 96 rows, and
+        # the direction its cell is left in is the one its first note
+        # opens on). One another voice sounds is NOT modelled -- the width
+        # is swept by two voices at once, each in its own direction, which
+        # a walk taking voices one at a time cannot follow (Human_Race
+        # subtune 0: voices 0 and 1 both step record 0 for the first 16
+        # frames) -- so the leading voice, whose cell is then unknown, is
+        # declined.
+        unmodelled = set()
+        for v, lead in sorted(leads.items()):
+            if owner.setdefault(lead, v) != v:
+                unmodelled.add(v)
+                if log:
+                    log(f"Pulse phase.............: subtune {g} voice {v} "
+                        f"sweeps instrument {lead} before its first "
+                        "instrument byte while another voice sounds it; "
+                        "that lead-in is not modelled and the voice is "
+                        "declined")
 
         tempo = max(1, tempos[g])
+        # The triangle engine's per-voice cells and its startup preroll --
+        # see `tri_start` above. The records are copied per group (each
+        # subtune starts from the file image) and every voice's clones
+        # below take their widths from these copies, after the preroll has
+        # moved them.
+        group_sims = sims
+        cells = None
+        if not per_voice:
+            prefetch, voices = (tri_start[g] if tri_start is not None
+                                else (0, ()))
+            cells = [PulseVoiceCell(*voices[x][1:]) if x < len(voices)
+                     else PulseVoiceCell() for x in range(3)]
+            group_sims = {num: sim.clone() for num, sim in sims.items()}
+            for _ in range(prefetch):
+                for x in (2, 1, 0):
+                    sim = (group_sims.get(voices[x][0])
+                           if x < len(voices) else None)
+                    if sim is not None:
+                        sim.cell = cells[x]
+                        sim.advance(1)
         for v in range(3):
+            if v in unmodelled:
+                continue
             ti = 3 * g + v
             expanded, _ = _expand_repeats(tracks[ti])
             if expanded is None:
@@ -4485,41 +4611,21 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             songlen = next((k for k, b in enumerate(track)
                             if b == GT_ORDER_RESTART), len(track))
             restart = track[songlen + 1] if songlen + 1 < len(track) else 0
-            voice_sims = {num: sim.clone() for num, sim in sims.items()
+            voice_sims = {num: (sim.clone() if cells is None
+                                else sim.clone(cell=cells[v]))
+                          for num, sim in group_sims.items()
                           if per_voice or owner.get(num) == v}
             if not voice_sims:
                 continue
-            # THE STARTUP PREROLL, measured rather than derived: the record
-            # that is current when the tune starts has already swept for a
-            # few calls by the time its first note fetches -- init plus the
-            # player's warm-up. Seven calls reproduces every one of
-            # 5_Title_Tunes voice 3's 188 measured onsets exactly (0..8 were
-            # swept; 7 alone scores 188/188, its neighbours 94). A record
-            # that is NOT the voice's opening instrument is frozen until its
-            # first note and needs none -- voices 1 and 2's first onsets
-            # measure exactly the record width, which is the zero-preroll
-            # prediction. A wrong value here costs a fixed orbit offset,
-            # never the band or the travel.
-            first_instr = 0
-            live_scan = 0
-            for b in track:
-                if b == GT_ORDER_RESTART:
-                    break
-                if b >= MAX_PATTERNS or b >= len(patterns):
-                    continue
-                for _, kind, instr in _phase_note_rows(
-                        patterns[b], live_scan, voice_sims):
-                    if instr:
-                        live_scan = instr
-                    if kind == "note":
-                        first_instr = instr
-                        break
-                if first_instr:
-                    break
-            if first_instr in voice_sims:
-                voice_sims[first_instr].advance(PULSE_PHASE_PREROLL)
 
-            def one_pass(start: int, live: int):
+            # The instrument the voice sweeps until a row names one: the
+            # image's, for the triangle engine (`tri_start`). Subtune 4 of
+            # Gerry_the_Germ holds record 17 on voice 0 from frame 0 to its
+            # first note at 289, sweeping through every rest before it.
+            lead_in = (tri_start[g][1][v][0] if tri_start is not None
+                       and v < len(tri_start[g][1]) else 0)
+
+            def one_pass(start: int, live: int, lead_in: int = 0):
                 out: dict = {}
                 pos = start
                 # The sim the voice's accumulator last ran under, for the
@@ -4547,7 +4653,7 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                             patterns[b], live, voice_sims):
                         if instr:
                             live = instr
-                        sim = voice_sims.get(instr)
+                        sim = voice_sims.get(instr or lead_in)
                         if sim is None:
                             cur = None
                             continue
@@ -4573,16 +4679,35 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                                 # nothing written into it -- 21 copies for
                                 # 19 writes on Saboteur_II before this.
                                 pass
-                            else:
+                            elif instr:
+                                # (A note before any row names an
+                                # instrument sweeps the lead-in record but
+                                # is not planned: our side plays it on
+                                # whatever Goattracker's channel holds.)
                                 out.setdefault(pos, {})[r] = (instr, sim.phase())
                             run(sim, tempo, skip_first=True)
                         else:
-                            run(sim, tempo)
+                            # A row that OPENS an event without a note is a
+                            # fetch too, and the triangle player spends its
+                            # fetch tick there as on a note. Two such rows
+                            # can be read off the pattern: a KEYOFF (a rest
+                            # under `rest_keyoff`, a past-table rest note, a
+                            # pre-instrument note silenced -- Gerry_the_Germ
+                            # subtune 3 holds $D40 across frame 817, the
+                            # KEYOFF row four rows after its D-5), and a
+                            # no-note row carrying an instrument byte, which
+                            # only an event's first row does (Zoids voice 0
+                            # holds $E40 across frame 1105, a `$BD 01` row).
+                            # A no-note event with neither is a plain hold
+                            # row here and is not seen.
+                            run(sim, tempo, skip_first=cells is not None
+                                and (patterns[b][4 * r] == GT_KEYOFF
+                                     or bool(patterns[b][4 * r + 1])))
                     pos += 1
                 return out, live
 
-            first, live = one_pass(0, 0)
-            second, _ = one_pass(restart, live)
+            first, live = one_pass(0, 0, lead_in)
+            second, _ = one_pass(restart, live, lead_in)
             # The loop's second pass re-enters wherever the free-running
             # accumulator happens to be, and a per-position command cannot
             # follow that -- so the FIRST pass's phases are anchored and

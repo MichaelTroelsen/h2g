@@ -460,6 +460,21 @@ It is set in `presets.json`'s always block, where it moves the 71 corpus files
 that carry such a record (measured at v0.5.494). Knucklebusters' empty record
 27 was the case that opened it.
 
+## `--ilv-filter-routing` (the interleaved player's per-voice routing)
+
+The interleaved (ILV) player routes each voice into the filter on its own, from
+the record a note starts. Without this option every filter program's params row
+routes all three voices (`goatwriter.ILV_FILTER_ROUTING`). With it, the union
+of the voices' routed bits is written as `CMD_SETFILTERCTRL` (B) commands at
+every row where that union changes (`goatwriter.ilv_filter_routing_plan`).
+It needs `--filter` and reaches only files with `det.ilv_filter` and a program
+with a passband. Off by default because it moves those files' bytes; it is set
+in `presets.json`'s always block. Measured forced at v0.5.496 plus the third
+drain, it moved exactly the five ILV files, filtered frames ours -> original:
+- Radio_ACE: 4602 -> 2736 (original 2688)
+- Go_Go_Dash: 6526 -> 1168 (original 1172)
+- Pacific_Coast: 1366 -> 6 (original 0)
+
 ## `--wave-alternate` (the derived alternate-noise dialect)
 
 For players whose bit `$02` derives an alternate noise waveform
@@ -1766,8 +1781,12 @@ the player has one: Food Feud steps its phase once every four frames through
 a `DEC/BPL/LDA/STA` cell in front of the phase reload, and the detector reads
 that reload constant into `frames_per_step` (1 on every other corpus file) so
 each step holds that many frames longer. With `--pitch-seq` forced on Food
-Feud its voice-2 tie count moves 7837 -> 3907 against the original's 5139;
-nothing else in the corpus carries a divider.
+Feud its voice-2 tie count moved 7837 -> 3907 against the original's 5139
+(v0.5.492), and since v0.5.495 the divided phase is also read from the
+player's clock and carried per instrument (`pitch_seq_phases`), which takes it
+3907 -> 5239 against the same 5139; nothing else in the corpus carries a
+divider. Food Feud's preset does not carry `--pitch-seq`, so neither figure
+reaches its shipped bytes.
 
 Only Trans-Atlantic ships both options, and only its record 3 (`0AF8`) is
 reached: **0 pitch reversals in a 60 s trace before, 392 after, against the

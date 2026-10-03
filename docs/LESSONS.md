@@ -2861,6 +2861,25 @@ What survives is only the ENTRY half (10 of 11 multispeed triangle carriers
 declare VBI). convert.py's `calls_per_frame` comment still states the 63%/61%
 as a measurement and is owed the same retraction.
 
+### THE CLOCK IS NOW MEASURED: per ORIGINAL TICK (2026-10-03, at 3b1c66d, uncommitted tree)
+
+Both retractions above stand, and the question they left open is answered.
+The triangle sweep steps once per ORIGINAL TICK -- a play call that passes the
+player's outer gate, read off the disassembly (One_Man `$1167 JMP $1389`,
+Game_Killer `$0826 DEC $0C8C / BPL` skipping one frame in ten, Rasputin's `R`
+from the track's `$FE nn`) -- with direction and delay cells per VOICE seeded
+from the file image and no reseed at note fetch. On that clock the walk opens
+notes on the original's width, paired by note: Game_Killer 563/563, Rasputin
+950/950, One_Man 735/736, 5_Title_Tunes 486/488, Gerry_the_Germ 498/498
+(runs.jsonl `triangle-sim-model-fails-on-rasputin-and-one-man`). The GT pulse
+speed is divided by our calls a TICK, `multiplier * (O+1) / O` under an outer
+gate: Game_Killer's packed ramp 225 -> 198 a frame against the original's
+200, Samantha_Fox 32 -> 24 against 25, Ninja 127 -> 96 against 94.5; One_Man
+(no gate) is the unmoved control (runs.jsonl
+`pulse-tri-program-multiplier-division-vs-call-clock`). convert.py's block
+header and its `calls_per_frame` comment now quote and retract both earlier
+wordings.
+
 ## The 0.5.495 drain (2026-10-02, at 1dde44a, committed as 7418932)
 
 Figures dated 0.5.495, each from the run record of the task named; every one
@@ -2931,3 +2950,38 @@ is historical. The mechanisms are in `H2G-CONVERSION-METHOD.md` § 7.mmmmmm.
   after the push by pinning the option off in those tests, as
   `test_instrument_bound`'s had been. The rule it re-teaches is CLAUDE.md's own:
   an always-block change is an output change, and the suite is its check.
+
+## The 0.5.496 drain (2026-10-02, at d52a1bf, committed as a5ea6d1)
+
+Figures dated 0.5.496, each from the run record of the task named; historical.
+
+* **Self-modified vibrato gate** (`selfmod-vibrato-gate`): on seven players the
+  classic gate's `CMP #n` operand is rewritten per frame from an instrument
+  table (Thundercats `EEE8 LDA $F787,Y / EEEB STA $EF77`). A py65 trace
+  checked every compare against `table[instrument*8]` with 0 mismatches:
+  Thundercats subtune 0 1215 compares, Star_Paws subtunes 0-2 1704 + 2951 +
+  2965, Mega_Apocalypse subtune 0 1584 (its subtunes 1-5 traced no compare
+  through a plain init and are not evidence). Seven files move `vib_delay`
+  bytes only, three of them held; Commando byte-exact. The columns moved mixed:
+  `vib` Thundercats 1.17x -> 1.12x, Star_Paws 0.98x -> 1.04x; `slides`
+  Mega_Apocalypse 1497 -> 1704 against the original's 880.
+* **Vibrato-pass instrument carry** (`c64-music-examples-vibrates-nothing`):
+  24 files move bytes, exactly the files whose vibrated-note count moves, and
+  NO scored column and no siddump frequency trace moves (C64ME identical on all
+  three voices over 600 s). The task's premise -- "vibrates nothing" -- was a
+  claim about a log count, not about sound: a note without the command already
+  vibrated through its instrument's own pointer.
+* **C64ME gate hold** (`gate-hold-lsr-cmp-spelling-arms-c64me-zero-wait-ties`):
+  only C64ME moves; at s1/o0 melody 0.961 -> 0.999, voice-3 ties 0 -> 72 against
+  the original's 72, attacks 565 -> 493 against 494.
+* **Unticked nibble phase** (`nibble-unticked-counter-phase`): 8 files move
+  (Bump_Set_Spike, Formula_1_Simulator, International_Karate, Kentilla,
+  Las_Vegas_Video_Poker, Spellbound, Thrust, Warhawk). First-toggle offset at
+  120 s, original | before | after: International_Karate `$5800` {2:51, 3:13} |
+  {0:13, 1:51} | {2:51, ...}; Thrust `$0800` {2:128} | {0:40, 1:88} | {2:86, ...}.
+  Las_Vegas `$0AA0` and Spellbound `$AFFF` match in neither arm.
+* **Crazy_Comets' `$7F`** (`crazy-comets-7f-global-counter`, partial): its
+  landing cell `$550D/$550E` holds a constant `$2003` (B-4) because its only
+  writers are on the SFX path (`$5396 BIT $550A / BPL`, `$550A = $FF` during
+  music). The earlier census wording "reads global counters" is retracted: it is
+  a dormant cell, not a counter.

@@ -1167,15 +1167,14 @@ def test_the_bounds_walk_runs_on_the_originals_frame_clock():
 
 
 def test_the_triangle_walk_honours_calls_per_frame_too():
-    """The walk turns calls into frames the same way for either engine's
-    sim; which clock convert.py hands it is a fact about the ENGINE
-    (`multiplier` for the bounds engine, 1 for this one -- measured on
-    Game_Killer, tests/test_pulse_phase.py). 5_Title_Tunes' sim (step
-    $40, delay 2) on 8-call
-    rows: the 7-frame preroll leaves the counter at 1 and the opening note
-    at $A00 on either clock; the row's sweep is then 7 ticks at `-S1`
-    (3 steps, $AC0 -- the measured cycle's +$C0 stride) but 8 calls of a
-    `-S2` file are 4 frames, 3 ticks past the fetch (1 step, $A40)."""
+    """The walk divides `tempos` by `calls_per_frame` the same way for
+    either engine's sim; what convert.py hands it is a fact about the
+    ENGINE -- our calls and the multiplier for the bounds engine, the
+    original's TICKS a row and 1 for this one (tests/test_pulse_phase.py
+    pins the seam). 5_Title_Tunes' sim (step $40, delay 2), no `tri_start`
+    (so no preroll, the cell up at a zero count), 8 steps a row: the
+    opening note at $900, then 7 ticks past the fetch fire 4 steps ($A00);
+    divided by 2 the row is 4, 3 past the fetch, 2 steps ($980)."""
     from h2g.goatwriter import PulsePhaseSim
     pat = _note_pattern([(0x70, 2, 0), (0x72, 0, 0), (None, 0, 0),
                          (None, 0, 0)])
@@ -1189,8 +1188,184 @@ def test_the_triangle_walk_honours_calls_per_frame_too():
     got2 = collect_pulse_phases([pat, rest], [list(t) for t in tracks], [8],
                                 {2: sim()}, calls_per_frame=2)
     assert got1 is not None and got2 is not None
-    assert got1[1] == [(0, 0, {0: (2, (0xA00, +1)), 1: (2, (0xAC0, +1))})]
-    assert got2[1] == [(0, 0, {0: (2, (0xA00, +1)), 1: (2, (0xA40, +1))})]
+    assert got1[1] == [(0, 0, {0: (2, (0x900, +1)), 1: (2, (0xA00, +1))})]
+    assert got2[1] == [(0, 0, {0: (2, (0x900, +1)), 1: (2, (0x980, +1))})]
+
+
+# --- the triangle walk's player state: voice cells, preroll, lead-in ---------
+# The width is per RECORD, the direction and delay counter per VOICE
+# (`dir,X` / `counter,X`), and the state every subtune starts from is the
+# file image's (goatwriter.triangle_start). Paired by note against the
+# originals' traces this is what takes Game_Killer from 245/563 exact
+# attack widths to 563/563 -- tests/test_pulse_phase.py pins the corpus
+# figures; these pin each mechanism on its own.
+
+def _rest4():
+    return _note_pattern([(None, 0, 0)] * 4)
+
+
+def test_a_voices_records_share_one_direction_cell():
+    """Voice 0 sounds record 2 from $DC0 (step $40 every tick): its fetch
+    tick holds, the next tick reaches $E00 and turns the VOICE down, two
+    more descend. Record 3 then opens at its own $900 -- heading DOWN,
+    because the direction is the voice's (`dir,X`), not the record's. A
+    sim per record would have opened it heading up."""
+    from h2g.goatwriter import PulsePhaseSim
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 3, 0),
+                         (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x01], [1, 0xFF, 0x01]]
+    sims = {2: PulsePhaseSim(0xDC0, 0x40, 1, 8, 0xE),
+            3: PulsePhaseSim(0x900, 0x40, 1, 8, 0xE)}
+    got = collect_pulse_phases([pat, _rest4()], tracks, [2], sims)
+    assert got is not None
+    assert got[1] == [(0, 0, {0: (2, (0xDC0, +1)), 2: (3, (0x900, -1))})]
+
+
+def test_the_preroll_sweeps_each_voices_image_instrument():
+    """`tri_start` names, per voice, the instrument the image holds and
+    its (direction, counter); the player sweeps that record for `prefetch`
+    ticks before its first fetch. Voice 2's image cell is (down, 1): tick 1
+    counts the 1 off, tick 2 steps $A00 to $9C0, tick 3 holds -- so its
+    first note opens ($9C0, down) where no preroll opens ($A00, up)."""
+    from h2g.goatwriter import PulsePhaseSim
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0)])
+    tracks = [[1, 0xFF, 0x01], [1, 0xFF, 0x01], [0, 0xFF, 0x00]]
+    start = [(3, ((0, +1, 0), (0, +1, 0), (2, -1, 1)))]
+
+    def walk(**kw):
+        sim = PulsePhaseSim(0xA00, 0x40, 2, 8, 0xE)
+        return collect_pulse_phases([pat, _rest4()], [list(t) for t in tracks],
+                                    [2], {2: sim}, **kw)[1]
+    assert walk(tri_start=start) == [(2, 0, {0: (2, (0x9C0, -1))})]
+    assert walk() == [(2, 0, {0: (2, (0xA00, +1))})]
+    assert walk(tri_start=[(0, start[0][1])]) == [(2, 0, {0: (2, (0xA00, -1))})]
+
+
+def test_the_lead_in_sweeps_the_image_instrument_until_a_row_names_one():
+    """Rows before a voice's first instrument byte sweep the image's
+    instrument (Gerry_the_Germ subtune 4 holds record 17 on voice 0 for
+    289 frames before its first note). Two hold rows of 2 ticks step $900
+    four times, to $A00; the note after them (no instrument byte) is a
+    fetch, so it holds one tick and steps once, and is NOT planned -- our
+    side plays it on whatever the channel holds -- and the note naming
+    instrument 2 opens at $A40."""
+    from h2g.goatwriter import PulsePhaseSim
+    pat = _note_pattern([(None, 0, 0), (None, 0, 0), (0x70, 0, 0),
+                         (0x72, 2, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x01], [1, 0xFF, 0x01]]
+    start = [(0, ((2, +1, 0), (0, +1, 0), (0, +1, 0)))]
+    sim = PulsePhaseSim(0x900, 0x40, 1, 8, 0xE)
+    got = collect_pulse_phases([pat, _rest4()], tracks, [2], {2: sim},
+                               tri_start=start)
+    assert got is not None
+    assert got[1] == [(0, 0, {3: (2, (0xA40, +1))})]
+
+
+def test_a_lead_in_on_a_record_another_voice_sounds_declines_that_voice():
+    """Voice 1 leads in on instrument 2 while voice 0 sounds it: one width
+    swept by two voices in two directions, which the voice-at-a-time walk
+    cannot follow (Human_Race subtune 0). Voice 1 is declined and logged;
+    voice 0 is still planned."""
+    from h2g.goatwriter import PulsePhaseSim
+    pat0 = _note_pattern([(0x70, 2, 0), (None, 0, 0)])
+    pat1 = _note_pattern([(None, 0, 0), (0x72, 3, 0)])
+    tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x01], [2, 0xFF, 0x02]]
+    start = [(0, ((2, +1, 0), (2, +1, 0), (0, +1, 0)))]
+    sims = {2: PulsePhaseSim(0x900, 0x40, 1, 8, 0xE),
+            3: PulsePhaseSim(0x900, 0x40, 1, 8, 0xE)}
+    logs: list = []
+    got = collect_pulse_phases([pat0, pat1, _rest4()], tracks, [2], sims,
+                               logs.append, tri_start=start)
+    assert got is not None
+    assert [ti for ti, _, _ in got[1]] == [0], got[1]
+    assert any("voice 1 sweeps instrument 2 before its first" in m
+               and "declined" in m for m in logs), logs
+
+
+def test_a_keyoff_and_an_instrument_row_are_fetch_ticks_for_the_triangle():
+    """A row that opens an event without a note is a fetch, and the fetch
+    tick does not sweep: a KEYOFF (Gerry_the_Germ subtune 3 holds $D40 at
+    frame 817) and a no-note row carrying an instrument byte (Zoids holds
+    $E40 at frame 1105). A plain hold row sweeps every tick. Three rows of
+    3 ticks after the opening note, every tick a step: 2 + 3 + 3 = 8 steps
+    past $900 through hold rows, 2 + 2 + 3 = 7 with a KEYOFF in the middle,
+    and 7 with an instrument row there."""
+    from h2g.goatwriter import PulsePhaseSim
+
+    def last_phase(middle):
+        pat = _note_pattern([(0x70, 2, 0), middle, (None, 0, 0),
+                             (0x72, 0, 0)])
+        tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x01], [1, 0xFF, 0x01]]
+        sim = PulsePhaseSim(0x900, 0x20, 1, 8, 0xE)
+        got = collect_pulse_phases([pat, _rest4()], tracks, [3], {2: sim})
+        return got[1][0][2][3][1]
+    assert last_phase((None, 0, 0)) == (0x900 + 8 * 0x20, +1)
+    assert last_phase((GT_KEYOFF, 0, 0)) == (0x900 + 7 * 0x20, +1)
+    assert last_phase((None, 2, 0)) == (0x900 + 7 * 0x20, +1)
+
+
+def test_the_triangle_turns_on_equality_and_runs_on_outside_its_band():
+    """`CMP #$08 / BNE` and `CMP #$0E / BNE` on the high nibble after the
+    step, 12 bits wide: Commando's record 6 ($800, $E0 every tick) on a
+    voice already descending goes $720, $640, ... -- the original holds
+    $3A0 five frames after its note at $800 -- wraps through $FFF, passes
+    the top nibble on the way DOWN without turning, and turns only where
+    the nibble next reads 8."""
+    from h2g.goatwriter import PulsePhaseSim, PulseVoiceCell
+    s = PulsePhaseSim(0x800, 0xE0, 1, 8, 0xE, PulseVoiceCell(-1, 0))
+    s.advance(5)
+    assert (s.width, s.direction) == (0x3A0, -1), hex(s.width)
+    s.advance(5)                       # $2C0 $1E0 $100 $020 $F40
+    assert (s.width, s.direction) == (0xF40, -1), hex(s.width)
+    s.advance(1)
+    assert (s.width, s.direction) == (0xE60, -1), "turned on the way down"
+    s.advance(7)                       # ... $920 $840
+    assert (s.width, s.direction) == (0x840, +1), hex(s.width)
+    # The top bound the same way, from a width the band never holds
+    # ascending: $E60 + $E0 is $F40, nibble F, which is not E -- it runs
+    # on, wraps to $020, and turns only at the next nibble E ($E20).
+    up = PulsePhaseSim(0xE60, 0xE0, 1, 8, 0xE, PulseVoiceCell(+1, 0))
+    up.advance(1)
+    assert (up.width, up.direction) == (0xF40, +1), "turned on magnitude"
+    up.advance(1)
+    assert (up.width, up.direction) == (0x020, +1), hex(up.width)
+    up.advance(16)                     # $100 ... $D40 $E20
+    assert (up.width, up.direction) == (0xE20, -1), hex(up.width)
+
+
+def test_prefetch_counts_the_ticks_before_the_gates_first_fetch():
+    """The gate fetches on the tick its counter reads the reload, and the
+    first DEC starts from the image byte: 5_Title_Tunes' 3 against a
+    reload of 3 sweeps 3 ticks first (the fit `PULSE_PHASE_PREROLL = 7`
+    stood in for); 0 underflows into a fetch at once; 5 against a reload
+    of 2 counts 4, 3 and fetches on 2."""
+    from h2g.goatwriter import TriangleStart
+    start = lambda c: TriangleStart(((1, 0),) * 3, (1, 2, 3), c)
+    assert start(3).prefetch(4) == 3
+    assert start(0).prefetch(2) == 0
+    assert start(1).prefetch(3) == 1
+    assert start(5).prefetch(3) == 2
+
+
+@needs_corpus
+def test_triangle_start_reads_the_players_image_cells():
+    """The start state off three players' images: 5_Title_Tunes player 0
+    (counter $1055 = 3; voice 2 descending at count 1; instruments 0, 1, 2
+    at `$1040`), Game_Killer (`$0C78` = 01 00 00, voice 0 DOWN), and
+    Crazy_Comets (voice 2's image instrument record 16, descending)."""
+    from h2g.goatwriter import triangle_start
+    want = {
+        "5_Title_Tunes.sid": (((1, 0), (1, 0), (-1, 1)), (1, 2, 3), 3),
+        "Game_Killer.sid": (((-1, 0), (1, 0), (1, 0)), (7, 10, 6), 1),
+        "Crazy_Comets.sid": (((1, 0), (1, 0), (-1, 0)), (2, 20, 17), 1),
+    }
+    for name, (cells, instruments, counter) in want.items():
+        sid = load_sid(str(CORPUS / name))
+        sid2, det = _detect_tables(sid, lambda m: None, 0)
+        st = triangle_start(sid2, det, lead=0)
+        assert st is not None, name
+        assert (st.cells, st.instruments, st.counter) == (
+            cells, instruments, counter), (name, st)
 
 
 def test_no_free_rows_means_every_note_reseeds():

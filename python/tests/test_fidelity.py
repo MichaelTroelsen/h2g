@@ -1036,6 +1036,21 @@ def test_a_held_cutoff_travels_nowhere():
 # equals its original held length also read an nrun delta of exactly -1, and
 # 0 of the other 76 do. The two cases below pin that mechanism directly
 # rather than re-deriving it from a corpus trace on every suite run.
+#
+# HISTORICAL (v0.5.480, before noise_runs' gate-AND) -- RE-TAKEN 2026-10-03 on
+# the uncommitted 0.5.496 drain tree, -t 180, under presets, every preset
+# song (C:/t/re-run-the-hold-delta-split-/split.py, split_all.json): 31 files
+# read noise_run_agreement < 1.0, 68 instruments pair an nrun key to a hold
+# key, 50 carry hold's -1 -- and 0 of them have an original modal noise run
+# equal to the original modal held length, so the "fills its held note" case
+# is EMPTY and 0 of the 50 read an nrun delta of -1. Gate-AND'd noise runs
+# end where the gate drops, while sound_runs keeps counting the release, so
+# the original's noise run is 2 to 479 frames shorter than its held note on
+# every population instrument; corpus-wide only 4 instruments are equal
+# (Bangkok_Knights, I_Ball, Nineteen, Pandora, all at length 1, all nrun
+# 1.0). nrun therefore no longer sees hold's -1 at all. The synthetic cases
+# below still pin the mechanism; fidelity.py's docstring and the Dimension
+# text still quote the historical split (owed, outside that task's touches).
 
 
 def _run_voice(wf_events, adsr_events, attacks=()):
@@ -2773,6 +2788,65 @@ def _oscillating_voice(note_len, half, nnotes=40, adsr=0x0F00,
     v.freq_events = [(f, vals[f]) for f in range(len(vals))]
     v.adsr_events = [(0, adsr)]
     return v, len(vals)
+
+
+def _flatten_tail(v, note_len, keep):
+    """Hold each note's pitch after its first `keep` frames: the same swing,
+    on fewer moving frames."""
+    out, last = [], None
+    for f, val in v.freq_events:
+        if f % note_len >= keep:
+            val = last
+        else:
+            last = val
+        out.append((f, val))
+    v.freq_events = out
+    return v
+
+
+def _three(v):
+    return [v, fidelity.Voice(), fidelity.Voice()]
+
+
+def test_depth_census_names_an_amplitude_shortfall_on_the_same_frames():
+    """Knucklebusters' shape: ours moves on the same frames and swings half
+    as far, so `cause` is amplitude and coverage reads 1."""
+    o, n = _oscillating_voice(64, 4, amp_per_half=0x80)
+    u, _ = _oscillating_voice(64, 4, amp_per_half=0x40)
+    (r,) = fidelity.depth_census(_three(o), _three(u), n, {0x0F00})
+    assert r["cause"] == "amplitude"
+    assert abs(r["coverage"] - 1.0) < 0.05
+    assert abs(r["ratio"] - 0.5) < 0.1
+
+
+def test_depth_census_names_a_coverage_shortfall_at_full_swing():
+    """Same swing, but ours stops moving halfway through every note."""
+    o, n = _oscillating_voice(64, 4, amp_per_half=0x80)
+    u, _ = _oscillating_voice(64, 4, amp_per_half=0x80)
+    _flatten_tail(u, 64, 32)
+    (r,) = fidelity.depth_census(_three(o), _three(u), n, {0x0F00})
+    assert r["cause"] == "coverage"
+    assert abs(r["ratio"] - 1.0) < 0.1
+    assert r["coverage"] < 0.6
+
+
+def test_depth_census_lists_an_instrument_ours_does_not_swing_as_absent():
+    o, n = _oscillating_voice(64, 4, amp_per_half=0x80)
+    u, _ = _oscillating_voice(64, 4, amp_per_half=0)
+    (r,) = fidelity.depth_census(_three(o), _three(u), n, {0x0F00})
+    assert r["cause"] == "absent" and r["our_moving"] == 0
+
+
+def test_depth_census_report_and_flag():
+    o, n = _oscillating_voice(64, 4, amp_per_half=0x80)
+    u, _ = _oscillating_voice(64, 4, amp_per_half=0x40)
+    recs = fidelity.depth_census(_three(o), _three(u), n, {0x0F00})
+    text = fidelity.depth_census_report([{"file": "X.sid",
+                                          "depth_census": recs}])
+    assert "| X.sid | `$0F00` |" in text and "| amplitude |" in text
+    assert "| amplitude | 1 |" in text
+    import inspect
+    assert '"--depth-census"' in inspect.getsource(fidelity)
 
 
 def _reversals(note_len, half):

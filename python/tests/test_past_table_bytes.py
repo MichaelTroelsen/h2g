@@ -136,10 +136,16 @@ def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
     # drum entry, each at row 20 of its pattern.
     song = songview.parse_sng(convert(str(SANXION), log=lambda m: None,
                                       **_preset_opts("Sanxion.sid")))
-    variant = len(song.instruments)
+    wave = song.tables["WTBL"]
+    # Found by its wave block, not by position: the variant was the last
+    # instrument until the legato-tie clones (`goatwriter.legato_tie_clones`)
+    # started appending after it -- Sanxion carries two.
+    found = [k for k, ins in enumerate(song.instruments, 1)
+             if wave[ins.wave_ptr - 1:ins.wave_ptr + 3] == SANXION_VARIANT_WAVE]
+    assert len(found) == 1, found
+    variant = found[0]
     record = song.instruments[SANXION_DRUM_RECORD - 1]
     drum = song.instruments[variant - 1]
-    wave = song.tables["WTBL"]
     assert wave[record.wave_ptr - 1:record.wave_ptr + 3] == SANXION_RECORD_WAVE
     assert wave[drum.wave_ptr - 1:drum.wave_ptr + 3] == SANXION_VARIANT_WAVE
     # Everything but the wave pointer is the record's: envelope, pulse

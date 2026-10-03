@@ -284,14 +284,67 @@ def test_three_values_in_one_frame_are_not_a_two_value_frame():
     assert V.octave_split_frames(_frames([fr])) == [0, 0, 0]
 
 
-def test_a_sign_extended_member_is_rebuilt_from_its_whole_partner():
-    # 0x22D0 is whole; its half 0x1168 dumps as 0x1168 (lo < $80) but 0x0DD0/2..
-    # use 0x1BA0 (lo >= $80) whose octave 0x3740 is whole: 0xFFA0 is the dump.
-    assert V._octave_partner(0xFFA0, 0x3740)
-    assert not V._octave_partner(0xFFA0, 0x3A40)
-    # two damaged values are refused, and a tiny pair is not a note
+def test_a_sign_extended_member_can_refute_an_octave_but_never_confirm_one():
+    # 0x1BA0 (lo >= $80) dumps as 0xFFA0; its octave 0x3740 is whole. The low
+    # byte matches, but the high byte that makes it an octave is the one the
+    # rebuild gave it: undecidable, so not counted.
+    assert V._octave_verdict(0xFFA0, 0x3740) is None
+    assert not V._octave_partner(0xFFA0, 0x3740)
+    # no high byte makes $xxA0 an octave of 0x3A40: the low byte refutes it
+    assert V._octave_verdict(0xFFA0, 0x3A40) is False
+    # two damaged values are undecidable, and a tiny pair is not a note
+    assert V._octave_verdict(0xFFFD, 0xFFFC) is None
     assert not V._octave_partner(0xFFFD, 0xFFFC)
-    assert not V._octave_partner(0x0003, 0x0006)
+    assert V._octave_verdict(0x0003, 0x0006) is False
+    assert V._octave_verdict(0xFF90, 0x0006) is False
+    # two whole values still decide on their own
+    assert V._octave_verdict(0x1168, 0x22D0) is True
+    assert V._octave_verdict(0x1168, 0x1A2C) is False
+
+
+# Formula_1_Simulator, ours under presets at -t 180 (-S2), voice 1: the held
+# A#3 is $0F82 (siddump frame 407) and dumps as $FF82; one play call a frame
+# drops it to $0F02, $0E02, $0D02, $0C02. Rebuilt from $0F02 or $0D02 the
+# low byte $82 reads as half of it within 1 ($0782 vs $0781, $0682 vs
+# $0681), which put 32 false octave-split frames on ours.
+F1_HELD, F1_DROPS = 0xFF82, (0x0F02, 0x0E02, 0x0D02, 0x0C02)
+
+
+def test_formula_1s_portamento_pair_is_not_an_octave():
+    assert not V._octave_partner(F1_HELD, 0x0F02)
+    assert not V._octave_partner(F1_HELD, 0x0D02)
+    assert V._octave_verdict(F1_HELD, 0x0F02) is None
+    assert V._octave_verdict(F1_HELD, 0x0D02) is None
+    # $0E02 and $0C02 have an even high byte: their halves end $01, and $82
+    # refutes them outright
+    assert V._octave_verdict(F1_HELD, 0x0E02) is False
+    assert V._octave_verdict(F1_HELD, 0x0C02) is False
+
+
+def test_an_octave_past_16_bits_is_refuted_not_blind():
+    """Devils_Galop, ours at -t 180, voice 2: `$817D` against a dumped `$FFFA`
+    "matched" as `$102FA` and counted 16 frames through v0.5.496."""
+    assert V._octave_verdict(0xFFFA, 0x817D) is False
+    assert V._octave_verdict(0x817D, 0xFFFA) is False
+    # the half is still tested: $40BE's octave $817C ends $7C, whole
+    assert V._octave_verdict(0xFFBE, 0x817C) is None
+
+
+def test_formula_1s_frames_are_blind_not_counted():
+    """The traced shape, line counts from the dump: held / drop / held."""
+    held = [[F1_HELD] * 312] * 3
+    drops = [[F1_HELD] * 119 + [d] * 154 + [F1_HELD] * 39 for d in F1_DROPS]
+    blind = []
+    assert V.octave_split_frames(_frames(held + drops + held), blind=blind) == [0, 0, 0]
+    # every drop frame has the trill's shape; two survive the low-byte test
+    assert blind == [2, 0, 0]
+
+
+def test_blind_is_reset_and_whole_octaves_are_not_blind():
+    blind = [9, 9, 9]
+    frames = _frames([_split(0x1168, 0x22D0, 156)] * 4)
+    assert V.octave_split_frames(frames, blind=blind) == [3, 0, 0]
+    assert blind == [0, 0, 0]
 
 
 def test_silent_lines_are_not_a_value():

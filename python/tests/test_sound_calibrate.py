@@ -965,3 +965,120 @@ def test_the_header_docstrings_exclusion_list_is_true_of_the_code_below_it():
     assert not lies, (
         f"the header docstring says nothing here calls {lies}, but the code below "
         f"it does -- fix the sentence, not the test")
+
+
+# The same claim checked across the tree, not only in this file
+# (prose-asserting-a-files-own-absence-is-checkable, 2026-10-03). Three
+# self-describing falsehoods landed in one cycle -- this file's `convert_at`
+# sentence, test_plan_audit.py's "Tests for plan_audit.check_g" header and a
+# goatwriter rshift derivation -- and only the first shape is mechanisable: a
+# module docstring naming a symbol it says the file does not use. Every .py
+# under python/ and .claude/skills/ that uses the shape is held to it.
+
+def _absence_claim_lies(text):
+    return sorted(_docstring_exclusions(text) & _called_names(text))
+
+
+def test_the_absence_check_reads_a_lying_docstring(tmp_path):
+    """Positive control, so the tree-wide scan below cannot pass by reading
+    nothing: a module that says it does not call `foo` and calls it."""
+    lying = '"""Nothing here calls `foo` or `bar`."""\nfoo()\n'
+    honest = '"""Nothing here calls `foo`."""\nbar()\n'
+    assert _absence_claim_lies(lying) == ["foo"]
+    assert _absence_claim_lies(honest) == []
+    assert _absence_claim_lies('"""`baz` is not exercised."""\nbaz()\n') == ["baz"]
+
+
+def test_no_module_docstring_claims_the_absence_of_a_name_it_calls():
+    root = pathlib.Path(__file__).resolve().parents[2]
+    files = [p for d in ("python", ".claude/skills")
+             for p in (root / d).rglob("*.py") if "__pycache__" not in p.parts]
+    claiming, lies = [], {}
+    for p in files:
+        text = p.read_text(encoding="utf-8", errors="replace")
+        try:
+            if not _docstring_exclusions(text):
+                continue
+        except SyntaxError:
+            continue
+        claiming.append(p)
+        bad = _absence_claim_lies(text)
+        if bad:
+            lies[str(p.relative_to(root))] = bad
+    assert claiming, "no file carries the shape; the scan or its regex is broken"
+    assert not lies, (f"module docstrings claim these names are not called, but "
+                      f"the code calls them: {lies} -- fix the sentence")
+
+
+# --------------------------------------------------------------------------
+# The traced-subtune pin: fidelity.SUBTUNE_COUNTERPART.
+#
+# Every check here used to take ONE index from `resolve_subtune` and render or
+# trace both sides at it. For a pinned file (C64ME s1/o0,
+# Dragons_Lair_Part_II s0/o9) that compares two different pieces of music.
+# `score_pair` and `clock_reading` take our side's index separately, and
+# `main` gets both from `fidelity.resolve_pair`.
+# --------------------------------------------------------------------------
+def test_score_pair_renders_ours_at_our_side_of_the_pair(monkeypatch):
+    """SABOTAGE TARGET: render the second side at `sub` and this fails."""
+    seen = []
+
+    def fake(sid, seconds, sub, tag, *a, **k):
+        seen.append((sid.stem, sub, tag))
+        return None if tag == "ours" else sid
+    monkeypatch.setattr(C.sound, "render_cached", fake)
+    C.score_pair(pathlib.Path("O.sid"), pathlib.Path("U.sid"), 1, 0, 9)
+    assert seen == [("O", 0, "orig"), ("U", 9, "ours")]
+    seen.clear()
+    C.score_pair(pathlib.Path("O.sid"), pathlib.Path("U.sid"), 1, 3)
+    assert seen == [("O", 3, "orig"), ("U", 3, "ours")], "unpinned: the diagonal"
+
+
+def test_clock_reading_traces_ours_at_our_side_of_the_pair():
+    """Every trace of the original at `sub`, every trace of ours at
+    `our_sub` -- including the length probe's. SABOTAGE TARGET: any `ours`
+    trace left at `sub` fails this."""
+    orig, ours = _clock_trace(10, 100), _clock_trace(8, 100 * 0.8)
+    calls = []
+
+    def trace(sid, seconds, sub, exe, cal=0, **kw):
+        calls.append((sid, sub))
+        return (orig if sid == "o" else ours)(seconds)
+    C.clock_reading("o", "u", 4, 1, 180, 0, "x", trace=trace, our_sub=0)
+    assert {s for sid, s in calls if sid == "o"} == {1}
+    assert {s for sid, s in calls if sid == "u"} == {0}
+    assert sum(sid == "u" for sid, _ in calls) >= 2, "length compare AND drift"
+
+
+def test_main_takes_both_sides_from_resolve_pair():
+    """Wiring guard on the hand-run `main`: no check resolves a subtune
+    through `resolve_subtune` (the diagonal) any more; checks 4 and 6, which
+    pair the original with ours, hand `our_sub` to `score_pair` /
+    `clock_reading`; check 3, which pairs two of OUR builds, renders both at
+    our side; check 1, which renders only the original, takes its side."""
+    text = pathlib.Path(C.__file__).read_text(encoding="utf-8")
+    main = next(n for n in ast.walk(ast.parse(text))
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+
+    def name(c):
+        return c.func.attr if isinstance(c.func, ast.Attribute) else getattr(c.func, "id", None)
+    calls = [n for n in ast.walk(main) if isinstance(n, ast.Call)]
+    names = [name(c) for c in calls]
+    assert "resolve_subtune" not in names
+    assert names.count("resolve_pair") == 4, "checks 1, 3, 4 and 6"
+
+    def loop_over(it):
+        return next(n for n in ast.walk(main) if isinstance(n, ast.For)
+                    and isinstance(n.iter, ast.Name) and n.iter.id == it)
+
+    def args_of(loop, fn):
+        return [ast.unparse(c) for c in ast.walk(loop)
+                if isinstance(c, ast.Call) and name(c) == fn]
+    for src in args_of(loop_over("KNOWN_BAD"), "score_pair"):
+        assert src.endswith("args.seconds, sub, our_sub)"), src
+    for src in args_of(loop_over("CLOCK_KNOWN_BAD"), "clock_reading"):
+        assert "our_sub=our_sub" in src, src
+    pairs = args_of(loop_over("INAUDIBLE_PAIRS"), "score_pair")
+    assert pairs and all(s.endswith("our_sub, our_sub)") for s in pairs), pairs
+    check1 = ast.unparse(loop_over("names"))
+    assert "F.resolve_pair(sid, 'auto')[0]" in check1

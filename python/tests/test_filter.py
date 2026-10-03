@@ -294,3 +294,200 @@ def test_a_clearing_record_gets_a_block_that_routes_nothing(stem, monkeypatch):
         left, right = entries[with_[i] - 1]
         assert left & FILT_SET_PARAMS and not right & 0x0F
         assert entries[with_[i]][0] in (FILT_SET_CUTOFF, FILT_STOP)
+
+
+# --- ilv_filter_routing: the per-voice union as CMD_SETFILTERCTRL -----------
+#
+# goatwriter.ilv_filter_routing_plan. The synthetic tests drive the walk on a
+# hand-built three-voice song whose answer can be read off the rows; the
+# corpus tests check the five files it moves against the routing each
+# ORIGINAL traces (ILV_FILTER_ROUTING's table: Radio_ACE and Lion_Heart route
+# voice 2 only, Pacific_Coast voice 1, Go_Go_Dash voices 2 and 0+2,
+# Sun_Never_Shines 0+2 and 0).
+
+from h2g.goatwriter import (CMD_SETFILTERCTRL, CMD_SETFILTERPTR,  # noqa: E402
+                            ILV_EMPTY_UNION, PACKED_PATTERN_LIMIT,
+                            _ilv_routing_walk, _ilv_voice_rows,
+                            packed_pattern_size, pattern_rows)
+
+_REST = (0xBD, 0, 0, 0)
+
+
+def _pattern(rows, length=8):
+    rows = dict(rows)
+    out = []
+    for r in range(length):
+        out += list(rows.get(r, _REST))
+    return out + [0xFF, 0, 0, 0]
+
+
+def _song(v0, v1, v2):
+    """Three one-pattern voices, patterns 0-2, each orderlist `p $FF 00`."""
+    patterns = [_pattern(v0), _pattern(v1), _pattern(v2)]
+    tracks = [[0, 0xFF, 0], [1, 0xFF, 0], [2, 0xFF, 0]]
+    timeline = [_ilv_voice_rows(t, patterns) for t in tracks]
+    return patterns, [(max(len(t) for t in timeline), timeline)]
+
+
+# instr_base 1: GT instrument 1 is record 0 (routed, with a program whose
+# resonance is $4), GT instrument 2 is record 1 (not routed).
+_ROUTED, _PLAIN = 1, 2
+_PROGRAMS = {0: (0x10, 0x40, 0x80, 0)}
+
+
+def _walk(patterns, groups, mode, params=None, init_row=None,
+          programs=_PROGRAMS):
+    return _ilv_routing_walk(groups, patterns, 1, {0}, programs, mode,
+                             params or {}, init_row or {})
+
+
+def test_the_union_walk_writes_each_voices_bit_where_it_changes():
+    """SABOTAGE TARGET: replace the union (`mask` in `_ilv_routing_walk`) by
+    the static ILV_FILTER_ROUTING $07 and every value below becomes $47.
+
+    Voice 0 enters the filter at row 1, voice 2 at row 3, and voice 0 leaves
+    at row 5 on an unfiltered record: the player's $D417 low nibble goes
+    1, 5, 4, and each `B` rides on the column of the voice that changed it."""
+    patterns, groups = _song({0: (0x90, _PLAIN, 0, 0), 1: (0x90, _ROUTED, 0, 0),
+                              5: (0x90, _PLAIN, 0, 0)},
+                             {},
+                             {0: (0x90, _PLAIN, 0, 0), 3: (0x90, _ROUTED, 0, 0)})
+    plan, stats = _walk(patterns, groups, "shared")
+    assert plan == {(0, 0): {1: (CMD_SETFILTERCTRL, 0x41),
+                             5: (CMD_SETFILTERCTRL, 0x44)},
+                    (2, 0): {3: (CMD_SETFILTERCTRL, 0x45)}}, plan
+    assert (stats["placed"], stats["late_rows"], stats["lagged"]) == (3, 0, 0)
+
+
+def test_a_params_row_overwrites_the_b_on_its_own_row_so_the_b_lags():
+    """player.s runs `mt_filtstep` before the channels: a program opening on
+    FILT_SET_PARAMS writes its own routing one call after the note, so the
+    union voice 2's note opens on ($45, against a params value of $41) can
+    only be written on the NEXT row -- counted, not hidden."""
+    patterns, groups = _song({1: (0x90, _ROUTED, 0, 0), 5: (0x90, _PLAIN, 0, 0)},
+                             {},
+                             {3: (0x90, _ROUTED, 0, 0)})
+    plan, stats = _walk(patterns, groups, "params", params={0: 0x41})
+    assert plan == {(0, 0): {4: (CMD_SETFILTERCTRL, 0x45),
+                             5: (CMD_SETFILTERCTRL, 0x44)}}, plan
+    assert (stats["lagged"], stats["late_rows"]) == (1, 1)
+
+
+def test_no_command_on_row_0_or_over_a_taken_column():
+    """Row 0 is the subtune's clock (CLAUDE.md); a change there waits for the
+    first free row, and an occupied column is never written over."""
+    patterns, groups = _song({0: (0x90, _ROUTED, 0, 0), 1: (0xBD, 0, 4, 0x11)},
+                             {1: (0xBD, 0, 5, 0x22)},
+                             {1: (0xBD, 0, 6, 0x33)})
+    plan, stats = _walk(patterns, groups, "shared")
+    assert plan == {(0, 0): {2: (CMD_SETFILTERCTRL, 0x41)}}, plan
+    assert (stats["unplaceable"], stats["late_rows"]) == (1, 2)
+
+
+def test_an_empty_union_is_never_written_as_zero():
+    """`B $00` also stops the filter table (gplay.c:471); with a resonance of
+    0 the empty union is written ILV_EMPTY_UNION instead."""
+    patterns, groups = _song({1: (0x90, _ROUTED, 0, 0), 3: (0x90, _PLAIN, 0, 0)},
+                             {}, {})
+    plan, _ = _walk(patterns, groups, "shared",
+                    programs={0: (0x10, 0x00, 0x80, 0)})
+    assert plan == {(0, 0): {1: (CMD_SETFILTERCTRL, 0x01),
+                             3: (CMD_SETFILTERCTRL, ILV_EMPTY_UNION)}}, plan
+
+
+def test_a_repeat_replays_the_occurrence_without_rewriting_it():
+    """Commands go on an occurrence's FIRST play only; the walk's later plays
+    of it execute what is there (`REPEAT` $D1 plays pattern 0 twice)."""
+    patterns = [_pattern({1: (0x90, _ROUTED, 0, 0), 3: (0x90, _PLAIN, 0, 0)}),
+                _pattern({}, 16), _pattern({}, 16)]
+    tracks = [[0xD1, 0, 0xFF, 0], [1, 0xFF, 0], [2, 0xFF, 0]]
+    timeline = [_ilv_voice_rows(t, patterns, 16) for t in tracks]
+    assert [x[:2] for x in timeline[0][::8]] == [(1, 0), (1, 1)]
+    plan, stats = _walk(patterns, [(16, timeline)], "shared")
+    assert plan == {(0, 1): {1: (CMD_SETFILTERCTRL, 0x41),
+                             3: (CMD_SETFILTERCTRL, 0x40)}}, plan
+    assert stats["late_rows"] == 0
+
+
+# The routed voices each ORIGINAL traces (ILV_FILTER_ROUTING, v0.5.461), as
+# the $D417 low nibbles a conversion may write. Sun_Never_Shines' program 12
+# opens on voice 1 too, so only its `B` values are held to the trace.
+ILV_MOVERS = {"Radio_ACE": {0, 4}, "Lion_Heart": {0, 4},
+              "Pacific_Coast": {0, 2}, "Go_Go_Dash": {0, 1, 4, 5},
+              "Sun_Never_Shines": {0, 1, 4, 5}}
+
+
+def _routed_conversion(stem, **extra):
+    import fidelity as F
+    from songview import parse_sng
+    doc = json.loads((REPO / "presets.json").read_text("utf-8"))
+    opts = dict(F._preset_opts(doc, f"{stem}.sid"), **extra)
+    lines = []
+    blob = convert(str(CORPUS / f"{stem}.sid"), log=lines.append, **opts)
+    return blob, parse_sng(blob), lines
+
+
+@pytest.mark.parametrize("stem", sorted(ILV_MOVERS))
+def test_the_routing_written_is_the_voices_the_original_routes(stem):
+    """SABOTAGE TARGET: with the union replaced by the static $07, Radio_ACE,
+    Lion_Heart and Pacific_Coast write $x7 in their params rows and every
+    file's `B` set is empty or $x7 -- both fail here."""
+    _blob, song, lines = _routed_conversion(stem, ilv_filter_routing=True)
+    nibbles, row0, zero = set(), 0, 0
+    for p in song.patterns:
+        for r, (_n, _i, cmd, dat) in enumerate(pattern_rows(p)):
+            if cmd in (CMD_SETFILTERCTRL, CMD_SETFILTERPTR):
+                row0 += r == 0
+            if cmd == CMD_SETFILTERCTRL:
+                nibbles.add(dat & 0x0F)
+                zero += dat == 0
+    params = {right & 0x0F for left, right in song.tables["FTBL"]
+              if FILT_SET_PARAMS <= left < FILT_STOP and right}
+    assert nibbles and nibbles <= ILV_MOVERS[stem], (stem, nibbles)
+    if stem != "Sun_Never_Shines":
+        assert params <= ILV_MOVERS[stem], (stem, params)
+    assert not row0 and not zero, (stem, row0, zero)
+    assert all(packed_pattern_size(pattern_rows(p)) <= PACKED_PATTERN_LIMIT
+               for p in song.patterns)
+    logged = [m for m in lines if m.startswith("ILV filter routing")]
+    assert len(logged) == 1 and "unplaceable" in logged[0] \
+        and "lagged" in logged[0], logged
+
+
+def test_the_two_voice_files_write_both_union_states():
+    """Go_Go_Dash and Sun_Never_Shines filter on TWO voices; the reason the
+    gated clear could not serve them. The union must take both states their
+    originals trace -- 0+2 and one voice alone."""
+    for stem, need in (("Go_Go_Dash", {4, 5}), ("Sun_Never_Shines", {1, 5})):
+        _blob, song, _ = _routed_conversion(stem, ilv_filter_routing=True)
+        got = {dat & 0x0F for p in song.patterns
+               for _n, _i, cmd, dat in pattern_rows(p)
+               if cmd == CMD_SETFILTERCTRL}
+        assert need <= got, (stem, got)
+
+
+def test_a_single_filtering_voice_never_lags():
+    """A params row carries the union its notes most often open on; where one
+    voice alone filters that is every opening, so nothing lags. Sun's three
+    passbands force the params spelling on a two-voice file, which does."""
+    for stem in ("Radio_ACE", "Lion_Heart", "Pacific_Coast", "Sun_Never_Shines"):
+        _blob, _song, lines = _routed_conversion(stem, ilv_filter_routing=True)
+        line = next(m for m in lines if m.startswith("ILV filter routing"))
+        lagged = int(line.split(" lagged")[0].rsplit(", ", 1)[1])
+        assert (lagged > 0) == (stem == "Sun_Never_Shines"), line
+
+
+@pytest.mark.parametrize("stem", ["Lakers_vs_Celtics", "ACE_II", "Sanxion"])
+def test_the_option_moves_no_file_it_does_not_reach(stem):
+    """Lakers enables no record; ACE_II and Sanxion are the classic dialect,
+    whose routing is last-writer rather than a union (out of scope)."""
+    off, _, _ = _routed_conversion(stem)
+    on, _, lines = _routed_conversion(stem, ilv_filter_routing=True)
+    assert on == off
+    assert not any(m.startswith("ILV filter routing") for m in lines)
+
+
+def test_commando_is_untouched_by_the_routing_option():
+    ref = (REPO / "Commando.sng").read_bytes()
+    assert convert(str(REPO / "Commando.sid"), log=lambda m: None,
+                   filters=True, ilv_filter_routing=True) == ref

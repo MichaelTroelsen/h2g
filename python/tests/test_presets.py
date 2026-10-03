@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 
+import pytest
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SID = REPO_ROOT / "Commando.sid"
@@ -468,6 +470,30 @@ def _state(melody=1.0, seq=1.0, attacks=100, noise=(0, 0, 0, 0), osc=None,
     """A `tune_by_fidelity` state tuple, in the order `play()` builds it."""
     return (melody, seq, attacks, noise, osc, onset, hold, gate,
             orig_attacks, pphase)
+
+
+@pytest.mark.parametrize("ours, cand_attacks, orig, accepted", [
+    (375, 372, 372, True),    # Arcade_Classics, exact
+    (417, 414, 414, True),    # Sigma_Seven, exact
+    (446, 437, 437, True),    # Wiz, exact
+    (201, 196, 197, True),    # Rikky, one under -- closer is the rule
+    (201, 190, 197, False),   # past the original: the gaming the guard stops
+    (201, 196, None, False),  # no original count: the one-sided rule stands
+])
+def test_keeps_notes_reads_the_originals_attack_count(ours, cand_attacks,
+                                                      orig, accepted):
+    """`keeps_notes` judges FEWER attacks against the original's count.
+
+    The figures are the v0.5.411 regrid measurements the FIXED `regrid`
+    comment quotes: every one a strict improvement the old ours-against-ours
+    guard read as a loss. Acceptance comes from a pulse-phase gain, which is
+    acceptance-only, so the attack guard alone decides each case.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    ref = _state(attacks=ours, orig_attacks=orig, pphase=0.20)
+    cand = _state(attacks=cand_attacks, orig_attacks=orig, pphase=0.90)
+    assert presets.fidelity_better(cand, ref) is accepted
 
 
 def test_a_pulse_phase_gain_is_enough_to_accept():

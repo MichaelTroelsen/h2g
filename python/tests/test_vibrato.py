@@ -515,6 +515,60 @@ def test_a_carried_instrument_is_taken_only_when_every_entry_agrees():
     assert [pats[1][i + 3] for i in range(0, len(pats[1]), 4)] == [9, 9, 9]
 
 
+def test_a_long_note_on_a_named_instrument_without_vibrato_is_not_unnamed():
+    """Instrument 4 is named on the note row but has no `vib_ptrs` entry (a
+    zero shift byte is the player's own `BEQ past`): there is no depth to
+    command and nothing unresolved about it, so the log counts it apart from
+    the unnamed note in the next pattern -- and both are still written
+    nothing."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pats = [_pattern(_note(instr=2), _hold(), _hold()),     # vibrato slot
+            _pattern(_note(instr=4), _hold(), _hold()),     # named, no vibrato
+            _pattern(_note(), _hold(), _hold())]            # names none
+    lines: list = []
+    _vibrato_command_pass(det, pats, {0: (7, 8)}, lead=1, log=lines.append)
+    assert [pats[1][i + 2] for i in range(0, 12, 4)] == [0, 0, 0]
+    assert [pats[2][i + 2] for i in range(0, 12, 4)] == [0, 0, 0]
+    assert lines == ["Vibrato command.........: 1 note(s) vibrated, "
+                     "0 damped by length, 1 on an unnamed instrument, "
+                     "1 long on an instrument with no vibrato"], lines
+    # A carried instrument counts as named too: entered holding 4.
+    pats = [_pattern(_note(instr=4), _hold()),
+            _pattern(_note(), _hold(), _hold()),
+            _pattern(_note(instr=2), _hold(), _hold())]
+    lines = []
+    _vibrato_command_pass(det, pats, {0: (7, 8)}, lead=1, log=lines.append,
+                          tracks=[[0, 1, 2]])
+    assert lines and "unnamed" not in lines[0], lines
+    assert "1 long on an instrument with no vibrato" in lines[0], lines
+
+
+@needs_corpus
+def test_commodore_64_music_examples_instrument_04_is_not_unnamed():
+    """The finding behind the split: under the shipped presets three of the
+    long notes logged `on an unnamed instrument` sit on instrument 04, whose
+    shift byte is $00 -- named, and switched off by the player itself."""
+    import json
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import convert
+    from h2g.detect import detect
+    from fidelity import _preset_opts
+    name = "Commodore_64_Music_Examples.sid"
+    sid = load_sid(str(CORPUS / name))
+    det = detect(sid, lambda m: None)
+    assert sid.data[det.instr_start + 3 * det.instr_stride
+                    + det.triangle_vibrato] == 0
+    root = pathlib.Path(__file__).resolve().parents[2]
+    opts = _preset_opts(json.loads((root / "presets.json").read_text()), name)
+    lines: list = []
+    convert(str(CORPUS / name), log=lines.append, **opts)
+    said = [l for l in lines if "Vibrato command" in l]
+    assert said and "3 long on an instrument with no vibrato" in said[0], said
+
+
 def test_build_sng_hands_the_orderlists_to_the_vibrato_pass():
     """The carry is inert unless build_sng passes `tracks`; a behaviour test
     would need a triangle-dialect file, so this pins the call's keyword."""

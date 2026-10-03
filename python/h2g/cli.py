@@ -225,6 +225,13 @@ def main(argv=None) -> int:
              "wave for noise on one and costs the other melody; see "
              "presets.EXCLUDED_FROM_ALWAYS")
     parser.add_argument(
+        "--ilv-filter-routing", action="store_true",
+        help="write the interleaved player's per-voice filter routing as "
+             "CMD_SETFILTERCTRL commands where the routed voices change, "
+             "instead of routing all three voices from every filter program. "
+             "Needs --filter; reaches only interleaved files with a passband "
+             "program. Off by default: it moves the bytes of those files")
+    parser.add_argument(
         "--drop-unnamed-instruments", action="store_true",
         help="leave out every instrument record no pattern row names, and "
              "renumber the instrument columns to match (instrument 1 is always "
@@ -560,6 +567,7 @@ def main(argv=None) -> int:
                           ("--compact-instruments", "compact_instruments"),
                           ("--drop-unnamed-instruments",
                            "drop_unnamed_instruments"),
+                          ("--ilv-filter-routing", "ilv_filter_routing"),
                           ("--wave-alternate", "wave_alternate"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--skip-gate", "skip_gate"),
@@ -656,6 +664,7 @@ def main(argv=None) -> int:
                       rest_instrument=args.rest_instrument,
                       compact_instruments=args.compact_instruments,
                       drop_unnamed_instruments=args.drop_unnamed_instruments,
+                      ilv_filter_routing=args.ilv_filter_routing,
                       wave_alternate=args.wave_alternate,
                       engine=args.engine,
                       reject_phantoms=args.reject_phantoms,

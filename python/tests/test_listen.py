@@ -611,3 +611,99 @@ def test_no_legato_still_fires_on_a_slow_tie_deficit_and_names_the_voice():
     ours = [_voice([], []), _voice([0], [40]), _voice([], [])]
     notes = [n for n in L.listen_notes({}, orig, ours) if "No legato" in n]
     assert notes and "30 slow" in notes[0] and "(voice 2)" in notes[0]
+
+
+# --- the traced-subtune pin: fidelity.SUBTUNE_COUNTERPART -----------------
+#
+# Two corpus files are scored by fidelity.py at a pair that is NOT the
+# diagonal: C64ME s1/o0 (our .sng carries one subtune, and it is the
+# original's second) and Dragons_Lair_Part_II s0/o9 (its init remaps PSID 0
+# to song 9). listen.py used to take the original's side from
+# `resolve_subtune` alone, so a {subtune: 1, matched_subtune: 0} row staged
+# s0/o0 -- and LISTENING.md's notes for both files described a comparison
+# of two different pieces of music. SABOTAGE TARGET: drop the `if pinned`
+# return in `pair_subtunes` and every assertion below on a pinned file fails.
+
+C64ME = "Commodore_64_Music_Examples.sid"
+DL2 = "Dragons_Lair_Part_II.sid"
+
+
+def test_c64me_is_staged_at_its_pinned_pair_not_the_diagonal(tmp_path):
+    # The row exactly as build/fidelity.json carries it at 0.5.495.
+    row = {"file": C64ME, "subtune": 1, "matched_subtune": 0}
+    assert L.pair_subtunes(tmp_path / C64ME, row, "auto") == (1, 0)
+    assert L.pair_subtunes(tmp_path / C64ME, {"file": C64ME}, "auto") == (1, 0)
+
+
+def test_dragons_lair_ii_is_staged_at_its_pinned_pair_whatever_the_row_says(tmp_path):
+    """A pre-pin row's `matched_subtune` is the diagonal the pin replaces;
+    it must not win. A forced `-a 0` is the pin's own original index, so it
+    pins too (`resolve_pair`'s rule)."""
+    assert L.pair_subtunes(tmp_path / DL2, {"matched_subtune": 9}, "auto") == (0, 9)
+    assert L.pair_subtunes(tmp_path / DL2, {"matched_subtune": 0}, "auto") == (0, 9)
+    assert L.pair_subtunes(tmp_path / DL2, {}, 0) == (0, 9)
+    # ...nor a matched_subtune recovered from an older fidelity.json.
+    assert L.pair_subtunes(tmp_path / DL2, {}, "auto", matched=0) == (0, 9)
+
+
+def test_a_forced_index_off_the_pin_falls_back_to_the_diagonal(tmp_path):
+    """No counterpart is known for C64ME's s0, so -a 0 traces 0 on both."""
+    assert L.pair_subtunes(tmp_path / C64ME, {}, 0) == (0, 0)
+
+
+def test_the_probe_renders_the_pinned_original_subtune(tmp_path, monkeypatch):
+    """pick_renderer's one-second probe renders the ORIGINAL; for C64ME that
+    is s1, not resolve_subtune's s0."""
+    (tmp_path / "sidplayfp.exe").write_text("x")
+    sid = tmp_path / C64ME
+    sid.write_bytes(b"PSID" + b"\x00" * 200)
+    seen = []
+    monkeypatch.setattr(L, "render_sidplayfp",
+                        lambda s, o, sec, sub, exe=None, mute=(): seen.append(sub) or True)
+    args = types.SimpleNamespace(sidplayfp=str(tmp_path / "sidplayfp.exe"),
+                                 sid2wav="", outdir=str(tmp_path), subtune="auto")
+    L.pick_renderer(sid, args, probe_dir=tmp_path)
+    assert seen == [1]
+
+
+def test_main_traces_each_side_of_a_pinned_file_at_its_own_subtune(
+        tmp_path, monkeypatch):
+    """End to end through `main`: the original corpus file is traced at the
+    pin's original index, the packed .sid at ours -- even from a pre-pin
+    row that recorded the diagonal. Read through `--from-json`, so the run
+    never falls back to whatever build/fidelity.json holds today."""
+    corpus = tmp_path / "corpus"
+    _make_sid(corpus / DL2)
+    presets = _presets(tmp_path, {DL2: {}})
+    _stage_stub_env(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(L, "run_siddump",
+                        lambda *a, **k: calls.append(a) or [])
+    rows = tmp_path / "fidelity.json"
+    rows.write_text(json.dumps([{"file": DL2, "subtune": 0, "matched_subtune": 0}]))
+    rc = L.main([str(corpus), "--files", DL2, "-o", str(tmp_path / "out"),
+                 "--presets", presets, "--workdir", str(tmp_path / "work"),
+                 "--from-json", str(rows), "-t", "1", "--traces-only"])
+    assert rc == 0
+    (orig_a, ours_a) = calls
+    assert Path(orig_a[0]).name == DL2 and orig_a[2] == 0
+    assert Path(ours_a[0]).name != DL2 and ours_a[2] == 9
+
+
+def test_every_unpinned_corpus_file_pairs_exactly_as_before():
+    """The other corpus files: `pair_subtunes` is the old rule verbatim --
+    the original at `resolve_subtune`, ours at the row's `matched_subtune`
+    when given, else the same index."""
+    from fidelity import SUBTUNE_COUNTERPART, resolve_subtune
+    corpus = Path("C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    sids = sorted(corpus.glob("*.sid"))
+    if not sids:
+        import pytest
+        pytest.skip("corpus not on disk")
+    unpinned = [s for s in sids if s.name not in SUBTUNE_COUNTERPART]
+    assert len(unpinned) == len(sids) - len(SUBTUNE_COUNTERPART)
+    for s in unpinned:
+        d = resolve_subtune(s, "auto")
+        assert L.pair_subtunes(s, {}, "auto") == (d, d), s.name
+        assert L.pair_subtunes(s, {"matched_subtune": d + 1}, "auto") == (d, d + 1), s.name
+        assert L.pair_subtunes(s, {}, "auto", matched=d + 2) == (d, d + 2), s.name

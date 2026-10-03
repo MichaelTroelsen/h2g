@@ -285,7 +285,11 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
                        if unrecoverable_from else
                        ["approved .sng not on disk -- re-stage it with listen.py"])
         return v, cur_sha
-    sub = F.resolve_subtune(sid, "auto")
+    # `sub` is the ORIGINAL's subtune, `our_sub` ours: the same index except
+    # where `fidelity.SUBTUNE_COUNTERPART` pins the pair (C64ME s1/o0,
+    # Dragons_Lair_Part_II s0/o9). Every trace or render of a packed build
+    # (current or approved) goes through `our_sub`; the original's through `sub`.
+    sub, our_sub, _pinned = F.resolve_pair(sid, "auto")
     orig_trace = F.run_siddump(sid, seconds, sub, siddump)
 
     p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult)
@@ -294,15 +298,15 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
         v = inherit({}, {}, {}, {}, None, cause="pack-refused")
         v["failed"] = ["gt2reloc refused a side"]
         return v, cur_sha
-    t_cur = F.run_siddump(p_cur, seconds, sub, siddump, calls=mult)
-    t_app = F.run_siddump(p_app, seconds, sub, siddump, calls=mult)
+    t_cur = F.run_siddump(p_cur, seconds, our_sub, siddump, calls=mult)
+    t_app = F.run_siddump(p_app, seconds, our_sub, siddump, calls=mult)
     s_cur, s_app = _structure_of(orig_trace, t_cur, seconds), _structure_of(orig_trace, t_app, seconds)
     structure = dict(s_cur, approved_attacks=s_app["attacks"],
                      approved_melody=s_app["melody"], approved_sequence=s_app["sequence"])
     lag = 0.02 * F.startup_lag(orig_trace, t_cur)[0]
-    app_vs_orig = sound.compare_sids(sid, p_app, seconds, sub, sub, prior_s=lag)
-    cur_vs_orig = sound.compare_sids(sid, p_cur, seconds, sub, sub, prior_s=lag)
-    cur_vs_app = sound.compare_sids(p_app, p_cur, seconds, sub, sub)
+    app_vs_orig = sound.compare_sids(sid, p_app, seconds, sub, our_sub, prior_s=lag)
+    cur_vs_orig = sound.compare_sids(sid, p_cur, seconds, sub, our_sub, prior_s=lag)
+    cur_vs_app = sound.compare_sids(p_app, p_cur, seconds, our_sub, our_sub)
     return inherit(app_vs_orig, cur_vs_orig, cur_vs_app, structure, cal), cur_sha
 
 

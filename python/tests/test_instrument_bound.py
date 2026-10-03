@@ -261,7 +261,7 @@ def test_ricochets_warning_is_a_pattern_no_orderlist_reaches():
     assert naming and not (naming & reached), sorted(naming & reached)
 
 
-def test_the_bound_lands_on_the_last_instrument_played_in_several_files():
+def test_the_bound_lands_on_the_last_instrument_played_in_several_files(monkeypatch):
     """Why the boundary is a reading and not a plausible-looking guess.
 
     A pattern names Goattracker instrument `record + base`, where base is 2 in
@@ -276,6 +276,11 @@ def test_the_bound_lands_on_the_last_instrument_played_in_several_files():
     """
     if not CORPUS.is_dir():
         return
+    # Legato-tie clones (`goatwriter.legato_tie_clones`) are appended after the
+    # records and named by tie rows, so they would be the highest instrument a
+    # pattern names; they are not records, and this test is about records.
+    import h2g.goatwriter as gwmod
+    monkeypatch.setattr(gwmod, "legato_tie_family", lambda sid, det: False)
     exact, checked = 0, 0
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))

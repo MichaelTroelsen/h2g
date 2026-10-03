@@ -2414,6 +2414,26 @@ CLAUDE.md: in the *Regenerate the generated artefacts* bullet add `python fideli
 
 **Gate — check before writing a line:** the plan task `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must be `outcome: "done"` in `.claude/tasks/runs.jsonl`, with its evidence showing `FIDELITY.md`'s `drift` column and `--pace`'s integrated drift agreeing on the 13 files `presets.json` records `regrid: true` for. If it is not, STOP this task and say so: the term would select `--regrid` on an instrument never checked against the one the 13 adoptions were made on.
 
+> **RE-GRADED 2026-10-02 (at d52a1bf, `drift-column-vs-pace-agreement-on-the-13-regrid-files`):
+> this gate, as worded, compares `fidelity.drift()` with itself.** `--pace`'s
+> drift line (`pace_report`) calls the same Theil-Sen `fidelity.drift(a, b)` on
+> the same `-m{multiplier}` trace that `_measure` uses for `drift_per_1000`, so
+> the measured run agreed 10 of 10 in sign and rank with |diff| 0.0 -- by
+> construction, not as evidence. `--pace`'s other reading, `pace()`'s gap-ratio
+> median, read 1.000 on all 20 arms (regrid on and off) and cannot rank regrid
+> at all. And "13" is stale: `presets.json` carries **15** `regrid: true` songs
+> (both at 1dde44a and d52a1bf), five of them on the DIGI hold (After_8,
+> Arcade_Classics, One_on_One_Jordan_vs_Bird, Powerplay_Hockey_USA_vs_USSR,
+> Rikky), so **10** are measurable. Restated gate: `drift_per_1000` must agree
+> in sign and rank with a measure that does not share its estimator or its
+> pairing -- a candidate is the per-window median offset of name-blind
+> time-paired attacks (the method of
+> `rasputin-noise-placement-disagrees-on-both-firstwave-arms`,
+> `C:/t/rasputin-noise-placement-disagrees-on-bo/probe_onsets.py`), on the 10
+> non-held regrid files. That second measure is PROPOSED, not yet measured;
+> until it is, this gate is unmet, not passed.
+
+
 **Interfaces:**
 - Consumes: `fidelity.pitch_drift(...)` or whatever function produces the row's `drift_per_1000` (find it: `grep -n "drift_per_1000" python/fidelity.py` → the function whose dict carries it; call it exactly as `_measure` does).
 - Produces: `fidelity_better` reads `cand[11]` / `ref[11]` (`drift_per_1000`, float|None); `play()` computes it for every candidate.

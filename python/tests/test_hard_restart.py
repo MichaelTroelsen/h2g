@@ -321,3 +321,41 @@ def test_the_emitted_gatetimer_is_never_zero():
     # The floor is REACHED, not merely respected -- a function that never
     # returned 1 would pass the assertion above while pinning nothing.
     assert min(seen) == 1
+
+
+@needs_corpus
+def test_the_packed_player_compares_the_counter_with_this_gatetimer(tmp_path):
+    """The fetch bound in the PACKED bytes, not only in this module.
+
+    Action_Biker (-S1 under presets) shares one gatetimer across every
+    instrument, so greloc packs it as `GATETIMERPARAM`: player.s:1090-1098
+    becomes `LDA mt_chncounter,X / CMP #gatetimer / BEQ mt_getnewnote`.
+    A compare of that shape carries the .sng's gatetimer masked to six
+    bits -- non-zero, so the next note is fetched that many calls early.
+    Measured: `$12AA BD A5 13 C9 02 F0 03`, the only such compare at $02. Not
+    "exactly one" in general: at operand 3 the packed image carries three
+    `LDA abs,X / CMP #$03 / BEQ` sequences (sabotage M2, C:/t/fetch-deficit).
+    """
+    import json
+    import pytest
+    import fidelity as F
+    import songview
+    from h2g.convert import convert
+    if not pathlib.Path(F.GT2RELOC).exists():
+        pytest.skip("gt2reloc not available")
+    root = pathlib.Path(__file__).resolve().parents[2]
+    doc = json.loads((root / "presets.json").read_text(encoding="utf-8"))
+    name = "Action_Biker.sid"
+    sng = convert(str(CORPUS / name), log=lambda m: None,
+                  **F._preset_opts(doc, name))
+    gts = {ins.gatetimer for ins in songview.parse_sng(sng).instruments}
+    assert len(gts) == 1, "the fixed-params path needs one shared gatetimer"
+    gt = gts.pop() & 0x3F
+    assert gt >= 1
+    packed = F.pack_sid(sng, tmp_path, multiplier=F._preset_multiplier(doc, name))
+    assert packed is not None and packed.exists()
+    body = packed.read_bytes()[0x7E:]
+    hits = [i for i in range(3, len(body) - 3)
+            if body[i - 3] == 0xBD and body[i] == 0xC9 and body[i + 2] == 0xF0]
+    operands = [body[i + 1] for i in hits]
+    assert gt in operands, operands

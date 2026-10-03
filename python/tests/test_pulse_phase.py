@@ -125,8 +125,8 @@ def _corpus_and_presets():
 
 def _walk_calls_per_frame(name: str, force: int | None = None):
     """Convert `name` with `pulse_phase` forced, capturing what convert.py
-    hands `collect_pulse_phases` as `calls_per_frame` (or overriding it
-    with `force`), and the plan it returned."""
+    hands `collect_pulse_phases` as (tempos, `calls_per_frame`) -- or
+    overriding the latter with `force` -- and the plan it returned."""
     import fidelity
     from h2g import convert as C
     corpus, doc = _corpus_and_presets()
@@ -141,7 +141,7 @@ def _walk_calls_per_frame(name: str, force: int | None = None):
     real = C.collect_pulse_phases
 
     def spy(*a, **kw):
-        seen.append(kw.get("calls_per_frame"))
+        seen.append((list(a[2]), kw.get("calls_per_frame")))
         if force is not None:
             kw["calls_per_frame"] = force
         r = real(*a, **kw)
@@ -156,36 +156,40 @@ def _walk_calls_per_frame(name: str, force: int | None = None):
     return seen, plans, doc["songs"][name].get("multiplier", 1)
 
 
-def test_the_triangle_walk_stays_on_our_calls_and_the_bounds_walk_on_frames():
-    """`calls_per_frame` is the multiplier for the bounds engine and 1 for
-    the triangle engine, and the second half is MEASURED, not the leftover
-    it looked like. When the bounds walk landed (v0.5.488) the 1 was kept
-    so the moved set stayed confined to the bounds files, and a task then
-    read it as Saboteur_II's defect repeated on the triangle carriers.
-    Passing the multiplier for both was tried and measured -- RETRACTED:
-    "on Game_Killer (`-S9`) the walk's planned onset buckets agree with the
-    original's index-paired 61% over the first 200 sweeping notes on the
-    call clock and 21% on the frame clock". The pairing slipped one note;
-    paired by note both clocks read at chance (0.135 / 0.215), see
-    `test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks`.
-    The 1 below is therefore pinned as the CURRENT source, not as a
-    measured clock. Rasputin and
-    One_Man_and_his_Droid read at chance on BOTH. The triangle sweep's
-    counter runs inside the multispeed core, `multiplier` ticks a frame;
-    the bounds engine's runs once a frame ($756 planned where Saboteur_II
-    held $2B0 before it did). Pinned as source at the seam and by capture
-    on a carrier of each engine: One_Man_and_his_Droid (`-S2`) gets 1 and
-    Saboteur_II (`-S3`) gets 3 -- never the multiplier for both, never 1
-    for both, never its square."""
+def test_the_triangle_walk_runs_on_the_originals_ticks_the_bounds_walk_on_frames():
+    """The two engines' clocks, each read off its player. The bounds engine
+    sweeps once a FRAME: the walk gets our calls a row (the GT tempo) and
+    the multiplier to divide them by ($756 planned where Saboteur_II held
+    $2B0 before it did). The triangle engine sweeps once a TICK -- a play
+    call that passes the player's outer gate -- so the walk gets the
+    original's ticks a row (`SongSpeeds.frames_for`) and divides by 1:
+    One_Man_and_his_Droid (`-S2`, GT tempo 4) walks 2 ticks a row,
+    Game_Killer (`-S9`, GT tempo 20, a frame skipped in ten) 2, Rasputin
+    (`-S2`, GT tempos 6 and 5, an outer gate its `$FE nn` moves) 2 and 2.
+
+    RETRACTED, the state this replaces (v0.5.488 to here): the triangle
+    walk got the GT tempo with `calls_per_frame` 1 -- the CALL clock --
+    pinned as "The triangle sweep's counter runs inside the multispeed
+    core, `multiplier` ticks a frame", and "Rasputin and
+    One_Man_and_his_Droid read at chance on BOTH". Neither holds: the
+    counter sits behind the outer gate (read at 1dde44a, see
+    goatwriter.PulsePhaseSim), and on the tick clock with the voice cells
+    the three carriers open on the original's width at the attack (pinned
+    by `test_the_plan_opens_on_the_originals_width_paired_by_note`)."""
     seen_t, _, mult_t = _walk_calls_per_frame("One_Man_and_his_Droid.sid")
+    seen_g, _, mult_g = _walk_calls_per_frame("Game_Killer.sid")
+    seen_r, _, mult_r = _walk_calls_per_frame("Rasputin.sid")
     seen_b, _, mult_b = _walk_calls_per_frame("Saboteur_II.sid")
-    assert mult_t == 2 and mult_b == 3, (mult_t, mult_b)
-    assert seen_t == [1], ("triangle engine walked on the frame clock", seen_t)
-    assert seen_b == [mult_b], ("bounds engine off the frame clock", seen_b)
+    assert (mult_t, mult_g, mult_r, mult_b) == (2, 9, 2, 3)
+    assert seen_t == [([2], 1)], ("triangle engine off the tick clock", seen_t)
+    assert seen_g == [([2], 1)], seen_g
+    assert seen_r == [([2, 2], 1)], seen_r
+    assert seen_b[0][1] == mult_b, ("bounds engine off the frame clock", seen_b)
     src = (PYTHON_ROOT / "h2g" / "convert.py").read_text(encoding="utf-8")
-    assert "calls_per_frame=multiplier if bounds_sims else 1)" in src, (
-        "the two engines' clocks are no longer the measured pair; read "
-        "this test's docstring before changing either")
+    assert "walk_tempos, calls_per_frame, start = group_tempos, multiplier, None" in src
+    assert "walk_tempos, calls_per_frame = frames, 1" in src, (
+        "the triangle walk is no longer handed the original's ticks a row; "
+        "read this test's docstring before changing either clock")
 
 
 # --------------------------------------------------------------------------
@@ -200,11 +204,15 @@ def test_the_triangle_walk_stays_on_our_calls_and_the_bounds_walk_on_frames():
 #   0..`multiplier` table ticks along its planned direction (200/200). The
 #   set row, the budget (it drops nothing here) and the -S9 table step all
 #   deliver the plan.
-# * **THE PLAN ITSELF DOES NOT PREDICT THE ORIGINAL.** Paired by note, the
-#   plan's bucket agrees with the original's 0.135 at the attack frame and
-#   0.000 one frame later on the call clock, 0.215 / 0.145 on the frame
-#   clock (chance ~0.14 on the seven-bucket band). The packed trace's 0.11
-#   is that plan, delivered.
+# * **RETRACTED: "THE PLAN ITSELF DOES NOT PREDICT THE ORIGINAL. Paired by
+#   note, the plan's bucket agrees with the original's 0.135 at the attack
+#   frame".** That was the CALL-clock plan with a direction and counter
+#   cloned into each record, starting up. On the original's TICK clock
+#   (two a row) with the per-voice cells seeded from the image -- voice
+#   0's `$0C78` reads 01, DOWN -- the first 200 planned notes open on the
+#   original's own width at the attack, 200/200; the call clock with the
+#   same cells gets 131. The packed trace's 0.11 was the old plan,
+#   delivered.
 # * **RETRACTED: "the walk's planned onset buckets agree with the original's
 #   63% / 61% over the first 100 / 200 sweeping notes on the CALL clock".**
 #   That figure paired the plan's i-th note with the i-th original attack
@@ -221,12 +229,14 @@ _GK_SECONDS = 90
 _GK_NOTES = 200
 
 
-def _game_killer_walk(force: int | None = None) -> dict:
+def _game_killer_walk(force: int | None = None,
+                      tempos: list | None = None) -> dict:
     """Convert Game_Killer with `pulse_phase` forced, capturing the plan,
     the table, the bytes, and the ATTACK INDEX of every planned voice-0
     note: its position among the walk's note rows in play order, ties
     (`CMD_TONEPORTA`, no gate retrigger) excluded -- the same count siddump
-    makes of the attacks it prints."""
+    makes of the attacks it prints. `force` overrides `calls_per_frame`
+    and `tempos` the steps a row the walk is handed."""
     import fidelity
     from h2g import convert as C
     from h2g import patterns as P
@@ -243,6 +253,8 @@ def _game_killer_walk(force: int | None = None) -> dict:
     def walk(pats, tracks, *a, **kw):
         if force is not None:
             kw["calls_per_frame"] = force
+        if tempos is not None:
+            a = (list(tempos),) + a[1:]
         r = real_walk(pats, tracks, *a, **kw)
         cap.update(patterns=pats, tracks=tracks, plan=r)
         return r
@@ -362,47 +374,182 @@ def test_game_killers_planned_phases_reach_the_packed_output():
                         f"reach the packed trace", missed[:8])
 
 
-def test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks():
-    """REPLACES `test_game_killers_onsets_put_the_triangle_sweep_on_the_call_clock`,
-    whose 0.615 (call clock) against 0.21 (frame clock) was an index slip:
-    it paired the plan's i-th entry with the i-th original attack whose
-    width a frame on is $800 or more, a list that opens with the static
-    $84D note at frame 641 the plan never planned. Paired by note, on
-    the first 200 planned notes, the measured figures are:
+def test_game_killers_plan_opens_on_the_originals_width_on_the_tick_clock():
+    """REPLACES `test_game_killers_plan_paired_by_note_reads_at_chance_on_both_clocks`,
+    which pinned "NEITHER clock's plan predicts the original's onsets" --
+    0.135 at the attack on the call clock, 0.215 on the frame clock,
+    under a 0.35 ceiling -- and asked that "a sim fix that lifts a clock
+    past the ceiling should turn the ceiling into a floor, with its own
+    figures". These are those figures. Paired by note on the first 200
+    planned voice-0 notes (attack indices 270-469), the plan the converter
+    ships -- the original's tick clock, two ticks a row, with the per-voice
+    cells seeded from the image -- opens on the original's EXACT width at
+    the attack on 200 of 200. The call clock (the GT tempo, 20 a row) with
+    the same cells gets 131 of 200: the cells alone were not the repair.
+    (The old ceiling's other arm, the frame clock, divided the GT tempo by
+    the multiplier; on ticks it would divide 2 by 9 and is not a clock.)"""
+    orig, ours, walked = _game_killer_traces()
 
-        clock    at the attack   one frame on
-        calls        0.135          0.000
-        frames       0.215          0.145         (chance ~0.14)
+    def exact(notes) -> int:
+        notes = [(i, ph) for i, ph in notes if i < len(orig)][:_GK_NOTES]
+        assert len(notes) == _GK_NOTES, len(notes)
+        assert all(ours[i][3] == orig[i][3] for i, _ in notes)
+        return sum(orig[i][1] == w for i, (_, (w, _)) in notes)
+    assert exact(walked["notes"]) == _GK_NOTES
+    calls = exact(_game_killer_walk(tempos=[20])["notes"])
+    assert calls < 0.75 * _GK_NOTES, ("the call clock reaches the original "
+                                      "too -- the tick clock is no longer "
+                                      "what this pins", calls)
 
-    so NEITHER clock's plan predicts the original's onsets, and
-    `calls_per_frame=1` for the triangle engine is no longer a measured
-    choice. Bound: 0.35 everywhere, the old test's own ceiling for "the
-    wrong clock". The slip itself is pinned last -- planned note i+1
-    against the original's note i one frame on reproduces >= 0.5 --
-    because that is the lead the retraction leaves: the sim's phase at the
-    NEXT note is what the original holds a frame after THIS one. A sim fix
-    that lifts a clock past the ceiling should turn the ceiling into a
-    floor, with its own figures."""
+
+# --------------------------------------------------------------------------
+# The plan against the ORIGINAL, paired by note, on every carrier the
+# corrected model was measured on. Exact width at the attack frame: the
+# walk's planned width for each note row in play order against the width
+# the original's trace holds on the frame of the same note, the two note
+# sequences aligned by name (difflib, runs of 8 or more -- an index
+# pairing breaks wherever our conversion and the original differ by a
+# note, One_Man's A#3 restrike at attack 856 being one). The walk is the
+# FIRST one convert() makes, which is player 0 on a compilation
+# (5_Title_Tunes converts players 1-4 after it through PlayerView).
+#
+# Shipped model (the call clock, a direction and counter per record
+# starting up, a 7-call preroll on the first note's instrument, a
+# magnitude turn) -> this one, measured on the same windows at this
+# change: Game_Killer 245 -> 563 of 563; Rasputin 48 -> 269 of 269;
+# One_Man_and_his_Droid at 260 s 199 of 200 (351 -> 735 of 736 at 700 s);
+# 5_Title_Tunes 128/128/96 -> 128/128/192 (voice 2 of 192); Gerry_the_Germ
+# subtunes 1/3/4/5/6 7/11/4/3/15 -> 288/54/26/40/90; Crazy_Comets subtune
+# 0 voice 2 38 -> 41 of 41; Zoids 8 -> 136 of 136; Commando 27 -> 343 of
+# 346. Each part of the model has a carrier that needs it: the tick clock
+# (Game_Killer, Rasputin, One_Man), the image's cells (Game_Killer voice
+# 0), the preroll (5_Title_Tunes voice 2), the KEYOFF fetch (Gerry 3), the
+# lead-in (Gerry 4, Crazy_Comets 0), the instrument-row fetch (Zoids), the
+# equality turn (Commando).
+# --------------------------------------------------------------------------
+
+_EXACT_WIDTHS = [
+    # (file, seconds, subtune traced, group walked, {voice: (exact, paired)})
+    ("Game_Killer.sid", 180, None, 0, {0: (563, 563)}),
+    ("Rasputin.sid", 180, None, 0, {0: (269, 269)}),
+    ("One_Man_and_his_Droid.sid", 260, None, 0, {0: (199, 200)}),
+    ("5_Title_Tunes.sid", 180, None, 0,
+     {0: (128, 128), 1: (128, 128), 2: (192, 192)}),
+    ("Gerry_the_Germ.sid", 180, 1, 1, {1: (288, 288)}),
+    ("Gerry_the_Germ.sid", 180, 3, 3, {0: (54, 54)}),
+    ("Gerry_the_Germ.sid", 180, 4, 4, {0: (26, 26)}),
+    ("Gerry_the_Germ.sid", 180, 5, 5, {0: (40, 40)}),
+    ("Gerry_the_Germ.sid", 180, 6, 6, {0: (90, 90)}),
+    ("Crazy_Comets.sid", 180, 0, 0, {2: (41, 41)}),
+    ("Zoids.sid", 180, None, 0, {0: (136, 136)}),
+    ("Commando.sid", 180, None, 0, {0: (343, 346)}),
+]
+_WALKS: dict = {}
+
+
+def _first_walk(name: str) -> dict:
+    """The first walk convert() makes on `name` under its presets with
+    `pulse_phase` forced: patterns, tracks as walked, and the plan."""
+    if name in _WALKS:
+        return _WALKS[name]
+    import fidelity
+    from h2g import convert as C
+    corpus, doc = _corpus_and_presets()
+    if not (corpus / name).exists():
+        import pytest
+        pytest.skip(f"{name} not in the corpus here")
+    kwargs = fidelity._preset_opts(doc, name)
+    kwargs["pulse_phase"] = True
+    cap: dict = {}
+    real = C.collect_pulse_phases
+
+    def walk(pats, tracks, *a, **kw):
+        r = real(pats, tracks, *a, **kw)
+        if "plan" not in cap:
+            cap.update(patterns=pats, tracks=[list(t) for t in tracks], plan=r)
+        return r
+    C.collect_pulse_phases = walk
+    try:
+        C.convert(str(corpus / name), log=lambda m: None, **kwargs)
+    finally:
+        C.collect_pulse_phases = real
+    assert cap.get("plan"), f"{name}: the walk planned nothing"
+    _WALKS[name] = cap
+    return cap
+
+
+_NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-",
+               "A#", "B-"]
+
+
+def _exact_widths(name: str, seconds: int, sub, group: int) -> dict:
+    """{voice: (exact, paired)} for one walked group against the original's
+    trace of subtune `sub` (`auto` when None) -- see the block above."""
+    import difflib
+    import shutil
+    import tempfile
     import fidelity as F
-    orig, _, walked = _game_killer_traces()
-    bucket = F.PULSE_PHASE_BUCKET
+    from h2g import patterns as P
+    corpus, doc = _corpus_and_presets()
+    if not Path(F.SIDDUMP).exists():
+        import pytest
+        pytest.skip("siddump not available here")
+    cap = _first_walk(name)
+    wd = Path(tempfile.mkdtemp(prefix="tri_exact_"))
+    try:
+        local = wd / "o.sid"
+        shutil.copyfile(corpus / name, local)
+        cal, _ = F.table_calibration(corpus / name, F._preset_opts(doc, name))
+        traced = F.resolve_subtune(corpus / name, "auto") if sub is None else sub
+        trace = F.run_siddump(local, seconds, traced, F.SIDDUMP, cal)
+    finally:
+        shutil.rmtree(wd, ignore_errors=True)
+    nf = seconds * 50
+    planned = {(ti, pos, r): ph for ti, pos, rows in cap["plan"][1]
+               for r, ph in rows.items()}
+    out = {}
+    for v in range(3):
+        ti = 3 * group + v
+        notes, live = [], 0
+        for pos, b in enumerate(cap["tracks"][ti]):
+            if b == P.GT_ORDER_RESTART:
+                break
+            if b >= P.MAX_PATTERNS or b >= len(cap["patterns"]):
+                continue
+            pat = cap["patterns"][b]
+            for r, kind, instr in P._phase_note_rows(pat, live, {}):
+                if instr:
+                    live = instr
+                if kind != "note" or pat[4 * r + 2] == P.CMD_TONEPORTA:
+                    continue
+                n = pat[4 * r] - P.GT_FIRSTNOTE
+                notes.append((f"{_NOTE_NAMES[n % 12]}{n // 12}",
+                              planned.get((ti, pos, r))))
+        if not any(ph for _, ph in notes):
+            continue
+        t = F.register_timeline(trace[v].pulse_events, nf)
+        orig = [(t[f], trace[v].attacks[k])
+                for k, f in enumerate(trace[v].attack_frames) if f + 1 < nf]
+        sm = difflib.SequenceMatcher(None, [n for n, _ in notes],
+                                     [o[1] for o in orig], autojunk=False)
+        pairs = [(notes[m.a + k][1], orig[m.b + k][0])
+                 for m in sm.get_matching_blocks() if m.size >= 8
+                 for k in range(m.size) if notes[m.a + k][1] is not None]
+        if pairs:
+            out[v] = (sum(w == ph[1][0] for ph, w in pairs), len(pairs))
+    return out
 
-    def agreement(notes, col: int, shift: int = 0) -> float:
-        pairs = [(orig[i - shift][col] // bucket, w // bucket)
-                 for i, (_, (w, _)) in notes if 0 <= i - shift < len(orig)]
-        pairs = pairs[:_GK_NOTES]
-        assert len(pairs) == _GK_NOTES, len(pairs)
-        return sum(a == b for a, b in pairs) / len(pairs)
 
-    frames_walk = _game_killer_walk(force=walked["multiplier"])
-    got = {}
-    for clock, w in (("calls", walked), ("frames", frames_walk)):
-        for col, at in ((1, "attack"), (2, "frame on")):
-            got[(clock, at)] = agreement(w["notes"], col)
-    assert all(v <= 0.35 for v in got.values()), got
-    slip = agreement(walked["notes"], 2, shift=1)
-    assert slip >= 0.5, ("the next-note slip no longer reproduces the "
-                         "retracted 0.615", slip, got)
+def test_the_plan_opens_on_the_originals_width_paired_by_note():
+    """The figures in the block above, re-measured: a change to the walk's
+    clock, its cells, its preroll, its lead-in, its fetch rows or the sim's
+    turn moves at least one of them."""
+    bad = {}
+    for name, seconds, sub, group, want in _EXACT_WIDTHS:
+        got = _exact_widths(name, seconds, sub, group)
+        if got != want:
+            bad[(name, sub)] = (got, want)
+    assert not bad, bad
 
 
 def test_the_engine_population_and_its_multispeed_share():
@@ -613,20 +760,25 @@ def _play_pulse_table(entries: list, ptr: int, calls: int) -> list:
 
 
 # The files whose per-phase layout overflows under forced `pulse_phase` at
-# this tree, and the records the shared-ramp rescue keeps swept. The first
-# four are the task's (docs/LESSONS.md, "The pulse-phase table overflows on
-# four VBI carriers"); the next four were found overflowing by the same
-# corpus byte-hash. Gremlins 10 (speed 18, off the $600 band's lattice) and
-# Gremlins 20, Human_Race 20 / 21 still degrade.
+# this tree, and the records the shared-ramp rescue keeps swept. Master_of_
+# Magic and Phantoms are two of the task's four (docs/LESSONS.md, "The
+# pulse-phase table overflows on four VBI carriers"); the rest were found
+# overflowing by the same corpus byte-hash. Gremlins 10 and 20 and
+# Human_Race 20 and 23 still degrade.
+#
+# **THE OTHER TWO OF THE FOUR, Last_V8 and its C128 version, LEFT this set
+# with the triangle walk's tick clock and voice cells**: the plan is now
+# the original's (724 of 724 exact attack widths on subtune 0), and it
+# opens on more phases -- instrument 8 on 11 where it was 4, 9 on 22 where
+# it was 20 -- so that even the shared layout no longer fits. See
+# `test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8`.
 _OVERFLOWING = {
-    "Last_V8.sid": (7, 9),
-    "Last_V8_C128_version.sid": (7, 9),
     "Master_of_Magic.sid": (14,),
     "Phantoms_of_the_Asteroid.sid": (17,),
     "Battle_of_Britain.sid": (11, 15, 16),
     "Crazy_Comets.sid": (17,),
     "Gremlins.sid": (7,),
-    "Human_Race.sid": (23,),
+    "Human_Race.sid": (21,),
 }
 
 
@@ -634,14 +786,17 @@ def test_one_ramp_per_phase_is_what_overflowed_and_a_merge_has_nothing_to_merge(
     """The cost the rescue removes, pinned at the figures docs/LESSONS.md
     records: Last_V8 instrument 7 asks for 130 rows and 9 for 64 under one
     ramp per phase, Master_of_Magic 14 for 112, Phantoms 17 for 70; shared,
-    87 / 43 / 76 / 47. And the cheaper idea the task opened with -- merge
+    87 / 43 / 76 / 47. Re-measured on the triangle walk's tick clock with
+    voice cells: Last_V8 9 now plans 22 phases and asks 70 / 47, and
+    Master_of_Magic 14 asks 112 / 75; 7 and Phantoms 17 are unmoved. And the
+    cheaper idea the task opened with -- merge
     the phases that land within one speed step of each other -- MEASURED
     inert on all four: their same-direction phases are four speed steps
     apart (the sim moves the width a whole engine step a tick), so no two
     are within one and a merge loses nothing because it merges nothing."""
     from h2g.goatwriter import _phase_block, _phase_sweep_params
-    want_rows = {("Last_V8.sid", 7): (130, 87), ("Last_V8.sid", 9): (64, 43),
-                 ("Master_of_Magic.sid", 14): (112, 76),
+    want_rows = {("Last_V8.sid", 7): (130, 87), ("Last_V8.sid", 9): (70, 47),
+                 ("Master_of_Magic.sid", 14): (112, 75),
                  ("Phantoms_of_the_Asteroid.sid", 17): (70, 47)}
     for (name, num), (per_phase, shared) in want_rows.items():
         (sid, det, _, _, mult, phases, _, lead), _ = _forced_table_args(name)
@@ -704,33 +859,37 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     instrument's phase set overflowed `GT_MAX_TABLELEN`, and convert.py's
     caller reverted the WHOLE expansion -- Last_V8 shipped with no
     CMD_SETPULSEPTR at all rather than losing only instrument 7 and 9's
-    sweeps. Then it degraded instead: with one ramp per phase, 5 instruments
-    lose their phase entries and, of those, 3 reach pointer 0 -- still the
-    per-phase pass's count, pinned below on `_lay_pulse_phase_table` itself.
-    These figures are on the triangle walk's CALL clock; on a frame clock
-    (`calls_per_frame=multiplier`, measured and rejected -- see
-    `test_the_triangle_walk_stays_on_our_calls_and_the_bounds_walk_on_frames`)
-    this `-S2` file's instrument 8 opens on 14 phases instead of 4 and the
-    overflow cascades to 18 losing and 16 with no width at all.
+    sweeps. Then it degraded instead, and from v0.5.48x the shared-ramp
+    rescue placed all four phase-tracked records in 247 rows on the CALL
+    clock's plan.
 
-    **What ships now is the shared-ramp rescue** (`_phase_block(share=True)`
-    plus the reuse of identical static blocks): 247 rows place all four
-    phase-tracked records and degrade none, so instruments 7 and 9 sweep.
-    """
+    **ON THE TICK CLOCK WITH VOICE CELLS THE RESCUE NO LONGER FITS.** The
+    plan is now the original's -- 724 of 724 exact attack widths on
+    subtune 0, against 60 on the call clock -- and it opens instrument 8 on
+    11 phases where the call clock planned 4, and 9 on 22 where it planned
+    20. One ramp per phase degrades 14 records, 12 of them to pointer 0
+    (no width at all), and keeps only instruments 2 and 8; shared, every
+    phase-tracked record fits but the static blocks after them do not (16
+    degraded, 15 to pointer 0), so the per-phase layout ships. A CAPACITY
+    regression on this file under the FORCED flag only -- Last_V8's preset
+    does not ship `pulse_phase` -- and the walk is not where it is fixed:
+    the table's allocation order is (statics laid after the phase blocks
+    starve). Pinned so the next change to either side sees it move."""
     import h2g.goatwriter as G
     (sid, det, iu, pulse, mult, phases, _, lead), table = _forced_table_args("Last_V8.sid")
+    assert {k: len(v) for k, v in phases.items()} == {2: 28, 7: 42, 8: 11, 9: 22}
     per_phase = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
                                          None, lead, False)
-    assert (per_phase[3], per_phase[4], per_phase[6]) == (5, 3, 2), per_phase[3:]
+    shared = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
+                                      None, lead, True)
+    assert (per_phase[3], per_phase[4], per_phase[6]) == (14, 12, 2), per_phase[3:]
+    assert (shared[3], shared[4], shared[6]) == (16, 15, 4), shared[3:]
     lines = _forced_pulse_phase_logs("Last_V8.sid")
-    assert not any("PULSE TABLE FULL UNDER --pulse-phase --" in l for l in lines), lines
-    assert not any("FALLING BACK TO A STATIC WIDTH" in l for l in lines), lines
-    shared = [l for l in lines if "shared ramps --" in l]
-    assert shared == ["Pulse phase.............: shared ramps -- 247 table "
-                      "row(s) place 4 of 4 phase-tracked record(s), where one "
-                      "ramp per phase placed 2 and degraded 5 record(s), 3 to "
-                      "pointer 0"], lines
-    assert {7, 9} <= {k[0] for k in table[2]}
+    assert ("*** PULSE TABLE FULL UNDER --pulse-phase -- 14 INSTRUMENT(S) "
+            "LOSE THEIR PHASE ENTRIES, 12 SET NO WIDTH AT ALL ***") in lines, lines
+    assert not any("shared ramps --" in l for l in lines), lines
+    assert table is not None, "the file was refused rather than degraded"
+    assert {k[0] for k in table[2]} == {2, 8}
     assert any(l.startswith("Pulse phase.............: CMD_SETPULSEPTR")
                for l in lines), (
         "a partial table must still ship phase commands for the "

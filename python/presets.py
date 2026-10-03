@@ -110,6 +110,15 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          # (decision: stop emitting records no pattern names; Commando
          # carries one, so it is an option set here, not a default).
          "drop_unnamed_instruments": True,
+         # ilv-filter-routing-via-setfilterctrl: the interleaved player's
+         # per-voice routing as CMD_SETFILTERCTRL (goatwriter.
+         # ilv_filter_routing_plan). Forced -t 180 A/B over the six ILV files
+         # on the 0.5.496 drain tree, melody and sequence IDENTICAL on all:
+         # filtered frames Radio_ACE 4602 -> 2736 (orig 2688), Lion_Heart
+         # 8994 -> 8952 (8954), Pacific_Coast 1366 -> 6 (0), Go_Go_Dash
+         # 6526 -> 1168 (1172), Sun_Never_Shines 8992 -> 8992 (8997) with its
+         # routed mask now $5/$1 where it was $7 throughout; Lakers unmoved.
+         "ilv_filter_routing": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
 # HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
@@ -146,6 +155,10 @@ LIVE_ON = {
     # Measured at 0.5.494 (dirty drain tree, 2026-10-02), not 0.5.483: the
     # 71 files that carry a record no pattern names.
     "drop_unnamed_instruments": 71,
+    # Measured at 0.5.496 (dirty drain tree, 2026-10-03): forced on over the
+    # shipped presets, 95 compared, 89 converted, 5 moved -- Go_Go_Dash,
+    # Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines.
+    "ilv_filter_routing": 5,
 }
 LIVE_ON_MEASURED_AT = "0.5.483"
 
@@ -282,6 +295,18 @@ EXCLUDED_FROM_ALWAYS = {
     # shipped presets before it lands, not a plausible argument. The decision
     # recorded is: the exclusion list should NOT keep growing, and the term to
     # add is not `drift` but the original's attack count in `keeps_notes`.
+    #
+    # **STALE SINCE v0.5.413 (cb2011c), noted 2026-10-03:** "`keeps_notes`
+    # requires `cand[2] >= ref[2]` -- OUR raw attack count" and "NOT
+    # IMPLEMENTED HERE" no longer describe `fidelity_better`. Its attack
+    # guard is two-sided against the ORIGINAL's count (state element 8,
+    # `orig_attacks`): a reduction that moves toward the original's count is
+    # accepted, one past it is refused, and a state without the count keeps
+    # the one-sided rule. The four figures above are pinned against it in
+    # `tests/test_presets.py::test_keeps_notes_reads_the_originals_attack_count`.
+    # What is still open is the other half: `regrid` stays OUT of
+    # `FIDELITY_TOGGLES`, and walking it wants the corpus `--fidelity` A/B
+    # against the shipped presets this paragraph asks for.
     "regrid",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It

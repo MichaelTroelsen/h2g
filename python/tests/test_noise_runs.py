@@ -177,6 +177,11 @@ def test_the_noise_frame_deficit_is_one_firstwave_frame_per_note_plus_startup():
     got = F.wave_compare(orig, ours, nframes=n, lag=startup)
     assert got["orig_noise_frames"] == n - start
     assert got["orig_noise_frames"] - got["our_noise_frames"] == notes + startup
+    # The column's own attribution: one firstwave frame per note, and the
+    # rest of the deficit is the startup.
+    assert got["our_noise_firstwave_frames"] == notes
+    assert got["orig_noise_firstwave_frames"] == 0
+    assert got["wave_voices"][0]["our_noise_firstwave_frames"] == notes
 
     # The control: the same emission with `no_test_restart`'s byte. $FF has
     # the noise bit, so the column counts the frame and the deficit is the
@@ -185,3 +190,52 @@ def test_the_noise_frame_deficit_is_one_firstwave_frame_per_note_plus_startup():
                                        FIRSTWAVE_GATE_ONLY), [(0, 0x0A99)]))
     got = F.wave_compare(orig, ours_ntr, nframes=n, lag=startup)
     assert got["orig_noise_frames"] - got["our_noise_frames"] == startup
+    assert got["our_noise_firstwave_frames"] == 0
+
+
+def test_a_firstwave_frame_is_a_silent_test_bit_frame_before_noise():
+    """Only a frame selecting NO waveform with the test bit, followed by a
+    noise frame, counts: a test bit under a selected waveform, a `$09` before
+    a pulse note, and a `$09` on the window's last frame do not."""
+    f = F._noise_firstwave_frames
+    assert f([0x09, 0x81]) == 1
+    assert f([0x08, 0x80]) == 1
+    assert f([0x09, 0x41]) == 0            # a pulse note
+    assert f([0x49, 0x81]) == 0            # test bit under pulse select
+    assert f([0x89, 0x81]) == 0            # already noise ($FF-like)
+    assert f([0x01, 0x81]) == 0            # no test bit
+    assert f([0x81, 0x09]) == 0            # last frame, nothing follows
+    assert f([0x09, 0x81, 0x80, 0x09, 0x81]) == 2
+
+
+def _row_with_noise(orig, ours, fw):
+    import json
+    import pathlib
+    import pytest
+    p = pathlib.Path(__file__).resolve().parents[2] / "build" / "fidelity.json"
+    if not p.exists():
+        pytest.skip("build/fidelity.json absent; run fidelity.py to generate it")
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    rows = doc if isinstance(doc, list) else (doc.get("rows") or doc.get("songs") or [])
+    real = next((r for r in rows if r.get("status") == "measured"
+                 and r.get("wave") is not None), None)
+    if real is None:
+        pytest.skip("no measured row with wave in build/fidelity.json")
+    row = dict(real)
+    row.update(file="Zz_Probe.sid", orig_noise_frames=orig,
+               our_noise_frames=ours, our_noise_firstwave_frames=fw)
+    return row
+
+
+def test_the_summary_splits_a_noise_deficit_into_firstwave_and_rest():
+    """FIDELITY.md's Summary prints each short file's deficit as firstwave
+    + rest, so `ours < original` is not read as an emission defect."""
+    import argparse
+    args = argparse.Namespace(label=None, seconds=60, subtune="auto", pair=None)
+    text = F.report([_row_with_noise(8998, 8507, 486)], args)
+    line = next((ln for ln in text.splitlines() if "firstwave test-bit" in ln), "")
+    assert "Zz_Probe.sid 491 = 486 + 5" in line, line
+    # A file not short of the original is not listed.
+    text = F.report([_row_with_noise(300, 308, 24)], args)
+    line = next((ln for ln in text.splitlines() if "firstwave test-bit" in ln), "")
+    assert "Zz_Probe" not in line

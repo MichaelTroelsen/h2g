@@ -1145,7 +1145,13 @@ def _tied_calls(left, right, row, frames, written=False, start=6):
     new note. Frame 0 is the audible attack; the wavetable's first entry
     runs on tick 1 of the attack row (the init call runs none), so frame
     `j` is tick `(j + 1) % row`, or `j % row` where `written` (the
-    firstwave owns frame 0 and the entries start on frame 1)."""
+    firstwave owns frame 0 and the entries start on frame 1).
+
+    'B'/'U' is the NEXT row's base/octave: a note written on a tie row's
+    tick 0 is relative to the next row's note, which `mt_newnoteinit` has
+    already stored in `mt_chnnote` (player.s) -- on the original's last
+    frame of a row, unless `written` puts tick 0 on its fetch frame.
+    `test_a_tick_0_note_sounds_the_next_rows_note` measures it."""
     lt = {start + k: left[k] for k in range(len(left))}
     rt = {start + k: right[k] for k in range(len(right))}
     ptr, wavetime = start, 0
@@ -1168,7 +1174,8 @@ def _tied_calls(left, right, row, frames, written=False, start=6):
                 if note != 0x80:
                     wrote = "u" if note == 0x0C else "b"
         if wrote is not None:
-            sounding = wrote
+            sounding = (wrote.upper() if tied and tick == 0 and not written
+                        else wrote)
         elif tied and tick != 0:
             sounding = "b"               # the tie writes the new base
         out.append(sounding)
@@ -1305,6 +1312,102 @@ def test_chimeras_tie_rows_are_re_measured_against_the_original():
                     octave_after += 1
     assert repitch > 300, repitch
     assert octave_after / repitch > 0.8, (octave_after, repitch)
+
+
+# The counter's own base frame under a tie chain (task tie-chain-counter-base,
+# v0.5.496): the original sounds it, the row shape does not, and carrying it
+# was measured and REJECTED at the chain's residue as well as the record's
+# -- see the RETRACTED paragraph above `FIXED_ARP_TIE_SHARE`. The reason is
+# the packed player's tick 0, pinned by the two tests below.
+@pytest.mark.parametrize("row", [3, 4, 6])
+@pytest.mark.parametrize("phase", range(8))
+@pytest.mark.parametrize("tick", [None, (0x81, 2)])
+def test_the_tie_row_shape_writes_no_note_on_a_tie_rows_tick_0(row, phase,
+                                                               tick):
+    """A note written on a tie row's tick 0 sounds the NEXT row's note
+    (`_tied_calls`' 'B'/'U'), so the shape writes none there: the base frame
+    a counter-carrying loop would put on tick 0 and the octave's return
+    after a tick-2 base frame both land on the wrong note. The carrying arm
+    measured on Chimera at -t 180: 177 tick-0 frames the next note's octave,
+    `vib` 0.847 -> 0.829."""
+    left, right = fixed_arp_tie_row_entries(0x41, 0x41, 0x07, BEQ, phase,
+                                            0x0C, 1, 6, 255, row, tick=tick)
+    ours = _tied_calls(left, right, row, 96)
+    assert ours == ours.lower(), ours
+
+
+def _wave_left_offset(sng):
+    """Offset of the WTBL's left column in a .sng (`build_sng`'s order)."""
+    import songview
+    pos = songview.HEADER_LEN
+    subtunes = sng[pos]
+    pos += 1
+    for _ in range(subtunes * 3):
+        pos += sng[pos] + 2
+    pos += 1 + sng[pos] * 25
+    return pos + 1
+
+
+needs_gt2reloc = pytest.mark.skipif(
+    not pathlib.Path(fidelity.GT2RELOC).exists(),
+    reason="no gt2reloc on this machine")
+
+
+@needs_corpus
+@needs_siddump
+@needs_gt2reloc
+def test_a_tick_0_note_sounds_the_next_rows_note(tmp_path):
+    """Through the PACKED player: Chimera's $0060 record (GT 5) with its loop
+    entry `(2, octave)` respelt `(0, octave)` -- the octave written on every
+    call, tick 0 included -- re-pitches each tie one frame EARLIER than the
+    shipped shape does, onto the next note's octave: on tick 0
+    `mt_newnoteinit` has already stored the next row's note, and the
+    wavetable's relative note is read against it (player.s, the
+    `cmp #TONEPORTA / beq mt_nonewnoteinit` that runs the wavetable after
+    tick 0's note init). The shipped shape re-pitches on tick 1, where the
+    tie writes the new base."""
+    import songview
+    sng, _t, _p = _converted("Chimera")
+    wt = _wavetable_of(sng, 5)
+    assert wt[-2] == (0x02, 0x0C) and wt[-1][0] == 0xFF, wt
+    ins = next(i for i in songview.parse_sng(sng).instruments
+               if i.number == 5)
+    at = _wave_left_offset(sng) + ins.wave_ptr - 1 + len(wt) - 2
+    assert sng[at] == 0x02
+    patched = bytearray(sng)
+    patched[at] = 0x00
+    assert songview.parse_sng(bytes(patched)).tables["WTBL"][
+        ins.wave_ptr - 1 + len(wt) - 2] == (0x00, 0x0C)
+    seconds, n = 30, 30 * 50
+
+    def repitches(blob, sub):
+        work = tmp_path / sub
+        work.mkdir()
+        packed = fidelity.pack_sid(bytes(blob), work)
+        assert packed is not None and packed.exists(), sub
+        out = set()
+        for vi, v in enumerate(fidelity.run_siddump(packed, seconds, 0,
+                                                    calls=1)):
+            fq = fidelity.register_timeline(v.freq_events, n + 4)
+            ad = fidelity.register_timeline(v.adsr_events, n + 4)
+            for f in range(1, n):
+                x, prev = fq[f], fq[f - 1]
+                if ad[f] != 0x0060 or not x or not prev or x == prev:
+                    continue
+                if abs(x / prev - 2) < 0.02 or abs(prev / x - 2) < 0.02:
+                    continue             # an octave flip, not a re-pitch
+                out.add((vi, f))
+        return out
+
+    shipped = repitches(sng, "shipped")
+    every_call = repitches(patched, "every_call")
+    assert len(shipped) > 100, len(shipped)
+    early = {(v, f + 1) for v, f in every_call} & shipped
+    # The respelt record re-pitches a frame before the shipped one: 461 of
+    # its 465 re-pitches, covering 461 of the shipped shape's 499 (v0.5.496;
+    # the rest are chain attacks and octave-adjacent notes).
+    assert len(early) / len(every_call) > 0.95, (len(early), len(every_call))
+    assert len(early) / len(shipped) > 0.85, (len(early), len(shipped))
 
 
 
@@ -2163,3 +2266,264 @@ def test_formula_1s_one_step_half_is_re_measured_against_the_original():
             assert set(body) == {2, 3}, (rec, phase, body)
             assert sum(body) / len(body) == pytest.approx(2.5, abs=0.05), (
                 rec, phase, body)
+
+
+# ---------------------------------------------------------------------------
+# The GATE-OFF tail (nibble-per-call-shape-above-s1). A drum+arp record whose
+# noise tick did not fit its budget keeps `tail` `$40` against its `$41`
+# attack, so `nibble_arp_entries` -- which loops through entry 0 -- declines
+# it, and until `gateoff_nibble_arp_entries` it fell to the -S1 per-call
+# loop: the interval toggled on every play call above -S1. Census under
+# presets at 3b1c66d + the dirty tree (C:/t/nibble-gateoff-tail/
+# census_before.json): Bump_Set_Spike 22-24 and Spellbound 22-24 at -S5,
+# Kentilla 20 at -S10, Thrust 18 and 25 at -S3 -- each at the five-entry
+# (Thrust 18: six) budget of a full table. The old census's Warhawk, IK and
+# Samantha_Fox per-call records were read past the instrument table and are
+# never converted (C:/t/nibble-per-call-shape-above-s1/where_out.txt).
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (gateoff_nibble_arp_budget_pair,  # noqa: E402
+                            gateoff_nibble_arp_entries,
+                            nibble_arp_half_cycle)
+
+
+@pytest.mark.parametrize("half", [2, 3, 6, 11, 16, 17, 22, 40, (5, 6),
+                                  (2, 3), (6, 7, 7, 6, 7, 7),
+                                  (3, 3, 4, 3, 3, 4)])
+def test_the_gateoff_nibble_shape_holds_each_half_for_its_period(half):
+    """The attack once at entry 0 and `$40` on every call after it -- the
+    gate never re-asserted; every half, the first included (the attack is
+    its first call), is the cycle's, base first; the jump returns to entry
+    1, not 0."""
+    cyc = (half, half) if isinstance(half, int) else half
+    left, right = gateoff_nibble_arp_entries(0x41, 0x40, 0x74, half, 6, 255)
+    assert (left[:2], right[:2]) == ([0x41, 0x40], [0x00, 0x00])
+    assert left[-1] == 0xFF and right[-1] == 7
+    assert 0x41 not in left[1:]
+    calls = wave_timeline(left, right, first=6, calls=6 * sum(cyc))
+    assert [w for _, w, _ in calls] == [0x41] + [0x40] * (len(calls) - 1)
+    runs = _runs([n for _, _, n in calls])
+    assert len(runs) > 2 * len(cyc), runs
+    assert [r[1] for r in runs[:-1]] == (list(cyc) * 8)[:len(runs) - 1], runs
+    assert [r[0] for r in runs[:2]] == [0x00, 0x74]
+
+
+@pytest.mark.parametrize("half", [2, 3, 6, 16, (5, 6), (17, 16), (3, 4)])
+def test_a_two_half_gateoff_loop_is_five_entries(half):
+    """Each delay carries the next half's note on its final call, so no
+    hold entry sits beside a note: halves up to (17, 16) cost the five
+    entries every later record is reserved (16 a side is one delay; the
+    base half's first two calls are the attack and entry 1). Declined at
+    a budget of four, and at a half of one call."""
+    left, _ = gateoff_nibble_arp_entries(0x41, 0x40, 0x7B, half, 6, 5)
+    assert len(left) == 5
+    assert gateoff_nibble_arp_entries(0x41, 0x40, 0x7B, half, 6, 4) is None
+    assert gateoff_nibble_arp_entries(0x41, 0x40, 0x7B, 1, 6, 255) is None
+    assert gateoff_nibble_arp_entries(0x41, 0x40, 0x7B, (1, 2), 6, 255) is None
+
+
+def test_a_starved_gateoff_record_keeps_the_nearest_rate_that_fits():
+    """Where the exact halves need more than the budget, the two halves
+    summing to the cycle's mean doubled (rounded, base the longer), capped
+    at one delay entry each -- never the per-call loop."""
+    cases = {22: (17, 16), 40: (17, 16), 6: (6, 6), (5, 6): (6, 5),
+             (6, 7, 7, 6, 7, 7): (7, 6), (3, 3, 4, 3, 3, 4): (4, 3)}
+    for half, want in cases.items():
+        pair = gateoff_nibble_arp_budget_pair(half)
+        assert pair == want, (half, pair)
+        left, _ = gateoff_nibble_arp_entries(0x41, 0x40, 0x74, pair, 6, 5)
+        assert len(left) == 5, (half, left)
+
+
+# name -> (multiplier, gate skip, {record: (start, budget, left, right)}),
+# each record's block as `convert` lays it out under presets.
+GATEOFF_RECORDS = {
+    "Kentilla": (10, 10, {
+        20: (221, 5, [0x41, 0x40, 0x0F, 0x0F, 0xFF],
+             [0x00, 0x00, 0x74, 0x00, 0xDE])}),
+    "Spellbound": (5, 10, {
+        22: (241, 5, [0x41, 0x40, 0x03, 0x05, 0xFF],
+             [0x00, 0x00, 0x7D, 0x00, 0xF2]),
+        23: (246, 5, [0x41, 0x40, 0x03, 0x05, 0xFF],
+             [0x00, 0x00, 0x7C, 0x00, 0xF7]),
+        24: (251, 5, [0x41, 0x40, 0x03, 0x05, 0xFF],
+             [0x00, 0x00, 0x7B, 0x00, 0xFC])}),
+    "Thrust": (3, 9, {
+        18: (205, 6, [0x41, 0x40, 0x02, 0x02, 0xFF],
+             [0x00, 0x00, 0x7B, 0x00, 0xCE]),
+        25: (241, 5, [0x41, 0x40, 0x05, 0x05, 0xFF],
+             [0x00, 0x00, 0x74, 0x00, 0xF2])}),
+    "Bump_Set_Spike": (5, 5, {
+        22: (241, 5, [0x41, 0x40, 0x04, 0x05, 0xFF],
+             [0x00, 0x00, 0x7D, 0x00, 0xF2]),
+        23: (246, 5, [0x41, 0x40, 0x04, 0x05, 0xFF],
+             [0x00, 0x00, 0x7C, 0x00, 0xF7]),
+        24: (251, 5, [0x41, 0x40, 0x04, 0x05, 0xFF],
+             [0x00, 0x00, 0x7B, 0x00, 0xFC])}),
+}
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", sorted(GATEOFF_RECORDS))
+def test_the_gateoff_records_take_the_gateoff_shape(name):
+    """Every corpus record of the population: Spellbound's (5, 6) and
+    Bump_Set_Spike's 6 are its own halves exactly; Kentilla's 22 and
+    Thrust's six-half cycles need more than their budget and take
+    `gateoff_nibble_arp_budget_pair`. None toggles per call."""
+    m, skip, records = GATEOFF_RECORDS[name]
+    sid, det = _det(CORPUS / f"{name}.sid")
+    for rec, (start, budget, want_l, want_r) in records.items():
+        got = _wavetable_entries(sid, det, rec, True, "gts5", [], m,
+                                 start=start, budget=budget, gate_skip=skip)
+        assert got == (want_l, want_r), (name, rec, got)
+        nib = sid.data[det.instr_start + rec * det.instr_stride + 7] >> 4
+        own = (nibble_arp_half_cycle(sid, det, nib, m, skip)
+               or nibble_arp_half_calls(sid, det, nib, m, skip))
+        cyc = (own, own) if isinstance(own, int) else tuple(own)
+        exact = gateoff_nibble_arp_entries(want_l[0], want_l[1], want_r[2],
+                                           own, start, budget)
+        want = cyc if exact is not None else gateoff_nibble_arp_budget_pair(
+            own)
+        runs = _runs([n for _, _, n in wave_timeline(
+            want_l, want_r, first=start, calls=10 * sum(want))])
+        assert [r[1] for r in runs[:-1]] == (
+            list(want) * 10)[:len(runs) - 1], (name, rec, runs)
+        assert min(r[1] for r in runs) >= 2, (name, rec, runs)
+
+
+# ---------------------------------------------------------------------------
+# The gated duty's 10-call step is RIGHT; what doubles a base frame is where
+# our song's calls fall against the original's skipped frame (v0.5.496,
+# C:/t/gated-duty-step-rounding).
+#
+# Opened as "Game_Killer's -S9 duty steps every 10 calls (1.11 frames), so
+# one base frame sounds as two; this caps reversal_ratio at about 0.53 even
+# with every note on its own residue". REFUTED on both counts, measured on
+# the tree as found under presets:
+#
+# * The cap is not the duty. At -t 180 the original sounds 2091 reversals
+#   and ours 905; split by the attack frame's AD + S nibble, `$0A9` (the
+#   `$0A9A` record, GT 2, effect $0A: 7 long notes on voice 0 and 2 on
+#   voice 1) is 1652 against 479 -- 1173 of the 1186 missing. Every other
+#   group is within 12 (`296` 87/75, `19B` 63/62, the rest equal). At -t 60
+#   the voice-0 note at frame 641 alone is 262 against 78.
+# * The doubled base frame is not the step length. A step of 10 calls is
+#   the original's average exactly -- one passing call is 10/9 frames -- and
+#   a 10-call grid sampled every 9 calls repeats one step in ten frames, as
+#   the original's gate does. What decides WHICH frame repeats is the call
+#   phase: ours attacks one frame early on 2 of every 3 notes on every
+#   voice (t180, matched by index after the harness's lag 5: v1 -1 x744 /
+#   0 x385, v2 -1 x900 / 0 x450). Advancing the packed song 3, 4 or 5 calls
+#   in its init (a scratch 6502 stub) makes every onset exact (t60: 367/367,
+#   362/362, 450/450), voice 0's octave-frame agreement 888/1153 -> 1029/1068
+#   at 5 calls, and reversal_ratio 0.527 -> 0.547 -- the ceiling of anything
+#   aimed at the duty; reproducing the `$0A9A` note's 262 would put it at
+#   0.98 (arithmetic, (214 + 184) / 406, not measured).
+#
+# The model below is that finding, minus the trace: the original's frames
+# from its own gate walk, ours from `fixed_arp_duty_entries` through the
+# wavetable loop transcription, a frame sampled after its ninth call.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import _gate_calls, file_multiplier         # noqa: E402
+
+_PHASE_NOTES = 72        # 8 counter residues x 9 skip phases: every pairing
+_PHASE_FRAMES = 12       # frames compared from each attack
+
+
+def _gate_walk(sid, nframes):
+    """`(skip, c, reload)`: per frame, whether the outer gate's RTS skips it
+    and what the octave block's counter reads (held on a skipped frame) --
+    the player's `DEC ctr / BPL / LDA #reload / STA ctr / RTS`, from the
+    file's own byte; the new-song call reads 0."""
+    m = OUTER_GATE_RTS.search(sid.data)
+    assert m is not None
+    ctr = m.group(1)[0] | m.group(1)[1] << 8
+    reload = m.group(2)[0]
+    g = sid.data[sid.to_offset(ctr)]
+    skip, c, cnt, started = [], [], 0, False
+    for _ in range(nframes):
+        g -= 1
+        if g < 0:
+            g = reload
+            skip.append(True)
+            c.append(cnt)
+            continue
+        if started:
+            cnt += 1
+        started = True
+        skip.append(False)
+        c.append(cnt)
+    return skip, c, reload
+
+
+def _gated_duty_model(sigma, step=None):
+    """`(onsets misplaced, frames differing on the notes that are not)`,
+    over a note attacking on each of the first `_PHASE_NOTES` passing calls.
+
+    The original: attack frame base (the init call runs no effect), then each
+    passing frame `fixed_arp_up` on the counter, each skipped frame holding.
+    Ours: the note's first call is `grid * w + sigma`, `grid` our calls a
+    passing call -- the song's row clock, (R + 1) * m / R, independent of the
+    code under test -- and a frame shows the state after its last call.
+    `step` overrides the duty's own call count (the code's is `_gate_calls`).
+    """
+    sid, det = _det(CORPUS / "Game_Killer.sid")
+    mask, branch = fixed_arp_mask(sid, det)
+    base = fixed_arp_counter_base(sid, det)
+    speeds = find_song_speeds(sid, det)
+    m = file_multiplier(sid, speeds, True)
+    skip, c, reload = _gate_walk(sid, 2 * _PHASE_NOTES + 4 * _PHASE_FRAMES)
+    assert ((reload + 1) * m) % reload == 0
+    grid = (reload + 1) * m // reload
+    duty = _gate_calls(m, reload) if step is None else step
+    passing = [f for f, s in enumerate(skip) if not s]
+    misplaced = differ = 0
+    for w in range(_PHASE_NOTES):
+        f0 = passing[w]
+        want = ["b"]
+        for f in range(f0 + 1, f0 + _PHASE_FRAMES):
+            want.append(want[-1] if skip[f] else
+                        "u" if fixed_arp_up(mask, branch, base + c[f]) else "b")
+        left, right = fixed_arp_duty_entries(
+            0x41, 0x41, mask, branch, (base + c[f0]) % fixed_arp_period(mask),
+            0x0C, duty, start=6, budget=255)
+        s = grid * w + sigma
+        tl = wave_timeline(left, right, first=6,
+                           calls=m * (_PHASE_FRAMES + 2) + grid)
+        if s // m != f0:
+            misplaced += 1
+            continue
+        got = ["u" if tl[m * f + m - 1 - s][2] == 0x0C else "b"
+               for f in range(f0, f0 + _PHASE_FRAMES)]
+        differ += sum(a != b for a, b in zip(want, got))
+    return misplaced, differ
+
+
+@needs_corpus
+def test_the_gated_duty_is_frame_exact_at_the_originals_call_phase():
+    """Exactly one call phase of our row grid puts every attack on the
+    original's frame, and at it the duty `_gate_calls` steps is frame-exact
+    for every residue against every skip phase; a step one call shorter or
+    longer is not. So 10 calls is not what doubles a base frame."""
+    sid, det = _det(CORPUS / "Game_Killer.sid")
+    m = file_multiplier(sid, find_song_speeds(sid, det), True)
+    _, _, reload = _gate_walk(sid, 1)
+    assert (m, reload, _gate_calls(m, reload)) == (9, 9, 10)
+    grid = 10
+    aligned = [s for s in range(grid) if _gated_duty_model(s)[0] == 0]
+    assert len(aligned) == 1, aligned
+    assert _gated_duty_model(aligned[0]) == (0, 0)
+    for step in (grid - 1, grid + 1):
+        assert _gated_duty_model(aligned[0], step)[1] > 0, step
+
+
+@needs_corpus
+def test_off_the_originals_call_phase_a_base_frame_doubles():
+    """Every other phase misplaces attacks AND differs on notes whose attack
+    it does place: the `bb` the opened task saw is the phase, carried by the
+    same 10-call duty that is exact above."""
+    aligned = [s for s in range(10) if _gated_duty_model(s)[0] == 0]
+    for sigma in range(10):
+        if sigma in aligned:
+            continue
+        misplaced, differ = _gated_duty_model(sigma)
+        assert misplaced > 0 and differ > 0, (sigma, misplaced, differ)
