@@ -1960,11 +1960,15 @@ def vibrato_population(sid_path) -> dict:
       `TRIANGLE_VIBRATO_MAX_SHIFT` (15) or more shifts the interval to zero
       and the record oscillates by nothing. 5_Title_Tunes record 7 stores
       `$10`; Last_V8 stores 81 and Human_Race 119 (detect.py). No player in
-      the family masks the byte. The emitter's own test is `_triangle_vibrato_entry`'s
-      `byte > TRIANGLE_VIBRATO_MAX_SHIFT` -- one off from this census at
-      exactly 15, where 16 shifts of a 16-bit value are already zero; no
-      corpus record stores 15 (probe_records.py at v0.5.488: the dropped
-      bytes are $10 and $17), so the two never disagree on a corpus file.
+      the family masks the byte. The emitter's own test,
+      `_triangle_vibrato_entry`'s `byte >= TRIANGLE_VIBRATO_MAX_SHIFT`,
+      agrees with this census at exactly 15 (16 shifts of a 16-bit value are
+      already zero). Retraction (2026-10-03): this note used to say the
+      emitter's test was "`byte > TRIANGLE_VIBRATO_MAX_SHIFT` -- one off from
+      this census at exactly 15"; the emitter now uses `>=`, so that is no
+      longer true. No corpus record stores 15 (probe_records.py at v0.5.488:
+      the dropped bytes are $10 and $17), so the two never disagreed on a
+      corpus file either way.
     * **Gate.** `LDA $14EF,X / AND #$1F / CMP #gate / BCC out`: the note's
       own stored duration byte, and a note shorter than the gate gets no
       vibrato at all (detect.TRIANGLE_VIBRATO_GATE, `_find_triangle_gate`

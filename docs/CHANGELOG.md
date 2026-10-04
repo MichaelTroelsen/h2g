@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.506 — 2026-10-04
+
+- optimistic merge for worktree subtasks in the task plan; fidelity.py triangle-vibrato docstring now matches the emitter's >=
+
 ## 0.5.505 — 2026-10-03
 
 - whattask plan re-scoped to the goatwriter modules: worktree-isolated subtasks, merge-scoped writes, models re-graded, 8 tasks offloaded to qwen3-coder
