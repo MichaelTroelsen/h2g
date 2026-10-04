@@ -65,6 +65,7 @@ def positional_after(cmd: str, script: str) -> bool:
             # flags that take a value consume the next token
             if t in ("-o", "-t", "-a", "-n", "--json", "--presets", "--output",
                      "--from-json", "--workdir", "--census", "--hold-census",
+                     "--depth-census",
                      "--baseline", "--shard", "--files", "--gt2reloc",
                      "--siddump", "--sidplayfp", "--sid2wav", "--instrmap"):
                 i += 2
@@ -131,6 +132,18 @@ def main() -> int:
                 "build/fidelity.json HAS `aud`/`loud`. The re-run would drop "
                 "both columns -- which approvals and the sound calibration "
                 "read -- and look like a clean result.")
+        # The census reports are written only when their flag is given, and a
+        # refresh that omits one leaves the previous census on disk under a
+        # newer FIDELITY.md -- stale, and indistinguishable from fresh. Only
+        # the artefact refresh (`-o .../FIDELITY.md`) is held to this; a
+        # scratch measurement wants no census.
+        if re.search(r"-o\s+\S*FIDELITY\.md\b", seg):
+            for flag in ("--census", "--hold-census", "--depth-census"):
+                if not re.search(re.escape(flag) + r"(?=\s|=)", seg):
+                    problems.append(
+                        "fidelity.py refreshing docs/FIDELITY.md without `%s`: "
+                        "that census is not written, so the previous one stays "
+                        "on disk beside a newer report." % flag)
 
     if not problems:
         return 0

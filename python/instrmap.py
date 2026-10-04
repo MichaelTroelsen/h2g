@@ -481,7 +481,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
            gt2reloc: str, siddump: str, dump: bool = True) -> tuple:
     """(markdown lines, summary dict) for one song."""
     nframes = seconds * 50
-    sub = F.resolve_subtune(path, "auto")
+    sub, our_sub, _pinned = F.resolve_pair(path, "auto")
     workdir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, workdir / "o.sid")
 
@@ -492,7 +492,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
     sng, _ = F.legalise_restarts(sng)
     packed = F.pack_sid(sng, workdir, gt2reloc, mult)
     u_raw: list = []
-    ours = (F.run_siddump(packed, seconds, sub, siddump, calls=mult,
+    ours = (F.run_siddump(packed, seconds, our_sub, siddump, calls=mult,
                           capture=u_raw)
             if packed is not None else None)
 
@@ -554,7 +554,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
     o_by, u_by = by_adsr(o_on), by_adsr(u_on)
 
     lines = [f"# {path.name} — instrument map", "",
-             f"Subtune {sub}, {seconds}s, packed at `-S{mult}`. Signatures are "
+             f"Subtune {sub}" + (f" (ours {our_sub})" if our_sub != sub else "") + f", {seconds}s, packed at `-S{mult}`. Signatures are "
              "the registers on the frame after each note onset, joined on ADSR "
              "— a verbatim per-instrument copy, and so the one field that "
              "identifies an instrument on both sides.", ""]

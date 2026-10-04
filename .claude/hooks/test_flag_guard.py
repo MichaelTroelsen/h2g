@@ -28,6 +28,17 @@ CASES = [
     (2, 'cd python && python sound_calibrate.py'),
     (2, 'python fidelity.py /c -t 180 --json ../build/fidelity.json'),
     (2, 'python fidelity.py /c -o ../docs/FIDELITY.md'),
+    # A FIDELITY.md refresh that drops a census flag. Must block.
+    (2, 'python fidelity.py /c --sound --census a.md --hold-census b.md '
+        '-o ../docs/FIDELITY.md'),
+    (2, 'python fidelity.py /c --sound --hold-census b.md --depth-census c.md '
+        '-o ../docs/FIDELITY.md'),
+    (2, 'python fidelity.py /c --sound --census a.md --depth-census c.md '
+        '-o ../docs/FIDELITY.md'),
+    (0, 'python fidelity.py /c --sound --census a.md --hold-census b.md '
+        '--depth-census c.md -o ../docs/FIDELITY.md'),
+    # a scratch report is not held to the census rule
+    (0, 'python fidelity.py x.sid --sound --json s.json -o scratch.md'),
     # CORRECT invocations. Must pass.
     (0, 'python survey.py /c -o ../docs/SURVEY.md --legal-restart --gt2reloc'),
     (0, 'python sound_calibrate.py /corpus'),

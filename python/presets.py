@@ -1396,7 +1396,11 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     workdir = Path(workdir)
     local = workdir / "o.sid"
     shutil.copyfile(sid_path, local)
-    sub = F.resolve_subtune(sid_path, "auto")
+    # `sub` is the ORIGINAL's subtune and `pair_ours` ours: the same index
+    # except where `fidelity.SUBTUNE_COUNTERPART` pins the pair (C64ME s1/o0,
+    # Dragons_Lair_Part_II s0/o9). One index for both sides scored C64ME's s0
+    # against our s0, two different pieces of music.
+    sub, pair_ours, pinned = F.resolve_pair(sid_path, "auto")
     # **The original's own tuning, as `fidelity._measure` traces it.** Four
     # corpus files carry a frequency table tuned off the semitone grid, and
     # siddump names their notes against its own table unless told otherwise --
@@ -1418,7 +1422,7 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # one, and the toggles this searches change no orderlist length. That is
     # an assumption, and it is the reason the window is re-derived per file
     # rather than cached across the corpus.
-    ours_sub = sub
+    ours_sub = pair_ours
 
     def _dump(packed, st):
         return F.run_siddump(packed, seconds, st, siddump, calls=multiplier)
@@ -1487,7 +1491,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     probe = convert(str(sid_path), log=lambda m: None, **base, **FIXED)
     probe, _ = F.legalise_restarts(probe)
     packed = F.pack_sid(probe, workdir, gt2reloc, multiplier)
-    if packed is not None:
+    # A pinned pair is established evidence, not a guess to re-search.
+    if packed is not None and not pinned:
         best = None
         for st in (sub, sub - 1, sub + 1):
             if st < 0:

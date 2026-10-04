@@ -140,6 +140,7 @@ from `python/`:
 ```sh
 python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --jobs 16 \
     --census ../build/onset_census.md --hold-census ../build/hold_census.md \
+    --depth-census ../build/depth_census.md \
     --json ../build/fidelity.json -o ../docs/FIDELITY.md
 python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json
 ```
@@ -162,8 +163,10 @@ with free RAM never under 18.9 GB, every row identical. Since then the
 limit is cores: warm, `--jobs 16` took 1m27s and `--jobs 20` 1m24s (one run
 each, within noise) with 20% more summed per-song time -- use 16, the
 P-cores' thread count (v0.5.501).
-`--sound` and the two census flags are what the current artefact carries;
-`.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
+`--sound` and the three census flags are what the current artefact carries;
+`.claude/hooks/flag_guard.py` refuses a re-run that would drop them -- the
+census flags only on a refresh writing `FIDELITY.md` (before v0.5.508 it
+checked `--sound` alone, whatever this line said).
 Regenerate after a commit that changes what the converter emits, and never from a
 tree with unrelated edits in `h2g/`. `QUEUE.md` reads that same
 `build/fidelity.json`, so it is only as fresh as the run before it and belongs

@@ -1,18 +1,17 @@
 {
  "generated_from": {
-  "head": "018919f",
+  "head": "dfa606a",
+  "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous, at 4af6e62)",
-   ".claude/tasks/runs.jsonl (whole file, 896 lines; no record since the previous plan -- latest is split-goatwriter-into-a-package, already folded in)",
+   ".claude/tasks/whattask.json (previous, at 018919f + the 2026-10-04 optimistic-merge edit)",
+   ".claude/tasks/runs.jsonl (whole file, 912 lines; 16 records since the previous plan: 2 runqueue cycles + the docstring record)",
    ".claude/tasks/decisions.jsonl (whole file; latest answers at 57c086e, all already folded in)",
-   "git log 4af6e62..018919f (1005a29 plan re-scope, 018919f artefact regen -- neither closes or opens a task)",
-   "working tree: python/fidelity.py docstring retraction (tail of closed triangle-max-shift-boundary)",
+   "git log 018919f..dfa606a (2c3c702, 8832fbc, 10170b8, 86ddc31, dfa606a)",
+   "working tree at dfa606a: cycle-2 merges uncommitted (presets.py, instrmap.py, flag_guard, CLAUDE.md, 2 tests)",
    "todo.md, whats-next.md, docs/BACKLOG.md (unchanged since 8b86184)",
-   "graphify-out/graph.json (graphify update at 018919f: 8939 nodes, 19521 edges)",
-   "gh issue list / gh pr list (both empty)",
-   "optimistic merge (user, 2026-10-04): rw:merge:<file> entries removed from every subtask; merge-conflict handling and own-test-file rule moved into each verify; lanes re-derived"
-  ],
-  "focus": null
+   "graphify-out/graph.json (graphify update at dfa606a: 9018 nodes, 19708 edges)",
+   "gh: no reachable issue tracker; gh pr list empty"
+  ]
  },
  "hazards": [
   "presets.json",
@@ -576,7 +575,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. NOTE the design document writes `H2G-CONVERSION-METHOD.md` WITHOUT its `docs/` prefix and no such file exists at the repo root; the grant names the real path, `docs/H2G-CONVERSION-METHOD.md`, so a literal string comparison against the document will flag it forever. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "overlaps 92 other task(s) on a written path (build/approvals.json, build/fidelity.json, presets.json)",
+   "why_lane": "overlaps 91 other task(s) on a written path (build/approvals.json, build/fidelity.json, presets.json)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -615,7 +614,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. EDGE ADDED: the GATE above was recorded ONLY as prose, where /runtask's selector cannot see it -- it now also exists as a `depends_on` edge on `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace`. That gate is currently SATISFIED (that id reads done in runs.jsonl), so nothing was blocked by its absence; what was wrong is that a runner obeying the selection rule literally had no way to know it existed.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "overlaps 41 other task(s) on a written path (build/fidelity.json, presets.json, python/presets.py)",
+   "why_lane": "overlaps 40 other task(s) on a written path (build/fidelity.json, presets.json, python/presets.py)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -942,7 +941,7 @@
    "why_model": "writing down a limit already derived and quoted in a run record",
    "why_effort": "the derivation exists; the work is placing it in the archive with a grade",
    "why_mode": "a single doc edit with no measurement of its own",
-   "why_lane": "overlaps 23 other task(s) on a written path (build/fidelity.json, CLAUDE.md, docs/LESSONS.md)",
+   "why_lane": "overlaps 22 other task(s) on a written path (build/fidelity.json, CLAUDE.md, docs/LESSONS.md)",
    "fork": null,
    "branch": null,
    "offload": null,
@@ -1752,7 +1751,7 @@
    "why_model": "on hold; the tier it would run on when released, opus, as its root-cause shape needs",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "on hold by the user's DIGI rule; no work resolves it until the hold is lifted",
-   "why_lane": "overlaps 88 other task(s) on a written path (presets.json, CLAUDE.md)",
+   "why_lane": "overlaps 87 other task(s) on a written path (presets.json, CLAUDE.md)",
    "fork": null,
    "branch": null,
    "offload": null,
@@ -2932,35 +2931,6 @@
    "why_offload": null
   },
   {
-   "id": "fidelity-triangle-docstring",
-   "title": "update the stale 'one off at 15' note in python/fidelity.py:1911-1915 now that the emitter uses >=",
-   "source": "runs.jsonl#triangle-max-shift-boundary (opened)",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/fidelity-triangle-docstring",
-    "rw:ollama:gpu"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 1dde44a by triangle-max-shift-boundary (figures historical; re-measure on the current tree): update the stale 'one off at 15' note in python/fidelity.py:1911-1915 now that the emitter uses >= SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "a bounded text or count fix",
-   "why_effort": "a text or one-line change checked mechanically",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
-   "offload": "qwen3-coder",
-   "why_offload": "text or a small mechanical change generated from a stated spec, checked by the suite or a grep"
-  },
-  {
    "id": "nibble-per-call-shape-above-s1",
    "title": "Nibble records with a gate-off tail ($41/$40, no tick) still toggle once per call above -S1 on Kentilla, Spellbound and Thrust",
    "source": "runs.jsonl#nibble-arp-alternation-period (opened), runs.jsonl#nibble-per-call-shape-above-s1 (opened gateoff-starved-layout-budget)",
@@ -3155,7 +3125,8 @@
    "lane": "parallel",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/stored-wave-per-state-variants"
+    "rw:host:C:/t/stored-wave-per-state-variants",
+    "r:.claude/worktrees/wf_f76f522f-603-6"
    ],
    "mcp": [],
    "needs_main": false,
@@ -3165,7 +3136,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture (figures historical; re-measure on the current tree): one note per pattern is a compromise where plays disagree (Crazy_Comets 6/6, Gremlins 62/2); give each waveform state its own pattern copy, if MAX_PATTERNS allows SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture (figures historical; re-measure on the current tree): one note per pattern is a compromise where plays disagree (Crazy_Comets 6/6, Gremlins 62/2); give each waveform state its own pattern copy, if MAX_PATTERNS allows SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends. PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) with no report; its unverified, unmerged edits are kept in worktree .claude/worktrees/wf_f76f522f-603-6 (read them with git -C <that path> diff). A retry may use that diff as a draft but must re-run this verify itself and report its own evidence.",
    "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
    "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
    "why_mode": "confined to the named modules and their tests",
@@ -3231,62 +3202,6 @@
    "why_offload": null
   },
   {
-   "id": "pulse-loop-tail-sharing",
-   "title": "`_lay_out_pulse` shares only whole (program, loop) blocks",
-   "source": "runs.jsonl#the-pulse-layout-pays-for-a-new-sweep-by-evicting-the-last-instruments-whole-program-and-knucklebusters-loses-gt-26 (opened)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/pulse-loop-tail-sharing"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by the-pulse-layout-pays-for-a-new-sweep-by-evicting-the-last-instruments-whole-program-and-knucklebusters-loses-gt-26 (figures historical; re-measure on the current tree): `_lay_out_pulse` shares only whole (program, loop) blocks; let a block whose loop body matches an already-placed block's loop body jump into it. On Knucklebusters GT26's loop (127,245),(35,245),(127,11),(35,11) is GT14's, so GT26 would cost 4 entries instead of 8 and keep its sweep (248+4 <= 255). The block's own prefix must still come first, and the bytes of every file whose table already fits must not change (corpus byte-hash under presets). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
-   "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
-   "id": "pulse-full-log-miscount",
-   "title": "`_pulse_layout`'s 'N INSTRUMENT(S) KEEP A STATIC WIDTH INSTEAD OF THEIR SWEEP' counts `dropped`, and that includes records that then went silent",
-   "source": "runs.jsonl#the-pulse-layout-pays-for-a-new-sweep-by-evicting-the-last-instruments-whole-program-and-knucklebusters-loses-gt-26 (opened)",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/pulse-full-log-miscount"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by the-pulse-layout-pays-for-a-new-sweep-by-evicting-the-last-instruments-whole-program-and-knucklebusters-loses-gt-26 (figures historical; re-measure on the current tree): `_pulse_layout`'s 'N INSTRUMENT(S) KEEP A STATIC WIDTH INSTEAD OF THEIR SWEEP' counts `dropped`, and that includes records that then went silent. On Knucklebusters it prints '2 ... KEEP A STATIC WIDTH, 1 SET NO WIDTH', but only GT26 kept a static width; GT29 had no sweep to lose and got pointer 0. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
-   "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "bounded work with a clear done-condition",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
    "id": "pulse-tri-zp-voice3-overstep",
    "title": "Samantha Fox voice 3 pulse span 2752 vs original 1984 and Spellbound voice 0 3072 vs 2208 under the CORRECT $F0/$0F masks (refutes the mask as cause)",
    "source": "runs.jsonl#detect-the-zero-page-per-voice-triangle-pulse-engine-on-samantha-fox-and-spellbound (opened)",
@@ -3306,7 +3221,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by detect-the-zero-page-per-voice-triangle-pulse-engine-on-samantha-fox-and-spellbound (figures historical; re-measure on the current tree): Samantha Fox voice 3 pulse span 2752 vs original 1984 and Spellbound voice 0 3072 vs 2208 under the CORRECT $F0/$0F masks (refutes the mask as cause); find what widens our band (e.g. notes Goattracker does not retrigger where the player still reseeds, or records seeded below $800) SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by detect-the-zero-page-per-voice-triangle-pulse-engine-on-samantha-fox-and-spellbound (figures historical; re-measure on the current tree): Samantha Fox voice 3 pulse span 2752 vs original 1984 and Spellbound voice 0 3072 vs 2208 under the CORRECT $F0/$0F masks (refutes the mask as cause); find what widens our band (e.g. notes Goattracker does not retrigger where the player still reseeds, or records seeded below $800) SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends. PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) before editing anything; start fresh.",
    "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
    "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
    "why_mode": "confined to the named modules and their tests",
@@ -3421,34 +3336,6 @@
    "decision": null,
    "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by give-the-derived-alternate-noise-dialect-a-per-song-option (figures historical; re-measure on the current tree): tune_by_fidelity converts, packs and traces every combination even when the bytes are identical to one already scored; memoising the score by .sng sha would make per-song toggles inert on most files nearly free and is outcome-preserving SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
    "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
-   "id": "filter-note-end-hold-frame",
-   "title": "on Saboteur_II the classic player holds the cutoff on the last frame of every note (801 of 801 segments), while ours keeps sweeping",
-   "source": "runs.jsonl#the-modulate-horizon-is-a-second-independent-knob-and-wants-deriving-not-ablating (opened)",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/filter-note-end-hold-frame"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by the-modulate-horizon-is-a-second-independent-knob-and-wants-deriving-not-ablating (figures historical; re-measure on the current tree): on Saboteur_II the classic player holds the cutoff on the last frame of every note (801 of 801 segments), while ours keeps sweeping. Find in the disassembly why the filter block skips that frame (hard-restart or fetch frame?) before deciding whether an emitter can say it. This is worth about 10% of cut travel on Saboteur_II, Auf_Wiedersehen_Monty (1.145) and Knucklebusters (1.275, mostly single-frame excess). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
-   "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap",
    "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
    "why_mode": "confined to the named modules and their tests",
    "why_lane": "no written-path overlap with any other task",
@@ -3589,34 +3476,6 @@
    "blocked_on": null,
    "decision": null,
    "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by osplit-blind-files (figures historical; re-measure on the current tree): make vicetrace._octave_partner accept 2^k ratios (Devils_Galop's +24 arp) and have the osplit run cover >= 2100 frames (-t 45) so Monty and Warhawk can react; check against Last_V8 etc. that shipped stays 0 and the original stays 0 SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
-   "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
-   "id": "osplit-devils-residual-16",
-   "title": "Devils_Galop voice 1 shows 16 osplit frames (38, 70, 102 ..",
-   "source": "runs.jsonl#osplit-blind-files (opened)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/osplit-devils-residual-16"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 1dde44a by osplit-blind-files (figures historical; re-measure on the current tree): Devils_Galop voice 1 shows 16 osplit frames (38, 70, 102 ... 518) identical shipped and disabled, so not from the ticked arp; find out what they are SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) The converter has no test_goatwriter.py/test_patterns.py/test_detect.py; tests are topic-named, so this task is granted rw:python/tests and names the test file it adds or extends.",
    "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
    "why_effort": "the disassembly decides it, and a wrong reading moves bytes",
    "why_mode": "confined to the named modules and their tests",
@@ -3847,7 +3706,7 @@
    "why_model": "a bounded log-text fix",
    "why_effort": "ordinary judgement",
    "why_mode": "confined to the named modules and their tests",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "text or a small mechanical change generated from a stated spec, checked by the suite or a grep"
   },
@@ -3947,7 +3806,8 @@
    "lane": "parallel",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/tie-placement-blind-count-ratio"
+    "rw:host:C:/t/tie-placement-blind-count-ratio",
+    "r:.claude/worktrees/wf_f76f522f-603-2"
    ],
    "mcp": [],
    "needs_main": false,
@@ -3957,7 +3817,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by zoids-hunter-tie-dip (figures historical; re-measure on the current tree): `tie_ratio` credits ties on the wrong frame; add a same-frame (lag-aligned) tie agreement beside the count ratio, so a phase fix that removes spurious ties (Zoids voice 2 at -t 180: ours-only 178 -> 44, same-frame 2099 unchanged) does not read as a loss. Scratch method in C:/t/zoids-hunter-tie-dip/tiematch.py SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by zoids-hunter-tie-dip (figures historical; re-measure on the current tree): `tie_ratio` credits ties on the wrong frame; add a same-frame (lag-aligned) tie agreement beside the count ratio, so a phase fix that removes spurious ties (Zoids voice 2 at -t 180: ours-only 178 -> 44, same-frame 2099 unchanged) does not read as a loss. Scratch method in C:/t/zoids-hunter-tie-dip/tiematch.py SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) with no report; its unverified, unmerged edits are kept in worktree .claude/worktrees/wf_f76f522f-603-2 (read them with git -C <that path> diff). A retry may use that diff as a draft but must re-run this verify itself and report its own evidence.",
    "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
    "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
    "why_mode": "confined to the named modules and their tests",
@@ -4050,34 +3910,6 @@
    "why_offload": null
   },
   {
-   "id": "fidelity-zero-freq-attack-naming",
-   "title": "in python/fidelity.py parse_dump, name an attack siddump printed at freq $0000 from the next nonzero-frequency tie of the same voice, on both sides",
-   "source": "runs.jsonl#siddump-testbit-attack-naming (opened)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/fidelity-zero-freq-attack-naming"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by siddump-testbit-attack-naming (figures historical; re-measure on the current tree): in python/fidelity.py parse_dump, name an attack siddump printed at freq $0000 from the next nonzero-frequency tie of the same voice, on both sides; do not count that tie in ties/tie_frames; if it never resolves, drop the attack. Pin with a test on a synthetic siddump table: the Sanxion shape `0000 C-0 41` then `41B8 (B-5 C7) 81`. Expected at -t 180: melody up on 10 files and down on none, Sanxion 96.60 -> 99.59. Touches python/fidelity.py and python/tests/test_fidelity.py; FIDELITY.md regenerates afterwards in the main lane SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
    "id": "classic-clear-gate-reads-record-mask",
    "title": "in _classic_clearing_instruments, derive the filtering voice set from the union of routed records' resctl low nibble rather than from the voices naming them, an",
    "source": "runs.jsonl#filter-overfilters-where-original-does-not (opened)",
@@ -4097,7 +3929,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at d52a1bf by filter-overfilters-where-original-does-not (figures historical; re-measure on the current tree): in _classic_clearing_instruments, derive the filtering voice set from the union of routed records' resctl low nibble rather than from the voices naming them, and drop or relax the clear-played-only-on-filtering-voices arm for the classic dialect, where the mask is record-owned (rule B in C:/t/filter-overfilters-where-original-does-n/movers.py). Measured in-process under presets at -t 180: Deep_Strike 8823->2048 (orig 2048), Food_Feud 12344->10126 (orig 9956), Nineteen 8416->8018 (orig 8016). AWM and Nemesis change bytes but no column moves, which needs explaining before adopting. tests/test_filter.py::CLASSIC_CLEARS will need new pins. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at d52a1bf by filter-overfilters-where-original-does-not (figures historical; re-measure on the current tree): in _classic_clearing_instruments, derive the filtering voice set from the union of routed records' resctl low nibble rather than from the voices naming them, and drop or relax the clear-played-only-on-filtering-voices arm for the classic dialect, where the mask is record-owned (rule B in C:/t/filter-overfilters-where-original-does-n/movers.py). Measured in-process under presets at -t 180: Deep_Strike 8823->2048 (orig 2048), Food_Feud 12344->10126 (orig 9956), Nineteen 8416->8018 (orig 8016). AWM and Nemesis change bytes but no column moves, which needs explaining before adopting. tests/test_filter.py::CLASSIC_CLEARS will need new pins. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) before editing anything; start fresh.",
    "why_model": "a player-reading or harness change where a plausible wrong mechanism is cheap",
    "why_effort": "the disassembly or the measurement decides it, and a wrong reading moves bytes or a column",
    "why_mode": "confined to the named modules and their tests",
@@ -4143,7 +3975,8 @@
    "lane": "parallel",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/osplit-phase-self-report"
+    "rw:host:C:/t/osplit-phase-self-report",
+    "r:.claude/worktrees/wf_f76f522f-603-1"
    ],
    "mcp": [],
    "needs_main": false,
@@ -4153,35 +3986,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by osplit-minority-at-s3 (figures historical; re-measure on the current tree): make the osplit column say when it is blind. Per side, compute the predicted per-call minority from calls-per-frame and the measured write phase (n odd: min(w+(n-1)/2*L, (n+1)/2*L-w); n even: 156) and flag the row when it is below OCTAVE_MINORITY_LINES. Measured -S3 phase w=64..82 on all 11 files (126..144). Also trace one -S5 file, where the theoretical floor is 124.8 with a drifting phase SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
-   "why_effort": "bounded work with a clear done-condition",
-   "why_mode": "confined to the named modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
-  },
-  {
-   "id": "osplit-window-covers-file",
-   "title": "Thrust's only octave trill starts at 328.7 s, so any osplit run at -t <= 300 is blind to it by window",
-   "source": "runs.jsonl#osplit-minority-at-s3 (opened)",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/osplit-window-covers-file"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by osplit-minority-at-s3 (figures historical; re-measure on the current tree): Thrust's only octave trill starts at 328.7 s, so any osplit run at -t <= 300 is blind to it by window. Record per file the first frame an octave record plays, or run osplit at the song's full length SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at d52a1bf by osplit-minority-at-s3 (figures historical; re-measure on the current tree): make the osplit column say when it is blind. Per side, compute the predicted per-call minority from calls-per-frame and the measured write phase (n odd: min(w+(n-1)/2*L, (n+1)/2*L-w); n even: 156) and flag the row when it is below OCTAVE_MINORITY_LINES. Measured -S3 phase w=64..82 on all 11 files (126..144). Also trace one -S5 file, where the theoretical floor is 124.8 with a drifting phase SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) with no report; its unverified, unmerged edits are kept in worktree .claude/worktrees/wf_f76f522f-603-1 (read them with git -C <that path> diff). A retry may use that diff as a draft but must re-run this verify itself and report its own evidence.",
    "why_model": "bounded measurement, attribution or harness work against a stated spec; high effort covers the care it needs",
    "why_effort": "bounded work with a clear done-condition",
    "why_mode": "confined to the named modules and their tests",
@@ -4240,37 +4045,9 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "a doc-text correction against code already landed",
    "why_mode": "one file, mechanical",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "a Dimension text rewrite from the stated refusal rule, checked by the suite"
-  },
-  {
-   "id": "osplit-blind-column",
-   "title": "Wire the blind-frame count into the osplit column so it says how many frames it could not read",
-   "source": "runs.jsonl#osplit-sign-extended-single-partner-guard (opened)",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/osplit-blind-column"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 3b1c66d by osplit-sign-extended-single-partner-guard (figures historical; re-measure on the current tree): wire vicetrace.octave_split_frames(blind=...) into fidelity.vice_octave_split as orig/our_octave_split_blind_frames, so the column says how many trill-shaped frames it could not read. Formula_1 ours has 58; Devils_Galop, Last_V8 and Monty_on_the_Run have about 100-18 Done when each fidelity row carries orig_/our_octave_split_blind_frames from vicetrace.octave_split_frames(blind=...), the report says the count beside osplit, and a test pins a row where blind frames are nonzero. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "bounded, mechanical work against an existing harness",
-   "why_effort": "bounded plumbing with a test that must discriminate",
-   "why_mode": "one harness module plus its test",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
   },
   {
    "id": "osplit-siddump-oracle",
@@ -4324,37 +4101,9 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "a one-argument fix to a test",
    "why_mode": "one test file",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "text or a small mechanical change generated from a stated spec, checked by the suite or a grep"
-  },
-  {
-   "id": "presets-instrmap-honour-subtune-pins",
-   "title": "presets.tune_by_fidelity and instrmap.py still pick subtunes without the C64ME/DL2 pins",
-   "source": "runs.jsonl#listen-and-approvals-honour-subtune-pins (opened)",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/presets-instrmap-honour-subtune-pins"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 3b1c66d by listen-and-approvals-honour-subtune-pins (figures historical; re-measure on the current tree): presets.tune_by_fidelity and instrmap.py still call F.resolve_subtune(sid, 'auto') and may trace both sides at one index, which for C64ME would score s0 against our s0 (different music); check them and route them through fidelity.resolve_pair the sam Done when both call fidelity.resolve_pair and use its two indices (C64ME s1/o0, DL2 s0/o9), and a test in each file pins the pinned pair. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "bounded, mechanical work against an existing harness",
-   "why_effort": "the same change listen.py already took, applied to two more callers",
-   "why_mode": "two harness modules and their tests",
-   "why_lane": "no written-path overlap with any other task",
-   "offload": null,
-   "why_offload": null
   },
   {
    "id": "restage-c64me-dl2-listening",
@@ -4445,7 +4194,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "a dated retraction of a comment",
    "why_mode": "one comment in one file",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "a dated retraction comment from the stated facts, checked by grep"
   },
@@ -4474,7 +4223,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "documenting a measured mechanism",
    "why_mode": "one docstring",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "a docstring paragraph from measured facts that fit in the prompt, checked by grep"
   },
@@ -4973,7 +4722,8 @@
    "lane": "parallel",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/legato-tie-last-row-and-ambiguous-entry"
+    "rw:host:C:/t/legato-tie-last-row-and-ambiguous-entry",
+    "r:.claude/worktrees/wf_f76f522f-603-7"
    ],
    "mcp": [],
    "needs_main": false,
@@ -4983,7 +4733,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 3b1c66d by monty-tied-note-drops-instrument-restart (figures historical; re-measure on the current tree): re-latch through the successor pattern's row 0, or copy the pattern, so last-row and two-instrument-entry ties stop declining (Nineteen 2, Trans-Atlantic 2, Knucklebusters 2, Flash_Gordon 1) Done when those ties are cloned (re-latched through the successor pattern's row 0, or by copying the pattern) and the per-file decline counts fall to 0 or each remaining decline is named with its reason. Corpus byte-hash under presets (fidelity._preset_opts) reports converted/refused/compared/moved and NAMES every mover; Commando.sng stays byte-identical (tests/test_commando.py). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). OPENED at 3b1c66d by monty-tied-note-drops-instrument-restart (figures historical; re-measure on the current tree): re-latch through the successor pattern's row 0, or copy the pattern, so last-row and two-instrument-entry ties stop declining (Nineteen 2, Trans-Atlantic 2, Knucklebusters 2, Flash_Gordon 1) Done when those ties are cloned (re-latched through the successor pattern's row 0, or by copying the pattern) and the per-file decline counts fall to 0 or each remaining decline is named with its reason. Corpus byte-hash under presets (fidelity._preset_opts) reports converted/refused/compared/moved and NAMES every mover; Commando.sng stays byte-identical (tests/test_commando.py). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) PRIOR ATTEMPT (2026-10-04, dfa606a): the agent died on an API outage (ENOTFOUND) with no report; its unverified, unmerged edits are kept in worktree .claude/worktrees/wf_f76f522f-603-7 (read them with git -C <that path> diff). A retry may use that diff as a draft but must re-run this verify itself and report its own evidence.",
    "why_model": "a player-reading or emitter change where a plausible wrong mechanism is cheap to produce",
    "why_effort": "the code must be understood against the 6502 player before it is changed",
    "why_mode": "confined to the converter, verified by a corpus byte-hash plus a targeted A/B",
@@ -5423,7 +5173,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "a comment correction",
    "why_mode": "one comment",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "a comment rewrite from the named replacement, checked by grep"
   },
@@ -5760,7 +5510,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "bounded work with a clear done-condition",
    "why_mode": "one harness module",
-   "why_lane": "overlaps 7 other task(s) on a written path (ollama:gpu)",
+   "why_lane": "overlaps 6 other task(s) on a written path (ollama:gpu)",
    "offload": "qwen3-coder",
    "why_offload": "text or a small mechanical change generated from a stated spec, checked by the suite or a grep"
   },
@@ -5851,34 +5601,6 @@
    "why_offload": null
   },
   {
-   "id": "refresh-command-depth-census",
-   "title": "Add --depth-census to the FIDELITY refresh command",
-   "source": "runs.jsonl#fidelity-add-a-depth-census (opened)",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:CLAUDE.md",
-    "rw:.claude/hooks/flag_guard.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 3b1c66d by fidelity-add-a-depth-census (figures historical; re-measure on the current tree): add `--depth-census ../build/depth_census.md` to the FIDELITY.md refresh command (CLAUDE.md \"On demand\" block and flag_guard if it pins the flag set) so the census is produced with each refresh. Done when CLAUDE.md's \"On demand\" refresh command carries --depth-census ../build/depth_census.md and flag_guard.py refuses a refresh that drops it (or is shown not to pin flags). (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a command-line and guard edit",
-   "why_mode": "edits CLAUDE.md, which the main session owns",
-   "why_lane": "overlaps 6 other task(s) on a written path (CLAUDE.md)",
-   "offload": null,
-   "why_offload": null
-  },
-  {
    "id": "document-the-third-drain-in-method-and-lessons",
    "title": "Record the third drain's mechanisms in H2G-CONVERSION-METHOD.md (triangle clock, legato tie clones, ILV routing, nibble gate phase)",
    "source": "runs.jsonl#triangle-sim-model-fails-on-rasputin-and-one-man (opened triangle-clock-docs), runs.jsonl#monty-tied-note-drops-instrument-restart (opened docs-legato-tie), runs.jsonl#ilv-filter-routing-via-setfilterctrl (opened ilv-filter-routing-cli-flag), runs.jsonl#nibble-gate-stall-phase (opened regenerate-after-nibble-gate-phase)",
@@ -5904,7 +5626,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a documentation pass against landed code",
    "why_mode": "edits hand-written docs including CLAUDE.md",
-   "why_lane": "overlaps 28 other task(s) on a written path (docs/H2G-CONVERSION-METHOD.md, docs/LESSONS.md, CLAUDE.md)",
+   "why_lane": "overlaps 27 other task(s) on a written path (docs/H2G-CONVERSION-METHOD.md, docs/LESSONS.md, CLAUDE.md)",
    "offload": null,
    "why_offload": null
   },
@@ -5939,7 +5661,63 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a doc reconciliation against a layout the split fixes",
    "why_mode": "edits CLAUDE.md, which the main session owns",
-   "why_lane": "overlaps 28 other task(s) on a written path (CLAUDE.md, docs/H2G-CONVERSION-METHOD.md, docs/LESSONS.md)",
+   "why_lane": "overlaps 27 other task(s) on a written path (CLAUDE.md, docs/H2G-CONVERSION-METHOD.md, docs/LESSONS.md)",
+   "why_offload": null
+  },
+  {
+   "id": "filter-note-end-hold-via-last-row-command",
+   "title": "Prototype a last-row CMD_SETFILTERPTR so a filtered note holds its cutoff on the fetch frame",
+   "source": "opened by filter-note-end-hold-frame (runs.jsonl, 10170b8)",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/filter-note-end-hold-via-last-row-comman"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 8832fbc by filter-note-end-hold-frame (figures historical; re-measure on the current tree): the classic players skip the filter on the note-fetch frame, which a static filter table cannot say. The one expressible route is a tick-0 CMD_SETFILTERPTR on each filtered note's last row pointing at a per-instrument [FILT_MODULATE k, FILT_STOP] tail, k = tempo - multiplier - 1 calls, for files with one filtering voice. Read the row-0 rules (patterns.TEMPO_OVERWRITABLE, ONE_SHOT_COMMANDS) before using the command column. Done when EITHER it ships default-off as a convert() option in all three places (signature, presets.FIXED, _preset_opts) with the corpus byte-hash naming every file that moves under presets and an A/B of cutoff_sweep on Saboteur_II, Knucklebusters and Auf_Wiedersehen_Monty against the hold-simulation bound the opening record gives, plus the command-column collisions and pattern-budget drops it costs; OR it is declined with that measured A/B as the reason. Commando.sng stays byte-identical either way. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break.",
+   "why_model": "a pattern-pass change that must respect the row-0 command and pattern-budget invariants",
+   "why_effort": "the failure mode is a plausible reading of the player that is wrong for some files, not a slow answer",
+   "why_mode": "self-contained in one worktree, concluded by a corpus byte-hash and a named A/B",
+   "why_lane": "no written-path overlap with any other task",
+   "fork": null,
+   "branch": null,
+   "offload": null,
+   "why_offload": null
+  },
+  {
+   "id": "classic-filter-status-bit0-skips-filter",
+   "title": "Check whether a status-bit-$01 record bypasses the classic filter block, per file",
+   "source": "opened by filter-note-end-hold-frame (runs.jsonl, 10170b8)",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/classic-filter-status-bit0-skips-filter"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 8832fbc by filter-note-end-hold-frame (figures historical; re-measure on the current tree): in Saboteur_II a record with status bit $01 takes a path that leaves by JMP past the filter block unless another bit is set, so the original never writes the filter for it. The opening record lists the files with records carrying both $20 and $01 (Delta_Mix, Dragons_Lair_Part_II, Food_Feud, Knucklebusters, Lightforce, Sanxion; Powerplay is held). Read each one's disassembly (python/dis6502.py). Done when every listed file has a recorded reading -- bypasses or not -- pinned by a test that can fail (a retargeted jump must change the reading, as tests/test_filter_fetch_hold.py does), and, where a file bypasses, either the converter stops emitting filter blocks for those records with the corpus byte-hash naming the files it moves and the cut/filt A/B on them, or a follow-up is opened with that measured share. Commando.sng stays byte-identical. SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, mutated region printed from disk; where the change has no natural mutation, say so and name the property that would have to break.",
+   "why_model": "a disassembly reading per player where a confident wrong generalisation is the cheap answer",
+   "why_effort": "the failure mode is a plausible reading of the player that is wrong for some files, not a slow answer",
+   "why_mode": "self-contained in one worktree, concluded by a corpus byte-hash and a named A/B",
+   "why_lane": "no written-path overlap with any other task",
+   "fork": null,
+   "branch": null,
+   "offload": null,
    "why_offload": null
   }
  ],
@@ -9633,6 +9411,66 @@
    "title": "fid_loop2.py's disabled() patched the goatwriter package, which after the split reaches no caller",
    "closed_by": "ac98219",
    "reason": null
+  },
+  {
+   "id": "fidelity-triangle-docstring",
+   "title": "update the stale 'one off at 15' note in python/fidelity.py:1911-1915 now that the emitter uses >=",
+   "closed_by": "2c3c702",
+   "reason": null
+  },
+  {
+   "id": "pulse-loop-tail-sharing",
+   "title": "`_lay_out_pulse` shares only whole (program, loop) blocks",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "pulse-full-log-miscount",
+   "title": "`_pulse_layout`'s 'N INSTRUMENT(S) KEEP A STATIC WIDTH INSTEAD OF THEIR SWEEP' counts `dropped`, and that includes records that then went silent",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "filter-note-end-hold-frame",
+   "title": "on Saboteur_II the classic player holds the cutoff on the last frame of every note (801 of 801 segments), while ours keeps sweeping",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "osplit-devils-residual-16",
+   "title": "Devils_Galop voice 1 shows 16 osplit frames (38, 70, 102 ..",
+   "closed_by": "uncommitted:2026-10-04",
+   "reason": "runqueue cycle 2: no code change; the 16 frames are a vibrato turnaround the vicetrace >$FFFF guard already refutes, pinned by python/tests/test_osplit_devils_residual.py, which is in the working tree at dfa606a and not yet committed."
+  },
+  {
+   "id": "fidelity-zero-freq-attack-naming",
+   "title": "in python/fidelity.py parse_dump, name an attack siddump printed at freq $0000 from the next nonzero-frequency tie of the same voice, on both sides",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "osplit-window-covers-file",
+   "title": "Thrust's only octave trill starts at 328.7 s, so any osplit run at -t <= 300 is blind to it by window",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "osplit-blind-column",
+   "title": "Wire the blind-frame count into the osplit column so it says how many frames it could not read",
+   "closed_by": "10170b8",
+   "reason": null
+  },
+  {
+   "id": "presets-instrmap-honour-subtune-pins",
+   "title": "presets.tune_by_fidelity and instrmap.py still pick subtunes without the C64ME/DL2 pins",
+   "closed_by": "uncommitted:2026-10-04",
+   "reason": "runqueue cycle 2: python/presets.py tune_by_fidelity and python/instrmap.py report trace the pinned subtune pair; merged into the working tree at dfa606a with tests/test_subtune_pins_presets_instrmap.py, full suite 3104 passed; not yet committed."
+  },
+  {
+   "id": "refresh-command-depth-census",
+   "title": "Add --depth-census to the FIDELITY refresh command",
+   "closed_by": "uncommitted:2026-10-04",
+   "reason": "runqueue cycle 2 main lane: CLAUDE.md refresh command carries --depth-census and .claude/hooks/flag_guard.py refuses a FIDELITY.md refresh missing any census flag (test_flag_guard.py 24 cases, 0 failures); in the working tree at dfa606a, not yet committed."
   }
  ]
 }
