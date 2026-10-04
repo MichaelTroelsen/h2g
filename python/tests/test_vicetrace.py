@@ -94,7 +94,9 @@ def test_the_live_trace_agrees_with_siddump_where_siddump_is_reliable():
     samples = V.run(src, 10, 0)
     assert len(samples) == 10 * 50 * V.PAL_LINES_PER_FRAME
     edges = sum(len(V.gate_edges(samples, v)) for v in range(3))
-    attacks = sum(len(v.attacks)
+    # A gate edge siddump prints at freq $0000 that no tie ever names has no
+    # pitch and leaves `attacks` (parse_dump), but it is still an edge.
+    attacks = sum(len(v.attacks) + len(v.unnamed_attack_frames)
                   for v in F.run_siddump(src, 10, 0, F.SIDDUMP, 0))
     assert edges == attacks
 

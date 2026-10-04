@@ -216,6 +216,10 @@ def _hex_field(text: str, width: int) -> int | None:
 class Voice:
     attacks: list[str] = field(default_factory=list)   # note names, in order
     attack_frames: list[int] = field(default_factory=list)
+    # Frames of gate edges siddump printed at freq $0000 that no later tie
+    # ever named: real strikes with no pitch, dropped from `attacks` and
+    # kept here so a count of gate edges can still be reconciled.
+    unnamed_attack_frames: list[int] = field(default_factory=list)
     ties: int = 0
     # Frames on which siddump printed a *tie* -- a note change with no gate
     # retrigger.
@@ -304,6 +308,9 @@ def parse_dump(text: str) -> Trace:
     """
     voices = [Voice(), Voice(), Voice()]
     filt = FilterState()
+    # Index into voices[v].attacks of an attack siddump printed at freq $0000,
+    # waiting for the next nonzero-frequency tie of that voice to name it.
+    pending: list[int | None] = [None, None, None]
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
@@ -331,10 +338,29 @@ def parse_dump(text: str) -> Trace:
                     events.append((frame, val))
             m = _ATTACK.match(rest)
             if m:
-                voices[v].attacks.append(m.group(1))
+                # A gate edge at freq $0000 is named `C-0` whatever the note
+                # was (Sanxion's past-table drum, `0000 C-0 41` then
+                # `41B8 (B-5 C7) 81`): the note it plays is the one the
+                # NEXT nonzero-frequency tie of the voice names. Hold the
+                # slot with "" until that tie arrives; a second attack first
+                # leaves it "" and it is dropped below.
+                if fval == 0:
+                    pending[v] = len(voices[v].attacks)
+                    voices[v].attacks.append("")
+                else:
+                    pending[v] = None
+                    voices[v].attacks.append(m.group(1))
                 voices[v].attack_frames.append(frame)
                 continue
-            if _TIE.match(rest):
+            m = _TIE.match(rest)
+            if m:
+                if pending[v] is not None and fval:
+                    # The tie that names the zero-frequency attack is that
+                    # attack's pitch, not a note change of its own: it is
+                    # not counted in ties / tie_frames.
+                    voices[v].attacks[pending[v]] = m.group(1)
+                    pending[v] = None
+                    continue
                 voices[v].ties += 1
                 voices[v].tie_frames.append(frame)
                 continue
@@ -359,6 +385,14 @@ def parse_dump(text: str) -> Trace:
         band = _PASSBAND.get(glob[9:12].strip())
         if band is not None:
             filt.passband_events.append((frame, band))
+    for vc in voices:
+        # An attack at freq $0000 that no tie ever named has no pitch: drop it.
+        if "" in vc.attacks:
+            keep = [i for i, n in enumerate(vc.attacks) if n]
+            vc.unnamed_attack_frames = [f for i, f in enumerate(vc.attack_frames)
+                                        if not vc.attacks[i]]
+            vc.attack_frames = [vc.attack_frames[i] for i in keep]
+            vc.attacks = [vc.attacks[i] for i in keep]
     return Trace(voices, filt)
 
 
@@ -4368,11 +4402,25 @@ def vice_register_compare(orig_samples: list, our_samples: list,
 
 def vice_octave_split(orig_samples: list, our_samples: list) -> dict:
     """`osplit`: frames where a voice holds a note and its octave inside one
-    frame (`vicetrace.octave_split_frames`), each side, summed over voices."""
-    return {"orig_octave_split_frames":
-            sum(vicetrace.octave_split_frames(orig_samples)),
-            "our_octave_split_frames":
-            sum(vicetrace.octave_split_frames(our_samples))}
+    frame (`vicetrace.octave_split_frames`), each side, summed over voices.
+
+    Also the frames that had the trill's shape but whose interval the dump
+    could not read (`*_octave_split_blind_frames`), so the column says how
+    much it could not see; and the first counted frame per side (None: never
+    in this window) beside the frames the window covered, so a 0 can be told
+    from "not reached"."""
+    out = {}
+    for side, samples in (("orig", orig_samples), ("our", our_samples)):
+        blind: list[int] = []
+        first: list = []
+        out[f"{side}_octave_split_frames"] = sum(
+            vicetrace.octave_split_frames(samples, blind=blind, first=first))
+        out[f"{side}_octave_split_blind_frames"] = sum(blind)
+        out[f"{side}_octave_first_frame"] = min(
+            (f for f in first if f is not None), default=None)
+    out["octave_window_frames"] = (
+        len(orig_samples) // vicetrace.PAL_LINES_PER_FRAME)
+    return out
 
 
 def vice_skip_span(calls_per_frame: int) -> tuple[int, int]:
@@ -5492,7 +5540,9 @@ DIMENSIONS = (
               "low byte >= $80, so a pair whose members are BOTH so damaged "
               "is refused, one damaged member is rebuilt from its partner "
               "(low byte within 3), and a trill across more than two values "
-              "or a non-octave interval is not counted", source="our_octave_split_frames"),
+              "or a non-octave interval is not counted. The frames of that shape "
+              "the dump could not read are counted, not lost: `(blind "
+              "ours/orig)` beside the count", source="our_octave_split_frames"),
     Dimension("aud", "aud", (AUDIO,), "fraction",
               "per-frame agreement of the rendered sound's log-mel spectrum, "
               "level removed -- timbre, filter, envelope shape. Absent unless "
@@ -6745,10 +6795,14 @@ def _fmt_length(r: dict) -> str:
 
 
 def _fmt_osplit(row: dict) -> str:
-    """`osplit`: `-` unless the run was taken with `--vice`, else `ours/orig`."""
+    """`osplit`: `-` unless the run was taken with `--vice`, else `ours/orig`,
+    then `(blind ours/orig)` where trill-shaped frames could not be read."""
     if "our_octave_split_frames" not in row:
         return "-"
-    return _one_sided(row, "octave_split_frames")
+    text = _one_sided(row, "octave_split_frames")
+    o = row.get("orig_octave_split_blind_frames", 0)
+    u = row.get("our_octave_split_blind_frames", 0)
+    return f"{text} (blind {u}/{o})" if o or u else text
 
 
 def _fmt_sweep(row: dict) -> str:

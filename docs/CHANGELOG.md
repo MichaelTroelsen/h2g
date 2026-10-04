@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.507 — 2026-10-04
+
+- first optimistic-merge drain: osplit blind and first-frame fields, zero-freq attack naming, pulse loop-tail sharing, pulse log count, filter fetch-frame test
+
 ## 0.5.506 — 2026-10-04
 
 - optimistic merge for worktree subtasks in the task plan; fidelity.py triangle-vibrato docstring now matches the emitter's >=

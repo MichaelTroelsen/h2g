@@ -49,7 +49,10 @@ Middle C frequency is $1168
 def test_only_bare_notes_count_as_attacks():
     v0, v1, v2 = fidelity.parse_dump(DUMP)
     assert v0.attacks == ["E-7", "D-6"]      # frames 0 and 6
-    assert v1.attacks == ["C-0"]             # frame 0 only
+    # Frame 0 is `0000  C-0 80`: an attack at freq $0000 is named by the next
+    # nonzero-frequency tie of the voice, and this voice has none, so it is
+    # dropped (test_zero_freq_attack.py).
+    assert v1.attacks == []
     assert v2.attacks == ["A-1"]
 
 
@@ -74,7 +77,7 @@ def test_attack_frames_are_recorded():
 def test_header_and_rule_rows_are_not_frames():
     # The header row also starts with '|' and has the right field count.
     assert sum(len(v.attacks) + v.ties + v.slides
-               for v in fidelity.parse_dump(DUMP)) == 4 + 2 + 3
+               for v in fidelity.parse_dump(DUMP)) == 3 + 2 + 3
 
 
 def test_waveform_writes_are_recorded_per_voice():
@@ -4891,7 +4894,10 @@ def test_vice_octave_split_sums_both_voices_of_each_side():
                 for i in range(624)]
     got = fidelity.vice_octave_split(side(0x1168, 0x22D0, 156),
                                      side(0x1168, 0x1168, 156))
-    assert got == {"orig_octave_split_frames": 3, "our_octave_split_frames": 0}
+    assert got["orig_octave_split_frames"] == 3
+    assert got["our_octave_split_frames"] == 0
+    assert got["orig_octave_split_blind_frames"] == 0
+    assert got["our_octave_split_blind_frames"] == 0
 
 
 def test_a_run_cut_only_at_the_right_edge_stays_excluded_by_design():

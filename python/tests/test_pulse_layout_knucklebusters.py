@@ -1,17 +1,13 @@
-"""Knucklebusters' pulse table, the corpus file that fills it: a played record
-keeps at least its SET when the table is full, and GT26 is the one that pays.
+"""Knucklebusters' pulse table, the corpus file that fills it: every record
+keeps its whole program, GT26 included, because a block whose loop body is
+already in the table jumps into it.
 
-The task this pins asked for a set-vs-sweep preference in `_lay_out_pulse`:
-drop a program's sweep and keep its set rather than drop a later program
-whole. Measured on the tree as found (Knucklebusters under its presets, the
-usage pass of `_pulse_layout` in place), that preference already holds: the
-table is 255 of 255; GT26 (record 25, 8 notes sounded, all in subtune 2)
-keeps its set `$81 $40` at pointer 249 and loses only its sweep; the one
-record with pointer 0 is GT29, which sounds nothing. GT26's full block is
-eight entries and the played records ahead of it in usage order leave seven,
-so no reordering among them buys it the sweep -- only a cheaper encoding of
-its block could (its loop body is GT14's, entry for entry). See the comment
-above `_lay_out_pulse`.
+History: before the loop-tail sharing, GT26 (record 25, 8 notes sounded, all
+in subtune 2) was the one played record to lose its sweep -- its full block was
+eight entries and seven were left, so it kept its set `$81 $40` at pointer 249
+and nothing more. Its loop body is GT14's entry for entry, so a jump into
+GT14's loop costs the 3-entry prefix plus one jump, four entries, not eight,
+and `_lay_out_pulse` now writes that. The table is still 255 of 255.
 """
 import json
 import sys
@@ -59,7 +55,7 @@ def _convert_capturing(monkeypatch):
 
 
 @needs_corpus
-def test_every_played_record_keeps_its_set_and_gt26_loses_only_its_sweep(
+def test_every_record_keeps_its_whole_program_and_gt26_jumps_into_gt14s_loop(
         monkeypatch):
     import songview
     out, usage, programs, statics, lead = _convert_capturing(monkeypatch)
@@ -67,26 +63,31 @@ def test_every_played_record_keeps_its_set_and_gt26_loses_only_its_sweep(
     ptbl = song.tables["PTBL"]
     assert len(ptbl) == 255, "the premise: Knucklebusters fills the table"
     by_number = {ins.number: ins for ins in song.instruments}
-    played = [i for i, u in enumerate(usage) if u]
-    assert 25 in played and usage[25] == 8, \
-        "the premise: GT26 is record 25 and sounds 8 notes"
-    for i in played:
-        ptr = by_number[lead + i + 1].pulse_ptr
-        assert ptr, f"GT{lead + i + 1} sounds {usage[i]} notes and has no width"
-        assert ptbl[ptr - 1] == statics[i][0], \
-            f"GT{lead + i + 1}'s pointer does not open on its own set"
-    # GT26 is the one that pays: every other played record keeps its whole
-    # program. Neither the usage pass nor its reservation decides that here:
-    # with either removed the layout's bytes move but GT26 is still the only
-    # played record short of its sweep and GT29 the only one with pointer 0.
-    # Those two are pinned synthetically in test_pulse.py; on this file only
-    # the static fallback in `_lay_out_pulse` is load-bearing.
+    assert 25 in [i for i, u in enumerate(usage) if u] and usage[25] == 8,         "the premise: GT26 is record 25 and sounds 8 notes"
     short = []
-    for i in played:
-        ptr, (program, _) = by_number[lead + i + 1].pulse_ptr, programs[i]
-        if list(ptbl[ptr - 1:ptr - 1 + len(program)]) != list(program):
-            short.append(lead + i + 1)
-    assert short == [lead + 26], f"played records without their sweep: {short}"
-    gt26 = by_number[lead + 26].pulse_ptr
-    assert list(ptbl[gt26 - 1:gt26 + 1]) == list(statics[25]), \
-        "GT26 keeps exactly its static pair: its set, then stop"
+    for i, (program, loop) in enumerate(programs):
+        n = lead + i + 1
+        if i >= len(usage) or not usage[i]:
+            continue                     # sounds nothing, so nothing to hear
+        ptr = by_number[n].pulse_ptr
+        assert ptr, f"GT{n} sounds {usage[i]} notes and has no width"
+        got = list(ptbl[ptr - 1:ptr - 1 + len(program)])
+        if loop is None:
+            ok = got == list(program)
+        else:
+            # Follow the jump: the program is its prefix, then its loop body
+            # wherever that lives (inline, or in an earlier block).
+            prefix = list(program[:loop])
+            ok = got[:loop] == prefix
+            at = ptr + loop
+            if got[loop:loop + 1] and got[loop][0] == 0xFF:
+                at = got[loop][1]
+            body = list(ptbl[at - 1:at - 1 + len(program) - loop])
+            ok = ok and body == list(program[loop:])
+        if not ok:
+            short.append(n)
+    assert short == [], f"records without their whole program: {short}"
+    gt14, gt26 = by_number[lead + 14].pulse_ptr, by_number[lead + 26].pulse_ptr
+    prefix = list(programs[25][0][:programs[25][1]])
+    assert list(ptbl[gt26 - 1:gt26 - 1 + len(prefix)]) == prefix
+    assert ptbl[gt26 - 1 + len(prefix)] == (0xFF, gt14 + programs[13][1]),         "GT26's block ends in a jump to the first entry of GT14's loop"

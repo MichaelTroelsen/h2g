@@ -85,6 +85,16 @@ class Sample:
     modevol: int = 0
 
 
+def vsid_timeout(seconds: float) -> float:
+    """Wall-clock ceiling for one vsid dump of `seconds` of tune.
+
+    A flat 300 s killed Thrust's 400 s trace, so a window reaching its only
+    octave trill (328.7 s) could not be taken at all: the ceiling scales with
+    the window, 300 s being the floor it always was.
+    """
+    return max(300.0, 3.0 * seconds)
+
+
 def run(sid: Path, seconds: float, subtune: int = 0, exe: str = VSID,
         out: Path | None = None) -> list[Sample]:
     """Trace `seconds` of `sid`, one Sample per rasterline.
@@ -99,7 +109,7 @@ def run(sid: Path, seconds: float, subtune: int = 0, exe: str = VSID,
     subprocess.run(
         [exe, "-console", "-sounddev", "dump", "-soundarg", str(out),
          "-limitcycles", str(cycles), "-tune", str(subtune + 1), str(sid)],
-        capture_output=True, timeout=300, stdin=subprocess.DEVNULL)
+        capture_output=True, timeout=vsid_timeout(seconds), stdin=subprocess.DEVNULL)
     return parse(out.read_text(encoding="utf-8", errors="replace")) \
         if out.exists() else []
 
@@ -423,7 +433,8 @@ def _octave_partner(a: int, b: int) -> bool:
 
 def octave_split_frames(samples: list, voices: int = 3,
                         minority: int = OCTAVE_MINORITY_LINES,
-                        blind: list[int] | None = None) -> list[int]:
+                        blind: list[int] | None = None,
+                        first: list[int | None] | None = None) -> list[int]:
     """Per voice: frames that hold a note and its octave in two halves.
 
     All of: exactly two freq values (silent lines are not values) an octave
@@ -439,10 +450,17 @@ def octave_split_frames(samples: list, voices: int = 3,
     (`_octave_verdict` None: a sign-extended member) is not counted; pass a
     list as `blind` to have those frames tallied into it per voice instead of
     lost silently.
+
+    Pass a list as `first` to have, per voice, the index of the first frame
+    that is counted (None where none is): an osplit of 0 is a statement about
+    the window only if the trace reaches the frame where the shape first
+    plays -- Thrust's only octave trill starts at 328.7 s.
     """
     counts = [0] * voices
     if blind is not None:
         blind[:] = [0] * voices
+    if first is not None:
+        first[:] = [None] * voices
     n = PAL_LINES_PER_FRAME
     for v in range(voices):
         prev = 0
@@ -458,6 +476,8 @@ def octave_split_frames(samples: list, voices: int = 3,
                     verdict = _octave_verdict(fa, fb)
                     if verdict is True:
                         counts[v] += 1
+                        if first is not None and first[v] is None:
+                            first[v] = start // n
                     elif verdict is None and blind is not None:
                         blind[v] += 1
             last = [f for f in seq if f]

@@ -344,8 +344,10 @@ def test_a_shared_blocks_jump_is_absolute_and_lands_inside_its_own_block():
     programs, each shared by many records: the second block's jump must name
     an entry of the SECOND block, at the start it was actually written at."""
     n = 24
-    a, b = _record(pulse_lo=0x00, rate=0x01), _record(pulse_lo=0x10, rate=0x01)
-    sid = _sid([a, b] * (n // 2), [0xF0] * n)
+    a, b = _record(pulse_lo=0x00, rate=0x01), _record(pulse_lo=0x00, rate=0x01)
+    # Different bounds, so different LOOP BODIES: programs that only differ in
+    # their prefix would share a body (tests/test_pulse_loop_tail_sharing.py).
+    sid = _sid([a, b] * (n // 2), [SWEEP[48], SWEEP[44]] * (n // 2))
     prog_a, loop_a = _pulse_program(sid, _det(n), 0, True, 1)
     prog_b, loop_b = _pulse_program(sid, _det(n), 1, True, 1)
     assert prog_a != prog_b
@@ -374,6 +376,20 @@ def test_a_shared_blocks_jump_is_absolute_and_lands_inside_its_own_block():
 BIG = 0x02          # rate: a 42-entry program against bounds $F0
 SMALL = 0x40        # rate: a 4-entry program against bounds $82
 
+# Sweeps with PAIRWISE-DISTINCT loop bodies, keyed by their block cost
+# (program + its jump): rate 1, pulse_lo 0, and this bounds byte. A block whose
+# loop body is already in the table is written as its prefix and a jump
+# (`_lay_out_pulse`), so a scenario that needs a table to be FULL of sweeps must
+# not hand it the same body twice -- six BIG records, differing only in
+# pulse_lo, share one of four bodies.
+SWEEP = {64: 0x89, 60: 0x8A, 56: 0x8B, 52: 0x8C, 48: 0x8D, 44: 0x8E, 40: 0x8F,
+         36: 0x80, 32: 0x81, 16: 0x85, 4: 0x88}
+
+
+def _sweeps(costs):
+    """(records, bounds) for sweeps costing `costs` entries each."""
+    return [_record(pulse_lo=0, rate=1) for _ in costs], [SWEEP[c] for c in costs]
+
 
 def _cost(sid, det, i):
     program, loop = _pulse_program(sid, det, i, True, 1)
@@ -390,15 +406,13 @@ def test_without_usage_the_index_order_passes_stand_as_they_were():
 
 
 def test_a_full_table_drops_the_least_played_sweep_not_the_last_one():
-    """Six 42-entry programs fill the table to 254 of 255; a seventh, 4-entry
-    one at the END overflows it. Index order gave the last record NOTHING --
+    """Five big programs and a sixth, played least, fill the table; a last,
+    4-entry one at the END overflows it. Index order gave the last record NOTHING --
     not even its width -- because the records before it had used the table
     up. By usage the least-played record is the one that loses, and it loses
     only its sweep."""
     n = 7
-    recs = [_record(pulse_lo=i, rate=BIG) for i in range(6)]
-    recs.append(_record(pulse_lo=6, rate=SMALL))
-    bounds = [0xF0] * 6 + [0x82]
+    recs, bounds = _sweeps([64, 56, 52, 48, 40, 36, 4])
     sid, det = _sid(recs, bounds), _det(n)
     assert sum(_cost(sid, det, i) for i in range(n)) + 2 > GT_MAX_TABLELEN
     usage = [1] + [10] * 6                  # record 0 is the least played
@@ -422,12 +436,13 @@ def test_a_record_that_sounds_keeps_at_least_its_width():
     is reserved for every record that sounds, so the last big program yields
     its sweep to twelve widths instead."""
     big, quiet = 6, 12
-    recs = [_record(pulse_lo=i, rate=BIG) for i in range(big)]
+    recs, bounds = _sweeps([52, 48, 44, 40, 36, 32])
     recs += [_record(pulse_lo=0x10 + i, rate=0) for i in range(quiet)]
     n = len(recs)
-    sid, det = _sid(recs, [0xF0] * n), _det(n)
-    assert 2 + sum(_cost(sid, det, i) for i in range(big)) + 2 > GT_MAX_TABLELEN, \
-        "the six sweeps alone must leave no room for a static pair"
+    bounds += [0xF0] * quiet
+    sid, det = _sid(recs, bounds), _det(n)
+    assert 2 + sum(_cost(sid, det, i) for i in range(big)) + 2 * quiet \
+        > GT_MAX_TABLELEN, "the six sweeps leave no room for twelve widths"
     usage = [100] * big + [1] * quiet       # all of them sound
     entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)
     assert 0 not in starts[1:], "a record that sounds never loses its width"
@@ -450,7 +465,8 @@ def test_a_record_that_sounds_nothing_is_the_one_that_goes_without():
     the instrument table all keep their sweeps. Index order gave the unplayed
     record the first block and silenced the last played one."""
     n = 7
-    sid = _sid([_record(pulse_lo=i, rate=BIG) for i in range(n)], [0xF0] * n)
+    recs, bounds = _sweeps([48, 64, 60, 56, 52, 16, 4])
+    sid = _sid(recs, bounds)
     det = _det(n)
     usage = [0] + [10] * 6
     entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)

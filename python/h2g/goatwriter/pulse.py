@@ -419,8 +419,10 @@ def _tri_step_delay(det: Detection, rate: int) -> tuple[int, int]:
 # records buys the sweep, and evicting GT27's unplayed sweep (placed after
 # GT26 had already failed) frees nothing GT26 could use. What would buy it is
 # a cheaper encoding: GT26's loop body (entries 3-6) is GT14's entry for
-# entry, so a jump into GT14's loop would cost 4 entries, not 8. The usage
-# pass is not what saves GT26's set on this file: with it removed the bytes
+# entry, so a jump into GT14's loop costs 4 entries, not 8 -- which
+# `_lay_out_pulse` now does (loop-tail sharing, below), so GT26 keeps its
+# sweep and the static-fallback description in this paragraph is historical.
+# The usage pass was not what saved GT26's set on this file: with it removed the bytes
 # move but GT26 is still the one played record short of its sweep and GT29
 # the one at pointer 0 -- the static fallback is. Pinned by
 # tests/test_pulse_layout_knucklebusters.py.
@@ -434,7 +436,14 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
     Returns (entries, starts, dropped, silent, shared). With `share`, a
     program identical to one already in the table -- same entries, same
     loop index -- is not written again: its record points at the block that
-    is already there. The block's `(0xFF, start + loop)` jump encodes an
+    is already there. A block whose LOOP BODY is already in the table (same
+    entries after its loop index, whatever precedes them) is written as its
+    own prefix plus `(0xFF, <that body's absolute index>)`, or not at all
+    when the prefix is empty -- the body's closing jump already returns to
+    the body's own start, so the sound is the same and the cost is the
+    prefix and one entry. Only with `share`, so a table that fits unshared is
+    byte-for-byte what it always was; a block that fell back to its static
+    pair registers no body. The block's `(0xFF, start + loop)` jump encodes an
     ABSOLUTE table index, so a block is emitted once at one start and every
     sharer names that start; the key is (entries, loop), not the finished
     block, because the finished block differs by the start it was written at.
@@ -452,6 +461,7 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
     by_rec = [0] * len(programs)
     placed: dict = {}                  # (program, loop) -> 1-based start
+    bodies: dict = {}                  # loop body -> 1-based index of its first entry
     dropped = silent = shared = 0
     order = list(range(len(programs))) if order is None else list(order)
     for n, i in enumerate(order):
@@ -463,6 +473,22 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
             continue
         start = len(entries) + 1
         block = program if loop is None else program + [(0xFF, start + loop)]
+        tail_shared = False
+        if share and loop is not None:
+            body = tuple(program[loop:])
+            at = bodies.get(body)
+            if at is not None:
+                # The loop body is already in the table: write only this
+                # block's own prefix, then jump into that body. The body's
+                # own closing jump returns to ITS start, which is the same
+                # place this block's loop would have returned to.
+                if loop == 0:            # nothing before the body: point at it
+                    by_rec[i] = at
+                    placed[key] = at
+                    shared += 1
+                    continue
+                block = program[:loop] + [(0xFF, at)]
+                tail_shared = True
         reserve = 0
         if reserve_for:
             pending = {tuple(statics[j]) for j in order[n + 1:]
@@ -479,6 +505,7 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
                 shared += 1
                 continue
             block = static
+            tail_shared = False
         if len(entries) + len(block) > _gw_constants.GT_MAX_TABLELEN:
             # Not even the static pair fits. Pointer 0 leaves the pulse width
             # alone (readme.txt:714) -- the record must still get one, or every
@@ -488,6 +515,10 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
             continue
         placed[key] = start
         by_rec[i] = start
+        if tail_shared:
+            shared += 1
+        elif loop is not None and block is not static:
+            bodies.setdefault(tuple(program[loop:]), start + loop)
         entries += block
     # The empty Clear Voice, if present, keeps entry 1.
     return entries, [1] * lead + by_rec, dropped, silent, shared
@@ -596,9 +627,11 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
         unheard = sum(1 for u in use if u == 0)
     if log and shared:
         log(f"*** PULSE TABLE FULL -- {shared} INSTRUMENT(S) SHARE A BLOCK "
-            f"IDENTICAL TO AN EARLIER ONE ***")
+            f"IDENTICAL TO AN EARLIER ONE, OR TO ITS LOOP ***")
     if log and dropped:
-        log(f"*** PULSE TABLE FULL -- {dropped} INSTRUMENT(S) KEEP A STATIC "
+        # `dropped` also counts the records that then lost even the static
+        # pair (`silent`, always a subset of it); only the rest kept a width.
+        log(f"*** PULSE TABLE FULL -- {dropped - silent} INSTRUMENT(S) KEEP A STATIC "
             f"WIDTH INSTEAD OF THEIR SWEEP"
             + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
         if usage is not None:
