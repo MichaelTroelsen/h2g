@@ -117,38 +117,9 @@ def _nearest_entry(table: List[int], freq: int) -> int:
                key=lambda i: abs(log2(max(table[i], 1) / max(freq, 1))))
 
 
-def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
-                      log=None, slides: bool = False,
-                      status_bit6: bool = False,
-                      trace: Optional[List[tuple]] = None
-                      ) -> Dict[int, Dict[int, int]]:
-    """{pattern entry: {event ordinal: table entry}} for every event whose
-    note byte lands on the stored-waveform cells, as the original sounds it.
-
-    `tracks` are `convert_tracks`'s orderlists, still in Hubbard numbering.
-    `slides`/`status_bit6` are the options `convert_patterns` decodes under,
-    so the events walked are the events emitted.
-
-    Each subtune's three voices are walked tick by tick (one tick = one
-    event-duration unit, `wait + 1` per event, shared by all three voices),
-    in the player's order X = 2, 1, 0 within a tick. At each fetch the
-    landing byte's frequency is `cell[k+1] << 8 | cell[k]` from the cells as
-    they stand; then the voice's own cell takes its current instrument's
-    waveform byte. A cell is unknown until its voice has fetched under a
-    named instrument, and an event reading an unknown cell casts no vote.
-
-    A pattern is global, so a pattern played at two moments with different
-    neighbours has ONE note to give: the most frequent pitch across the
-    plays the walk saw (first seen breaks a tie), and the disagreement is
-    logged. An event the walk never reached is absent, and the decoder
-    clamps it exactly as before.
-
-    `trace`, when given a list, receives one `(group, voice, tick, entry,
-    ordinal, freq, derived)` tuple per vote, in walk order -- the frequency
-    the original writes at that fetch, which is what a siddump of the
-    original can be checked against, and which the returned map (one note
-    per event) cannot show. It changes nothing returned.
-    """
+def _applicable(sid: SidFile, det: Detection, log=None
+                ) -> Dict[int, Tuple[int, int]]:
+    """The landings the walk reads, or {} where it does not run."""
     if det.pattern_dialect != "classic" or det.track_voices != 3:
         return {}
     if sid.name in HELD:
@@ -156,9 +127,16 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
             log("Stored-wave pitch.......: HELD for this tune (human decision, "
                 "the byte-exact fixture); past-table bytes stay clamped")
         return {}
-    landings = stored_wave_landings(sid, det)
-    if not landings:
-        return {}
+    return stored_wave_landings(sid, det)
+
+
+def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
+          landings: Dict[int, Tuple[int, int]], slides: bool,
+          status_bit6: bool) -> List[tuple]:
+    """Every vote the walk casts, in walk order, as `(group, voice, tick,
+    position, entry, ordinal, freq, derived)` -- `position` being the index
+    in `tracks[3 * group + voice]` of the orderlist byte that named `entry`.
+    See `stored_wave_notes` for what is walked and how."""
     ft = det.freq_table
     data = sid.data
     base = sid.to_offset(ft.addr)
@@ -185,15 +163,17 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
         at = det.instr_start + rec * det.instr_stride + off
         return data[at] if 0 <= at < len(data) else None
 
-    votes: Dict[Tuple[int, int], Counter] = {}
-    order: Dict[Tuple[int, int], List[int]] = {}
-
+    votes: List[tuple] = []
     for g in range(len(tracks) // 3):
         bodies: List[List[int]] = []
+        # Per body element, the index of its byte in the orderlist: what a
+        # per-position copy rewrites.
+        places: List[List[int]] = []
         starts: List[Optional[int]] = []
         for v in range(3):
             track = tracks[3 * g + v]
             body: List[int] = []
+            at: List[int] = []
             restart = None
             i = 0
             while i < len(track):
@@ -203,6 +183,7 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
                     break
                 if b < floor:
                     body.append(b)
+                    at.append(i)
                 elif b != 0xF0:
                     # A non-zero orderlist transpose moves the byte the
                     # player shifts; the walk does not model it.
@@ -216,6 +197,7 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
                 if start >= len(body):
                     start = None        # `$FE`: the tune ends here
             bodies.append(body)
+            places.append(at)
             starts.append(start)
         if any(not b for b in bodies):
             continue
@@ -264,28 +246,74 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
                     lo = record_byte(held[k], off)
                     hi = record_byte(held[k + 1], off)
                     if lo is not None and hi is not None:
-                        key = (entry, evi[v])
-                        derived = _nearest_entry(table, (hi << 8) | lo)
-                        if trace is not None:
-                            trace.append((g, v, t, entry, evi[v],
-                                          (hi << 8) | lo, derived))
-                        votes.setdefault(key, Counter())[derived] += 1
-                        if derived not in order.setdefault(key, []):
-                            order[key].append(derived)
+                        freq = (hi << 8) | lo
+                        votes.append((g, v, t, places[v][pos[v]], entry,
+                                      evi[v], freq,
+                                      _nearest_entry(table, freq)))
                 if rec is not None:
                     held[v] = rec
                 evi[v] += 1
                 nxt[v] = t + wait + 1
             t = min(nxt)
+    return votes
 
+
+def _majority(picks: List[int]) -> int:
+    """The most frequent value, the first seen breaking a tie."""
+    c = Counter(picks)
+    top = max(c.values())
+    return next(n for n in picks if c[n] == top)
+
+
+def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
+                      log=None, slides: bool = False,
+                      status_bit6: bool = False,
+                      trace: Optional[List[tuple]] = None
+                      ) -> Dict[int, Dict[int, int]]:
+    """{pattern entry: {event ordinal: table entry}} for every event whose
+    note byte lands on the stored-waveform cells, as the original sounds it.
+
+    `tracks` are `convert_tracks`'s orderlists, still in Hubbard numbering.
+    `slides`/`status_bit6` are the options `convert_patterns` decodes under,
+    so the events walked are the events emitted.
+
+    Each subtune's three voices are walked tick by tick (one tick = one
+    event-duration unit, `wait + 1` per event, shared by all three voices),
+    in the player's order X = 2, 1, 0 within a tick. At each fetch the
+    landing byte's frequency is `cell[k+1] << 8 | cell[k]` from the cells as
+    they stand; then the voice's own cell takes its current instrument's
+    waveform byte. A cell is unknown until its voice has fetched under a
+    named instrument, and an event reading an unknown cell casts no vote.
+
+    A pattern is global, so a pattern played at two moments with different
+    neighbours has ONE note to give here: the most frequent pitch across the
+    plays the walk saw (first seen breaks a tie), and the disagreement is
+    logged. An event the walk never reached is absent, and the decoder
+    clamps it exactly as before. `stored_wave_copies` is what convert()
+    calls: it gives each disagreeing orderlist position its own copy.
+
+    `trace`, when given a list, receives one `(group, voice, tick, entry,
+    ordinal, freq, derived)` tuple per vote, in walk order -- the frequency
+    the original writes at that fetch, which is what a siddump of the
+    original can be checked against, and which the returned map (one note
+    per event) cannot show. It changes nothing returned.
+    """
+    landings = _applicable(sid, det, log)
+    if not landings:
+        return {}
+    votes = _walk(sid, det, tracks, landings, slides, status_bit6)
+    if trace is not None:
+        trace.extend((g, v, t, e, o, f, d)
+                     for (g, v, t, _p, e, o, f, d) in votes)
+    plays: Dict[Tuple[int, int], List[int]] = {}
+    for (_g, _v, _t, _p, e, o, _f, d) in votes:
+        plays.setdefault((e, o), []).append(d)
     out: Dict[int, Dict[int, int]] = {}
     split = 0
-    for (entry, ordinal), c in votes.items():
-        top = max(c.values())
-        pick = next(n for n in order[(entry, ordinal)] if c[n] == top)
-        if len(c) > 1:
+    for (entry, ordinal), picks in plays.items():
+        if len(set(picks)) > 1:
             split += 1
-        out.setdefault(entry, {})[ordinal] = pick
+        out.setdefault(entry, {})[ordinal] = _majority(picks)
     if log and out:
         n = sum(len(m) for m in out.values())
         log(f"Stored-wave pitch.......: {n} past-table note(s) in "
@@ -293,3 +321,121 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
             + (f"; {split} played under two waveform states, majority kept"
                if split else ""))
     return out
+
+
+def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
+                       first: int, limit: int, log=None,
+                       slides: bool = False, status_bit6: bool = False,
+                       trace: Optional[List[tuple]] = None
+                       ) -> Tuple[Dict[int, Dict[int, int]],
+                                  List[Tuple[int, Dict[int, int]]]]:
+    """`stored_wave_notes`, with one pattern copy per waveform state.
+
+    A pattern is global, but the pitch a stored-wave note sounds is what the
+    OTHER voices hold at the fetch, so two orderlist positions naming the
+    same pattern can sound it differently (Crazy_Comets' pattern $18: C-4
+    where voice 1 holds a triangle, B-5 where it holds a pulse). One note
+    per pattern is then a compromise. Here each orderlist POSITION gets the
+    note map its own plays vote for -- per event, the majority of that
+    position's plays, an event it never voted on taking the pattern-wide
+    majority -- and positions are grouped by that map:
+
+    * the map with the most plays (first seen breaking a tie) keeps the
+      pattern's own number, and is returned in the first map in the shape
+      `stored_wave_notes` returns (with one landing event per pattern, the
+      corpus case, it is the same majority note; with several, it is the
+      map one group of positions actually plays rather than a per-event
+      mix no position plays);
+    * every other map becomes a COPY, numbered `first`, `first + 1`, ...
+      (after `fold_transposes`' variants, which is what `first` says), and
+      the positions that vote for it are rewritten IN PLACE in `tracks` to
+      name the copy. A position the walk never reached keeps the pattern.
+
+    A copy is not made at or past `limit` (the dialect's command floor: an
+    orderlist byte there is a command, not a pattern); its positions then
+    keep the majority, as before. `convert_patterns` decodes copy j from its
+    source entry with its own map, after the variants, and is where the
+    pattern-count limit is enforced.
+
+    What a copy cannot repair is a position whose OWN plays disagree -- a
+    loop that brings the same orderlist byte round under a different
+    neighbour. That is still one byte with one note; the count of such
+    events is logged.
+
+    Returns `(wave_notes, copies)`: `wave_notes` as `stored_wave_notes`
+    (for the patterns' own numbers), `copies` the `(source entry, map)`
+    list in copy-number order. `trace` as `stored_wave_notes`.
+    """
+    landings = _applicable(sid, det, log)
+    if not landings:
+        return {}, []
+    votes = _walk(sid, det, tracks, landings, slides, status_bit6)
+    if trace is not None:
+        trace.extend((g, v, t, e, o, f, d)
+                     for (g, v, t, _p, e, o, f, d) in votes)
+    # Pattern-wide, as stored_wave_notes: the fallback for an event a
+    # position did not vote on.
+    wide_plays: Dict[Tuple[int, int], List[int]] = {}
+    # Per position (track, index in it): its entry, and its plays per event.
+    where: Dict[Tuple[int, int], int] = {}
+    pos_plays: Dict[Tuple[int, int], Dict[int, List[int]]] = {}
+    for (g, v, _t, p, e, o, _f, d) in votes:
+        wide_plays.setdefault((e, o), []).append(d)
+        key = (3 * g + v, p)
+        where[key] = e
+        pos_plays.setdefault(key, {}).setdefault(o, []).append(d)
+    wide: Dict[int, Dict[int, int]] = {}
+    for (e, o), picks in wide_plays.items():
+        wide.setdefault(e, {})[o] = _majority(picks)
+
+    # Per entry: each distinct position map, in first-seen order, with its
+    # play count and the positions voting for it.
+    maps: Dict[int, List[list]] = {}
+    still_split = 0
+    for key, per in pos_plays.items():        # insertion = walk order
+        e = where[key]
+        m = dict(wide[e])
+        for o, picks in per.items():
+            m[o] = _majority(picks)
+            if len(set(picks)) > 1:
+                still_split += 1
+        frozen = tuple(sorted(m.items()))
+        weight = sum(len(picks) for picks in per.values())
+        for slot in maps.setdefault(e, []):
+            if slot[0] == frozen:
+                slot[1] += weight
+                slot[2].append(key)
+                break
+        else:
+            maps[e].append([frozen, weight, [key]])
+
+    out: Dict[int, Dict[int, int]] = {}
+    copies: List[Tuple[int, Dict[int, int]]] = []
+    moved = refused = 0
+    for e in sorted(maps):
+        slots = maps[e]
+        top = max(s[1] for s in slots)
+        keep = next(s for s in slots if s[1] == top)
+        out[e] = dict(keep[0])
+        for s in slots:
+            if s is keep:
+                continue
+            if first + len(copies) >= limit:
+                refused += len(s[2])
+                continue
+            number = first + len(copies)
+            copies.append((e, dict(s[0])))
+            for (tn, p) in s[2]:
+                tracks[tn][p] = number
+                moved += 1
+    if log and out:
+        n = sum(len(m) for m in out.values())
+        log(f"Stored-wave pitch.......: {n} past-table note(s) in "
+            f"{len(out)} pattern(s) read off the voices' waveforms"
+            + (f"; {len(copies)} waveform-state cop(ies) for {moved} "
+               f"orderlist position(s)" if copies else "")
+            + (f"; {refused} position(s) kept the majority, no pattern "
+               f"number left below the command floor" if refused else "")
+            + (f"; {still_split} event(s) whose own plays disagree, "
+               f"majority kept" if still_split else ""))
+    return out, copies

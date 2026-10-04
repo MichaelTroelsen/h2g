@@ -631,24 +631,38 @@ def _classic_clearing_instruments(sid: SidFile, det: Detection,
     standing, so the interleaved rule of clearing on every exclusive
     unfiltered record over-fires here: on Sanxion it named records 3 and 10
     beside the player's 2, on Nemesis_the_Warlock records 6 and 13 where the
-    player clears on none.
+    player clears on none in the first 180 s.
 
-    The gate is `_ilv_clearing_instruments`' -- exactly ONE voice names a
-    routed record, and the clearing record is played on no other voice --
-    for the same reason: a Goattracker filter pointer belongs to the
-    instrument and $D417 to the whole chip, so a clear written by voice A
-    stamps out a circuit voice B holds, where the player's per-frame
-    last-writer race would not. Census over the 21 classic-filter corpus
-    files at v0.5.487 (`tests/test_filter.py::CLASSIC_CLEARS` pins seven of
-    them): I_Ball {7}, Sanxion {2} and Saboteur_II {5} fire, and at `-t 180`
-    each lands within 5 frames of its original's filtered-frame count
-    (8725/8730, 7132/7133, 4696/4699) from 8992, 8416 and 7970.
-    Nemesis_the_Warlock's record 9 plays on voice 2 while voice 1 routes,
-    Food_Feud's 8 and 9, Knucklebusters' 0 and Dragons_Lair_Part_II's 23
-    play on more than one voice, Lightforce, Deep_Strike, Nineteen and
-    Auf_Wiedersehen_Monty route on two or three voices, Pandora's 14 and
-    Delta_Mix-E-Load_loader's 23 and five other files' are never named, and
-    the remaining files have no such record.
+    **THE ROUTING MASK IS THE RECORD'S, SO THE GATE READS THE MASK.** The
+    same `LDA resctl,Y / STA $D417` that makes the clear a record makes the
+    routing one: which voice the filter hears is the resctl low nibble of
+    whatever record is playing, not the voice that plays it. The gate is
+    therefore (a) the union of the routed records' low nibbles (bits 0-2)
+    names exactly ONE voice, and (b) a clearing record is named on any voice
+    at all. Both halves replaced a voice-naming gate copied from
+    `_ilv_clearing_instruments` (one voice NAMES a routed record; the clear
+    is played on no other voice), which is right for the interleaved
+    dialect, whose mask belongs to the voice, and wrong here: Deep_Strike's
+    routed record 5 is named on voices 0 and 1 and both route voice 0
+    ($F1); Nemesis_the_Warlock's clear 9 is played on voice 2 while voice 1
+    routes, and the ORIGINAL clears there too -- $D417 goes $F2 -> $00 at
+    frame 13162 of a 900 s trace, past the 180 s window, and the new gate's
+    conversion does it at 13169 (filtered frames over 900 s: original
+    31064, old gate 44992, new 31070). The single-voice half of (a) is kept
+    from the old gate, not re-derived: a two-voice union is the cross-voice
+    race `CMD_SETFILTERCTRL` would have to model.
+
+    Measured at v0.5.508 under presets at `-t 180` (filtered frames ours /
+    original): Deep_Strike 8823 -> 2048 / 2048, Food_Feud 12344 -> 10126 /
+    9956, Nineteen 8416 -> 8018 / 8016; I_Ball {7}, Sanxion {2} and
+    Saboteur_II {5} unchanged (8725/8730, 7132/7133, 4696/4699 at v0.5.487).
+    Auf_Wiedersehen_Monty's clear 14 and Nemesis' 9 change bytes and no
+    register in the window: 14 is never struck in 900 s on either side, 9
+    first at frame 13162. Refused: Lightforce ($7), Knucklebusters ($6),
+    Dragons_Lair_Part_II and Delta_Mix-E-Load_loader ($3) and
+    Bangkok_Knights ($5) route more than one voice; Pandora's,
+    Thundercats' and Bangkok_Knights' 14 and Delta_Mix's 23 are never named.
+    `tests/test_classic_clear_mask.py` pins the corpus sets.
     """
     filt = det.filter
     if filt is None or not tracks:
@@ -665,16 +679,13 @@ def _classic_clearing_instruments(sid: SidFile, det: Detection,
         (routed if data[base] & 0x0F else unrouted).add(i)
     if not routed or not unrouted:
         return set()
-    per_voice = _instruments_named_per_voice(tracks, patterns, instr_base)
-    filtering = {v for v in range(3) if per_voice[v] & routed}
-    if len(filtering) != 1:
+    mask = 0
+    for i in routed:
+        mask |= data[filt.offset + i * det.instr_stride] & 0x07
+    if mask not in (0x01, 0x02, 0x04):
         return set()
-    out = set()
-    for i in unrouted:
-        played_on = {v for v in range(3) if i in per_voice[v]}
-        if played_on and played_on <= filtering:
-            out.add(i)
-    return out
+    per_voice = _instruments_named_per_voice(tracks, patterns, instr_base)
+    return {i for i in unrouted if any(i in per_voice[v] for v in range(3))}
 
 
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,

@@ -1435,6 +1435,63 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def tie_compare(orig: list[Voice], ours: list[Voice], nframes: int,
+                lag: int = 0) -> dict:
+    """Same-FRAME tie agreement, beside `tie_ratio`'s count.
+
+    **The count ratio is blind to WHERE a tie lands.** `tie_ratio` is
+    `our_ties / orig_ties`: a tie we place one frame off the original's is
+    credited exactly as one placed on it, and a phase fix that REMOVES spurious
+    ties -- Zoids voice 2 at -t 180, ours-only ties 178 -> 44 with the
+    same-frame ties unchanged at 2099 (the opening measurement, d52a1bf;
+    historical, re-measure) -- moves the ratio toward 1.00 only by luck of
+    the totals and can read as a loss when it is the opposite. This is the
+    other half: of the frames on which EITHER side ties, the share on which
+    BOTH do.
+
+    A Jaccard, `|both| / |either|`, the shape `pitch` and `gate` use, and
+    for the same reason: a side that ties nothing scores 0 and a side that
+    ties at exactly the original's frames scores 1. Ties we place on no
+    original tie (`tie_ours_only`) and original ties we do not reproduce
+    (`tie_orig_only`) are the two directions, reported because they have
+    different fixes -- the first is spurious articulation (or phase), the
+    second a legato we dropped or re-attacked.
+
+    **Aligned by `lag`** like the other per-frame columns (a tie is an event
+    in time), and both sides are cut to the SAME window so a tie the original
+    makes past where our shifted trace ends is not charged as dropped.
+    Frames are exact: no tolerance, the whole point being the frame.
+
+    **Blind in the same two ways `tie_ratio` is**, stated here rather than
+    found later: it is siddump's note-table classification, not a player
+    fact; and at multiplier>1 a tie that lands and moves on inside one frame
+    is never printed for us (so `tie_orig_only` is biased high there, and
+    `--equal-calls` removes it). `None` when neither side ties.
+    """
+    lo = max(0, lag)
+    hi = min(nframes, nframes + lag)
+    same = ours_only = orig_only = 0
+    per_voice = []
+    for a, b in zip(orig, ours):
+        ot = {f + lag for f in a.tie_frames if lo <= f + lag < hi}
+        ut = {f for f in b.tie_frames if lo <= f < hi}
+        vs, vu, vo = len(ot & ut), len(ut - ot), len(ot - ut)
+        per_voice.append({
+            "tie_agreement": (vs / (vs + vu + vo)) if (vs + vu + vo) else None,
+            "same": vs, "ours_only": vu, "orig_only": vo})
+        same += vs
+        ours_only += vu
+        orig_only += vo
+    either = same + ours_only + orig_only
+    return {
+        "tie_agreement": (same / either) if either else None,
+        "tie_same_frame": same,
+        "tie_ours_only": ours_only,
+        "tie_orig_only": orig_only,
+        "tie_voices": per_voice,
+    }
+
+
 GATE_KINDS = ("retrigger", "matched", "short", "held")
 
 
@@ -4400,7 +4457,58 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     return out
 
 
-def vice_octave_split(orig_samples: list, our_samples: list) -> dict:
+def octave_predicted_minority(calls_per_frame: int, write_line: float) -> float:
+    """The fewest lines the rarer of a note and its octave can hold in a frame
+    when a per-call two-entry loop at `calls_per_frame` calls a frame writes
+    at `write_line` (rasterline, taken modulo the call length `L = 312/n`).
+
+    n odd: `min(w + (n-1)/2*L, (n+1)/2*L - w)` with `w = write_line mod L`;
+    n even: 156, whatever the phase (the frame splits in two equal halves).
+    Compare with `vicetrace.OCTAVE_MINORITY_LINES`: below it, `osplit` cannot
+    count the trill however faithfully it plays."""
+    n = max(1, int(calls_per_frame))
+    lines = vicetrace.PAL_LINES_PER_FRAME
+    if n % 2 == 0:
+        return lines / 2
+    period = lines / n
+    w = write_line % period
+    return min(w + (n - 1) / 2 * period, (n + 1) / 2 * period - w)
+
+
+def vice_octave_floor(samples: list, calls_per_frame: int,
+                      voices: int = 3) -> tuple[float | None, float | None]:
+    """`(median, minimum)` predicted minority (`octave_predicted_minority`)
+    over the write lines a side's trace shows, or `(None, None)` where it
+    shows none. A write is the first line of a run of one nonzero freq lasting
+    at least half a call, so a call's own overwritten intermediate does not
+    count; each voice's write phase is read off the trace, not assumed."""
+    n = max(1, int(calls_per_frame))
+    if n == 1:
+        # one call a frame writes once: there is no per-call loop to trill,
+        # so a geometry claim would flag every ordinary file.
+        return None, None
+    hold = max(1, int(vicetrace.PAL_LINES_PER_FRAME / n) // 2)
+    preds: list[float] = []
+    for v in range(voices):
+        freq = [s.voices[v].freq if v < len(s.voices) else 0 for s in samples]
+        total = len(freq)
+        i = 0
+        while i < total:
+            j = i + 1
+            while j < total and freq[j] == freq[i]:
+                j += 1
+            if freq[i] and i and freq[i - 1] and j - i >= hold:
+                preds.append(octave_predicted_minority(n, i))
+            i = j
+    if not preds:
+        return None, None
+    preds.sort()
+    return preds[len(preds) // 2], preds[0]
+
+
+def vice_octave_split(orig_samples: list, our_samples: list,
+                      our_calls_per_frame: int = 1,
+                      orig_calls_per_frame: int = 1) -> dict:
     """`osplit`: frames where a voice holds a note and its octave inside one
     frame (`vicetrace.octave_split_frames`), each side, summed over voices.
 
@@ -4418,6 +4526,13 @@ def vice_octave_split(orig_samples: list, our_samples: list) -> dict:
         out[f"{side}_octave_split_blind_frames"] = sum(blind)
         out[f"{side}_octave_first_frame"] = min(
             (f for f in first if f is not None), default=None)
+    for side, samples, calls in (("orig", orig_samples, orig_calls_per_frame),
+                                 ("our", our_samples, our_calls_per_frame)):
+        med, low = vice_octave_floor(samples, calls)
+        out[f"{side}_octave_predicted_minority"] = med
+        out[f"{side}_octave_predicted_minority_min"] = low
+        out[f"{side}_octave_floor_blind"] = (
+            med is not None and med < vicetrace.OCTAVE_MINORITY_LINES)
     out["octave_window_frames"] = (
         len(orig_samples) // vicetrace.PAL_LINES_PER_FRAME)
     return out
@@ -5113,6 +5228,19 @@ DIMENSIONS = (
               "than that on a multiplier>1 file is sampling, not a defect, "
               "and --equal-calls removes it. Historical, re-measure before "
               "quoting a figure. `-` is an original with no ties"),
+    # `tie_ratio`'s other half: WHERE the ties land, not how many.
+    Dimension("tie_agreement", "tiefr", _PITCH_REGS, "fraction",
+              "of the frames on which either side ties a voice, the share "
+              "on which BOTH do, aligned by the startup lag -- the "
+              "same-frame reading `tie` (a count ratio) cannot give: a tie "
+              "placed a frame off the original's is credited by the count "
+              "and not here, and a phase fix that removes spurious ties "
+              "raises this while the ratio can read as a loss. It shares "
+              "`tie`'s blindnesses (siddump's note-table CLASSIFICATION; "
+              "orig-only ties biased high at multiplier>1) and is omitted "
+              "under `--equal-calls` and `--vice`, which do not walk the "
+              "traces frame against frame. `-` is a file neither side "
+              "ties in"),
     Dimension("wave", "wave", ("$D404",), "fraction",
               "per-frame agreement of the waveform-select nibble; a waveform "
               "we hold latched under a closed gate after its release has run "
@@ -5542,7 +5670,12 @@ DIMENSIONS = (
               "(low byte within 3), and a trill across more than two values "
               "or a non-octave interval is not counted. The frames of that shape "
               "the dump could not read are counted, not lost: `(blind "
-              "ours/orig)` beside the count", source="our_octave_split_frames"),
+              "ours/orig)` beside the count. **BLIND BY GEOMETRY**: at an odd "
+              "calls-per-frame n the rarer value holds `min(w+(n-1)/2*L, "
+              "(n+1)/2*L-w)` lines (L=312/n, w the measured write phase; 156 "
+              "at even n); a side whose median is under 120 is marked "
+              "`(floor ours)` / `(floor orig)` -- its 0 is the column's "
+              "limit, not the file's", source="our_octave_split_frames"),
     Dimension("aud", "aud", (AUDIO,), "fraction",
               "per-frame agreement of the rendered sound's log-mel spectrum, "
               "level removed -- timbre, filter, envelope shape. Absent unless "
@@ -6539,7 +6672,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row.update(vice_register_compare(
                     vo, vu, args.vice_reduce,
                     mask_release=bool(opts.get("cut_release"))))
-                row.update(vice_octave_split(vo, vu))
+                row.update(vice_octave_split(
+                    vo, vu, our_calls_per_frame=(
+                        getattr(args, "calls_per_frame", None) or multiplier)))
                 # `vib` and `depth` from the same two traces, at rasterline
                 # resolution -- the reading this mode exists for. Through
                 # v0.5.485 they were not computed here at all and the row
@@ -6570,6 +6705,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag,
                                     mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
+            row.update(tie_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
@@ -6802,7 +6938,11 @@ def _fmt_osplit(row: dict) -> str:
     text = _one_sided(row, "octave_split_frames")
     o = row.get("orig_octave_split_blind_frames", 0)
     u = row.get("our_octave_split_blind_frames", 0)
-    return f"{text} (blind {u}/{o})" if o or u else text
+    if o or u:
+        text = f"{text} (blind {u}/{o})"
+    floor = [name for name, key in (("ours", "our"), ("orig", "orig"))
+             if row.get(f"{key}_octave_floor_blind")]
+    return f"{text} (floor {'+'.join(floor)})" if floor else text
 
 
 def _fmt_sweep(row: dict) -> str:
@@ -7171,8 +7311,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | osplit | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | tiefr | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | osplit | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -7198,6 +7338,7 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{'-' if r.get('tie_ratio') is None else f'{r["tie_ratio"]:.2f}x'} | "
+            f"{_fmt_pct(r.get('tie_agreement'))} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
             f"{_fmt_depth(r)} | "
             f"{_fmt_drift(r)} | "

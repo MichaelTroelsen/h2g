@@ -3031,3 +3031,32 @@ Figures dated 0.5.496, each from the run record of the task named; historical.
   writers are on the SFX path (`$5396 BIT $550A / BPL`, `$550A = $FF` during
   music). The earlier census wording "reads global counters" is retracted: it is
   a dormant cell, not a counter.
+
+## The 0.5.497 drain (2026-10-02, at 3b1c66d, committed as 54d3b74)
+
+Figures are historical: each is from its task's run record at 3b1c66d, under
+presets, and has not been re-taken since. The mechanisms are in
+`docs/H2G-CONVERSION-METHOD.md` § 7.nnnnnn.
+
+* **Legato clones** (`monty-tied-note-drops-instrument-restart`): ties landing on
+  a bit-7-clear note in the -S1 note-flag family are spelled as plain notes on
+  gatetimer-$40 legato clones. Monty voice 3 noise 210 -> 269 ticks against the
+  original's 240, exact 45 -> 61; 9 files move. Declined at -S>1 because
+  `greloc.c:811-815` mis-packs the first legato record, and at the instrument
+  cap. Three tests that assumed no appended instruments were repaired.
+  `entry-instruments-second-lap` then made `_entry_instruments` walk one restart
+  lap (`gplay.c:966-969`), which stopped `legato_tie_clones` double-lapping; 0
+  corpus movers.
+* **Gate skip, triangle clock** (`pulse-tri-program-multiplier-division-vs-call-clock`):
+  the sweep divided by calls per original tick, `multiplier*(O+1)/O`. Packed
+  ramp per frame, original | before | after: Game_Killer 200 | 225 | 198,
+  Samantha_Fox 25 | 32 | 24, Ninja 94.5 | 127 | 96. 4 gated triangle files move
+  (Game_Killer, Ninja, Samantha_Fox, Spellbound). The leg-span defect it
+  uncovered (Game_Killer leg 7.33 against 6.62) and Rasputin's `$FE nn` gate
+  were opened, not fixed.
+* **Gate skip, nibble arpeggio** (`nibble-gate-stall-phase`): the skipped call
+  modelled per frame from the gate cell's file byte and walked mod
+  lcm(period, O). Formula_1 base half 91/91 (was mixed), Las_Vegas_Video_Poker
+  one-step arpeggio 321/321 (was all inverted), its octave 12/12; 2 files move,
+  capped at 4 halves so IK and Kentilla keep their table room; 10 of 11
+  sabotages caught (the eleventh redundant, its property named).

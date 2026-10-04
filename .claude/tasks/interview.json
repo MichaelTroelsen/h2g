@@ -1,220 +1,406 @@
 {
  "generated_from": {
-  "head": "57c086e",
-  "plan_head": "57c086e"
+  "head": "42f3f4a",
+  "plan_head": "42f3f4a"
  },
  "blockers": [
   {
-   "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
-   "kind": "authorisation",
-   "title_at_research": "Any Commando pitch fix requires recutting the byte-exact fixture",
-   "blocked_on_at_research": "Authorisation to recut Commando.sng, the project's only byte-exact fidelity anchor. RESTATED at 24b9f1d with the bound attached (C:/t/the-commando-fixture-decisio/restated-question.md; census at C:/t/trace-what-lies-past-the-tab/census_retake.json): of 16 corpus files emitting a byte past their own frequency table (102 events), only the $68 stored-waveform-array read touches the fixture -- 10 files / 58 emitted events, Commando 25 of them (Gerry 10, Proteus 6, Warhawk 6, Gremlins 4, Geoff 3, Crazy_Comets/Devils_Galop/Monty/Phantoms 1 each), and its pitch is per-file runtime state (B-5 where voice 1 holds a $41 pulse; C-4 on Crazy_Comets, D#4 on Phantoms, silence on Devils_Galop), so any fix derives the pitch from what voices 0/1 hold at that row. The other three mechanisms (Sanxion's $60 rest, the $60 voice-offset constant on Proteus/Warhawk/Thing, the $63 ramp, Mega_Apocalypse's >= $80 wrap) emit nothing Commando emits and need NO fixture decision -- they are open [subagent] tasks. THE QUESTION: authorise recutting Commando.sng for the $68 fix (the byte-exactness tests then compare against OUR output, not the 2005 tool's; the historical count of those tests is 32 at 5a2fa2d and is not re-derived), OR gate the $68 fix to the nine non-fixture files and leave Commando as is, OR defer until `stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision` has material -- the listen is the only thing that says whether B-5 is what Commando's $68 rows should sound like. `stored-waveform-pitch-is-per-file-not-b-5` (opened at 24b9f1d) is folded into this question rather than listed separately.",
-   "current_behaviour": "Commando.sng is the only byte-exact anchor (tests/test_commando.py). Of 16 files emitting a byte past their frequency table, only the $68 stored-waveform read touches the fixture: 10 files / 58 events, Commando 25. Its pitch is per-file runtime state (B-5 / C-4 / D#4 / silence), so any fix derives it from voices 0/1. The note-104 listen that would say what Commando should sound like has not been staged.",
-   "sources": [
-    "C:/t/the-commando-fixture-decisio/restated-question.md",
-    "python/tests/test_commando.py"
-   ],
-   "options": [
-    {
-     "label": "Gate the fix to the 9 other files",
-     "consequence": "fix lands now where nothing is anchored; Commando keeps the 2005 tool's bytes and its $68 rows stay as they are"
-    },
-    {
-     "label": "Defer until the note-104 listen",
-     "consequence": "nothing lands on any of the 10 files until a listen is staged and heard"
-    },
-    {
-     "label": "Authorise the recut",
-     "consequence": "the fixture compares against OUR output from then on; the byte-exact link to h2g.v1.2.exe is gone"
-    }
-   ],
-   "recommendation": "Gate the fix to the 9 other files",
-   "why": "It ships the fix where there is no anchor to lose and keeps the recut decision open for when the listen exists.",
-   "question": "The $68 stored-waveform pitch fix would change Commando.sng, the only byte-exact fixture. What should happen to the fixture?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "pandora-regresses-under-the-two-sided-attack-guard",
+   "id": "sign-off-food-feud",
    "kind": "decision",
-   "title_at_research": "Pandora regresses under the two-sided attack guard",
-   "blocked_on_at_research": "A decision on Pandora's regression under the two-sided attack guard.",
-   "current_behaviour": "The two-sided keeps_notes guard landed (ed7f7bc) but its search result was not adopted. Adopting it gives four gains (Off_the_Cuff +35.5pp gate, Spellbound +3.3 melody/+16 pitch, two more) and costs Pandora under one point on three columns. The decided 180 s corpus search (decisions.jsonl) WILL pick these settings up, Pandora included. The lever for protecting Pandora is `gave_back`, not the guard.",
+   "title_at_research": "Sign off Food Feud: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Food Feud, which no measurement substitutes for. It cannot be asked until measure-food-feud has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
    "sources": [
-    "runs.jsonl#keeps-notes-attack-guard-should-be-two-sided-against-the-original",
-    "presets.json Pandora.sid",
-    "python/presets.py gave_back"
-   ],
-   "options": [
-    {
-     "label": "Accept Pandora's regression",
-     "consequence": "the 180 s search adopts the four gains as measured; Pandora loses <1pp on three columns"
-    },
-    {
-     "label": "Protect Pandora",
-     "consequence": "pin Pandora's current entry through the search; the four gains still land"
-    }
-   ],
-   "recommendation": "Accept Pandora's regression",
-   "why": "Four gains, one of them 35 points of gate, against under a point on three columns of one file.",
-   "question": "When the 180 s preset search runs, it will adopt four gains and cost Pandora under one point on three columns. Accept that?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "reject-phantoms-and-rest-instrument-are-live-on-zero-files",
-   "kind": "decision",
-   "title_at_research": "Two always flags move no bytes on any of the 89 files, singly or paired: dead code paths, or keep them?",
-   "blocked_on_at_research": "reject_phantoms and rest_instrument read live on 0 of 89 files under every toggle tested (single at 50a6178, paired with fold_transpose/vibrato_command at eae8d8d; presets.LIVE_ON records it). Decide whether they are dead code paths worth a deliberate ablation/removal (an option removed is a signature/emitter path removed, with its tests) or policy flags kept for a population the corpus does not contain -- and whether to wait for the full pairwise census first.",
-   "current_behaviour": "reject_phantoms and rest_instrument move no file's bytes on 0 of 89 files, singly and paired with fold_transpose/vibrato_command (eae8d8d). The full pairwise census against the other 14 always-on flags is queued as extend-the-multi-flag-census-to-all-fourteen-remaining-always-flags [main, low].",
-   "sources": [
-    "runs.jsonl#multi-flag-interaction-census-for-the-near-inert-always-flags",
-    "python/presets.py LIVE_ON"
-   ],
-   "options": [
-    {
-     "label": "Remove if the full census stays at 0",
-     "consequence": "run the queued census first; if still inert, remove both options with their emitter paths and tests"
-    },
-    {
-     "label": "Keep as policy flags",
-     "consequence": "keep both for a population the corpus lacks; stop re-measuring them"
-    },
-    {
-     "label": "Remove now",
-     "consequence": "skip the census; removal is a signature/emitter change on a partial search"
-    }
-   ],
-   "recommendation": "Remove if the full census stays at 0",
-   "why": "The census is already queued and cheap; removing on a partial search risks the one pairing nobody tested.",
-   "question": "reject_phantoms and rest_instrument change nothing on any corpus file. Keep them, or remove them?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "orphaned-processes-survive-their-sessions",
-   "kind": "decision",
-   "title_at_research": "Orphaned processes survive their sessions",
-   "blocked_on_at_research": "A decision on how to reap processes that outlive the session that started them.",
-   "current_behaviour": "Measured now: no h2g harness process is running. The leftovers are 12 tdz-c64-knowledge MCP server processes started by sessions on 20, 22, 29 and 30 Sep (server.py instances, one on port 8765, a streamlit admin GUI) plus two `pip list --outdated` from 28 Sep. That is machine-wide session hygiene, not this repo.",
-   "sources": [
-    "Get-CimInstance Win32_Process python.exe at 57c086e"
-   ],
-   "options": [
-    {
-     "label": "Move it to claude-setup",
-     "consequence": "cancel it here; reaping belongs in the plugin/hooks that start sessions"
-    },
-    {
-     "label": "Reap in h2g's harness",
-     "consequence": "h2g tools kill their own children on exit; does nothing for the MCP servers actually leaking"
-    },
-    {
-     "label": "Leave it",
-     "consequence": "accept the leak"
-    }
-   ],
-   "recommendation": "Move it to claude-setup",
-   "why": "Every leaking process today belongs to another project's MCP server, so a fix inside h2g would reap nothing.",
-   "question": "The leaking processes are all tdz-c64-knowledge MCP servers and stale pip runs, none from h2g. Where should this task live?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "three-of-four-known-bad-pairs-are-clock-defects-aud-cannot-see",
-   "kind": "decision",
-   "title_at_research": "Human_Race, Las_Vegas and Samantha_Fox are clock defects a per-frame timbre agreement is blind to: move them to a clock check or retire them",
-   "blocked_on_at_research": "Whether Human_Race, Las_Vegas and Samantha_Fox move to a clock-validated check (len/drift columns) or retire from KNOWN_BAD -- decisions.jsonl already keeps the two incomparable pairs and reports them; this asks about the third and about adding at least one more STRUCTURAL pair (same -S both sides, commit reaches the file) so check 4 does not rest on W_A_R alone. The sound Dimension text in fidelity.py should say a per-frame timbre/level agreement is blind to a clock either way.",
-   "current_behaviour": "Check 4 of the sound calibration rests on W_A_R alone. Human_Race, Las_Vegas and Samantha_Fox are clock (multiplier) defects that a per-frame timbre/level comparison cannot see; decisions.jsonl already keeps Las_Vegas/Samantha and reports them. Open: what happens to Human_Race, and adding at least one STRUCTURAL pair (same -S both sides).",
-   "sources": [
-    "runs.jsonl#check-4-now-rests-on-one-file-and-its-margin-is-shrinking-with-the-window",
-    "python/sound_calibrate.py KNOWN_BAD"
-   ],
-   "options": [
-    {
-     "label": "Clock check + one structural pair",
-     "consequence": "move the three to a len/drift-validated check and add a same -S pair so check 4 has two witnesses"
-    },
-    {
-     "label": "Retire the three + one structural pair",
-     "consequence": "drop them from KNOWN_BAD; the len/drift columns are not asked to witness anything"
-    },
-    {
-     "label": "Clock check only",
-     "consequence": "keeps W_A_R as check 4's sole witness"
-    }
-   ],
-   "recommendation": "Clock check + one structural pair",
-   "why": "The three are real defects; moving them to the column that can see a clock keeps them as evidence, and a second structural pair stops check 4 hinging on one file.",
-   "question": "Human_Race, Las_Vegas and Samantha_Fox are clock defects the sound check cannot see. What should the calibration do with them?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "knucklebusters-gt28-is-a-fully-vacant-instrument-occupying-a-slot",
-   "kind": "decision",
-   "title_at_research": "source record 27 carries rec+0=$00, rec+1=$00 (pulse width $000), an EMPTY wavetable block, and is named 0 times in any pattern",
-   "blocked_on_at_research": "user: a listening verdict, or a decision about what the tune should sound like -- source record 27 carries rec+0=$00, rec+1=$00 (pulse width $000), an EMPTY wavetable block, and is named 0 times in any pattern -- it occupies one of 29 instrument slots and one of the 51 representabl",
-   "current_behaviour": "Knucklebusters source record 27 (GT28) has pulse width $000, an empty wavetable block and is named in no pattern. A record named in no pattern is never played, so dropping it cannot change what is heard; it frees an instrument slot plus wavetable and pulse budget. The pointer-0 vs set-$000 default only matters for a record that plays, so it is moot for GT28.",
-   "sources": [
-    "runs.jsonl#pulse-table-exhaustion-eleven-instruments-set-no-width",
-    "python/h2g/goatwriter.py _pulse_layout"
-   ],
-   "options": [
-    {
-     "label": "Drop unreferenced instruments",
-     "consequence": "don't emit records no pattern names; frees budget, renumbers later instruments"
-    },
-    {
-     "label": "Keep emitting them",
-     "consequence": "instrument numbering stays aligned with the source records"
-    }
-   ],
-   "recommendation": "Drop unreferenced instruments",
-   "why": "A record no pattern plays cannot be heard, and the slot and table budget are what the pulse-exhaustion files are short of.",
-   "question": "Instruments no pattern ever names (e.g. Knucklebusters GT28) take slots and table budget. Stop emitting them?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "ninety-two-unreachable-stash-commits-sit-in-the-object-store-unread",
-   "kind": "decision",
-   "title_at_research": "Unreachable stash commits sit in the object store and nobody has read them",
-   "blocked_on_at_research": "Whether to recover anything. MEASURED TODAY (2026-09-07, at 665939c): `git fsck --unreachable` reports 117 unreachable commits, 96 of them stash-shaped (`WIP on ...` / `index on ...` / `On ...`), up from the 92 measured at e28179a -- so this is still growing rather than waiting. `git stash list` is empty. CLAUDE.md's stash rule records that the last diagnosis taken from inside one worktree was wrong in BOTH directions, so the choice -- read them all, sample them, or accept the loss and let gc take them -- is not one to take unilaterally. `.claude/hooks/stash_guard.py` stops it recurring; it does not read what is there.",
-   "current_behaviour": "Measured at 57c086e: `git fsck --unreachable --no-reflogs` lists 7 commits; only 2 are stash-shaped (6dc8817 'index on master', 2d60335 'On master: local CLAUDE.md task-observer addition'). The other ~94 have been pruned by gc -- the choice the task asks for was made by gc. 2d60335 holds 3 lines adding '## Task observation / Activate the task-observer skill...' to CLAUDE.md, which now lives in ~/.claude/CLAUDE.md.",
-   "sources": [
-    "git fsck --unreachable --no-reflogs at 57c086e",
-    "git show 2d60335"
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
    ],
    "options": [],
    "recommendation": null,
-   "why": "Nothing is left to choose: gc pruned the ~94, and the 2 survivors hold content already preserved in the global CLAUDE.md. What remains is the verify's recording arm.",
+   "why": "Material or evidence must exist before the question can be put.",
    "question": null,
-   "unblocked_by_research": true
+   "unblocked_by_research": false
   },
   {
-   "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
+   "id": "sign-off-saboteur-ii",
    "kind": "decision",
-   "title_at_research": "Twenty-six worktrees remain, and the keep/prune decision is still the human's",
-   "blocked_on_at_research": "STILL BLOCKED, but the premise is corrected: `git worktree list` returns 45 lines -- the main checkout plus **44 worktrees**, not the 24 the title and blocked_on claim. The count has nearly doubled since it was written, so this is growing rather than waiting. A per-worktree decision over 44 is no longer a single sitting's question; it wants a triage pass that groups them (which hold a diff at all, which are branches already merged) BEFORE a human is asked anything. Sharpened rather than asked.",
-   "current_behaviour": "Measured at 57c086e: `git worktree list` returns 1 line (the main checkout) and .git/worktrees is empty. The 44 worktrees no longer exist.",
+   "title_at_research": "Sign off Saboteur II: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Saboteur II, which no measurement substitutes for. It cannot be asked until measure-saboteur-ii has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
    "sources": [
-    "git worktree list at 57c086e",
-    ".git/worktrees"
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
    ],
    "options": [],
    "recommendation": null,
-   "why": "ALREADY SATISFIED: there is no worktree left to hold uncommitted work, so there is nothing to decide or run.",
+   "why": "Material or evidence must exist before the question can be put.",
    "question": null,
-   "unblocked_by_research": true
+   "unblocked_by_research": false
   },
   {
-   "id": "tempo-alignment-rounding-decision",
+   "id": "sign-off-zoolook",
    "kind": "decision",
-   "title_at_research": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
-   "blocked_on_at_research": "Whether to accept a tempo-alignment change that rounds effective_frames to the nearest whole frame before multiplying by the multiplier -- eliminating the slot-swallowing frame shift on most multispeed files at the cost of average-rate accuracy. Needs a --pace/drift comparison on Food_Feud, Rasputin and Knucklebusters from a scratch prototype and a listening call, not just a byte-hash.",
-   "current_behaviour": "The fork's own verify says the evidence to put in front of the human is --pace MEDIAN and drift on Food_Feud, Rasputin and Knucklebusters from a scratch prototype of the rounding, plus a listen. No run record has produced that prototype measurement.",
+   "title_at_research": "Sign off Zoolook: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Zoolook, which no measurement substitutes for. It cannot be asked until measure-zoolook has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
    "sources": [
-    "runs.jsonl#multiplier-does-not-explain-slot",
-    "python/h2g/goatwriter.py tempo_command_value"
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
    ],
    "options": [],
    "recommendation": null,
-   "why": "Asking adopt/refuse now would be asking without the evidence the task says the answer rests on; the prototype measurement is agent work and comes first.",
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-confuzion",
+   "kind": "decision",
+   "title_at_research": "Sign off Confuzion: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Confuzion, which no measurement substitutes for. It cannot be asked until measure-confuzion has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-las-vegas-video-poker",
+   "kind": "decision",
+   "title_at_research": "Sign off Las Vegas Video Poker: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Las Vegas Video Poker, which no measurement substitutes for. It cannot be asked until measure-las-vegas-video-poker has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-geoff-capes-strongman-challenge",
+   "kind": "decision",
+   "title_at_research": "Sign off Geoff Capes Strongman Challenge: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Geoff Capes Strongman Challenge, which no measurement substitutes for. It cannot be asked until measure-geoff-capes-strongman-challenge has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-action-biker",
+   "kind": "decision",
+   "title_at_research": "Sign off Action Biker: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Action Biker, which no measurement substitutes for. It cannot be asked until measure-action-biker has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-kings-of-the-beach-ingame",
+   "kind": "decision",
+   "title_at_research": "Sign off Kings of the Beach ingame: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Kings of the Beach ingame, which no measurement substitutes for. It cannot be asked until measure-kings-of-the-beach-ingame has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-sigma-seven",
+   "kind": "decision",
+   "title_at_research": "Sign off Sigma Seven: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Sigma Seven, which no measurement substitutes for. It cannot be asked until measure-sigma-seven has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-samantha-fox-strip-poker",
+   "kind": "decision",
+   "title_at_research": "Sign off Samantha Fox Strip Poker: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Samantha Fox Strip Poker, which no measurement substitutes for. It cannot be asked until measure-samantha-fox-strip-poker has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-knucklebusters",
+   "kind": "decision",
+   "title_at_research": "Sign off Knucklebusters: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Knucklebusters, which no measurement substitutes for. It cannot be asked until measure-knucklebusters has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sign-off-sanxion",
+   "kind": "decision",
+   "title_at_research": "Sign off Sanxion: listen, then record the approval",
+   "blocked_on_at_research": "A listening verdict on Sanxion, which no measurement substitutes for. It cannot be asked until measure-sanxion has reported, because until then there is nothing to say what to listen FOR.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "action-biker-subtune-pairing-needs-an-ear",
+   "kind": "decision",
+   "title_at_research": "Action Biker's subtune pairing needs an ear",
+   "blocked_on_at_research": "A listening verdict on which of Action Biker's subtunes pairs with ours.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "action-biker-noise-runs-want-a-listen-because-the-columns-disagree",
+   "kind": "decision",
+   "title_at_research": "Action Biker's noise runs want a listen because the columns disagree",
+   "blocked_on_at_research": "A listening verdict on Action Biker's noise runs; nrun and gate disagree.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
+   "kind": "decision",
+   "title_at_research": "ACE II has two withheld gains awaiting one listen",
+   "blocked_on_at_research": "A listening verdict on ACE II deciding two gains no column can adjudicate.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "monty-firstwave-trade-needs-a-listen",
+   "kind": "decision",
+   "title_at_research": "The Monty firstwave trade needs a listen",
+   "blocked_on_at_research": "A listening verdict on Auf Wiedersehen Monty's firstwave trade.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "mega-apocalypse-pitch-seq-is-a-near-exact-vib-fix-costing-twelve-points-of-pitch",
+   "kind": "decision",
+   "title_at_research": "Mega Apocalypse's pitch_seq is a near-exact vib fix costing twelve points of pitch",
+   "blocked_on_at_research": "A decision on whether a near-exact vib fix is worth twelve points of pitch.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask. Research: opened as \"needs an ear\" / \"wants a listen\" (runs.jsonl opened arrays), so this is a listening verdict, not a measurement trade.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision",
+   "kind": "decision",
+   "title_at_research": "Stage the Commando note-104 pair for a listen before the fixture decision",
+   "blocked_on_at_research": "A listening verdict on the Commando note-104 pair, which must precede any decision about recutting the fixture.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "the-six-interleaved-classic-files-have-never-been-listened-to",
+   "kind": "decision",
+   "title_at_research": "The six interleaved-classic files have never been listened to",
+   "blocked_on_at_research": "STILL BLOCKED on a listening verdict, but MIS-SCOPED as it stands. Confirmed by listing build/listen: 0 of the six files (Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast, Go_Go_Dash, Sun_Never_Shines) appear there. Staging them is `listen.py`, which is [main] AGENT work, not the human's -- so asking for a verdict now would be asking for something that cannot be given. The human step begins only once the material exists. Sharpened: stage first, then ask.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a): unchanged since c490b72 -- stage first. The six are LOW PRIORITY (Jason_Page/RobTracker per SIDId).",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "pacific-coast-no-test-restart-adoption-trades-melody-for-rendered-audio",
+   "kind": "decision",
+   "title_at_research": "Pacific_Coast's no_test_restart adoption trades melody for rendered audio",
+   "blocked_on_at_research": "A decision on whether to adopt --no-test-restart for Pacific_Coast, which trades melody against the rendered-audio column.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask. Research: opened as \"needs an ear\" / \"wants a listen\" (runs.jsonl opened arrays), so this is a listening verdict, not a measurement trade.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "listen-to-whether-confuzion-loses-an-audible-release-tail-on-0909",
+   "kind": "decision",
+   "title_at_research": "the original leaves noise latched with the gate off for ~3 frames per note on voice 2, and its $0909 record carries release nibble $9, so that latched",
+   "blocked_on_at_research": "user: a listening verdict, or a decision about what the tune should sound like -- the original leaves noise latched with the gate off for ~3 frames per note on voice 2, and its $0909 record carries release nibble $9, so that latched tail decays audibly; ours writes $09 (test bit se",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "detect-the-static-global-pitch-sequence-form-and-feed-kings-of-the-beach-intros-writer",
+   "kind": "decision",
+   "title_at_research": "the writer for the static form is in `goatwriter._pitch_seq_notes` (interim encoding: `PitchSeq(pairs=-1, base=<table offset>, steps=+-n)`, negative w",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Kings_of_the_Beach_intro.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "adopt-pitch-seq-for-kings-of-the-beach-intro-once-detection-reads-its-static-table",
+   "kind": "decision",
+   "title_at_research": "its preset entry carries `pitch_seq` False because the search could never see the mechanism (`det.pitch_seq` None)",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Kings_of_the_Beach_intro.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "why-does-the-static-arpeggio-overshoot-the-originals-reversals-by-ten-percent",
+   "kind": "decision",
+   "title_at_research": "with the static form attached, Kings_of_the_Beach_intro reads 5178 reversals against the original's 4706",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Kings_of_the_Beach_intro.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "bmx-kidz-0878-vibrato-is-five-times-too-shallow",
+   "kind": "decision",
+   "title_at_research": "With instrument $0878 reaching the file, BMX_Kidz's depth reads 0.20x: byte $23 -> STBL ($81,$03) is too shallow",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: BMX_Kidz.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
    "question": null,
    "unblocked_by_research": false
   },
@@ -222,14 +408,287 @@
    "id": "delta-mix-and-chicken-song-play-differently-on-their-second-pass",
    "kind": "decision",
    "title_at_research": "Delta_Mix's $FF handler re-transposes voice 2 by -4 and swaps voice 0's first pattern on every restart; Chicken Song creeps each voice per restart",
-   "blocked_on_at_research": "Whether either second pass is wanted: Delta_Mix's could be unrolled as two passes (voice 2 at -4, voice 0's first pattern swapped) and Chicken Song's is cumulative (+1/+2/+3 per restart, then instrument-byte patches) and cannot be. The converter loops pass one on both today. A listen of the originals past their first restart is the material; stage it with listen.py first.",
-   "current_behaviour": "The material for the decision -- the originals past their first restart -- is not staged; listen.py staging is agent work.",
+   "blocked_on_at_research": "STILL BLOCKED (57c086e), sharpened: stage the ORIGINALS of Delta_Mix and Chicken_Song rendered past their first restart (listen.py, [main] agent work) before asking whether either second pass is wanted.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a): unchanged since 57c086e -- stage the originals past their first restart first.",
    "sources": [
-    "runs.jsonl#the-version-0-note-addend-has-three-spellings-and-only-one-is-a-region-transpose"
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
    ],
    "options": [],
    "recommendation": null,
-   "why": "Same shape as the six interleaved files: stage first, then ask.",
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "tempo-alignment-rounding-decision",
+   "kind": "decision",
+   "title_at_research": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
+   "blocked_on_at_research": "STILL BLOCKED (57c086e), sharpened: the evidence this fork's verify names -- --pace MEDIAN and drift on Food_Feud, Rasputin and Knucklebusters from a scratch prototype of the rounding -- has never been produced. That prototype is agent work (no commit) and must exist before adopt/refuse is asked; then one listen.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a): the --pace MEDIAN/drift prototype on Food_Feud, Rasputin and Knucklebusters still does not exist; no run record produced it since 57c086e.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "keep-or-revert-the-tied-instrument-envelope-change-after-a-listen",
+   "kind": "decision",
+   "title_at_research": "The tied-instrument envelope spelling (v0.5.487) reaches 27 files on a one-file symptom; a listener decides whether it stays",
+   "blocked_on_at_research": "user: listen to Warhawk, Kentilla and Samantha Fox before and after 922c782 and say whether the tied-instrument envelope change stays",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "after-8s-fixed-pitch-is-still-not-emitted-under-its-pitch-seq-preset",
+   "kind": "decision",
+   "title_at_research": "After_8's four $40 records are effect $54 and `_two_stage_pitch_seq_entries` returns before `_fixed_attack_note` is consulted, so its 914-sighting C-5 is still not emitted",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: After_8.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "listen-to-rock-tells-the-tale-gt16-against-gt9-after-the-usage-ordered-pulse-table",
+   "kind": "decision",
+   "title_at_research": "The usage-ordered pulse pass gives Rock GT16 (352 sounded notes) its sweep and takes GT9's (38); the trade was chosen by count, not by ear",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Rock_Tells_the_Tale. Before the hold it was also blocked on: user: listen to Rock_Tells_the_Tale before and after 922c782 (GT16 vs GT9 sweep trade)",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-artefact-claim",
+   "kind": "decision",
+   "title_at_research": "Arcade Classics' melody and pitch drop under the expanding vibrato is claimed to be a naming artefact, and stands unverified",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Arcade_Classics.",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "the-digi-decoder-has-no-tie-and-rikky-re-attacks-the-note-after-every-slide",
+   "kind": "decision",
+   "title_at_research": "_build_raw_pattern_digi has no tie parameter: Rikky's original lands the note after an $82 slide with no gate write, ours hard-restarts it",
+   "blocked_on_at_research": "ON HOLD (user, 2026-09-30): this task's subject is a DIGI file (python/hold.py ON_HOLD; CLAUDE.md 'On hold: the DIGI files'). Do not start it until the user lifts the hold. Held file: Rikky (the digi decoder).",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "ace-ii-needs-a-fresh-listening-approval",
+   "kind": "decision",
+   "title_at_research": "ACE_II's approved 0.5.369 build cannot be rebuilt; only a fresh listen to the current sha can renew its approval",
+   "blocked_on_at_research": "A listening verdict on ACE_II's CURRENT conversion (sha 276720ac at 59fbe1b -- check it against build/fidelity.json first) staged by listen.py; every tree 0.5.369-0.5.375 converts to 2297af87, never the approved 7bc6dfad, so no rebuild can stand in for the ear.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "classic-vibrato-gate-needs-a-listen",
+   "kind": "decision",
+   "title_at_research": "Listen to the classic-vibrato gate's onsets before keeping or reverting it",
+   "blocked_on_at_research": "A listening verdict: Food_Feud, ACE_II, Star_Paws and Saboteur_II now start their vibrato on the original's frame (uncommitted change). Stage the current build against HEAD's with listen.py (an agent can stage; only the ear decides) and say keep or revert.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "rasputin-opening-listen",
+   "kind": "decision",
+   "title_at_research": "Listen to Rasputin's opening with and without the tempo-duty split",
+   "blocked_on_at_research": "A listening verdict: does Rasputin's opening (first ~23 s, R=2) octave trill now match the original with the uncommitted tempo-duty split? An agent can stage the pair (listen.py); only the ear decides keep or revert, and commit-or-revert-the-drain-work waits on that call.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "listen-shared-ramp-movers",
+   "kind": "decision",
+   "title_at_research": "forced pulse_phase now sweeps Last_V8 7/9, Master_of_Magic 14, Phantoms 17 and others",
+   "blocked_on_at_research": "forced pulse_phase now sweeps Last_V8 7/9, Master_of_Magic 14, Phantoms 17 and others. Whether to turn pulse_phase on in presets for these files is a listening verdict.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "note-104-listen",
+   "kind": "decision",
+   "title_at_research": "Commando is still held at G#7",
+   "blocked_on_at_research": "Commando is still held at G#7. The walk would give B-5 on voice 1 and D#4 on 4 voice-0 events; listen before recutting Commando.sng",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "listen-to-chicken-song-wave-alternate",
+   "kind": "decision",
+   "title_at_research": "decide whether Chicken_Song's song entry gets \"wave_alternate\": true",
+   "blocked_on_at_research": "decide whether Chicken_Song's song entry gets \"wave_alternate\": true. At -t 180 it trades wave -4.8pp and per-frame onset 0.808->0.769 for noise frames 2556->3780 (orig 4188) and noise pitch 14148->5614 (orig 5611), with melody, seq and attacks unchanged",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "confuzion-voice2-listen-presets-vs-rfw234",
+   "kind": "decision",
+   "title_at_research": "listen to presets against real_firstwave_instruments=(2,3,4) on Confuzion",
+   "blocked_on_at_research": "listen to presets against real_firstwave_instruments=(2,3,4) on Confuzion. The columns split: nrun prefers presets, while wave and the noise-frame count prefer (2,3,4), at a cost of voice 3 melody .9837.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "5tt-listen",
+   "kind": "decision",
+   "title_at_research": "listen to subtunes 1-4 of 5_Title_Tunes (new) and to subtune 0's SIMPLEPULSE-off pulse",
+   "blocked_on_at_research": "listen to subtunes 1-4 of 5_Title_Tunes (new) and to subtune 0's SIMPLEPULSE-off pulse",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sanxion-drum-variant-listen",
+   "kind": "decision",
+   "title_at_research": "Listen to Sanxion's past-table drum variant before keeping it (melody 98 -> 97% by siddump naming only)",
+   "blocked_on_at_research": "A listening verdict: Sanxion's six $60 drum rows now sound their absolute-B-5 noise burst (0 -> 42 hits in 100 s, original 41); the harness reads melody 98 -> 97% only because siddump names our test-bit attack frame differently. Keep or revert.",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "gateoff-nibble-listen",
+   "kind": "decision",
+   "title_at_research": "Listen: is the approximated gate-off arpeggio rate on Kentilla instr 19 and Thrust instr 19/26 acceptable?",
+   "blocked_on_at_research": "a listening verdict on Kentilla instr 19 and Thrust instr 19/26 ((17,16) against 22; (7,6) and (4,3)) against the old per-call buzz",
+   "current_behaviour": "STILL BLOCKED (42f3f4a), sharpened: the staged audio is stale -- build/listen holds a current conversion for 2 of 95 files (sha1[:12] of build/listen/<song>.h2g.sng against build/fidelity.json output_sha), and every song this verdict names is stale, so a verdict now would be about bytes that no longer exist. Restage first (restage-the-listening-set-at-a-uniform-window, [main], ready), check the sha again, then ask.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "Material or evidence must exist before the question can be put.",
+   "question": null,
+   "unblocked_by_research": false
+  },
+  {
+   "id": "after-8-counter-gate-hold-unreached",
+   "kind": "decision",
+   "title_at_research": "After_8's $44 vibrato records did not move under the counter-gate hold (held file)",
+   "blocked_on_at_research": "After_8 is a DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30); no work is wanted on it until the hold is lifted",
+   "current_behaviour": "DIGI file on hold (python/hold.py ON_HOLD, user 2026-09-30): not asked while the hold stands.",
+   "sources": [
+    "build/listen vs build/fidelity.json output_sha at 42f3f4a",
+    "python/hold.py"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "CLAUDE.md: no listening verdict is asked for a held file.",
    "question": null,
    "unblocked_by_research": false
   }

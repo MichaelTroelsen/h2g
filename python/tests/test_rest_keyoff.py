@@ -95,11 +95,17 @@ def test_the_corpus_splits_into_holders_and_silencers():
         if not _find_status_bit6(data):
             continue
         (silences if _find_rest_silences(data) else holds).append(path.name)
-    # 61 files carry the shape; the split is 40/21 and Commando is a holder.
-    assert len(holds) + len(silences) == 61
-    assert len(silences) == 21
+    # 61 files carry the shape and three more spell it otherwise
+    # (`detect._status_bit6_bvs`, tests/test_rest_pulse_reseed.py); the split
+    # is 42/22 and Commando is a holder. Of the three, Samantha Fox and
+    # Spellbound hold (their branch only DECs the gate mask) and
+    # Mega_Apocalypse silences ($4B91: LDA #$00 / STA $D406,Y / STA $D405,Y).
+    assert len(holds) + len(silences) == 64
+    assert len(silences) == 22
     assert "Commando.sid" in holds
     assert "IK_plus.sid" in silences and "Ricochet.sid" in silences
+    assert {"Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"} <= set(holds)
+    assert "Mega_Apocalypse.sid" in silences
 
 
 @needs_corpus

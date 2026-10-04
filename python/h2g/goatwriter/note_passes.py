@@ -306,6 +306,81 @@ def _lapped_tracks(tracks: List[List[int]]) -> List[List[int]]:
     return out
 
 
+def _pattern_successors(tracks: List[List[int]], count: int) -> dict:
+    """Pattern number -> the set of patterns a channel plays NEXT after it,
+    over every orderlist in play order (repeats honoured, transposes
+    skipped -- `_entry_instruments`' walk), the restart followed one lap
+    (`_lapped_tracks`). A pattern the song ends on (no restart, or one out
+    of range: gplay.c:969 stops the song) has no successor from there."""
+    nxt: dict = {}
+    for track in _lapped_tracks(tracks):
+        prev, repeat, operand = None, 1, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= count:
+                continue
+            for _ in range(repeat):
+                if prev is not None:
+                    nxt.setdefault(prev, set()).add(b)
+                prev = b
+            repeat = 1
+    return nxt
+
+
+def _successor_relatch(out: List[List[int]], pn: int, base: int,
+                       entry: dict, successors: dict):
+    """For a tie on pattern `pn`'s LAST row: (successors whose row 0 must
+    name `base`, None), or (None, decline reason).
+
+    The clone stays latched across the pattern boundary -- gplay.c:912
+    replaces `cptr->instr` only where a row names one, player.s:1251
+    `mt_instr` likewise -- and both players test the legato bit of the
+    instrument latched at the fetch (gplay.c:930, after :912), so a
+    successor whose first note comes before any row names an instrument
+    would play that note legato. A successor that names nothing at all
+    carries the clone on into the pattern after it. Writing `base` on such
+    a successor's row 0 re-latches it (gplay.c:912 stores it; on a note row
+    it is the instrument the note was going to play anyway). It is taken
+    only where `_entry_instruments` settles the successor on exactly
+    `base` -- every other way into it already holds `base`, so the write
+    changes nothing they hear -- and only where the copy still packs
+    (`PACKED_PATTERN_LIMIT`, greloc.c packpattern): the column costs a
+    byte."""
+    need = []
+    for q in sorted(successors.get(pn, ())):
+        pat = out[q]
+        covered = False
+        for r in range(len(pat) // 4):
+            note, ins = pat[4 * r], pat[4 * r + 1]
+            if note == 0xFF:
+                break
+            if ins:
+                covered = True
+                break
+            if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                break
+        if covered:
+            continue
+        if entry.get(q) != {base}:
+            return None, "successor entered holding another instrument"
+        trial = list(pat)
+        trial[1] = base
+        if packed_pattern_size(pattern_rows(trial)) > PACKED_PATTERN_LIMIT:
+            return None, "successor would pack past the limit"
+        need.append(q)
+    return need, None
+
+
 def legato_tie_clones(patterns: List[List[int]], rows: set,
                       tracks: Optional[List[List[int]]],
                       cloneable: Set[int], first_number: int,
@@ -320,19 +395,35 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
     written back on the first later row that would otherwise inherit the
     clone: the next note row with an empty column, or -- where no note
     follows in the pattern -- the row after the tie, as a re-latch (the
-    spelling `_tied_instrument_envelopes` uses), so no pattern ends on a
-    clone and no orderlist entry inherits one. A row declines, and keeps the
-    old spelling, where the instrument it plays cannot be settled (an empty
-    column before any row names one, entered with two instruments), where
-    that instrument has no record to clone (`cloneable`), where the tie is
-    the pattern's last row (nowhere to put the base back), or where the
-    numbers run out: `last_number` defaults to `GT_MAX_INSTRUMENTS`
-    (gcommon.h MAX_INSTR - 1)."""
+    spelling `_tied_instrument_envelopes` uses). A tie on the pattern's LAST
+    row has no row after it, so that pattern ends on the clone: the base is
+    written on row 0 of each successor pattern (`_pattern_successors`)
+    whose first note would otherwise inherit it, or that names nothing and
+    would pass it on (`_successor_relatch`). The orderlists are already
+    written when this runs, so a successor cannot be copied: one also
+    entered holding another instrument declines the tie instead.
+
+    A row declines, and keeps the old spelling, where the instrument it
+    plays cannot be settled (an empty column before any row names one, the
+    pattern entered with two instruments -- the orderlists are fixed here,
+    so the pattern cannot be split per entry), where that instrument has no
+    record to clone (`cloneable`), where a last-row tie's successors cannot
+    take the re-latch (no `tracks`; a successor entered holding another
+    instrument; one that would pack past `PACKED_PATTERN_LIMIT`), or where
+    the numbers run out: `last_number` defaults to `GT_MAX_INSTRUMENTS`
+    (gcommon.h MAX_INSTR - 1). The log names each decline's reason."""
     last_number = last_number or GT_MAX_INSTRUMENTS
     entry = _entry_instruments(tracks, patterns) if tracks else {}
+    successors = _pattern_successors(tracks, len(patterns)) if tracks else {}
     out = [list(p) for p in patterns]
     clone_of: dict = {}
     declined: set = set()
+    why: dict = {}
+
+    def decline(pn: int, r: int, reason: str) -> None:
+        declined.add((pn, r))
+        why[reason] = why.get(reason, 0) + 1
+
     for pn, pat in enumerate(out):
         mine = sorted(r for p, r in rows if p == pn)
         if not mine:
@@ -349,17 +440,36 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                 continue
             base = live
             room = r + 1 < n and pat[k + 4] != 0xFF
-            if not base or base not in cloneable or not room:
-                declined.add((pn, r))
+            if not base:
+                decline(pn, r, "entered with two instruments"
+                        if len(held) > 1 else "instrument unsettled")
                 continue
+            if base not in cloneable:
+                decline(pn, r, "no record to clone")
+                continue
+            onward: List[int] = []
+            if not room:
+                if not tracks:
+                    decline(pn, r, "last row, no orderlists")
+                    continue
+                need, reason = _successor_relatch(out, pn, base, entry,
+                                                  successors)
+                if need is None:
+                    decline(pn, r, f"last row, {reason}")
+                    continue
+                onward = need
             if base not in clone_of:
                 number = first_number + len(clone_of)
                 if number > last_number:
-                    declined.add((pn, r))
+                    decline(pn, r, "instrument numbers run out")
                     continue
                 clone_of[base] = number
             pat[k + 1] = clone_of[base]
             pat[k + 2] = pat[k + 3] = 0
+            if not room:
+                for q in onward:
+                    out[q][1] = base
+                continue
             # Put the base back before anything inherits the clone: on the
             # next note, or on the next row where no note follows -- unless
             # a later row names an instrument first.
@@ -381,7 +491,9 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
         log(f"Legato tie..............: "
             f"{len(rows) - len(declined)} tie row(s) on "
             f"{len(clones)} legato clone(s)"
-            + (f", {len(declined)} kept CMD_TONEPORTA" if declined else ""))
+            + (f", {len(declined)} kept CMD_TONEPORTA ("
+               + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
+               if declined else ""))
     return out, clones, declined
 
 

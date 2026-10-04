@@ -223,25 +223,28 @@ def test_burst_cutoff_start_does_not_mistake_the_sweep_for_an_init():
 
 # The classic player's own clear: an enabled record whose resctl low nibble is
 # 0 writes "route nothing" to $D417 on every frame it plays. Which of those a
-# Goattracker clear may carry is gated exactly as the interleaved dialect's
-# is -- one routing voice, and the record played on no other -- and the gate
-# was measured over every classic-filter file at v0.5.487 (`-t 180`, filtered
-# frames ours / original): I_Ball 8992 -> 8725 / 8730, Sanxion 8416 -> 7132 /
-# 7133, Saboteur_II 7970 -> 4696 / 4699, with melody, sequence, wave and adsr
-# identical. Each entry is (clearing records, why the others are refused).
+# Goattracker clear may carry is gated on the routed records' MASK -- their
+# union names one voice -- and the clear being named on any voice
+# (`tests/test_classic_clear_mask.py` holds the mechanism and the files the
+# mask reading added). Measured at v0.5.487 (`-t 180`, filtered frames ours /
+# original): I_Ball 8992 -> 8725 / 8730, Sanxion 8416 -> 7132 / 7133,
+# Saboteur_II 7970 -> 4696 / 4699; at v0.5.508 Food_Feud 12344 -> 10126 /
+# 9956. Each entry is (clearing records, why the others are refused).
 CLASSIC_CLEARS = {
-    "I_Ball": {7},              # record 7 on voice 2, which is the routing voice
-    "Sanxion": {2},             # record 2 on voice 1, which is the routing voice
-    "Saboteur_II": {5},         # record 5 on voice 2, which is the routing voice
-    # Record 9 plays on voice 2 while voice 1 routes: EXCLUSIVITY refuses it.
-    # The original filters 8997 of 9000 frames; the clear took ours to 8214.
-    "Nemesis_the_Warlock": set(),
-    # Records 8 and 9 each play on two voices: exclusivity refuses both.
-    "Food_Feud": set(),
-    # Record 2 plays on voice 1 alone, but voices 0 AND 1 route: the
-    # ONE-ROUTING-VOICE gate refuses it.
+    "I_Ball": {7},              # mask $4; record 7 on voice 2
+    "Sanxion": {2},             # mask $2; record 2 on voice 1
+    "Saboteur_II": {5},         # mask $4; record 5 on voice 2
+    # Mask $2; record 9 plays on voice 2 only. The voice-naming gate refused
+    # it as not exclusive to the routing voice, but the ORIGINAL clears there:
+    # $D417 $F2 -> $00 at frame 13162 of 900 s, past the 180 s window (ours
+    # 13169). Filtered frames over 900 s (v0.5.508): original 31064, ours
+    # 44992 -> 31070; over the 180 s window none move (8992 / 8997).
+    "Nemesis_the_Warlock": {9},
+    # Mask $2; records 8 and 9 each play on two voices, and clear from both.
+    "Food_Feud": {8, 9},
+    # $F4 | $F1 | $F3 = mask $7: the ONE-VOICE half refuses record 2.
     "Lightforce": set(),
-    # Record 0 plays on all three voices, three voices route.
+    # $F4 | $F2 = mask $6: two voices route.
     "Knucklebusters": set(),
 }
 

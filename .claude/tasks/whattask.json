@@ -1,16 +1,15 @@
 {
  "generated_from": {
-  "head": "dfa606a",
+  "head": "42f3f4a",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous, at 018919f + the 2026-10-04 optimistic-merge edit)",
-   ".claude/tasks/runs.jsonl (whole file, 912 lines; 16 records since the previous plan: 2 runqueue cycles + the docstring record)",
-   ".claude/tasks/decisions.jsonl (whole file; latest answers at 57c086e, all already folded in)",
-   "git log 018919f..dfa606a (2c3c702, 8832fbc, 10170b8, 86ddc31, dfa606a)",
-   "working tree at dfa606a: cycle-2 merges uncommitted (presets.py, instrmap.py, flag_guard, CLAUDE.md, 2 tests)",
+   ".claude/tasks/whattask.json (previous, at dfa606a, committed in ea81c02)",
+   ".claude/tasks/runs.jsonl (whole file, 912 lines; no record since the previous plan)",
+   ".claude/tasks/decisions.jsonl (whole file; no new answers since 57c086e)",
+   "git log dfa606a..42f3f4a (ea81c02 commits cycle 2 and the plan; 42f3f4a artefact regen)",
    "todo.md, whats-next.md, docs/BACKLOG.md (unchanged since 8b86184)",
-   "graphify-out/graph.json (graphify update at dfa606a: 9018 nodes, 19708 edges)",
-   "gh: no reachable issue tracker; gh pr list empty"
+   "graphify-out/graph.json (graphify update at 42f3f4a: nothing to re-extract)",
+   "gh: issue list empty, PR list unreachable"
   ]
  },
  "hazards": [
@@ -2293,7 +2292,7 @@
    "source": "runs.jsonl#triangle-pulse-walk-advances-on-our-calls-not-the-originals-frames",
    "model": "opus",
    "effort": "high",
-   "mode": "requires-user",
+   "mode": "subtask",
    "lane": "serial",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
@@ -2306,12 +2305,12 @@
    "depends_on": [],
    "fork": null,
    "branch": null,
-   "blocked_on": "the user asked for this reading to be theirs ([user] in the opening record); a runner may prepare the disassembly listing but not close it",
-   "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The inference behind the call-clock reading is from onsets; the human asked for the disassembly to be read before it is generalised. Done when the instruction addresses of the counter's DEC/BPL and of the core loop's entry are quoted and the containment stated, in a note the user signs off.",
+   "blocked_on": null,
+   "decision": "Read Game_Killer's player with python/dis6502.py yourself and write the note: quote the instruction addresses of the counter's DEC/BPL and of the core loop's entry, and state whether the core loop is contained by the outer gate. The user signs the note off afterwards; do not wait for that sign-off to report.",
+   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The inference behind the call-clock reading is from onsets; the human asked for the disassembly to be read before it is generalised. Done when the instruction addresses of the counter's DEC/BPL and of the core loop's entry are quoted and the containment stated, in a note written for the user to sign off (user, 2026-10-04: an agent reads, the user approves the note after the merge).",
    "why_model": "reading a player is where a plausible wrong answer costs a rule",
    "why_effort": "the answer sets a repo-wide rule",
-   "why_mode": "the opener tagged it [user]: the user wants to read or sign off the disassembly themselves",
+   "why_mode": "the user handed the reading to an agent (decisions.jsonl, 2026-10-04); the conclusion is quoted addresses, checkable after the fact",
    "why_lane": "overlaps 20 other task(s) on a written path (python/h2g/goatwriter)",
    "offload": null,
    "why_offload": null
@@ -2392,9 +2391,9 @@
    "id": "listen-notes-no-legato-should-say-what-shape-the-ties-are",
    "title": "listen_notes' 'No legato' fires on a whole-file tie count where 95-99% of Lakers'/Sun's ties are per-frame arpeggios",
    "source": "runs.jsonl#the-five-no-legato-notes-that-survive-the-multiplier-fix",
-   "model": "opus",
-   "effort": "low",
-   "mode": "requires-user",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
    "lane": "serial",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
@@ -2411,12 +2410,12 @@
    "depends_on": [],
    "fork": null,
    "branch": null,
-   "blocked_on": "The slow-tie rule is in the tree (uncommitted->committed); what remains is a choice: fire \"No legato\" at a third of the original's slow ties so Rikky (45 of 139) still fires, or keep the quarter cutoff; and whether Lakers voice 3's 14 of 96 slow ties is audible legato loss (evidence C:/t/listen-tie-shape).",
-   "decision": null,
+   "blocked_on": null,
+   "decision": "Pick the slow-tie cutoff by measurement, not preference: the one under which Lakers_vs_Celtics and Sun_Never_Shines stop firing \"No legato\" on arpeggio-shaped ties while Sun voice 1's real deficit still fires. Rikky is on the DIGI hold and does not constrain it.",
    "verify": "OPENED at 04fdcb5. Split listen_notes' tie count into rapid (<= 3 frames since the previous pitch event) and slow, word the note on the slow share only, and print both shares; re-run the five files' notes (C:/t/five-no-legato-notes/probe_ties.py has the bucketing) and show Lakers_vs_Celtics and Sun_Never_Shines no longer fire on arpeggio-shaped ties while Rikky and Sun voice 1's real deficits still do. build/listen is NOT restaged here. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "the blocker is a human judgement",
-   "why_effort": "one answer",
-   "why_mode": "the cutoff is a judgement the verify cannot settle",
+   "why_model": "a bounded harness change in python/listen.py against an existing probe",
+   "why_effort": "the cutoff is chosen by a measurement the verify names, and the change is sabotage-verified",
+   "why_mode": "self-contained harness edit concluded by a re-run of five files' notes",
    "why_lane": "overlaps 39 other task(s) on a written path (presets.json, python/fidelity.py, python/listen.py)",
    "offload": null,
    "why_offload": null
@@ -9439,8 +9438,8 @@
   {
    "id": "osplit-devils-residual-16",
    "title": "Devils_Galop voice 1 shows 16 osplit frames (38, 70, 102 ..",
-   "closed_by": "uncommitted:2026-10-04",
-   "reason": "runqueue cycle 2: no code change; the 16 frames are a vibrato turnaround the vicetrace >$FFFF guard already refutes, pinned by python/tests/test_osplit_devils_residual.py, which is in the working tree at dfa606a and not yet committed."
+   "closed_by": "ea81c02",
+   "reason": null
   },
   {
    "id": "fidelity-zero-freq-attack-naming",
@@ -9463,14 +9462,14 @@
   {
    "id": "presets-instrmap-honour-subtune-pins",
    "title": "presets.tune_by_fidelity and instrmap.py still pick subtunes without the C64ME/DL2 pins",
-   "closed_by": "uncommitted:2026-10-04",
-   "reason": "runqueue cycle 2: python/presets.py tune_by_fidelity and python/instrmap.py report trace the pinned subtune pair; merged into the working tree at dfa606a with tests/test_subtune_pins_presets_instrmap.py, full suite 3104 passed; not yet committed."
+   "closed_by": "ea81c02",
+   "reason": null
   },
   {
    "id": "refresh-command-depth-census",
    "title": "Add --depth-census to the FIDELITY refresh command",
-   "closed_by": "uncommitted:2026-10-04",
-   "reason": "runqueue cycle 2 main lane: CLAUDE.md refresh command carries --depth-census and .claude/hooks/flag_guard.py refuses a FIDELITY.md refresh missing any census flag (test_flag_guard.py 24 cases, 0 failures); in the working tree at dfa606a, not yet committed."
+   "closed_by": "ea81c02",
+   "reason": null
   }
  ]
 }

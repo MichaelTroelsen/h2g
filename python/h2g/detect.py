@@ -3161,8 +3161,9 @@ def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
 # so a status byte of $C0-$FE consumes nothing but itself, where a decoder
 # that honours bit 7 first reads an operand and a note it never read and
 # desynchronises the rest of the pattern. 61 of 95 corpus files have this
-# shape; the rest (the digi and cmdtable engines among them) fetch
-# differently and are not touched by the flag this gates.
+# shape, and three more spell it otherwise (`_status_bit6_bvs`); the rest
+# (the digi and cmdtable engines among them) fetch differently and are not
+# touched by the flag this gates.
 STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
 
 
@@ -4041,7 +4042,56 @@ def _nearest_table(data: bytes, shape: str, pattern_lo: int,
 
 
 def _find_status_bit6(data: bytes) -> bool:
-    return search_file(data, STATUS_BIT6_SHAPE) >= 1
+    return _status_bit6_bvs(data) >= 0
+
+
+# The same test spelled with ZERO-PAGE stores, consulted only where
+# STATUS_BIT6_SHAPE matched nothing (a signature encodes an addressing mode).
+# Samantha Fox $70AC:
+#
+#     70AC  B1 EE     LDA ($EE),Y     ; the status byte
+#     70AE  95 A9     STA $A9,X
+#     70B0  85 B8     STA $B8         ; the scratch copy...
+#     70B2  29 1F     AND #$1F
+#     70B4  95 A6     STA $A6,X       ; the wait counter
+#     70B6  24 B8     BIT $B8         ; ...tested for bit 6 FIRST
+#     70B8  70 3C     BVS $70F6       ; past the INY/operand and note reads
+#
+# and Mega_Apocalypse $4B4A is the same shape. Spellbound $E0C2 stores
+# its scratch copy absolute (`8D CD E4`) and computes a volume between the
+# counter store and the test (`$E0CE-$E0DA`, no pattern read), so its BIT
+# is STATUS_BIT6_LATE_WINDOW bytes on rather than adjacent. Both are required
+# to test the very cell the status byte was stored to.
+STATUS_BIT6_ZP_SHAPE = "B1 ?? 95 ?? 85 ?? 29 1F 95 ?? 24 ?? 70"
+STATUS_BIT6_LATE_SHAPE = "B1 ?? 95 ?? 8D ?? ?? 29 1F 9D ?? ??"
+STATUS_BIT6_LATE_WINDOW = 24
+
+
+def _status_bit6_bvs(data: bytes) -> int:
+    """File offset of the bit-6 test's BVS operand, or -1.
+
+    STATUS_BIT6_SHAPE first; the zero-page and late spellings only where it
+    matched nothing, so a file the primary shape reads is never disturbed."""
+    i = search_file(data, STATUS_BIT6_SHAPE)
+    if i >= 1:
+        return i + len(STATUS_BIT6_SHAPE.split())
+    i = search_file(data, STATUS_BIT6_ZP_SHAPE)
+    if i >= 1 and data[i + 5] == data[i + 11]:
+        return i + len(STATUS_BIT6_ZP_SHAPE.split())
+    i = search_file(data, STATUS_BIT6_LATE_SHAPE)
+    if i >= 1:
+        cell = data[i + 5:i + 7]
+        start = i + len(STATUS_BIT6_LATE_SHAPE.split())
+        for k in range(start, min(start + STATUS_BIT6_LATE_WINDOW,
+                                  len(data) - 4)):
+            # INY / LDA (zp),Y: the operand read came first, so whatever
+            # bit 6 does later is not the test that skips it.
+            if data[k] == 0xC8 and data[k + 1] == 0xB1:
+                return -1
+            if (data[k] == 0x2C and data[k + 1:k + 3] == cell
+                    and data[k + 3] == 0x70):
+                return k + 4
+    return -1
 
 
 # How far into the bit-6 branch to look for the silencing write. IK+'s is 13
@@ -4093,11 +4143,8 @@ def _rest_silence_window(data: bytes) -> bytes:
     Both probes below read the same window, and reading it in one place is
     what keeps them describing the same routine rather than two.
     """
-    i = search_file(data, STATUS_BIT6_SHAPE)
-    if i <= -1:
-        return b""
-    at = i + len(STATUS_BIT6_SHAPE.split())     # the BVS's own operand
-    if at >= len(data):
+    at = _status_bit6_bvs(data)                 # the BVS's own operand
+    if at < 0 or at >= len(data):
         return b""
     rel = data[at] - 256 if data[at] > 127 else data[at]
     target = at + 1 + rel

@@ -11731,6 +11731,26 @@ Dragons_Lair) keep their over-production: they need the cross-voice
 `CMD_SETFILTERCTRL` model, not this gate. `tests/test_filter.py` pins the
 clearing set for seven files.
 
+**Revised at v0.5.508: the gate reads the records' mask.** The same `LDA
+resctl,Y / STA $D417` that makes the clear a record makes the *routing* one:
+the voice the filter hears is the low nibble of whichever record plays, not
+the voice playing it. The voice-naming gate above was the ILV dialect's,
+whose mask is the voice's. The gate is now: the union of the routed records'
+bits 0-2 names exactly one voice, and an enabled-unrouted record named on
+*any* voice clears. Deep_Strike's routed `$F1` is named on two voices but
+routes one; Nineteen's three routed records are all `$F4`; Nemesis' clear 9
+plays on voice 2 while voice 1 routes, and the original clears there too --
+`$F2 -> $00` at frame 13162 of a 900 s trace (ours 13169; filtered frames
+over 900 s original 31064, old gate 44992, new 31070). Under presets at
+`-t 180`, filtered frames ours/original: Deep_Strike 8823 -> 2048/2048,
+Food_Feud 12344 -> 10126/9956, Nineteen 8416 -> 8018/8016. Five files'
+bytes move (those three, Nemesis and Auf_Wiedersehen_Monty); the last two
+move no register in the window -- AWM's clear 14 is never struck in 900 s on
+either side, Nemesis' first at 13162. Lightforce (`$7`), Knucklebusters
+(`$6`), Dragons_Lair_Part_II (`$3`) still route more than one voice and are
+refused. `tests/test_classic_clear_mask.py` pins the mechanism and the three
+added files.
+
 ### 7.eeeeee The bounds engine's pulse phase: a free flag, a per-voice sim, and the original's clock
 
 § 7.ccc's bounds engine reseeds `$D402/$D403` from the record at every note
@@ -12111,7 +12131,18 @@ gives each instrument the majority phase of its notes, walked with the same
 fetch lands on, after the frequency lookup and in voice order 2,1,0 -- so the
 frequency a `$68` plays is `cell[v1] << 8 | cell[v0]` at that tick.
 `stored_wave.py` reads the landing and walks each subtune's orderlists tick by
-tick to name it. Commando is held by name (`stored_wave.HELD`): its `.sng` is
+tick to name it. Because the pitch is the OTHER voices' state, two orderlist
+positions naming one pattern can sound it differently, and a pattern has one
+note to give: `stored_wave_copies` groups positions by the note map their own
+plays agree on, keeps the most-played map on the pattern and gives every other
+map a copy numbered after `fold_transposes`' variants, rewriting those
+positions to name it. A copy is refused at the dialect's command floor and
+dropped (positions keep the majority note) where its slices would reach
+`MAX_PATTERNS`. Measured at 42f3f4a + this change: Crazy_Comets' pattern
+`$18` (6 plays under a triangle = C-4, 6 under a pulse = B-5) and Gremlins'
+`$4F` (2 of 64 plays B-4) are the only two files a copy reaches; afterwards
+no play the walk sees disagrees with the note its position emits
+(`tests/test_stored_wave_copies.py`). Commando is held by name (`stored_wave.HELD`): its `.sng` is
 the byte-exact fixture, and the recut was refused pending a listen. The earlier
 reading that Devils_Galop's `$68` falls silent was the 180 s window: its one
 fetch comes later.
@@ -12169,3 +12200,63 @@ out of the presets (§ 7.iiii).
 - *The unticked nibble arpeggio starts from the walked residue*, the way the
   ticked shape already did (`nibble_arp_entries(phase=)`); a record keeps the
   unphased bytes where the phased shape would sound the same.
+
+### 7.nnnnnn The 0.5.497 drain: the player's own clock, per voice and per row
+
+The third `/runqueue` drain landed as v0.5.497 (54d3b74, presets c43a7f3,
+fidelity refresh 9bab8d4). Each item is read off the player and spelled in
+Goattracker's terms; the figures behind them are in `docs/LESSONS.md` § "The
+0.5.497 drain".
+
+**A triangle sweep steps per original TICK, not per frame** (`_tri_speed`,
+`goatwriter/pulse.py`). A tick is a play call that passes the player's outer
+gate. Where the player has an outer counter of reload O (`outer_gate_skip`),
+our calls per tick are `multiplier * (O + 1) / O`; with no outer gate it is
+plain `multiplier`. The GT pulse speed is the original's step divided by that,
+and `_pulse_tri_program` and `_phase_sweep_params` share it, so a note with no
+`CMD_SETPULSEPTR` sweeps at the same rate as one with it. This is the same
+ratio `_gate_calls` already applied to wavetable durations. Two gaps are left
+open, not fixed: the triangle's LEG still turns on the bound where the player
+turns on the first lattice point whose high nibble equals it, and Rasputin's
+gate comes from its track's `$FE nn`, which `outer_gate_skip` does not read, so
+it keeps plain `multiplier`.
+
+**A tie that lands on a note restarting its instrument becomes a legato clone**
+(`legato_tie_rows`, `legato_tie_clones`, `goatwriter/note_passes.py`). In the
+note-flag (legato-marker) family a bit-7-clear note retriggers the instrument
+even under `CMD_TONEPORTA 00`, so such a tie row is respelled as a plain note
+on a legato clone of the instrument it plays (gatetimer `$40`). The instrument
+column latches (`gplay.c:912-913`, `player.s` `mt_instr`), so the base is
+written back on the first later row that would inherit the clone -- the next
+note row with an empty column, or the row after the tie as a re-latch -- and
+no pattern ends on a clone. A row declines and keeps the old spelling where its
+instrument cannot be settled, has no record to clone, is the pattern's last
+row, or where the instrument numbers run out. **It is declined above -S1**:
+`greloc.c` mis-packs the first legato record of a multispeed song, so a clone
+there is a slip, not a fix; `greloc-multispeed-legato-slip` carries that open.
+
+**The interleaved dialect's per-voice filter routing is written as `B`
+commands** (`ilv_filter_routing_plan`, `goatwriter/filters.py`; the
+`ilv_filter_routing` option, in `presets.json`'s always block). Two facts of the
+replay decide the spelling (the model is the block comment above
+`CMD_SETFILTERPTR` in `goatwriter/constants.py`): `B $00` also stops the filter
+table, so an empty union is written `$X0` with X nonzero; and the filter step
+runs before the channels, so a program opening with its params row overwrites
+a `B` written on its own note row. The plan walks two spellings and keeps the
+one leaving fewer rows wrong: "shared" (one passband block per subtune, run by
+a `CMD_SETFILTERPTR`, every `B` on its own row) and "params" (each program's
+params row carries the union its notes most often open on; other notes take
+their `B` a row late). Never on row 0, never over an occupied command column;
+late rows and dropped patterns are counted, not hidden.
+
+**The outer gate's skipped call is modelled per frame for the nibble
+arpeggio** (`nibble_gate_byte`, `nibble_gate_frames`, `nibble_gate_runs`,
+`goatwriter/arpeggio.py`). The gate cell starts the song holding its byte in
+the file -- read only where the reload store is the cell's one write and the
+gate's `DEC` its one decrement; a zero-page cell reads None. The skipped call
+runs nothing, so it holds whatever the frame before it played. Where the
+gate's reload is a multiple of the record's period, the skip always lands on
+the same counter residue, so the same half is the long one on every note:
+Formula_1_Simulator stretches the base note, Las_Vegas_Video_Poker the
+interval. `nibble_gate_runs` is capped so a record's cycle cannot outgrow its
+table room.

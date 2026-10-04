@@ -2614,7 +2614,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_wave: bool = False,
                      rest_envelope: bool = False,
                      free_rows: bool = False,
-                     wave_notes: Optional[Dict[int, Dict[int, int]]] = None):
+                     wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
+                     wave_copies: Optional[List[tuple]] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -2666,6 +2667,17 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     orderlist transposes its source, and a transposed byte lands on a
     different cell, which the walk does not model (it declines any voice
     with a transpose). Empty on every file without such a landing.
+
+    `wave_copies` is `stored_wave.stored_wave_copies`' second result: per
+    group of orderlist positions whose waveform state sounds a stored-wave
+    note differently from the pattern's majority, a `(source entry, notes)`
+    copy the rewritten orderlists already name. Copy j is entry
+    `det.pattern_used + 1 + len(variants) + j`, decoded from its SOURCE
+    under the same grammar with its own `notes` as `wave_notes`. **A copy is
+    dropped, not aborted on, where its slices would bring the output to
+    MAX_PATTERNS**: its positions then play the source, the majority note --
+    the pre-copy compromise, which costs a pitch, where the abort would cost
+    the whole file.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -2766,6 +2778,37 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         else:
             raw_patterns.append(shift_notes(base, 12 * octaves))
 
+    # Waveform-state copies, after the variants (the order their numbers
+    # were handed out in by stored_wave.stored_wave_copies). Each is its
+    # source decoded again under the primary loop's grammar with the copy's
+    # own stored-wave notes; `arps` and `steps` collect distinct values, so
+    # passing them again re-finds what the source already added.
+    copy_from: Dict[int, int] = {}
+    for src, notes in (wave_copies or ()):
+        n = len(raw_patterns)
+        copy_from[n] = src
+        if phantoms and src in phantoms:
+            raw_patterns.append(list(ERROR_PATTERN))
+            continue
+        ex = []
+        fr = []
+        events = decode_entry(sid, det, src, slides, status_bit6, steps,
+                              rest_instrument, instr_base, tie=tie,
+                              rest_keyoff=rest_keyoff,
+                              rest_wave=rest_wave,
+                              rest_envelope=rest_envelope, exits_tied=ex,
+                              arps=arps,
+                              free_rows=fr if collect else None,
+                              wave_notes=notes)
+        exits[n] = bool(ex and ex[0])
+        free[n] = fr
+        if events is None:
+            log(f"*** PATTERN ${n:X} (WAVEFORM-STATE COPY OF ${src:X}) "
+                "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
+            events = list(ERROR_PATTERN)
+        raw_patterns.append(events)
+    copies_dropped = 0
+
     new_patterns: List[List[int]] = []
     track_index: List[List[int]] = []
     seen: dict = {}          # pattern bytes -> index in new_patterns
@@ -2783,6 +2826,13 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         slices = _slice_pattern(events, max_len, terminate_patterns)
         indices: List[int] = []
         entry_free = free.get(i, ())
+        if i in copy_from and len(new_patterns) + _new_slices(
+                slices, entry_free, terminate_patterns, dedup, free_rows,
+                seen) >= MAX_PATTERNS:
+            # The copy does not fit: its positions play the source.
+            copies_dropped += 1
+            track_index.append(list(track_index[copy_from[i]]))
+            continue
         base_row = 0
         for k, s in enumerate(slices):
             # The raw rows this slice was cut from, re-based to its row 0.
@@ -2829,6 +2879,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             log(f"Pruned {pruned} of {total} patterns "
                 f"({100 * pruned // total}%) that no track plays")
 
+    if copies_dropped:
+        log(f"*** {copies_dropped} WAVEFORM-STATE PATTERN COP(IES) DROPPED AT "
+            f"GOATTRACKER'S {MAX_PATTERNS} LIMIT: THEIR POSITIONS PLAY THE "
+            "MAJORITY NOTE ***")
+
     if dedup and reused:
         total = len(new_patterns) + reused
         log(f"De-duplicated {reused} of {total} patterns "
@@ -2840,6 +2895,28 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
         pattern_free)
+
+
+def _new_slices(slices: List[List[int]], entry_free, terminate: bool,
+                dedup: bool, free_rows: bool, seen: dict) -> int:
+    """How many output patterns `convert_patterns`' slice loop would add
+    for these slices: their distinct dedup keys not yet in `seen`, keyed
+    exactly as that loop keys them, or every slice without dedup."""
+    if not dedup:
+        return len(slices)
+    keys = set()
+    base_row = 0
+    for k, s in enumerate(slices):
+        data_rows = len(s) // 4
+        if terminate and k < len(slices) - 1:
+            data_rows -= 1
+        flags = frozenset(r - base_row for r in entry_free
+                          if base_row <= r < base_row + data_rows)
+        base_row += data_rows
+        key = (bytes(s), flags) if free_rows else bytes(s)
+        if key not in seen:
+            keys.add(key)
+    return len(keys)
 
 
 def inherit_free_rows(patterns: List[List[int]], free_rows: Dict[int, frozenset],

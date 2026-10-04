@@ -88,7 +88,7 @@ _corpus = sorted(glob.glob(os.path.join(CORPUS, "*.sid")))
 
 @pytest.mark.skipif(not _corpus, reason="corpus not present")
 def test_it_is_exactly_the_files_that_silence_on_a_rest():
-    """21 files, and the same 21 `rest_silences` names.
+    """22 files, and the same 22 `rest_silences` names.
 
     The two probes read the same branch and were derived independently -- one
     off the parked waveform, one off the envelope stores -- so their agreeing
@@ -107,7 +107,11 @@ def test_it_is_exactly_the_files_that_silence_on_a_rest():
             silences.add(name)
         if det.rest_silence_envelope:
             envelope.add(name)
-    assert len(envelope) == 21, sorted(envelope)
+    # 21 through STATUS_BIT6_SHAPE, plus Mega_Apocalypse through the
+    # zero-page spelling (`detect._status_bit6_bvs`), whose rest branch
+    # zeroes the pair at $4B95-$4B9A.
+    assert len(envelope) == 22, sorted(envelope)
+    assert "Mega_Apocalypse.sid" in envelope
     assert envelope == silences, sorted(envelope ^ silences)
 
 

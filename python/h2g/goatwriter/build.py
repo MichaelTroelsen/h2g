@@ -28,6 +28,7 @@ from .wavetable import (_wavetable_layout, _write_wavetable)
 from . import arpeggio as _gw_arpeggio
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
+from . import rest_reseed as _gw_rest_reseed
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
     """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
@@ -216,8 +217,12 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             tracks, patterns = ilv_routing.tracks, ilv_routing.patterns
     out.append((len(tracks) // 3) & 0xFF)
 
+    # Where each orderlist's bytes start, for a late pass that repoints a
+    # position at a pattern copy (`rest_reseed`): same length, same place.
+    track_at: List[int] = []
     for track in tracks:
         out.append((len(track) - 1) & 0xFF)
+        track_at.append(len(out))
         out += bytes(track)
 
     # The filter and pulse tables are both built before the instruments,
@@ -402,7 +407,20 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         for _record, _variant, block in drum_variants:
             drum_starts.append(len(wave_entries) + 1)
             wave_entries = wave_entries + block
-    if pulse_plan is not None:
+    # The zero-page triangle player reseeds its pulse on a REST event as on
+    # a note (`rest_reseed`). After every pass that fills a command column,
+    # so it takes only columns nobody else wanted, and before the budget,
+    # which must see its commands. Not where `pulse_plan` already owns
+    # CMD_SETPULSEPTR: that walk is the other dialect's and never meets
+    # this one (`pulse_phase_sims` returns {} here).
+    reseeded = 0
+    if pulse and pulse_plan is None:
+        patterns, tracks, reseeded = _gw_rest_reseed.rest_pulse_reseeds(
+            sid, det, tracks, patterns, pulse_starts, instr_used, lead,
+            multiplier, log)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
+    if pulse_plan is not None or reseeded:
         # Last, after every pass that writes a command column: the packed
         # size is a property of the finished rows and nothing else.
         patterns = _gw_pulse.budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)

@@ -25,7 +25,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .instrument_drop import (
     drop_unnamed_instruments as drop_unnamed_instruments_from)
 from .sidfile import SidFile, load_sid
-from .stored_wave import stored_wave_notes
+from .stored_wave import stored_wave_copies
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
                      silence_pre_instrument_notes,
@@ -448,8 +448,16 @@ def convert(sid_path: str, log: Logger = print,
     # the orderlists, which are still in Hubbard numbering here, under the
     # grammar convert_patterns decodes with. Not an option: it is what the
     # player does. Commando is held out by name (stored_wave.HELD).
-    wave_notes = stored_wave_notes(sid, det, tracks, log, slides=slides,
-                                   status_bit6=status_bit6)
+    #
+    # Since the pitch is the OTHER voices' state, two orderlist positions
+    # naming one pattern can sound it differently; each such position gets
+    # a copy numbered after fold_transposes' variants, and the orderlist
+    # byte is rewritten here, after `played` -- a copy is appended like a
+    # variant, never pruned, and its source stays referenced by the
+    # positions that kept the majority.
+    wave_notes, wave_copies = stored_wave_copies(
+        sid, det, tracks, det.pattern_used + 1 + len(variants), floor, log,
+        slides=slides, status_bit6=status_bit6)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -467,7 +475,7 @@ def convert(sid_path: str, log: Logger = print,
         # detect._find_rest_silence_envelope.
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
         instr_base=instr_base, tie=tie,
-        wave_notes=wave_notes,
+        wave_notes=wave_notes, wave_copies=wave_copies,
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.

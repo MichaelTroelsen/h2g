@@ -781,7 +781,7 @@ def test_the_tie_column_is_printed_beside_bend_and_dashes_without_an_original():
     rows[0].update(orig_ties=6312, our_ties=2233, tie_ratio=2233 / 6312)
     rows[1].update(orig_ties=0, our_ties=7, tie_ratio=None)
     text = fidelity.report(rows, _Args())
-    assert "| slides | bend | tie | vib |" in text
+    assert "| slides | bend | tie | tiefr | vib |" in text
     a = next(l for l in text.splitlines() if l.startswith("| A.sid |"))
     b = next(l for l in text.splitlines() if l.startswith("| B.sid |"))
     cells_a = [c.strip() for c in a.strip().strip("|").split("|")]
@@ -1728,6 +1728,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  onset_instruments=1, onset_first_matched=1,
                  onset_ours_early=0, onset_ours_late=0,
                  gate=melody, gate_frames=100,
+                 tie_agreement=melody, tie_same_frame=10,
+                 tie_ours_only=0, tie_orig_only=0,
                  gate_ours_ringing=0, gate_ours_silent=0,
                  orig_pulse_changes=0, our_pulse_changes=0,
                  orig_pulse_span=0, our_pulse_span=0,
