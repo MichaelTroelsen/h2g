@@ -299,7 +299,7 @@ def pick(rows: list[dict], per_band: int) -> list[tuple[str, dict]]:
     return out
 
 
-RAPID_TIE_FRAMES = 3
+RAPID_TIE_FRAMES = 2
 
 
 def tie_shares(voice, rapid: int = RAPID_TIE_FRAMES) -> tuple[int, int]:

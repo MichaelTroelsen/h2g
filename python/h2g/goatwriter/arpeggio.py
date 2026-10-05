@@ -1136,7 +1136,15 @@ def tempo_duty_split_plan(sid: SidFile, det: Detection,
                 for r in range(0, len(pat), 4):
                     if pat[r] == 0xFF:
                         break
-                    if pat[r + 2] == CMD_SETTEMPO and pat[r + 3] < 0x80:
+                    # Row 0 only: that is where a subtune's clock and an
+                    # orderlist tempo change are written. A tempo past row 0
+                    # is `patterns._compensate_fractional_rows` spending the
+                    # part of a row the change rounded away -- the segment's
+                    # step is still the change's, and reading the run's
+                    # `b + 1` as a step would clone notes the player plays
+                    # at the segment's rate.
+                    if (r == 0 and pat[r + 2] == CMD_SETTEMPO
+                            and pat[r + 3] < 0x80):
                         events.append((row, pat[r + 3]))
                     row += 1
             starts.append(occ)

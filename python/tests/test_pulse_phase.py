@@ -426,13 +426,20 @@ def test_game_killers_plan_opens_on_the_originals_width_on_the_tick_clock():
 # 0), the preroll (5_Title_Tunes voice 2), the KEYOFF fetch (Gerry 3), the
 # lead-in (Gerry 4, Crazy_Comets 0), the instrument-row fetch (Zoids), the
 # equality turn (Commando).
+#
+# RE-PINNED at the tied-slide change (2026-10-05, tests/test_tied_slide.py):
+# a slide event after a bit-5 note now spells its tie on row 0 instead of
+# re-striking, so the restrike rows leave the note list this walk pairs (it
+# skips CMD_TONEPORTA rows). One_Man at 260 s 199 of 200 -> 206 of 206;
+# Commando 343 of 346 -> 367 of 367 (the unpinned block-above figures are
+# historical and stay as measured). Every other row below is unmoved.
 # --------------------------------------------------------------------------
 
 _EXACT_WIDTHS = [
     # (file, seconds, subtune traced, group walked, {voice: (exact, paired)})
     ("Game_Killer.sid", 180, None, 0, {0: (563, 563)}),
     ("Rasputin.sid", 180, None, 0, {0: (269, 269)}),
-    ("One_Man_and_his_Droid.sid", 260, None, 0, {0: (199, 200)}),
+    ("One_Man_and_his_Droid.sid", 260, None, 0, {0: (206, 206)}),
     ("5_Title_Tunes.sid", 180, None, 0,
      {0: (128, 128), 1: (128, 128), 2: (192, 192)}),
     ("Gerry_the_Germ.sid", 180, 1, 1, {1: (288, 288)}),
@@ -442,7 +449,7 @@ _EXACT_WIDTHS = [
     ("Gerry_the_Germ.sid", 180, 6, 6, {0: (90, 90)}),
     ("Crazy_Comets.sid", 180, 0, 0, {2: (41, 41)}),
     ("Zoids.sid", 180, None, 0, {0: (136, 136)}),
-    ("Commando.sid", 180, None, 0, {0: (343, 346)}),
+    ("Commando.sid", 180, None, 0, {0: (367, 367)}),
 ]
 _WALKS: dict = {}
 

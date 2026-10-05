@@ -581,9 +581,19 @@ def _voice(attacks, ties):
 
 
 def test_tie_shares_splits_arpeggio_steps_from_held_glides():
-    # attack at 0, arpeggio ties at 1,2,3, then a held note gliding at 40, 90
-    v = _voice([0], [1, 2, 3, 40, 90])
-    assert L.tie_shares(v) == (3, 2)
+    # attack at 0, arpeggio ties at 1,2 (<= 2 frames each), then a tie 3 frames
+    # on and a held note gliding at 40, 90
+    v = _voice([0], [1, 2, 5, 40, 90])
+    assert L.tie_shares(v) == (2, 3)
+
+
+def test_rapid_cutoff_is_two_frames_the_measured_one():
+    # Lakers_vs_Celtics voice 3 stops firing "No legato" at <= 2 frames
+    # (orig 136 slow / ours 36) and fires at 3 (93 / 14); Sun voice 2 fires at
+    # every cutoff. SABOTAGE TARGET: RAPID_TIE_FRAMES = 3.
+    assert L.RAPID_TIE_FRAMES == 2
+    assert L.tie_shares(_voice([0], [2])) == (1, 0)
+    assert L.tie_shares(_voice([0], [3])) == (0, 1)
 
 
 def test_tie_shares_measures_from_the_previous_attack_too():

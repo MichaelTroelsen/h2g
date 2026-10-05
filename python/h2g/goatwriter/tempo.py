@@ -14,7 +14,9 @@ from .constants import (_ABS_X_LOAD, _ADJACENT_TABLE_WINDOW, GT_MIN_TEMPO,
                         PAL_NTSC_ENTRY, PAL_NTSC_FLAG_LDX, PAL_NTSC_WINDOW,
                         SPEED_GATE, SPEED_GATE_IMM, SPEED_GATE_ZP,
                         SPEED_RELOAD_STORE, SPEED_TABLE_LOAD,
-                        TEMPO_FASTEST_STEADY, _X_RELOADERS)
+                        TEMPO_FASTEST_STEADY, _X_RELOADERS,
+                        CMD_FUNKTEMPO, CMD_SETTEMPO, FUNK_ROW_CALLS,
+                        FUNK_SPEED_ENTRY, GT_MAX_TABLELEN)
 @dataclass(frozen=True)
 class SongSpeeds:
     """Frames per duration unit, per subtune, read from the player.
@@ -455,7 +457,11 @@ def pack_subtune(speeds: Optional[SongSpeeds], start_song: int) -> int:
     So the other ten files keep a rate that is wrong for one of their
     non-starting subtunes, and that is a real and UNFIXED defect -- it is just
     not one a single packed file can fix. Anything wanting per-subtune rates
-    needs a file per subtune, which is a different feature.
+    needs a file per subtune, which is a different feature. ONE case of it is
+    now fixed inside the file: a subtune whose row is exactly 2 calls at the
+    file's factor plays it through CMD_FUNKTEMPO (`write_funktempo`) instead
+    of clamping to 3 -- 5_Title_Tunes 1 and 4, Auf_Wiedersehen_Monty 12,
+    Gerry_the_Germ 2, Human_Race 4 at v0.5.509.
 
     Clamped to the speeds table, which every caller derives from the same
     `find_song_speeds`, because ALL FIVE call sites must agree: a `.sng`
@@ -504,8 +510,10 @@ def file_multiplier(sid: SidFile, speeds: Optional[SongSpeeds],
     (`-S2` on their own) inside a file that starts on player 0's 4-frame rows
     (`-S1`): converted at their own factor they would be packed at half the
     call rate they were written for; at the file's, every per-call rate is
-    right and only the row clamps to the fastest steady tempo, as any
-    non-starting subtune's already does. Every call site that chose the
+    right and the 2-call row is CMD_FUNKTEMPO (`write_funktempo`; it clamped
+    to 3 calls, 1.5x slow, before). Packing the whole compilation at `-S2`
+    was measured instead and lost player 4 to the pulse-table cap. Every call
+    site that chose the
     factor (`derived_group_tempos`, `orderlist_tempo_values`,
     `convert._derived_multiplier`) goes through here, so they cannot disagree.
     """
@@ -518,7 +526,8 @@ def file_multiplier(sid: SidFile, speeds: Optional[SongSpeeds],
 
 def tempo_command_value(sid: SidFile, subtune: int = 0,
                         speeds: Optional[SongSpeeds] = None,
-                        multiplier: int = 1, skip_gate: bool = False) -> int:
+                        multiplier: int = 1, skip_gate: bool = False,
+                        funk: bool = False) -> int:
     """CMD_SETTEMPO value for this subtune: its player's frames per unit.
 
     One converted row is one duration unit, and the player's speed gate says a
@@ -531,10 +540,22 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     speed cannot be read (no gate shape, a prescaler player, an over-counted
     subtune) the old constant stands, scaled the same way, so a file keeps one
     consistent timebase.
+
+    `funk` lets a row of EXACTLY two calls through as `FUNK_ROW_CALLS`, which
+    is not a CMD_SETTEMPO value (2 plays as 3 calls, gplay.c:494) but a
+    placeholder `write_funktempo` turns into CMD_FUNKTEMPO + `02 02` once the
+    speed table exists. Until then every reader of the value -- row_calls,
+    the per-instrument hard-restart bound, the pulse-phase walk, the arp
+    phases -- sees the row the file really plays. The caller passes it only
+    for a GTS5 file (a GTS2 file has no speed table). 5_Title_Tunes' players 1
+    and 4 are the case: 2-frame rows inside a file packed at player 0's -S1,
+    clamped to 3 calls (1.5x slow, melody 80.6 / 81.7) without it.
     """
     if speeds is None:
         speeds = find_song_speeds(sid)
     f = effective_frames(speeds, subtune, skip_gate)
+    if funk and f is not None and f * multiplier == FUNK_ROW_CALLS:
+        return FUNK_ROW_CALLS
     if f is None:
         # The old constant, scaled to the caller's timebase: 3 calls at 1x is
         # 3*m calls at m-times the call rate.
@@ -543,7 +564,9 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     # writer emits carries gatetimer 2 (_write_instruments), and gplay.c:334
     # stops the song outright when gatetimer exceeds the channel's tick. A
     # command value of 3 lands as effective tempo 2 -- exactly at that
-    # boundary -- so nothing below 3 may ever be emitted here.
+    # boundary -- so nothing below 3 may ever be emitted as CMD_SETTEMPO. The
+    # `funk` placeholder above is the one exception, and its instruments are
+    # bounded to gatetimer 1 by row_calls 2.
     return min(max(int(f * multiplier), TEMPO_FASTEST_STEADY), 0x7F)
 
 
@@ -581,6 +604,29 @@ def orderlist_tempo_values(sid: SidFile, det: Detection,
     and is written as 5. The alternative to a rounded change is the *absent*
     one, which is what this file had -- every row 4 calls where the truth
     ranges from 4.03 to 6.
+
+    The rounding is per CHANGE, and what it leaves over is no longer lost:
+    `orderlist_tempo_calls` keeps the exact quotient, and
+    `patterns._compensate_fractional_rows` spends the remainder inside the
+    patterns of each segment.
+    """
+    return [{at: min(max(int(round(c)), TEMPO_FASTEST_STEADY), 0x7F)
+             for at, c in m.items()}
+            for m in orderlist_tempo_calls(sid, det, reloads, tempo,
+                                           skip_gate)]
+
+
+def orderlist_tempo_calls(sid: SidFile, det: Detection,
+                          reloads: List[dict],
+                          tempo: int | str | None = None,
+                          skip_gate: bool = False) -> List[dict]:
+    """Each orderlist tempo command's row length in OUR play calls, unrounded.
+
+    The quantity `orderlist_tempo_values` rounds into a `CMD_SETTEMPO` value,
+    on the same timebase (same `frames_for`, same multiplier), so the two
+    cannot disagree about which number was rounded. Rasputin subtune 0 at
+    `-S2`: `2 * (R+1)/R * 2` calls, i.e. R 3 -> 5.333, R 5 -> 4.8, R 10 ->
+    4.4, R 60 -> 4.067, R 120 -> 4.033, R 6 -> 4.667, R 2 -> 6.
     """
     speeds = find_song_speeds(sid, det)
     mult = 1
@@ -596,14 +642,14 @@ def orderlist_tempo_values(sid: SidFile, det: Detection,
         base = None if speeds is None else speeds.frames_for(ti // 3)
         if base is None:
             base = TEMPO_FASTEST_STEADY
-        out.append({at: min(max(int(round(base * (r + 1) / r * mult)),
-                                TEMPO_FASTEST_STEADY), 0x7F)
+        out.append({at: base * (r + 1) / r * mult
                     for at, r in m.items() if r})
     return out
 
 
 def derived_group_tempos(sid: SidFile, det: Detection, groups: int,
-                         skip_gate: bool = False) -> Tuple[List[int], int, str]:
+                         skip_gate: bool = False,
+                         funk: bool = False) -> Tuple[List[int], int, str]:
     """Per-subtune CMD_SETTEMPO values, the -S multiplier, and a source note.
 
     `groups` is how many 3-track groups the caller has, which equals the
@@ -617,8 +663,43 @@ def derived_group_tempos(sid: SidFile, det: Detection, groups: int,
     """
     speeds = find_song_speeds(sid, det)
     mult = file_multiplier(sid, speeds, skip_gate)
-    values = [tempo_command_value(sid, s, speeds, mult, skip_gate)
+    values = [tempo_command_value(sid, s, speeds, mult, skip_gate, funk)
               for s in range(groups)]
     note = speeds.source if speeds is not None else \
         "no speed gate found, keeping the constant"
     return values, mult, note
+
+
+def write_funktempo(patterns: List[List[int]], speed_table: List[tuple],
+                    log=None) -> int:
+    """Turn each `CMD_SETTEMPO FUNK_ROW_CALLS` placeholder into CMD_FUNKTEMPO.
+
+    The placeholder is what `tempo_command_value(funk=True)` returns for a
+    2-call row and `apply_tempos` writes like any other value. Here, after
+    `build_speed_table` has numbered the slides, it becomes CMD_FUNKTEMPO
+    pointing at one shared `02 02` entry (constants.CMD_FUNKTEMPO). Where the
+    table is full the row falls back to the steady floor, TEMPO_FASTEST_STEADY
+    -- the clamp every 2-call row had before -- and says so. Returns how many
+    rows became CMD_FUNKTEMPO.
+    """
+    rows = [(p, r) for p in patterns for r in range(0, len(p) - 3, 4)
+            if p[r + 2] == CMD_SETTEMPO and p[r + 3] == FUNK_ROW_CALLS]
+    if not rows:
+        return 0
+    if (FUNK_SPEED_ENTRY not in speed_table
+            and len(speed_table) >= GT_MAX_TABLELEN):
+        for p, r in rows:
+            p[r + 3] = TEMPO_FASTEST_STEADY
+        if log:
+            log(f"*** NO SPEED-TABLE ROW FOR FUNKTEMPO 02 02: {len(rows)} "
+                f"2-call row tempo(s) clamped to {TEMPO_FASTEST_STEADY} calls ***")
+        return 0
+    if FUNK_SPEED_ENTRY not in speed_table:
+        speed_table.append(FUNK_SPEED_ENTRY)
+    index = speed_table.index(FUNK_SPEED_ENTRY) + 1
+    for p, r in rows:
+        p[r + 2], p[r + 3] = CMD_FUNKTEMPO, index
+    if log:
+        log(f"Funktempo...............: {len(rows)} 2-call row tempo(s) as "
+            f"CMD_FUNKTEMPO -> speed table row {index} (02 02)")
+    return len(rows)

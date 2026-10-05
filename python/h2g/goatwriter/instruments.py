@@ -237,8 +237,16 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
     if lead:
-        # Instrument 1: always the empty "Clear Voice" slot.
-        out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, first])
+        # Instrument 1: always the empty "Clear Voice" slot. A voice opening
+        # on rests runs under it, so on a 2-call CMD_FUNKTEMPO row (the only
+        # source of `row_calls` 2, goatwriter.constants.CMD_FUNKTEMPO) its
+        # gatetimer 2 would never be reached by the counter and the voice
+        # would never fetch its first note (player.s:1090-1098) --
+        # Gerry_the_Germ subtune 2 voice 1 and Auf_Wiedersehen_Monty subtune
+        # 12 voice 2 played nothing. 2 everywhere else, as always.
+        clear_gate = 0x02 if not row_calls or row_calls > 2 else 0x01
+        out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, clear_gate,
+                      first])
         out += _padded_name_bytes("Clear Voice")
 
     # The digi engine's records are 16 bytes rather than 8. The fields read
@@ -275,7 +283,14 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # tracks.instrument_row_calls -- it returns no entry rather than a
         # default wherever the attribution is unsafe, so the file-wide value
         # is what stands in, and a file with one tempo is unchanged.
-        own_row_calls = (instr_row_calls or {}).get(i + lead, row_calls)
+        # Keyed by the Goattracker number the patterns name, which is
+        # `gt_number` below (i + lead + 1). It read `i + lead` -- the slot
+        # BEFORE this one -- until the CMD_FUNKTEMPO 2-call row made the
+        # slip fatal: an instrument charged its neighbour's 3-call bound
+        # keeps gatetimer 2, and a 2-call row's counter never reaches 2
+        # (player.s:1090-1098), so its next note is never fetched
+        # (Gerry_the_Germ subtune 2: melody 79.6 -> 7.9 before this fix).
+        own_row_calls = (instr_row_calls or {}).get(i + lead + 1, row_calls)
         gatetimer = ((0x80 if no_hard_restart else 0)
                      | (_gw_hard_restart._hard_restart_ticks(multiplier, own_row_calls,
                                             wide_hard_restart,
@@ -345,6 +360,22 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # not the firstwave. `$FE` (gate stays off, waveform latched,
         # gplay.c:357) is not the fix: the wavetable never opens the gate, and
         # voice 2 reads 0 attacks.
+        # **CORRECTED (81da71d, v0.5.509): "where the gate opens, not the
+        # firstwave" is half wrong. The gate opens early BECAUSE of the
+        # firstwave.** Lag-aligned at 180 s under presets, on every voice,
+        # the note-row time and the gatetimer are already on the original's
+        # frames. Every gate fall lands on its frame (v1 485/485, v2 343/343,
+        # v0 183/191) and so does every waveform onset (192/192, 486/486,
+        # 344/344). Every gate RISE is one frame early (192/192, 486/486,
+        # 344/344). That frame is the note-init call, which writes only
+        # `$D404` = the firstwave, and `$09` carries the gate in bit 0.
+        # Clearing bit 0 (`$08`) puts every rise on the original's frame and
+        # takes `gate` .7656 -> .9946, with melody, sequence, wave, nrun and
+        # adsr unchanged. The record waveform & $FE also brings voice 2 to 1
+        # differing frame of 8994 (wave .9609 -> .9980). That is the gate-off
+        # firstwave that task `gate-off-firstwave-option` adds as an option.
+        # (`C:/t/confuzion-gate-opens-one-frame-early/edges.py`; pinned by
+        # `tests/test_firstwave_gate_edge.py`.)
         # REACH, MEASURED (runs.jsonl firstwave-set-across-the-hold-zero-files,
         # 826dec8, three corpus byte-hash arms): `real_firstwave_instruments`
         # moves 2 files as shipped (5_Title_Tunes, Auf_Wiedersehen_Monty) and

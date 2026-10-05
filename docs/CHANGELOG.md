@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.510 — 2026-10-04
+
+- runqueue drain (three cycles, 23 tasks): Crazy_Comets $7F emits the SFX cell's constant B-4; Spellbound's zero-page accumulate pulse is read; tied-slide fix (tie on row 0, slide on the hold rows, 36 files); 2-call subtune rows use CMD_FUNKTEMPO and two instrument row-bound attribution slips are fixed; Rasputin carries its fractional row tempo; 5_Title_Tunes' appended players share phase blocks; tune_by_fidelity memoises by bytes; --vice depth gated on the envelope and sustain-0 decay modelled; osplit accepts 2^k octaves; tie-shape cutoff 2; VIBRATO.md regenerated
+
 ## 0.5.509 — 2026-10-04
 
 - runqueue cycle 3: stored-wave state copies, status-bit-6 rest reseed, classic clear by record mask, last-row legato re-latch, tiefr and osplit self-report columns, third drain documented

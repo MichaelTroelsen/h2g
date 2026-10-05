@@ -387,6 +387,27 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     shipped 6.58). Rasputin's gate is not read at all: its R comes from
     the track's `$FE nn` (`outer_gate_skip` returns None), so it keeps
     `multiplier` -- shipped 128 a frame against the original's 101.
+
+    **So the `pul` COUNT overshoots by (O+1)/O by construction, and that is
+    not a pulse defect.** The gate skips the WHOLE play routine one frame in
+    O+1 (Samantha Fox `$7006 DEC $EA / BPL / LDA #$04 / STA $EA / RTS`), so
+    the original's width holds on that frame and moves O frames in O+1 by
+    a full step; this speed spreads the same travel over every call, the
+    way the GT tempo already spreads the gated ticks (5 calls a tick at
+    `-S4`). Measured at 81da71d (presets, 92 s window, subtune 9, frames
+    paired at the harness's startup lag): Samantha Fox's pulse changes are
+    3509/3509/3676 against ours 4385/4384/4594 (x1.250); EVERY frame where
+    ours moves and the original does not -- 876/876/918, exactly the
+    excess -- falls on one frame phase mod 5, the gate's, and none on a
+    note-fetch frame; the original never moves where ours holds. Spellbound
+    (O=10) reads x1.094 the same way, its excess on one phase mod 11. The
+    fetch frame is NOT the cause: the player opens the note on the record's
+    exact width and steps from the next frame, our set entry plus one
+    call's speed does the same, and both sides count that frame once.
+    Copying the hold would need the note's tick phase mod O per note (four
+    variants of every sweeping record's table at O=4) to reproduce a stutter
+    the tempo deliberately evens out everywhere else; read `pspan` and the
+    per-frame travel instead. `tests/test_pulse_tri_gate_hold.py` pins it.
     """
     if not gate_skip:
         return min(GT_MAX_PULSE_SPEED,
@@ -1284,7 +1305,8 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
 def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                             pulse: bool, multiplier: int,
                             phases: dict, log=None,
-                            lead: int = 1) -> tuple | None:
+                            lead: int = 1,
+                            prefer_short: bool = False) -> tuple | None:
     """The whole pulse table with phase entry points, or None if NOTHING
     survives the table budget.
 
@@ -1321,12 +1343,36 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     its C128 version, Master_of_Magic, Phantoms_of_the_Asteroid) place every
     phase-tracked record and drop none. `_phase_block` says why the shared
     layout plays the same widths.
+
+    **`prefer_short`: the table is shared with songs appended after this
+    one.** On a compilation (`convert._append_players`) the pulse table
+    subtune 0 leaves is the budget every appended player's sweeps must fit
+    in, so there the shared layout ships whenever it degrades no more
+    records AND is shorter, even where the per-phase one fits. Measured on
+    5_Title_Tunes: subtune 0's table 214 -> 167 rows, no record dropped
+    either way, its siddump register table identical for 180 s (9001
+    rows); the 47 rows let players 1-4 append with their sweeps (pulse 248
+    of 255) where they appended without any. Nothing else passes it, so
+    every other file keeps its bytes.
     """
     first_log: list = []
     first = _lay_pulse_phase_table(sid, det, instr_used, pulse, multiplier,
                                    phases, first_log.append, lead, False)
     chosen, chosen_log = first, first_log
-    if first[3] or first[4]:
+    if prefer_short and not (first[3] or first[4]):
+        short_log: list = []
+        short = _lay_pulse_phase_table(sid, det, instr_used, pulse,
+                                       multiplier, phases, short_log.append,
+                                       lead, True)
+        if (short[3], short[4]) <= (first[3], first[4]) \
+                and len(short[0]) < len(first[0]):
+            chosen, chosen_log = short, short_log
+            short_log.insert(0, (
+                f"Pulse phase.............: shared ramps -- {len(short[0])} "
+                f"table row(s) where one ramp per phase took {len(first[0])}; "
+                "the further players appended after this subtune share the "
+                "table"))
+    elif first[3] or first[4]:
         shared_log: list = []
         shared = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                         multiplier, phases, shared_log.append,

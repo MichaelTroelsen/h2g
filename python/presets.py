@@ -1389,6 +1389,7 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     nothing adds nothing to the JSON -- an entry recording `False` would look
     like a measured decision when it is the absence of one.
     """
+    import hashlib                                  # noqa: PLC0415
     import shutil                                   # noqa: PLC0415
     import fidelity as F                            # noqa: PLC0415
 
@@ -1427,6 +1428,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     def _dump(packed, st):
         return F.run_siddump(packed, seconds, st, siddump, calls=multiplier)
 
+    scored: dict[bytes, tuple | None] = {}
+
     def play(extra: dict):
         # **A combination that will not convert is one unplayable candidate,
         # not a failed song.** Letting the exception out abandoned the whole
@@ -1447,6 +1450,27 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 f"({type(exc).__name__}), skipped")
             return None
         blob, _ = F.legalise_restarts(blob)
+        # **MEMOISED BY THE BYTES THAT GET PACKED.** A score is a function of
+        # the trace, the trace of the packed .sid, and the packed .sid of
+        # `blob` (`pack_sid` reads nothing else that varies inside this call:
+        # `multiplier`, `gt2reloc`, `seconds`, `orig` and `ours_sub` are fixed
+        # for the song). So a combination whose converted bytes equal an
+        # already-scored one scores identically to it -- the walk would have
+        # seen the same tuple, and `fidelity_better` is deterministic -- and
+        # re-packing and re-tracing it is pure cost. Most toggles are inert on
+        # most files (that is what `prune_inert` and `_hard_restart_grid_inert`
+        # exist to say), so most of the 127-combination walk lands here.
+        # Outcome-preserving by construction: a hit returns the very tuple the
+        # first visit computed, a refusal (`None`) included. Keyed on the
+        # post-legalise bytes because that is what `pack_sid` receives; a
+        # conversion that RAISES has no bytes and is never cached.
+        key = hashlib.sha1(blob).digest()
+        if key in scored:
+            return scored[key]
+        scored[key] = result = _score(blob)
+        return result
+
+    def _score(blob: bytes):
         packed = F.pack_sid(blob, workdir, gt2reloc, multiplier)
         if packed is None:
             return None

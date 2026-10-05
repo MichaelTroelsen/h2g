@@ -5,8 +5,11 @@ from typing import Callable, List
 
 from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
+                         TEMPO_FASTEST_STEADY,
                          append_song, build_sng, derived_group_tempos,
-                         file_multiplier, orderlist_tempo_values,
+                         file_multiplier, orderlist_tempo_calls,
+                         orderlist_tempo_values,
+                         write_funktempo,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
@@ -299,7 +302,11 @@ def convert(sid_path: str, log: Logger = print,
     reaches. See tracks.fold_transposes.
 
     real_firstwave_instruments names the GT instrument numbers (1-based,
-    matching a pattern row's instrument column) whose "first frame" byte is
+    matching a pattern row's instrument column AS WRITTEN, i.e. BEFORE
+    `drop_unnamed_instruments` renumbers them -- songview shows the
+    post-drop number; 5_Title_Tunes' preset (1, 2, 3, 5, 6, 8) is
+    (1, 2, 3, 4, 5, 7) in the opened file, record 4 being dropped;
+    tests/test_firstwave_numbering_after_drop.py) whose "first frame" byte is
     the record's own waveform with the gate forced on, rather than the
     neutral testbit-only byte every instrument gets by default -- the same
     byte `no_test_restart` changes, but per instrument instead of for the
@@ -485,9 +492,14 @@ def convert(sid_path: str, log: Logger = print,
     # until after packing.
     step_tempos = (orderlist_tempo_values(sid, det, raw_tempos, tempo, skip_gate)
                    if any(raw_tempos) else None)
+    # The same changes unrounded, so the part of a row the rounding drops is
+    # spent inside each segment's patterns -- see
+    # patterns._compensate_fractional_rows.
+    step_calls = (orderlist_tempo_calls(sid, det, raw_tempos, tempo, skip_gate)
+                  if step_tempos else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows,
-                            tempos=step_tempos)
+                            tempos=step_tempos, tempo_calls=step_calls)
     if step_tempos:
         n = sum(len(m) for m in step_tempos)
         log(f"Orderlist tempo.........: {n} mid-song tempo change(s) from the "
@@ -578,8 +590,11 @@ def convert(sid_path: str, log: Logger = print,
         # resolved_tempo because the values differ between subtunes.
         resolved_tempo = None
         groups = len(tracks) // 3
+        # A GTS5 file can play a 2-call row (constants.CMD_FUNKTEMPO); the
+        # placeholder is resolved by write_funktempo below.
         values, mult, note = derived_group_tempos(sid, det, groups,
-                                                  skip_gate)
+                                                  skip_gate,
+                                                  funk=fmt != FORMAT_GTS2)
         multiplier = mult
         # A tempo command at orderlist position 0 *is* that subtune's opening
         # tempo -- the player's init loads the counter from its own table and
@@ -640,10 +655,16 @@ def convert(sid_path: str, log: Logger = print,
             raise ValueError(
                 f"tempo must be {GT_MIN_TEMPO}..127 (Goattracker reads 0 and 1 "
                 f"as funktempo, gplay.c:325), got {resolved_tempo}")
-        row_calls = resolved_tempo
-        short_row_calls = resolved_tempo
+        # CMD_SETTEMPO 2 plays 3 calls (gplay.c:494 decrements only values
+        # >= 3, and tempo 2 reloads the tick to 2), so a forced 2 is a 3-call
+        # row to everything that reads one. Only the derived path's
+        # CMD_FUNKTEMPO placeholder is a real 2-call row (write_funktempo), and
+        # row_calls == 2 compensates as one (patterns._scaled_step).
+        calls = max(resolved_tempo, TEMPO_FASTEST_STEADY)
+        row_calls = calls
+        short_row_calls = calls
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
-        group_tempos = [resolved_tempo] * (len(tracks) // 3)
+        group_tempos = [calls] * (len(tracks) // 3)
 
     # The outer counter's reload, where the player has one. A call it skips is
     # a call our wavetable steps anyway, so a duration read out of that player
@@ -663,6 +684,10 @@ def convert(sid_path: str, log: Logger = print,
     if fmt != FORMAT_GTS2:
         speed_table = build_speed_table(new_patterns, multiplier, slide_steps,
                                         row_calls)
+        # Only the derived path writes the placeholder; a forced tempo of 2
+        # keeps meaning what CMD_SETTEMPO 2 means (3 calls).
+        if resolved_tempo is None:
+            write_funktempo(new_patterns, speed_table, log)
         # Every stored step is the divided one, so at -S2 and above the count
         # of scaled slides is the count of entries.
         scaled = len(speed_table) if multiplier > 1 else 0
@@ -865,9 +890,14 @@ def convert(sid_path: str, log: Logger = print,
             table = None
             if plan:
                 phases, writes = plan
+                # A compilation's further players are appended after this
+                # table (`_append_players`, the same gate), so it is laid
+                # out as short as the same widths allow.
                 table = build_pulse_phase_table(
                     sid, det, _instruments_used(det, None, lead), pulse,
-                    multiplier, phases, log, lead)
+                    multiplier, phases, log, lead,
+                    prefer_short=(not isinstance(sid, PlayerView)
+                                  and len(det.players) >= 2))
             if plan and table:
                 entries, starts, index = table
                 apply_pulse_phase(new_patterns, tracks, writes, index, log)
@@ -945,13 +975,19 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
     drop runs once, on the finished file, after this.
 
     **The pulse table is the cap that binds.** 5_Title_Tunes' subtune 0
-    spends 214 of its 255 pulse rows on `pulse_phase`, so four more players'
-    sweeps cannot all fit beside it, phase-expanded or not. The appended
-    players are therefore tried at up to three levels -- the file's options,
-    then without `pulse_phase`, then without `pulse` (each record's starting
-    width, held) -- and the first level at which every player fits is kept;
-    where none does, the one that appends the most. Subtune 0 is never
-    degraded: it is the tune the file starts on, and its bytes do not move.
+    spent 214 of its 255 pulse rows on `pulse_phase` in the per-phase
+    layout, so players 1-4 appended only without sweeps. On a compilation
+    `convert` therefore lays subtune 0's phase table with SHARED RAMPS
+    (`build_pulse_phase_table(prefer_short=True)`): 167 rows, the same
+    register writes (siddump, 180 s), and players 1-4 then append WITH their
+    sweeps, without `pulse_phase` (pulse 248 of 255; measured at 81da71d).
+    Their own phase tables still do not fit (player 2's takes 177 rows,
+    player 3's 236). The appended players are tried at up to three levels
+    -- the file's options, then without `pulse_phase`, then without `pulse`
+    (each record's starting width, held) -- and the first level at which
+    every player fits is kept; where none does, the one that appends the
+    most. Subtune 0 is never degraded: it is the tune the file starts on,
+    and nothing appended after it moves its bytes.
     """
     players = det.players
     if isinstance(sid, PlayerView) or len(players) < 2:

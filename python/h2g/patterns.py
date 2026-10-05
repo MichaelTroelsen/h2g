@@ -19,7 +19,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
-from .goatwriter import CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell
+from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
+                         TEMPO_FASTEST_STEADY)
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -497,6 +498,105 @@ def past_table_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
     return out
 
 
+# Writers of a past-table landing cell that are READ OUT OF THE PLAYER as
+# dormant during music, keyed by PSID name and raw note byte:
+#     {name: {byte: (guard, writer addresses)}}
+# `past_table_notes` declines a cell any absolute writer names, reachable or
+# not, and it cannot tell a sequencer counter from a sound-effect engine's
+# state that music never arms -- that needs reachability, which no static
+# rule here has. So the reading is recorded as data, per player, and
+# `tests/test_sfx_dormant_cell.py` re-derives every claim in it from the
+# file's bytes.
+#
+# Crazy_Comets: `$7F` (Y = `$FE` at `$50E5 ASL / TAY / LDA $540F,Y`) lands
+# on `$550D`/`$550E`, `03 20` in the file = `$2003`. Its only writers --
+# `$53A1 DEC $550D`, `$53AB STA $550D`, `$551C STA $550D`, `$553B STA $550E`
+# -- are the SFX engine's: the first two sit behind `$5396 BIT $550A / BPL
+# / RTS`, the other two in the SFX start `$5514`, whose one caller `$539E
+# JSR $5514` is behind the same guard. `$550A` is `$FF` in the file and only
+# init with A >= 2 (`$6100 CMP #$02 / BCS`, an SFX subtune) clears its bit 7
+# (`$60DE ORA #$40 / STA $550A`), so during music subtunes 0 and 1 the cell
+# keeps its load-time `$2003` -- nearest entry 59 (`$20DC`, B-4), which
+# `$2003` sits 45 cents below. Measured 2026-10-04, 600 s siddump of
+# subtune 0 under presets: the original writes `$2003` at 10 note onsets on
+# voice 0 and 2 on voice 2 (none on voice 1), and the conversion's B-4
+# starts 7 frames after each one -- the tune's startup lag, the same offset
+# as the note before -- where it used to write the clamp's G#7 (`$DD0E`,
+# 164 + 96 frames, now 0). Between its `$2003` frames the original writes
+# `$9001 $C800 $9001 $5802`, an excursion this reading does not model.
+SFX_DORMANT_CELLS: Dict[str, Dict[int, Tuple[int, frozenset]]] = {
+    "Crazy Comets": {
+        0x7F: (0x550A, frozenset({0x53A1, 0x53AB, 0x551C, 0x553B})),
+    },
+}
+
+# Non-indexed writers touch exactly the address they name; indexed ones
+# (`abs,X` / `abs,Y`) reach up to two bytes on, as in `past_table_notes`.
+_ABS_INDEXED_WRITER_OPCODES = frozenset((
+    0x99, 0x9D, 0x1E, 0x3E, 0x5E, 0x7E, 0xDE, 0xFE))
+
+
+def cell_writer_sites(sid: SidFile, addr: int) -> frozenset:
+    """C64 addresses of every three-byte writer shape in the file that can
+    store to `addr` or `addr + 1`: a non-indexed writer naming either byte,
+    or an indexed one naming `addr - 2 .. addr + 1`. Data that looks like a
+    store is counted too, which errs toward declining."""
+    data = sid.data
+    sites = set()
+    for i in range(len(data) - 2):
+        op = data[i]
+        if op not in _ABS_WRITER_OPCODES:
+            continue
+        a = data[i + 1] | (data[i + 2] << 8)
+        lo = addr - 2 if op in _ABS_INDEXED_WRITER_OPCODES else addr
+        if lo <= a <= addr + 1:
+            sites.add(sid.to_address(i))
+    return frozenset(sites)
+
+
+def sfx_dormant_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
+    """`past_table_notes` for the cells `SFX_DORMANT_CELLS` records: a
+    past-table byte whose landing cell is written ONLY by writers read as
+    dormant during music sounds the cell's load-time value, mapped to the
+    nearest entry of the player's own table exactly as `past_table_notes`
+    maps a cell nothing writes.
+
+    The record is re-checked against the file, and a byte is declined (left
+    to the clamp) unless all of these hold: the byte is past the table and
+    below `$80`; the cell is not `$0000`; the guard byte has bit 7 set in the
+    file (the SFX engine is off at load); and the cell's writer sites
+    (`cell_writer_sites`) are EXACTLY the recorded ones -- a writer the
+    reading did not account for, or a recorded one gone, means a different
+    player image and the reading does not apply."""
+    record = SFX_DORMANT_CELLS.get(sid.name)
+    ft = det.freq_table
+    if not record or ft is None:
+        return {}
+    data = sid.data
+    base = sid.to_offset(ft.addr)
+    table = [data[base + 2 * i] | (data[base + 2 * i + 1] << 8)
+             for i in range(ft.length)
+             if 0 <= base + 2 * i and base + 2 * i + 1 < len(data)]
+    if len(table) != ft.length or not any(table):
+        return {}
+    out: Dict[int, int] = {}
+    for n, (guard, writers) in record.items():
+        if not ft.length <= n < 0x80:
+            continue
+        cell = base + 2 * n
+        g = sid.to_offset(guard)
+        if cell < 0 or cell + 1 >= len(data) or not 0 <= g < len(data):
+            continue
+        value = data[cell] | (data[cell + 1] << 8)
+        if value == 0 or not data[g] & 0x80:
+            continue
+        if cell_writer_sites(sid, ft.addr + 2 * n) != writers:
+            continue
+        out[n] = min(range(ft.length),
+                     key=lambda i: abs(log2(max(table[i], 1) / value)))
+    return out
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
@@ -657,6 +757,10 @@ def _build_raw_pattern(data: bytes, addr: int,
         g_note = GT_NO_NOTE
         cmd1 = 0
         cmd2 = 0
+        # (command, data) for this event's FIRST row alone, where it differs
+        # from the one its hold rows repeat: a tied slide (see `row0_cmd`
+        # below). None means row 0 carries `cmd1`/`cmd2` like every other row.
+        row0_cmd = None
         # This event's note byte landed on a silent cell past the table and
         # was emitted as a rest -- see `rest_notes` and the clamp below.
         past_rest = False
@@ -1226,6 +1330,28 @@ def _build_raw_pattern(data: bytes, addr: int,
             # player dialect: see tests/test_row_budget.py, and do not gate
             # the tie on the files it happens to show up in.
             cmd1, cmd2 = 3, 0x00
+        elif (tie and pending_tie and cmd1 in (1, 2) and wait >= 1
+                and g_note != GT_NO_NOTE):
+            # **A SLIDE EVENT THAT FOLLOWS A TIED NOTE IS A TIE TOO, AND IT
+            # USED TO RE-STRIKE.** The slide event (`status, $8x operand,
+            # note`) carries a note byte, and the previous event's bit 5 left
+            # the gate open, so the player writes that note's frequency into
+            # an open gate -- no attack, exactly the case above. The `cmd1 ==
+            # 0` guard above handed the command column to the slide and left
+            # the note to attack: One_Man_and_his_Droid voice 0 strikes A#3
+            # at frame 9735 AND AGAIN at 9751 where the original strikes it
+            # once at 9728 and slides (attack index 856-857; the voice's next
+            # note C-4 is struck twice the same way), and the same row
+            # repeats every 128 frames. A row has ONE command, so the two
+            # claimants are split across rows: row 0 ties (`CMD_TONEPORTA 0`,
+            # no attack, no hard restart) and the HOLD rows carry the slide,
+            # which is also where One_Man's player puts it (fetch frame 9744,
+            # first slide step 9745: measured on that one file, 2026-10-05,
+            # historical). A `wait` of 0 has no hold row to carry the slide;
+            # that case keeps the old reading, which is why the guard says
+            # `wait >= 1` -- INFERRED from the one-file timing above, not
+            # measured on an event of its own.
+            row0_cmd = (3, 0x00)
         # ...and so does an event whose `wait` field is **zero**, for a
         # different reason in the same routine. The players sequence a note's
         # end as
@@ -1303,7 +1429,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)
-        events += [g_note, g_instrument, cmd1, cmd2]
+        events += [g_note, g_instrument, *(row0_cmd or (cmd1, cmd2))]
         if event_log is not None:
             event_log.append((wait, log_record, log_entry))
         ordinal += 1
@@ -2194,7 +2320,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               gate_hold=tie and det.gate_hold,
                               exits_tied=exits_tied,
                               rest_notes=past_table_rests(sid, det),
-                              const_notes=past_table_notes(sid, det),
+                              const_notes={**past_table_notes(sid, det),
+                                           **sfx_dormant_notes(sid, det)},
                               instr_transpose=(
                                   instr_transpose_table(data, det)
                                   if det.instr_transpose >= 0 else None),
@@ -2436,11 +2563,16 @@ def _scaled_step(step: int, multiplier: int, row_calls: int = 0) -> tuple:
     measure, and at `row_calls == 3`, the corpus's most common tempo, that
     discards a third of every bend. See H2G-CONVERSION-METHOD.md section 7.vv.
 
-    Zero means "do not compensate", and so does anything under 3: below that
-    the value is funktempo rather than a rate (gplay.c:325), and `row_calls - 1`
-    stops being a call count worth dividing by.
+    Zero means "do not compensate", and so does 1. **2 compensates** since the
+    2-call row became real: it was excluded as "funktempo rather than a rate
+    (gplay.c:325)", and a CMD_FUNKTEMPO row on a `02 02` speed entry IS a
+    2-call row (goatwriter.constants.CMD_FUNKTEMPO), whose slide runs on one
+    call of two (player.s:982-987 skips continuous effects on tick 0 under
+    REALTIMEOPTIMIZATION, which gt2reloc defaults on). Only that path passes
+    2: `convert` reads a forced `--tempo 2` (CMD_SETTEMPO 2) as the 3 calls it
+    plays.
     """
-    if row_calls >= 3:
+    if row_calls >= 2:
         step = step * row_calls / (row_calls - 1)
     v = min(max(1, round(step / max(1, multiplier))), 0x7FFF)
     return (v >> 8) & 0xFF, v & 0xFF
@@ -4178,6 +4310,216 @@ def _apply_orderlist_tempos(new_track: List[int], moved: dict,
     return written
 
 
+def _pattern_rows(pattern: List[int]) -> int:
+    """Rows a pattern plays: up to its end marker, or all of them."""
+    for r in range(0, len(pattern) - 3, 4):
+        if pattern[r] == GT_END_PATTERN:
+            return r // 4
+    return len(pattern) // 4
+
+
+def _fraction_row_ok(pattern: List[int], k: int, rows: int) -> bool:
+    """Whether row `k` may carry a compensating `CMD_SETTEMPO`.
+
+    A hold row (`$BD`, no instrument, empty command column) whose previous
+    row's command column is empty too. gplay.c's tick-0 switch (gplay.c:404)
+    has no case for `CMD_SETTEMPO`, so a tempo row leaves `command` and
+    `cmddata` as the previous row set them -- and two adjacent free rows end
+    up with the SAME command once `_vibrato_command_pass` fills a note's
+    block (consecutive `$BD` rows with no instrument are always one block),
+    or with none if they are outside one. So the row's effect state is
+    exactly what an empty row would have given it. Row 0 is never taken: it
+    belongs to the subtune's clock and to the tempo change itself.
+    """
+    if not 1 <= k < rows:
+        return False
+    at = 4 * k
+    return (pattern[at] == GT_NO_NOTE and pattern[at + 1] == 0
+            and pattern[at + 2] == 0 and pattern[at + 3] == 0
+            and pattern[at - 2] == 0)
+
+
+# Rows a compensating run is confined to. One run (two commands) per
+# 16-row stretch: a single run over a 64-row pattern let the clock wander
+# 11 calls inside Rasputin's R = 6 patterns (5 frames at -S2) before the run
+# took it back; per 16 rows it stays within about 3.
+FRACTION_CHUNK_ROWS = 16
+
+
+def _fraction_runs(pattern: List[int], rows: int, d: int, b: int,
+                   run_value: int, c: float) -> tuple:
+    """Where `_compensate_fractional_rows` puts `|d|` rows at `run_value`.
+
+    `|d|` is shared over the pattern's 16-row stretches in proportion to
+    their rows (cumulative rounding, so the shares sum to `|d|`), and each
+    share is one run whose two ends pass `_fraction_row_ok`, placed where it
+    keeps that stretch's error smallest -- measured from zero, so the answer
+    depends on the pattern and `d` alone and repeated asks share one copy.
+    A share that cannot be placed whole is shortened and the rest offered to
+    the next stretch. Returns ((first row, length), ...), possibly empty.
+    """
+    ok = [_fraction_row_ok(pattern, k, rows) for k in range(rows)]
+    want = abs(d)
+    # Only stretches that can hold a run at all share in it: a stretch whose
+    # every column is taken (Rasputin's R = 6 pattern carries a portamento on
+    # each of its last 32 rows) would otherwise be dealt calls it can only
+    # pass on to a stretch after it, and the last one has none.
+    chunks = []
+    for s in range(0, rows, FRACTION_CHUNK_ROWS):
+        e = min(s + FRACTION_CHUNK_ROWS, rows)
+        if any(ok[k] and k + 1 <= min(e, rows - 1) and ok[k + 1]
+               for k in range(max(s, 1), e)):
+            chunks.append((s, e))
+    # Each usable stretch answers for the rows up to halfway to the next
+    # one; the last answers for half of what follows it, and the other half
+    # is left to the accumulator and so to the next entry -- the split that
+    # keeps the error smallest when the pattern's tail cannot be touched.
+    bounds = [(e + chunks[m + 1][0]) / 2 for m, (_s, e) in
+              enumerate(chunks[:-1])]
+    if chunks:
+        bounds.append((chunks[-1][1] + rows) / 2)
+    runs = []
+    owed = 0
+    last = 0                            # the last row a command was put on
+    prev = 0.0
+    for (s, e), upto in zip(chunks, bounds):
+        share = (round(want * upto / rows) - round(want * prev / rows)
+                 + owed)
+        prev = upto
+        owed = 0
+        for n in range(min(share, rows - 2), 0, -1):
+            best = None
+            for k1 in range(max(s, last + 1, 1), e):
+                k2 = k1 + n
+                if k2 > min(e, rows - 1) or not (ok[k1] and ok[k2]):
+                    continue
+                err = worst = 0.0
+                for k in range(s, e):
+                    err += (run_value if k1 <= k < k2 else b) - c
+                    worst = max(worst, abs(err))
+                if best is None or worst < best[0]:
+                    best = (worst, k1)
+            if best is not None:
+                runs.append((best[1], n))
+                last = best[1] + n
+                owed = share - n
+                break
+        else:
+            owed = share
+    return tuple(runs)
+
+
+def _compensate_fractional_rows(new_track: List[int], moved: dict,
+                                calls: dict, patterns: List[List[int]],
+                                copies: dict, log=None) -> Tuple[int, float]:
+    """Spend the part of a row an orderlist tempo change rounds away.
+
+    `_apply_orderlist_tempos` writes each change as a whole number of calls,
+    and Goattracker has no fractional tempo: Rasputin's R = 3 rows are 5.333
+    calls at `-S2` and play as 5, R = 5 as 5 against 4.8, R = 10 as 4 against
+    4.4. Each error is small; their SUM is not -- they integrate along the
+    orderlist, and on Rasputin they swung the matched-attack offset -34 ->
+    +62 -> -74 frames over 180 s (`drift` knee 37 per 1000), which is most of
+    its lag-aligned noise disagreement.
+
+    This walks the track from its first change to its end with an error
+    accumulator in calls (ours minus the player's), and gives each orderlist
+    entry the whole number of extra (or fewer) calls that brings the
+    accumulator nearest zero: `CMD_SETTEMPO b +- 1` on one hold row and
+    `CMD_SETTEMPO b` on a later one, so a run of `n` rows each gains or loses
+    a call and the pattern still ends on `b`. The run sits where it keeps the
+    error inside the pattern smallest. A first-order sigma-delta, with one
+    output sample per orderlist entry.
+
+    **In a copy, never in place**, for `_apply_orderlist_tempos`' reason;
+    copies are shared by every entry asking for the same edit. **A run of
+    one repeated entry gets ONE copy**, because `pack_repeats` folds such a
+    run into a repeat command afterwards and differing copies would unfold it
+    -- orderlist bytes are the scarcer budget. The accumulator then moves by
+    the run's length times the per-play remainder.
+
+    Declined, and the error carried on to the next entry, where the pattern
+    has no two usable rows (`_fraction_row_ok`), already changes tempo past
+    row 0, or would need a value outside 3..$7F, or the table is full.
+
+    Returns (entries compensated, final accumulator in calls).
+    """
+    end = len(new_track)
+    for i, b in enumerate(new_track):
+        if b == GT_ORDER_RESTART:
+            end = i
+            break
+    starts = {}
+    for at, c in calls.items():
+        i = moved.get(at)
+        if i is not None and i < end:
+            starts[i] = c
+    if not starts:
+        return 0, 0.0
+    first = min(starts)
+    err = 0.0
+    c = None
+    b = None                         # the CMD_SETTEMPO value in effect
+    done = 0
+    i = first
+    while i < end:
+        if i in starts:
+            c = starts[i]
+        entry = new_track[i]
+        if entry >= MAX_PATTERNS or entry >= len(patterns):
+            i += 1
+            continue
+        j = i + 1
+        while j < end and new_track[j] == entry and j not in starts:
+            j += 1
+        reps = j - i
+        pattern = patterns[entry]
+        rows = _pattern_rows(pattern)
+        if rows == 0:
+            i = j
+            continue
+        if pattern[2] == CMD_SETTEMPO and pattern[3] < 0x80:
+            b = pattern[3]
+        steady = b is not None and b >= TEMPO_FASTEST_STEADY
+        for k in range(1, rows):
+            if pattern[4 * k + 2] == CMD_SETTEMPO:
+                steady = False          # changes its own tempo: leave it
+        if not steady:
+            # The clock here is not one this pass can read, so it cannot say
+            # what the entry costs; keep the accumulator where it is.
+            i = j
+            continue
+        ideal = rows * c
+        d = int(round(ideal - rows * b - err / reps))
+        applied = 0
+        if d:
+            run_value = b + (1 if d > 0 else -1)
+            runs = (_fraction_runs(pattern, rows, d, b, run_value, c)
+                    if TEMPO_FASTEST_STEADY <= run_value <= 0x7F else ())
+            if runs:
+                key = (entry, runs, run_value, b)
+                if key not in copies and len(patterns) < MAX_PATTERNS:
+                    copy = list(pattern)
+                    for k1, n in runs:
+                        copy[4 * k1 + 2:4 * k1 + 4] = [CMD_SETTEMPO, run_value]
+                        copy[4 * (k1 + n) + 2:4 * (k1 + n) + 4] = [
+                            CMD_SETTEMPO, b]
+                    copies[key] = len(patterns)
+                    patterns.append(copy)
+                if key in copies:
+                    new_track[i:j] = [copies[key]] * reps
+                    n = sum(n for _k1, n in runs)
+                    applied = n if d > 0 else -n
+                    done += 1
+        err += reps * (rows * b + applied - ideal)
+        i = j
+    if log and done:
+        log(f"Fractional rows.........: {done} orderlist entr(ies) carry the "
+            f"part of a row the tempo rounds away; {len(copies)} pattern "
+            f"cop(ies), {err:+.2f} call(s) left at the end of the list")
+    return done, err
+
+
 def _apply_boundary_ties(new_track: List[int], moved: dict,
                          steps: Set[int], patterns: List[List[int]],
                          copies: dict, log=None) -> int:
@@ -4871,7 +5213,8 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    split: Optional[List[int]] = None,
                    patterns: Optional[List[List[int]]] = None,
                    max_rows: int = GT_DEFAULT_ROWS,
-                   tempos: Optional[List[dict]] = None) -> List[List[int]]:
+                   tempos: Optional[List[dict]] = None,
+                   tempo_calls: Optional[List[dict]] = None) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
     The length check runs at the end of each track so that `pack` -- which only
@@ -4902,6 +5245,7 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     new_tracks: List[List[int]] = []
     merge_cache: dict = {}      # shared, so one merged pattern serves every voice
     tempo_copies: dict = {}     # (pattern, value) -> the copy carrying it
+    fraction_copies: dict = {}  # see _compensate_fractional_rows
     tie_copies: dict = {}       # pattern -> the copy whose row 0 is tied
     # Present only on a TrackIndex, which is what convert_patterns returns; a
     # hand-built list simply gets no boundary ties.
@@ -4958,6 +5302,12 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
         if tempos and ti < len(tempos) and tempos[ti] and patterns is not None:
             _apply_orderlist_tempos(new_track, moved, tempos[ti], patterns,
                                     tempo_copies, log)
+            # Same placement, for the same reason (its edits ride in copies
+            # `pack_repeats` must see), and after the changes it measures
+            # from: each segment's exact row against the value written.
+            if tempo_calls and ti < len(tempo_calls) and tempo_calls[ti]:
+                _compensate_fractional_rows(new_track, moved, tempo_calls[ti],
+                                            patterns, fraction_copies, log)
         # Same placement, and for the same two reasons: the tie rides in a
         # *copy*, so it has to be substituted before pack_repeats can fold the
         # step back into the run around it -- and after the tempo pass, whose

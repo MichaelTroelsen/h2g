@@ -355,14 +355,16 @@ def test_the_step_compensates_the_call_lost_every_row():
 
 
 def test_no_compensation_without_a_row_length_or_below_funktempo():
-    """0 means "unknown"; 1 and 2 are funktempo, not a rate (gplay.c:325).
+    """0 means "unknown"; 1 is no row at all.
 
     Defaulting to compensation would silently rescale every caller that has
     not been taught to pass a row length -- including the GTS2 path, whose
-    bytes the Commando fixture pins.
+    bytes the Commando fixture pins. 2 used to be in this list as "funktempo,
+    not a rate (gplay.c:325)"; since the CMD_FUNKTEMPO `02 02` row it IS a
+    2-call row and compensates (tests/test_funktempo_rows.py).
     """
     plain = build_speed_table(_porta(8), 1)
-    for rc in (0, 1, 2):
+    for rc in (0, 1):
         assert build_speed_table(_porta(8), 1, row_calls=rc) == plain
 
 

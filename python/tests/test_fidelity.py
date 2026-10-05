@@ -1197,7 +1197,11 @@ def test_nrun_dimension_states_its_own_blindness_and_the_measured_split():
     d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
     assert "blind" in d.of
     assert "199 noise frames" in d.of
-    assert "28 of 28" in d.of and "0 of the other 76" in d.of
+    # The gate-AND re-take (2026-10-03, 3b1c66d) emptied the split; the
+    # v0.5.480 figures survive only as history and must say so.
+    assert "0 of the 50" in d.of and "0 of 50 read" in d.of
+    assert "HISTORICAL (v0.5.480" in d.of
+    assert d.of.index("HISTORICAL (v0.5.480") < d.of.index("28 of 28")
     assert "STRUCTURALLY IMMUNE" in d.of
     assert "10 of 12" in d.of and "5 corpus files" in d.of
 
@@ -4504,13 +4508,15 @@ def test_option_drift_still_reports_multiplier_difference():
 # requires before a `--vice` number is believed.
 
 def _vice_samples(per_voice_calls, calls_per_frame, phase=12, ctrl=0x41,
-                  adsr=0x0900, frames=None, note_frames=8):
+                  adsr=0x0900, frames=None, note_frames=8, hold_gate=False):
     """A synthetic VICE trace: `per_voice_calls[v]` is the frequency each
     play call leaves standing on voice v, written `phase` lines into the
     call, with a transient one line long before it (the dump sees the call's
     first write too), and printed the way the dump prints it -- low byte
     sign-extended into the high one. Gates rise on the first call of every
-    `note_frames`-th frame."""
+    `note_frames`-th frame, for 8 lines -- or, with `hold_gate`, and from then
+    until the last frame of the note, which is what a real note does and what
+    the `--vice` depth reading's envelope gate needs to see."""
     import vicetrace as V
     lines = V.PAL_LINES_PER_FRAME
     period = lines / calls_per_frame
@@ -4533,6 +4539,8 @@ def _vice_samples(per_voice_calls, calls_per_frame, phase=12, ctrl=0x41,
                     0 < k < len(calls):
                 f = (calls[k - 1] & 0xFF00) | (f & 0xFF)
             g = 1 if (i // lines) % note_frames == 0 and i % lines < 8 else 0
+            if hold_gate and (i // lines) % note_frames != note_frames - 1:
+                g = 1
             vs.append(V.VoiceLine(freq=_signext(f), ctrl=(ctrl & ~1) | g,
                                   adsr=adsr))
         out.append(V.Sample(voices=vs))
@@ -4665,7 +4673,7 @@ def test_vice_depth_is_keyed_from_siddump_not_the_dumps_adsr():
     `vibrato_records`. `keyed_by` hands the key over from siddump."""
     seg = _osc(30, 400)
     samples = _vice_samples([seg, [], []], calls_per_frame=1, adsr=0xFFF0,
-                            note_frames=64)
+                            note_frames=64, hold_gate=True)
     n = len(samples) // 312
     sd = fidelity.Voice(freq_events=[(0, 0x1000)],
                         adsr_events=[(0, 0x0BF0)],

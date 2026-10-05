@@ -383,11 +383,19 @@ def agreement(a: FrameCell, b: FrameCell, mode: str = "overlap") -> float:
 
 OCTAVE_MINORITY_LINES = 120   # of 312: the -S2 call boundary sits at ~156
 OCTAVE_MIN_FREQ = 0x100       # below this an "octave" is 3 against 4, not a note
+OCTAVE_MAX_SHIFT = 3          # 2^k with k <= 3: up to +36 semitones (Devils_Galop's
+                              # arp is +24, a ratio of 4). Not a ratio of 3:2.
 
 
 def _octave_verdict(a: int, b: int) -> bool | None:
-    """Is one dumped freq (about) twice the other: True, False, or None when
-    the dump cannot say.
+    """Is one dumped freq (about) 2^k times the other, k = 1..OCTAVE_MAX_SHIFT:
+    True, False, or None when the dump cannot say.
+
+    k > 1 is a trill across more than one octave: Devils_Galop's ticked arp is
+    +24 semitones, `$106E` against `$41B8` (dumped `$FFB8`), a ratio of 4 that
+    a ratio-2 test read as no octave at all. Such a pair reads None, not True,
+    while one member is sign-extended, so the dump alone shows it as blind;
+    `fidelity.vice_oracle_samples` rebuilds the member where siddump saw it.
 
     A `sign_extended` value's high byte is destroyed, and nothing in the dump
     can recover it: VICE prints a freq whose low byte has bit 7 set as `$FFxx`
@@ -412,21 +420,34 @@ def _octave_verdict(a: int, b: int) -> bool | None:
     if ea or eb:
         ext, whole = (a, b) if ea else (b, a)
         lo = ext & 0xFF
-        for want in (2 * whole, whole // 2):
-            # an octave above $8000 is not a 16-bit freq: Devils_Galop's
-            # `$817D` "matched" `$FFFA` as `$102FA` (16 frames through v0.5.496)
-            if want > 0xFFFF:
-                continue
-            real = ((want >> 8) << 8) | lo
-            if abs(real - want) <= 3:
-                return None
+        for k in range(1, OCTAVE_MAX_SHIFT + 1):
+            for want in (whole << k, whole >> k):
+                # an octave above $8000 is not a 16-bit freq: Devils_Galop's
+                # `$817D` "matched" `$FFFA` as `$102FA` (16 frames through
+                # v0.5.496)
+                if want > 0xFFFF:
+                    continue
+                real = ((want >> 8) << 8) | lo
+                # the table's rounding error sits on the LARGER member: it
+                # grows with k when `want` is the larger, and shrinks to
+                # ~1 unit when `want` is the smaller (Formula_1's `$FF82`
+                # against `$0E02` read `$0380` -> `$0382`, 2 off, as an
+                # octave pair two octaves down: it must stay refuted)
+                tol = 3 + (1 << (k - 1)) - 1 if want > whole else max(1, 3 >> (k - 1))
+                if abs(real - want) <= tol:
+                    return None
         return False
     lo_v, hi_v = sorted((a, b))
-    return lo_v > 0 and abs(hi_v - 2 * lo_v) <= 2 + (hi_v >> 10)
+    if lo_v == 0:
+        return False
+    # k octaves is a ratio of 2^k; the rounding of the player's note table
+    # doubles with each one, so the tolerance scales with it.
+    return any(abs(hi_v - (lo_v << k)) <= ((2 << (k - 1)) + (hi_v >> 10))
+               for k in range(1, OCTAVE_MAX_SHIFT + 1))
 
 
 def _octave_partner(a: int, b: int) -> bool:
-    """True only when the dump shows one freq is (about) twice the other --
+    """True only when the dump shows one freq is (about) 2^k times the other --
     `_octave_verdict` is True, never None."""
     return _octave_verdict(a, b) is True
 

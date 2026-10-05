@@ -123,6 +123,17 @@ complete readings; only the classic one moves numbers.
   value to pack with. See [presets](#per-song-presets--presetsjson) — the
   recommended multiplier is recorded per song. 30 of the 80 converting corpus
   files tick every 2 frames and need `-S2`; none tick every frame.
+- **A row of exactly two calls has a second door** in a GTS5 file:
+  `CMD_FUNKTEMPO` on a speed-table entry `02 02` (Goattracker readme.txt
+  1078-1081; `goatwriter.write_funktempo`). It is used for a subtune whose
+  row is 2 calls at the file's `-S` factor -- a non-starting subtune the
+  start-subtune rule (`pack_subtune`) used to clamp to 3 calls, 1.5x slow:
+  5_Title_Tunes subtunes 1 and 4, Auf_Wiedersehen_Monty 12, Gerry_the_Germ 2,
+  Human_Race 4. Every instrument such a subtune runs under -- including
+  instrument 1, which a voice opening on rests runs under unnamed -- is bounded
+  to gatetimer 1, because a 2-call row's counter never reaches 2
+  (`player.s:1090-1098`) and the voice would never fetch its next row. GTS2
+  keeps the 3-call floor (no speed table).
 - Where no speed gate is found (the command-table dialect derives its row
   from the duration table instead; Mozart/Ninja/Mega Apocalypse use a
   *prescaler* — run the player v of every v+1 calls — whose jittery rate no
@@ -245,6 +256,11 @@ dimension worse and no other file's bytes moved. See
 H2G-CONVERSION-METHOD.md § 7.ddddd, which also records why the operand is
 *not* the row length: read that way its `$FE 78` would be 121 frames a row
 against its neighbours' 3.
+
+The change itself is a whole number of calls, so the part of a row it rounds
+away is spent inside each segment's patterns as short runs at one call more
+or less (`patterns._compensate_fractional_rows`): Rasputin's `drift` goes
+-11.9 -> +0.3 per 1000 and its knee 37 -> 0.2 over 180 s. Same section.
 
 Hubbard's `$FE` track byte means *this tune has ended*. Every dialect
 implements it the same way — it calls the player's jump-table entry +3, which

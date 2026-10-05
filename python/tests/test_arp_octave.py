@@ -1022,7 +1022,11 @@ def test_rasputin_splits_its_opening_by_tempo():
                 for r in range(0, len(pat), 4):
                     if pat[r] == 0xFF:
                         break
-                    if pat[r + 2] == CMD_SETTEMPO and pat[r + 3] < 0x80:
+                    # Row 0 only, the planner's own reading: a tempo past
+                    # row 0 is the fractional-row compensation
+                    # (`patterns._compensate_fractional_rows`), not a step.
+                    if (r == 0 and pat[r + 2] == CMD_SETTEMPO
+                            and pat[r + 3] < 0x80):
                         ev.append((row, pat[r + 3]))
                     if pat[r + 1]:
                         cur = pat[r + 1]

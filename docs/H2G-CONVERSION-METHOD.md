@@ -9329,6 +9329,47 @@ number of calls: 2.67 frames at `-S2` is 5.33 and is written as 5. The
 alternative to a rounded change is the absent one, which is what this file had
 — every row 4 calls where the truth ranges from 4.03 to 6.
 
+#### The remainder the rounding drops is spent in the patterns
+
+Each rounded change is a small error; their sum is not. Subtune 0's segments
+are 5 calls against 5.333 (R 3), 5 against 4.8 (R 5), 4 against 4.4 (R 10),
+4 against 4.067 and 4.033, 5 against 4.667 (R 6), and they integrate along
+the orderlist: through v0.5.509 voice 2's first pass ran -217.6 .. +145.1
+calls off the player's clock (about -109 .. +73 frames at `-S2`), and over
+the 180 s window the matched-attack offset swung -34 -> +62 -> -74 frames,
+`drift` reading -11.9 per 1000 at MAD 16.2 with a 37.3 knee.
+
+`patterns._compensate_fractional_rows` keeps the exact quotient
+(`orderlist_tempo_calls`, the number `orderlist_tempo_values` rounds) and
+walks each tempo-carrying track with an accumulator in calls. Every entry
+gets the whole number of extra or fewer calls that brings the accumulator
+nearest zero, as runs of hold rows at `b ± 1` -- `CMD_SETTEMPO b ± 1` on one
+row, `CMD_SETTEMPO b` on a later one, one run per 16-row stretch, in a copy.
+Three readings make that safe:
+
+* **A tempo row does not disturb the effect state.** gplay.c's tick-0 switch
+  has no `CMD_SETTEMPO` case, so `command`/`cmddata` stay as the previous row
+  left them; a run end therefore goes only on a `$BD` hold row whose previous
+  row's column is free too, and `_vibrato_command_pass` (which fills only free
+  rows, later) gives two such rows the same command or none.
+* **A repeated run keeps one copy**, so `pack_repeats` still folds it -- the
+  orderlist is the scarcer budget.
+* **The duty split reads only row-0 tempos.** A run's `b + 1` is not the
+  segment's step (`tempo_duty_split_plan`); the clones it plans are unchanged
+  (`2 clone(s) [(7, 15, 3), (14, 16, 3)]`).
+
+Measured at 81da71d + this change, presets, `-t 180`, one file: `drift`
+-11.9 -> +0.3 per 1000, MAD 16.2 -> 0.35, knee 37.3 -> 0.23; `melody` 99 ->
+100%, `wave` 60 -> 77%, `adsr` 51 -> 68%, `gate` 45 -> 51%, `tie` 21 ->
+35%, attacks 2710 -> 2676 against the original's 2679. The median matched
+offset per 500-frame window stays 1..4 frames over the window (was -35 ..
++62), and the lag-aligned noise disagreements fall from 3472/2885
+(original-only/ours-only, three voices) to 1622/1305. The first pass now
+stays within -6.3 .. +6.7 calls; its widest point is the R 6 entry whose last
+32 rows carry a portamento on every row, where no run can sit. Cost: 61
+pattern copies (72 -> 133 patterns) and the `.sng` 18125 -> 26750 bytes;
+it still packs. Only Rasputin carries `$FE nn`, and only its bytes move.
+
 #### Measured
 
 `-t 60`, shipped preset, and `Rasputin.sid` is the only file whose bytes move
@@ -12168,6 +12209,34 @@ init/play and speed bit), and `goatwriter.append_song` appends the result,
 renumbering every reference and sharing identical table regions, under every
 Goattracker cap (63 instruments, 208 patterns, 255 rows a table). The subtune
 matrix pairs on the diagonal, each subtune equal to its player converted alone.
+The pulse table is the cap that binds: subtune 0's `pulse_phase` table took
+214 rows in the per-phase layout, and players 1-4 fitted only with their
+sweeps dropped. On a compilation subtune 0's table is now laid with shared
+ramps (`build_pulse_phase_table(prefer_short=True)`): 167 rows, the same
+siddump register table for 180 s, and players 1-4 append with their sweeps,
+without `pulse_phase` (pulse 248 of 255; pulse changes against the original
+387/15910 -> 15355/15910 on subtune 1, measured at 81da71d).
+
+**A 2-call row is CMD_FUNKTEMPO, not a clamp (task 5tt-multirate-subtunes).**
+Players 1 and 4 of 5_Title_Tunes tick every 2 frames inside a file packed at
+player 0's `-S1`, and CMD_SETTEMPO's fastest steady row is 3 calls, so they
+played 1.5x slow (melody 80.6 / 81.7 at `-t 180`). The two designs on the
+table were both measured and both lose: packing the compilation at `-S2`
+(forced through `file_multiplier`) gave 100 on player 1 but dropped player 4
+entirely (pulse table 259 > 255 rows once subtune 0's `pulse_phase` is
+re-planned at `-S2`) and put 2140 slide frames on subtune 0 against the
+original's 0; the start-subtune rule is the clamp itself. The third door is
+Goattracker's own: CMD_FUNKTEMPO on a speed entry `02 02` (readme.txt
+1078-1081; `player.s:725-733` reloads the counter with `value - 1` = 1). At
+`-S1`, subtunes 1 and 4 read 99.9 / 99.9 with subtunes 0, 2 and 3 unchanged.
+The bound it needs -- gatetimer 1 on every instrument a 2-call subtune runs
+under -- exposed two attribution slips in `instrument_row_calls`' consumers:
+the instrument writer looked the bound up under `i + lead`, the slot BEFORE
+the record, and instrument 1, which every voice starts on (`player.s:621`),
+was charged to no subtune whose voice opens on rests. Both were already
+stopping voices at 3- and 4-call rows (Human_Race subtune 2 melody 31.6 ->
+100, Knucklebusters 2 51.4 -> 99.9, with only the attribution fixed).
+
 
 **Sanxion's past-table drum keeps its noise frame.** A `KEYOFF` row carrying an
 instrument is the decoder's past-table rest; `past_table_drum_plan` re-emits it

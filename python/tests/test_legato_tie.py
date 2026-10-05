@@ -195,8 +195,11 @@ def test_a_multispeed_song_keeps_the_old_spelling_because_greloc_slips():
 @needs_corpus
 def test_monty_respells_exactly_its_unflagged_ties(monty):
     old, new, lines = monty
-    assert len(_tie_rows(old)) == 150
-    assert len(_tie_rows(new)) == 150 - 33
+    # 164 since tied slides (a slide event after a bit-5 note) spell their tie
+    # on row 0 (tests/test_tied_slide.py): 150 before, +14, none of them
+    # respelled -- the clone count below is unchanged.
+    assert len(_tie_rows(old)) == 164
+    assert len(_tie_rows(new)) == 164 - 33
     assert any("33 tie row(s) on 2 legato clone(s)" in l for l in lines)
     n_old = len(old.instruments)
     assert len(new.instruments) == n_old + 2
@@ -211,7 +214,7 @@ def test_monty_respells_exactly_its_unflagged_ties(monty):
 @needs_corpus
 @pytest.mark.parametrize("name, replaced", [
     ("Auf_Wiedersehen_Monty.sid", 0),   # its preset writes real firstwaves
-    ("Pandora.sid", 2),                 # every record on FIRSTWAVE_TESTBIT
+    ("Pandora.sid", 3),                 # every record on FIRSTWAVE_TESTBIT (2 before tied slides)
 ])
 def test_clones_are_their_record_with_the_legato_bit_and_real_wave(name, replaced):
     old = parse_sng(_convert(name, legato=False)[0])

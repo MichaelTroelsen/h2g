@@ -311,6 +311,25 @@ def append_song(base: bytes, extra: bytes, tag: str = "",
             rec[5] = moved(3, rec[5])
         key = bytes(rec[:_NAME_AT])
         if key not in known:
+            # The same record with a SHORTER early fetch (gatetimer & $3F) is
+            # the same instrument bounded by a faster row -- a 2-call
+            # CMD_FUNKTEMPO row bounds it to 1 (constants.CMD_FUNKTEMPO) --
+            # and an instrument played at two tempos takes the faster one's
+            # bound, `tracks.instrument_row_calls`' rule within one song. Only
+            # onto a lower one already in `base`: raising `base`'s would stop
+            # its own fast subtune (player.s:1090-1098 fetches when the
+            # counter EQUALS the gatetimer, and a 2-call row never counts to
+            # 2), and lowering it would touch `base`'s bytes.
+            at = 7    # ad sr wave pulse filter speed vibdelay GATETIMER firstwave
+            gt = rec[at]
+            for g in range((gt & 0x3F) - 1, 0, -1):
+                rec[at] = (gt & 0xC0) | g
+                if bytes(rec[:_NAME_AT]) in known:
+                    key = bytes(rec[:_NAME_AT])
+                    break
+            else:
+                rec[at] = gt
+        if key not in known:
             if tag:
                 name = bytes(rec[_NAME_AT:]).rstrip(b"\x00").decode("latin-1")
                 rec[_NAME_AT:] = _padded_name_bytes(tag + name)

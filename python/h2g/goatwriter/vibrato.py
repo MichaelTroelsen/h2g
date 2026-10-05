@@ -150,11 +150,11 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
     # quantity actually wanted is the mean row over the calls the vibrato
     # runs for; neither end is that, and reaching it means a new argument
     # through `convert`.
-    # Zero means "do not compensate", and so does anything under 3 -- the same
-    # convention and the same reason as `patterns._scaled_step`: below that the
-    # value is funktempo rather than a row length, and `row_calls - 1` stops
-    # being a call count worth dividing by.
-    if row_calls >= 3:
+    # Zero means "do not compensate", and so does 1 -- the same convention as
+    # `patterns._scaled_step`, which since the CMD_FUNKTEMPO 2-call row
+    # (goatwriter.constants.CMD_FUNKTEMPO) counts 2 as a row: one call of two
+    # runs effects.
+    if row_calls >= 2:
         half = half * (row_calls - 1) / row_calls
     # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
     # shortest is two calls (cmp 0), which is what the clamp gives.
@@ -173,8 +173,9 @@ def _effect_calls(entries: Optional[List[tuple]], ptr: int, calls: int,
     * **tick 0.** `REALTIMEOPTIMIZATION` is on in every pack (gt2reloc.c:55)
       and skips continuous effects whenever the channel counter is 0 -- the
       first call of every row, `row_calls` apart from the note's own call 0.
-      The `row_calls >= 3` convention of `_classic_vibrato_entry` applies:
-      below that the value is funktempo, not a row, and nothing is withheld.
+      The `row_calls >= 2` convention of `_classic_vibrato_entry` applies:
+      a 2-call CMD_FUNKTEMPO row withholds every second call; 0 and 1
+      withhold nothing.
     * **a wavetable step that writes a frequency.** A step whose right column
       is not $80 (editor encoding; greloc inverts the high bit) takes the
       `mt_wavefreq` / `goto PULSEEXEC` path, and so does a wavetable command
@@ -210,7 +211,7 @@ def _effect_call_list(entries: Optional[List[tuple]], ptr: int, calls: int,
                 if (GT_WAVE_FIRST_CMD <= wave <= GT_WAVE_LAST_CMD
                         or note != GT_WAVE_NO_NOTE):
                     effects = False
-        if row_calls >= 3 and c % row_calls == 0:
+        if row_calls >= 2 and c % row_calls == 0:
             effects = False
         if effects:
             out.append(c)
@@ -324,7 +325,8 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
     for i, (idx, delay) in vib_ptrs.items():
         ptr = (wave_starts[i + lead]
                if wave_starts is not None and i + lead < len(wave_starts) else 0)
-        own = (instr_row_calls or {}).get(i + lead, row_calls)
+        # Goattracker number, as `_write_instruments` keys it (i + lead + 1).
+        own = (instr_row_calls or {}).get(i + lead + 1, row_calls)
         # Same test as `_write_instruments`' firstwave byte.
         real = no_test_restart or (i + lead + 1) in real_firstwave_instruments
         got = _classic_gate_delay(det, mult, own, entries, ptr,

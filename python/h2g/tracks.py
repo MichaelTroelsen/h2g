@@ -1207,10 +1207,21 @@ def instrument_row_calls(tracks: List[List[int]],
     caller keeps the file-wide bound for it; `group_tempos` shorter than the
     track list (a split subtune shifted the numbering) falls back the same
     way, because a wrong attribution here is a stopped song.
+
+    **Instrument 1 is played without being named.** Every voice starts on it
+    (player.s:618-621 `lda #$01 / sta mt_chninstr,x`, gplay.c:62), so a voice
+    whose first row names no instrument runs under 1 until it does -- rests
+    included, because the gatetimer decides when the NEXT row is fetched. On
+    a 2-call CMD_FUNKTEMPO row (goatwriter.constants.CMD_FUNKTEMPO) a
+    gatetimer of 2 is never reached and that voice never leaves row 0:
+    Gerry_the_Germ subtune 2's voice 1 (instrument 1 named only in 3-call
+    subtunes) and Auf_Wiedersehen_Monty subtune 12's voice 2 played nothing.
+    So such a voice's subtune is charged to instrument 1 as well.
     """
     if not group_tempos:
         return {}
     plays: Dict[int, set] = {}
+    implicit: set = set()
     for ti, track in enumerate(tracks):
         group = ti // 3
         if group >= len(group_tempos):
@@ -1218,6 +1229,7 @@ def instrument_row_calls(tracks: List[List[int]],
             # rather than attribute this track's patterns to the wrong clock.
             return {}
         operand = False
+        first = True
         for entry in track:
             if operand:                 # $FF's restart position, not a pattern
                 operand = False
@@ -1225,7 +1237,14 @@ def instrument_row_calls(tracks: List[List[int]],
                 operand = True
             elif entry < MAX_PATTERNS:
                 plays.setdefault(entry, set()).add(group)
+                if first and entry < len(patterns):
+                    rows = patterns[entry]
+                    if len(rows) < 2 or not rows[1]:
+                        implicit.add(group)
+                first = False
     out: Dict[int, int] = {}
+    if implicit:
+        out[1] = min(group_tempos[g] for g in implicit)
     for pattern, groups in plays.items():
         if pattern >= len(patterns):
             continue

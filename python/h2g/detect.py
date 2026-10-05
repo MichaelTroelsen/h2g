@@ -253,7 +253,8 @@ class Detection:
     pulse_reseed_gate: str = ""
     # The *other* pulse engine, selected by effect bit $08 and mutually
     # exclusive with the sweep above: 34 corpus files sweep, 21 accumulate,
-    # none do both. `pulse_lo_base` is the file offset of a second
+    # none do both. (23 accumulate counting the zero-page dialect,
+    # PULSE_LO_SHAPES -- Samantha Fox and Spellbound, read since 2026-10-04.) `pulse_lo_base` is the file offset of a second
     # per-instrument record array, strided like the instrument table, whose
     # +0/+1 seed the 12-bit width at note start and whose +6 is added to the
     # low byte every frame. -1 when the block is absent or unreadable.
@@ -1315,9 +1316,10 @@ class PlayerView(SidFile):
     `pack_multiplier` is the compilation's `gt2reloc -S` factor. A packed file
     has one call rate, chosen from the subtune it starts on
     (`goatwriter.pack_subtune`), so a player whose own rows want another rate
-    is converted at the file's and its tempo clamps -- the same compromise a
-    single player's non-starting subtunes already get
-    (`goatwriter.file_multiplier`).
+    is converted at the file's -- the same compromise a single player's
+    non-starting subtunes already get (`goatwriter.file_multiplier`); a row
+    of 2 calls there plays as CMD_FUNKTEMPO rather than clamping
+    (`goatwriter.write_funktempo`).
     """
     pack_multiplier: int = 0
     player: int = -1
@@ -4568,11 +4570,9 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # `LDY` loads a *byte offset* (instrument index times stride) and
     # `LDA base,Y` reads the instrument records themselves -- Commando's block
     # names $5591, which is where its instrument table starts. See
-    # `_find_pulse_lo` for the field layout and the corpus evidence.
-    pulse_lo = search_file(
-        sid.data,
-        f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
-        f"99 ?? ?? AC ?? ?? 99 02 D4") >= 1
+    # `_find_pulse_lo` for the field layout and the corpus evidence, and
+    # PULSE_LO_SHAPES for the zero-page dialect (Samantha Fox, Spellbound).
+    pulse_lo = _pulse_lo_block(sid.data, load) is not None
     return rise, arp, drum, pulse_lo, arp_up
 
 
@@ -4713,17 +4713,16 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
         return -1
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
-    off = search_file(
-        sid.data,
-        f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
-        f"99 ?? ?? AC ?? ?? 99 02 D4")
-    if off < 0:
+    block = _pulse_lo_block(sid.data, load)
+    if block is None:
         return -1
+    lda, rate, spelling = block
     d = sid.data
-    base = d[off + 11] | (d[off + 12] << 8)
+    base = d[lda + 1] | (d[lda + 2] << 8)
+    sta = rate + (3 if d[rate] == 0x6D else 2)
     # The store must name the same array the load read, or this is not the
     # accumulate-in-place shape and nothing here is trustworthy.
-    if (d[off + 17] | (d[off + 18] << 8)) != base:
+    if (d[sta + 1] | (d[sta + 2] << 8)) != base:
         return -1
     at = sid.to_offset(base)
     if at < 0 or at + 6 >= len(d):
@@ -4732,7 +4731,66 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
     # signature matched a shape whose field offsets are not the ones above.
     if at != det.instr_start:
         return -1
+    # A fallback spelling must also show its rate cell filled from record +6
+    # (`LDA instr+6,Y / STA rate`), the field the emitter reads. The absolute
+    # spelling takes +6 from its 21-of-21 census above and is not re-checked,
+    # so a file that already reads correctly cannot be disturbed by this.
+    if spelling:
+        six = base + 6
+        cell = bytes(d[rate + 1:rate + (3 if d[rate] == 0x6D else 2)])
+        store = bytes([0x8D if len(cell) == 2 else 0x85]) + cell
+        if d.find(bytes([0xB9, six & 0xFF, six >> 8]) + store) < 0:
+            return -1
     return at
+
+
+# The accumulate block's spellings, tried IN ORDER; the first is the one the
+# 21 files above carry, and the others are fallbacks consulted only where it
+# matched nothing. Each follows the effect-byte load (`{load}`):
+#
+#     AND #$08 / BEQ / LDY idx / LDA instr,Y / ADC rate / STA instr,Y /
+#     LDY sidoff / STA $D402,Y
+#
+# The ZERO-PAGE dialect is the triangle's own (PULSE_TRI_ZP_SHAPE): the same
+# player family keeps `idx` -- the voice's record offset, filled by `LDA
+# instr,X / ASL / ASL / ASL / TAY / STY idx` at note fetch -- in zero page, and
+# Samantha Fox keeps the rate there too. Read off the two files that carry it:
+#
+#     Samantha Fox  7218  A5 E6     LDA eff        Spellbound  E25B  A5 BE
+#                   721A  29 08     AND #$08                         29 08
+#                   721C  F0 13     BEQ tri ($7231)                  F0 14
+#                   721E  A4 EB     LDY idx        (STY $EB, $7173)  A4 BD
+#                   7220  B9 07 74  LDA instr,Y                      B9 48 E5
+#                   7223  65 BD     ADC rate       (LDA $740D,Y at   6D D0 E4
+#                                          $717A; Spellbound $E1BC)
+#                   7225  99 07 74  STA instr,Y                      99 48 E5
+#                   7228  AC F6 73  LDY sidoff                       AC C3 E4
+#                   722B  99 02 D4  STA $D402,Y                      99 02 D4
+#
+# Same mechanism as Commando's in every respect the emitter reads: the low
+# byte accumulates IN the record (+0), +6 is the rate, $D403 is never written
+# here, and the BEQ skips to the triangle -- so bit $08 picks this engine over
+# that one, exactly as in the absolute dialect. Censused over the corpus (all
+# eight LDY/ADC/LDY addressing combinations): the absolute spelling in 21
+# files, `A4/6D/AC` in Spellbound only, `A4/65/AC` in Samantha Fox only, and
+# no other combination anywhere.
+PULSE_LO_SHAPES = (
+    "29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? 99 ?? ?? AC ?? ?? 99 02 D4",
+    "29 08 F0 ?? A4 ?? B9 ?? ?? 6D ?? ?? 99 ?? ?? AC ?? ?? 99 02 D4",
+    "29 08 F0 ?? A4 ?? B9 ?? ?? 65 ?? 99 ?? ?? AC ?? ?? 99 02 D4",
+)
+
+
+def _pulse_lo_block(d: bytes, load: str):
+    """(offset of `LDA instr,Y`, offset of `ADC rate`, spelling index) for the
+    first PULSE_LO_SHAPES spelling found after `load`, or None."""
+    lead = len(load.split())
+    for spelling, shape in enumerate(PULSE_LO_SHAPES):
+        off = search_file(d, f"{load} {shape}")
+        if off >= 1:
+            lda = off + lead + shape.split().index("B9")
+            return lda, lda + 3, spelling
+    return None
 
 
 # The triangle sweep, in full, because every field this converter needs is an

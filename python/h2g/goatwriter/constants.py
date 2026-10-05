@@ -346,6 +346,22 @@ CMD_SETTEMPO = 15
 GT_MIN_TEMPO = 2                  # below this is funktempo, not a rate
 TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
 
+# A row of TWO calls is still expressible, through the other door: CMD_FUNKTEMPO
+# (gcommon.h:18) pointing at a speed-table entry `02 02` -- Goattracker's own
+# recipe (readme.txt:1078-1081: "by using the funktempo command you can get
+# tempo 2 ... speedtable entry: 02 02 ... gateoff timer 1 in all instruments
+# and disable the pulse-optimization skipping"). The packed player loads both
+# halves into mt_funktempotbl (player.s:310-316) and reloads the counter with
+# `value - 1` = 1 (player.s:725-733: carry clear after `bcs`), so tick 0 comes
+# every second call; gplay.c:486-487/330 is the same in the editor. The two
+# conditions hold by construction here: gt2reloc is always run `-O0`, and the
+# gatetimer of an instrument played on a 2-call row is bounded to 1 by
+# `_hard_restart_ticks(row_calls=2)`. Only a GTS5 file has a speed table, so a
+# GTS2 file keeps the steady floor.
+CMD_FUNKTEMPO = 14
+FUNK_ROW_CALLS = 2                # the row CMD_FUNKTEMPO + `02 02` plays
+FUNK_SPEED_ENTRY = (FUNK_ROW_CALLS, FUNK_ROW_CALLS)
+
 # The superseded route: instrument 63's attack/decay (gplay.c:221). It was
 # wrong twice over. `ad = 2` yields tempo 1, which is funktempo -- the
 # alternating 9/6 tick pattern, not the steady 2 calls/row it was documented
