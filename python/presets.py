@@ -101,7 +101,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "silent_park": True,
          "skip_gate": True,
          "slides": True, "effects": True, "status_bit6": True,
-         "reject_phantoms": True, "fold_transpose": True,
+         "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
          "vibrato_command": True, "cut_release": True, "tie": True,
@@ -131,9 +131,14 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
 # emitted bytes, run record `name-the-minority-of-files-each-always-flag-
 # actually-earns-its-place-on`). MEASURED AT v0.5.483 / 50a6178; a figure
 # in the present tense decays, so re-run the census before quoting one.
-#   Two flags are live on NOTHING as shipped -- reject_phantoms and
-#   rest_instrument: nothing in this corpus distinguishes their True from
-#   their False. Two are live on EVERY file -- compact_instruments and
+#   Two flags were live on NOTHING as shipped -- reject_phantoms and
+#   rest_instrument. The pairwise census (extend-the-multi-flag-census-to-
+#   all-fourteen-remaining-always-flags, 1dde44a) settled both: reject_
+#   phantoms stayed inert on all 89 files and was REMOVED at v0.5.511
+#   (decision reject-phantoms-and-rest-instrument-are-live-on-zero-files);
+#   rest_instrument is masked, not dead -- live on 13 files once
+#   compact_instruments is off -- so it stays, and REST_INSTRUMENT_MASKED_BY
+#   below records that population. Two are live on EVERY file -- compact_instruments and
 #   no_hard_restart -- the strongest evidence any always flag has. The
 #   rest are a minority of files each, which is what the ratio column in
 #   SURVEY.md cannot show. This is a one-flag-at-a-time MARGINAL census: a
@@ -146,7 +151,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
 LIVE_ON = {
     "legal_restart": 30, "silent_park": 30, "skip_gate": 47,
     "slides": 28, "effects": 72, "status_bit6": 56,
-    "reject_phantoms": 0, "fold_transpose": 14,
+    "fold_transpose": 14,
     "sustain_exact": 67, "no_hard_restart": 89,
     "filters": 26, "pulse": 71, "vibrato": 82,
     "vibrato_command": 25, "cut_release": 31, "tie": 66,
@@ -160,6 +165,20 @@ LIVE_ON = {
     # Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines.
     "ilv_filter_routing": 5,
 }
+
+# rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:
+# with compact_instruments off, flipping rest_instrument moves the bytes of
+# these 13 files (pairwise census, run record extend-the-multi-flag-census-
+# to-all-fourteen-remaining-always-flags, at 1dde44a, v0.5.494; e.g. Zoids
+# compact-off 8756b0cd456a vs compact-off + rest flipped 87a9d8e5bd33).
+# HISTORICAL figure: re-run that census before quoting it. It is why the
+# flag stays although its marginal count is 0.
+REST_INSTRUMENT_MASKED_BY = ("compact_instruments", (
+    "Chain_Reaction", "Delta", "Devils_Galop", "Formula_1_Simulator",
+    "Kentilla", "Master_of_Magic", "Mega_Apocalypse", "Proteus",
+    "Samantha_Fox_Strip_Poker", "Spellbound", "Thing_on_a_Spring", "Zoids",
+    "Zoolook"))
+
 LIVE_ON_MEASURED_AT = "0.5.483"
 
 # convert() options deliberately NOT in the `always` block, and why. Every
@@ -1914,12 +1933,6 @@ def main(argv=None) -> int:
                    # Frees a slot and five wavetable entries, and lines the
                    # numbering up with the player's own records.
                    "compact_instruments": FIXED["compact_instruments"],
-                   # Its companion, and not optional beside it: a phantom
-                   # pattern entry decoded under the bit-6 grammar emits
-                   # garbage portamento, and gt2reloc re-encodes the speed
-                   # table file-wide, so one junk subtune's phantom
-                   # corrupts every other subtune's pitches.
-                   "reject_phantoms": FIXED["reject_phantoms"],
                    # Hubbard's transposes of 24, 36 and 48 semitones do not
                    # fit Goattracker's +14 orderlist ceiling and were
                    # clamped, playing four files up to 21 semitones flat.

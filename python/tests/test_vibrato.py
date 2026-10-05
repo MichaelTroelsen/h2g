@@ -532,7 +532,9 @@ def test_a_long_note_on_a_named_instrument_without_vibrato_is_not_unnamed():
     assert [pats[1][i + 2] for i in range(0, 12, 4)] == [0, 0, 0]
     assert [pats[2][i + 2] for i in range(0, 12, 4)] == [0, 0, 0]
     assert lines == ["Vibrato command.........: 1 note(s) vibrated, "
-                     "0 damped by length, 1 on an unnamed instrument, "
+                     "0 damped by length, 1 with no instrument resolved in the "
+                     "pattern (commanded nothing; they keep the "
+                     "instrument's own pointer), "
                      "1 long on an instrument with no vibrato"], lines
     # A carried instrument counts as named too: entered holding 4.
     pats = [_pattern(_note(instr=4), _hold()),
@@ -541,14 +543,14 @@ def test_a_long_note_on_a_named_instrument_without_vibrato_is_not_unnamed():
     lines = []
     _vibrato_command_pass(det, pats, {0: (7, 8)}, lead=1, log=lines.append,
                           tracks=[[0, 1, 2]])
-    assert lines and "unnamed" not in lines[0], lines
+    assert lines and "no instrument resolved" not in lines[0], lines
     assert "1 long on an instrument with no vibrato" in lines[0], lines
 
 
 @needs_corpus
 def test_commodore_64_music_examples_instrument_04_is_not_unnamed():
     """The finding behind the split: under the shipped presets three of the
-    long notes logged `on an unnamed instrument` sit on instrument 04, whose
+    long notes logged as `on an unnamed instrument` (now `no instrument resolved`) sit on instrument 04, whose
     shift byte is $00 -- named, and switched off by the player itself."""
     import json
     if not CORPUS.is_dir():

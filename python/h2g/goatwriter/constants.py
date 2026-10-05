@@ -115,13 +115,27 @@ EFFECT_PER_FRAME = 0x01
 DRUM_SPEED_PER_FRAME = 0x0100
 
 
-def _drum_speed(multiplier: int = 1) -> tuple:
+def _drum_speed(multiplier: int = 1, gate_skip: int | None = None) -> tuple:
     """`DRUM_SPEED_PER_FRAME` as a per-call (hi, lo) step at `-S{multiplier}`.
 
     Floor rather than round, and never zero: a step of zero is a sweep that
     does not move, which is further from the player than one 1/256th slow.
+
+    **The step is per WORKING frame**, and a player with an outer gate of
+    reload O (`tempo.outer_gate_skip`) runs nothing at all -- the drum block
+    included -- on one call in `O + 1`. Our tempo spreads those skipped
+    frames over every row (`SongSpeeds.exact_row`), so a frame of the
+    player's sweep occupies `multiplier * (O + 1) / O` of our calls, the
+    divisor `pulse._tri_speed` already uses for the same reason. Measured on
+    Warhawk `$0F0A` and Proteus `$090A` (O 7, `-S7`): the original falls
+    exactly `$0300` on every one of 82 notes and never `$0400`, so no skipped
+    frame ever carries a decrement; `/7` overshot that travel by 8/7.
     """
-    step = max(1, DRUM_SPEED_PER_FRAME // max(1, multiplier))
+    m = max(1, multiplier)
+    if gate_skip:
+        step = max(1, (DRUM_SPEED_PER_FRAME * gate_skip) // (m * (gate_skip + 1)))
+    else:
+        step = max(1, DRUM_SPEED_PER_FRAME // m)
     return (step >> 8) & 0xFF, step & 0xFF
 
 

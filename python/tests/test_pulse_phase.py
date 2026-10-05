@@ -770,8 +770,10 @@ def _play_pulse_table(entries: list, ptr: int, calls: int) -> list:
 # this tree, and the records the shared-ramp rescue keeps swept. Master_of_
 # Magic and Phantoms are two of the task's four (docs/LESSONS.md, "The
 # pulse-phase table overflows on four VBI carriers"); the rest were found
-# overflowing by the same corpus byte-hash. Gremlins 10 and 20 and
-# Human_Race 20 and 23 still degrade.
+# overflowing by the same corpus byte-hash. Gremlins 10 and Human_Race 20
+# still degrade; Gremlins 20 and Human_Race 23 stopped degrading when the
+# shared layout began laying one block over a sweep group's union
+# (tests/test_pulse_phase_union.py).
 #
 # **THE OTHER TWO OF THE FOUR, Last_V8 and its C128 version, LEFT this set
 # with the triangle walk's tick clock and voice cells**: the plan is now
@@ -784,8 +786,8 @@ _OVERFLOWING = {
     "Phantoms_of_the_Asteroid.sid": (17,),
     "Battle_of_Britain.sid": (11, 15, 16),
     "Crazy_Comets.sid": (17,),
-    "Gremlins.sid": (7,),
-    "Human_Race.sid": (21,),
+    "Gremlins.sid": (7, 20),
+    "Human_Race.sid": (21, 23),
 }
 
 

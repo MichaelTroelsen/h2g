@@ -540,35 +540,11 @@ entries and unplayed remainders — at each song's presets only `Last_V8` and
 `W_A_R` change at all — which is why this flag shipped **blocked** for two
 versions: decoding Last V8's phantom entry `$1C` differently poisoned the
 packed file's speed table and took its measured melody from 71% to 3%. Use
-it together with `--reject-phantoms`, which removes that hazard; measured
-with both flags at each song's presets, no corpus file moves by a point.
-
-## `--reject-phantoms` (pattern-table validation)
-
-The pattern count is inferred as `hi - lo - 1` — the gap between the LO and
-HI pointer tables (`H2G-CONVERSION-METHOD.md` §4.2). Nothing says every byte
-of that gap is an authored entry, so the table can claim **phantom** entries
-whose "pointer" is whatever bytes sit in the cells. `Last_V8`'s entry `$1C`
-points one byte past the last real pattern's terminator, straight into the
-player's own track-selector routine.
-
-The pass judges entries on the player's own terms, never statistically: an
-entry is rejected if its cell or address lies outside the file, if decoding
-it under the file's own grammar (dialect, `--slides`, `--status-bit6`) runs
-off the end of the file, or if the bytes it would decode overlap the pointer
-tables themselves or code that detection matched a player signature in
-(`Detection.code_spans` — bytes *known* to be the player). A rejected entry
-becomes the same one-rest placeholder an unresolvable address gets, so
-orderlists that name it still resolve. Reachability is deliberately not a
-criterion — unreferenced patterns are `--prune-patterns`' business, and
-orderlists naming entries beyond the table (dangling references, see
-`SURVEY.md`) are a separate phenomenon.
-
-Corpus-wide the pass flags entries in 10 files, none of them referenced by
-any clean subtune's orderlist; 7 of the 10 are digi-engine files whose
-flagged entries already decoded to the placeholder, so bytes actually change
-only for `Last_V8`, `Last_V8_C128_version` and `Kings_of_the_Beach_ingame`.
-Off by default: it changes the output bytes of those files.
+it together with the presets' `always` block. `--reject-phantoms`, which once
+removed that hazard by replacing provably non-pattern table entries with a
+one-rest placeholder, was REMOVED at v0.5.511: a pairwise census over every
+always flag (1dde44a) found it moved no bytes on any of the 89 files, because
+nothing in a preset conversion decodes those entries any more.
 
 ## `--skip-gate` (the row length the gate alone under-reads)
 
@@ -1031,6 +1007,11 @@ The old derivation equated the player's `(bound >> 1) × depth` — which the
 player's apply loop only ever *subtracts*, so it is a peak-to-peak — with a
 Goattracker *amplitude*. A period twice too long and an excursion convention
 off by two cancelled in the shift exactly. Only `cmp` was ever wrong.
+*Retracted 2026-10-05 (lvvp-vibrato-phase):* the claim that the apply loop
+"only ever *subtracts*". It subtracts `bound >> 1` depths and then adds `ctr`
+depths, so the peak-to-peak is `bound × depth`. The `rshift` that matches it
+is `shift + log2(multiplier)`, which v0.5.369 ships. Evidence is in
+`goatwriter/vibrato.py` `_classic_vibrato_entry`.
 
 **`FIDELITY.md` cannot adjudicate the correction, and it is worth being precise
 about why.** No dimension it prints measures an oscillation *rate*:
@@ -2474,8 +2455,8 @@ size tie-break picks them up: 76 of 78 songs take dedup, 73 take packing.
 Options given on the command line always beat the stored preset. A song with
 no entry converts at the defaults. The file's `always` block carries what is
 right for every song rather than searched per song — `gts5`, `--tempo auto`,
-`--legal-restart`, `--slides`, `--effects`, `--status-bit6`,
-`--reject-phantoms` and `--fold-transpose`, each of them either the player's
+`--legal-restart`, `--slides`, `--effects`, `--status-bit6`
+and `--fold-transpose`, each of them either the player's
 own reading or a no-op in the files it does not reach (`--initial-instrument`
 is deliberately *not* among them -- see its section above) — which is what lets a
 preset reproduce the exact bytes

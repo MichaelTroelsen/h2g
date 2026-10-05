@@ -42,14 +42,21 @@ def _preset_opts(name):
 
 
 def _convert(name, legato=True):
+    # Both arms with the bit-7 free-note variants off
+    # (`free_note_skips_two_stage`, tests/test_free_note_variant.py): they
+    # are appended after the legato clones on the same family, and this file
+    # measures the clones alone.
     real = G.legato_tie_family
+    real_free = G.note_passes.free_note_skips_two_stage
     if not legato:
         G.note_passes.legato_tie_family = lambda sid, det: False
+    G.note_passes.free_note_skips_two_stage = lambda sid, det: False
     try:
         lines = []
         sng = convert(str(CORPUS / name), log=lines.append, **_preset_opts(name))
     finally:
         G.note_passes.legato_tie_family = real
+        G.note_passes.free_note_skips_two_stage = real_free
     return sng, lines
 
 

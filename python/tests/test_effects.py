@@ -181,7 +181,7 @@ def test_the_drum_is_a_gate_off_waveform_and_a_downward_sweep():
                            speed_table=table, budget=8)
     # Entry 0 is the note's own waveform, 1-2 the noise tick, 3 the gate-off
     # waveform, and the sweep starts at 4.
-    assert left[1] == 0x81, "the tick, keeping the gate bit"
+    assert left[1] == 0x80, "the tick, gate released at -S1 (_drum_tick_noise)"
     assert left[3] == 0x40, "the voice's own waveform, gate released"
     assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1)
     assert table == [DRUM_SPEED], "256 units per frame == one $D401 step"
@@ -199,7 +199,11 @@ def test_the_noise_ending_is_measured_and_rejected():
     noise frames. Ours ends on the sweep instead.
     """
     left, _ = _entries(DRUM, effects=True, drum=True, wave=0x41)
-    assert WAVE_NOISE_GATEOFF not in left[2:]
+    # Past the tail, not past a fixed index: at -S1 the tick itself is a bare
+    # $80 since `_drum_tick_noise` (it was $81 when this read `left[2:]`).
+    tail = left.index(0x40)
+    assert tail == 3, "lead, two tick entries, then the tail"
+    assert WAVE_NOISE_GATEOFF not in left[tail:]
 
 
 def test_the_drum_leads_with_a_two_frame_noise_tick():
@@ -220,8 +224,8 @@ def test_the_drum_leads_with_a_two_frame_noise_tick():
     # as `15 80 80 14 14`. This test asserted noise at entry 0 until the trace
     # said otherwise.
     assert left[0] == 0x41, "the note's own waveform first"
-    assert left[1] == 0x81, "then noise, keeping the record's gate bit"
-    assert left[2] == 0x81, "for a second frame at -S1"
+    assert left[1] == 0x80, "then noise, gate released as the player's #$80"
+    assert left[2] == 0x80, "for a second frame at -S1"
     assert left[3] == 0x40, "and then the waveform with the gate released"
 
 
@@ -240,15 +244,16 @@ def test_the_tick_is_two_frames_at_every_call_rate():
     # (-S, the lead holding the record's waveform for one whole frame, the
     # delay closing the two-frame tick). The lead is one entry at -S1 and two
     # above it, the second being a delay of `m - 2` -- `value + 1` calls.
-    for m, lead, want in ((1, [0x41], 0x81),
-                          (2, [0x41, 0x41], 2),
-                          (4, [0x41, 0x02], 6)):
+    # The tick's gate bit is cleared at -S1 only (`_drum_tick_noise`).
+    for m, lead, want, noise in ((1, [0x41], 0x80, 0x80),
+                                 (2, [0x41, 0x41], 2, 0x81),
+                                 (4, [0x41, 0x02], 6, 0x81)):
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                                multiplier=m)
         assert left[:len(lead)] == lead, \
             f"-S{m}: the lead holds the record's waveform for a whole frame"
         tick = len(lead)
-        assert left[tick] == 0x81, f"-S{m}: the tick follows the lead"
+        assert left[tick] == noise, f"-S{m}: the tick follows the lead"
         assert left[tick + 1] == want, f"-S{m}"
         if m > 1:
             assert right[tick + 1] == 0x80, \
@@ -655,7 +660,7 @@ def test_the_noise_tick_length_is_derived_from_the_gate():
     # ...and a 1-frame tick emits one noise entry, not zero.
     left, _ = _drum_entries(0x41, "gts5", [], 1, min_note=40, sustain=0,
                             budget=5, tick_frames=1)
-    assert left[:3] == [0x41, 0x81, 0x40]
+    assert left[:3] == [0x41, 0x80, 0x40]
 
 
 # --- v0.5.200: the release the player destroys -------------------------------

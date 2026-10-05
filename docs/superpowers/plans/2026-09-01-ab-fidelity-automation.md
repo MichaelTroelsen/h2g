@@ -2432,6 +2432,29 @@ CLAUDE.md: in the *Regenerate the generated artefacts* bullet add `python fideli
 > `C:/t/rasputin-noise-placement-disagrees-on-bo/probe_onsets.py`), on the 10
 > non-held regrid files. That second measure is PROPOSED, not yet measured;
 > until it is, this gate is unmet, not passed.
+>
+> **SECOND MEASURE BUILT AND MEASURED 2026-10-05 (ab-9-independent-drift-measure,
+> base be0aeb1 + the cycle-3 merge; figures historical).**
+> `fidelity.time_paired_drift(orig, ours, nframes)` (test:
+> `tests/test_time_paired_drift.py`) pairs attacks by TIME only -- no note
+> name, no difflib -- locks a shared offset per 500-frame window, and fits an
+> ordinary least-squares line through the per-window MEDIAN offsets: neither
+> `drift`'s pairing nor its Theil-Sen. Run on the very two traces `_measure`
+> scored (`-t 180`, presets, regrid on and off, 10 non-held files; Sigma_Seven's
+> window is 66 s). Against `drift_per_1000`: regrid ON sign 9/10, Spearman
+> +0.903, Kendall +0.822; regrid OFF sign 10/10, Spearman +0.830, Kendall
+> +0.571; both arms pooled (n=20) sign 19/20, Spearman +0.967; the ON-minus-OFF
+> delta agrees in sign 10/10 (Spearman +0.988); both measures say regrid
+> shrinks |drift| on 10 of 10. The disagreements are small and named: the one
+> sign miss is Bangkok_Knights ON (+0.498 vs -0.033, both indistinguishable
+> from zero); the OFF arm's rank swaps are all among values bunched inside
+> -7.8..-9.2, the two readings of any one file differing by at most 0.317; the largest ON
+> gap is I_Ball (+3.08 vs +5.33), whose window offsets wander 73..120 frames
+> rather than run on a line. So the two agree in sign and, outside near-ties,
+> in rank -- NOT identically, which is the point: an exact match would again
+> have been one estimator read twice. Whether that clears Task 9's gate is the
+> user's call; the per-file table is in
+> `C:/t/ab-9-independent-drift-measure/table.md`.
 
 
 **Interfaces:**

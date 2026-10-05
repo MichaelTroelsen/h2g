@@ -29,6 +29,7 @@ from . import arpeggio as _gw_arpeggio
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
+from . import skydive as _gw_skydive
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
     """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
@@ -78,7 +79,7 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                         wave_program, pitch_seq, note_rows, row_calls,
                         no_test_restart, voice_two_stage, instr_voices,
                         gate_skip, real_firstwave_instruments,
-                        wave_alternate=False):
+                        wave_alternate=False, instr_row_calls=None):
     """`fixed_arp_phase_split_plan`'s `distinct`: whether a record's block
     at a residue differs from its block at its own (`_wavetable_layout`'s
     `phase_probe`, with the arguments `build_sng` lays the table out with)."""
@@ -97,7 +98,8 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                           gate_skip, real_firstwave_instruments, None,
                           arp_phases=arp_phases, arp_tie_rows=arp_tie_rows,
                           pitch_phases=pitch_phases, phase_probe=probe,
-                          wave_alternate=wave_alternate)
+                          wave_alternate=wave_alternate,
+                          instr_row_calls=instr_row_calls)
         return bool(probe[0][2])
     return distinct
 
@@ -175,7 +177,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 multiplier, min_notes, lead, two_stage, sfx_drum,
                 wave_program, pitch_seq, note_rows, row_calls,
                 no_test_restart, voice_two_stage, instr_voices, gate_skip,
-                real_firstwave_instruments, wave_alternate=wave_alternate),
+                real_firstwave_instruments, wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls),
             log=log)
     # Bit $10's divided phase gets the same split, in the same slot: its
     # clones are made, numbered and renamed exactly as the fixed arp's
@@ -190,7 +193,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 multiplier, min_notes, lead, two_stage, sfx_drum,
                 wave_program, pitch_seq, note_rows, row_calls,
                 no_test_restart, voice_two_stage, instr_voices, gate_skip,
-                real_firstwave_instruments, wave_alternate=wave_alternate),
+                real_firstwave_instruments, wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls),
             log=log)
     if phase_split is not None:
         tracks, patterns = phase_split.tracks, phase_split.patterns
@@ -381,7 +385,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                       else None),
         phase_clone_starts=phase_clone_starts, attack_holds=attack_holds,
         attack_hold_starts=attack_hold_starts,
-        wave_alternate=wave_alternate, log=log)
+        wave_alternate=wave_alternate, log=log,
+        instr_row_calls=instr_row_calls)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     # After the arpeggio pointers are resolved (they own every CMD_SETWAVEPTR
     # operand until then) and before the pulse budget, which must see every
@@ -407,6 +412,21 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         for _record, _variant, block in drum_variants:
             drum_starts.append(len(wave_entries) + 1)
             wave_entries = wave_entries + block
+    # Bit $02's skydive (`skydive_plan`): a CMD_SETWAVEPTR on the row each
+    # long note's window opens, into a program appended to the wavetable.
+    # After every block whose start the records carry, so its own starts are
+    # known, and before the passes that fill free command columns, which
+    # must see its rows as taken. Gated on `effects` like every read of +7.
+    if effects and det.skydive is not None:
+        sky = _gw_skydive.skydive_plan(sid, det, tracks, patterns, lead,
+                                       instr_used, fmt, multiplier,
+                                       gate_skip, table, len(wave_entries),
+                                       no_test_restart,
+                                       tuple(real_firstwave_instruments),
+                                       log=log)
+        if sky is not None:
+            patterns = sky.patterns
+            wave_entries = wave_entries + sky.entries
     # The zero-page triangle player reseeds its pulse on a REST event as on
     # a note (`rest_reseed`). After every pass that fills a command column,
     # so it takes only columns nobody else wanted, and before the budget,
@@ -513,6 +533,36 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             # instrument carries is written as it always was.
             patterns = _tied_instrument_envelopes(patterns, envelopes, tracks,
                                                   log, only=declined)
+    # A flagged note that re-attacks skips the two-stage attack and the
+    # pulse reseed (`free_note_skips_two_stage`): each such row plays a
+    # variant of its record that starts on the second stage with pulse
+    # pointer 0. After the legato clones, whose rows it must not take
+    # (`free_note_rows` leaves every CMD_TONEPORTA row alone) and whose
+    # numbers come first; not beside the tempo or phase split, whose
+    # renamed columns hold no record of their own here.
+    if (legato and two_stage and effects and duty_split is None
+            and phase_split is None
+            and _gw_note_passes.free_note_skips_two_stage(sid, det)):
+        free_starts = {}
+        for g in range(lead + 1, instr_used + 1):
+            wstart = _gw_note_passes.free_note_wave_start(
+                sid, det, g - lead - 1, wave_entries,
+                out[instr_at + 1 + (g - 1) * 25 + 2])
+            if wstart:
+                free_starts[g] = wstart
+        free_rows = _gw_note_passes.free_note_rows(
+            patterns, note_bit7_rows(patterns, known_bit7, decoded))
+        patterns, free_variants, _kept = _gw_note_passes.free_note_variants(
+            patterns, free_rows, tracks, free_starts, written_instr + 1,
+            log=log)
+        for base, _number in free_variants:
+            rec = instr_at + 1 + (base - 1) * 25
+            clone = bytearray(out[rec:rec + 25])
+            clone[2] = free_starts[base] & 0xFF
+            clone[3] = 0
+            out += clone
+            written_instr += 1
+        out[instr_at] = written_instr
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

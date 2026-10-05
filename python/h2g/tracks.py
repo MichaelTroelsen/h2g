@@ -405,12 +405,13 @@ def track_table_extent(sid: SidFile, det: Detection) -> Optional[int]:
     """How many subtunes the track table has room for, on the player's layout.
 
     The track table has no length field either -- the same hole
-    `patterns.phantom_patterns` closes for the *pattern* table, and the same
-    fix. Detection derives the pattern table's entry count from the distance
+    `patterns.phantom_patterns` closed for the *pattern* table (removed with
+    --reject-phantoms at v0.5.511, when a census found it moved no preset
+    conversion), and the same fix. Detection derives the pattern table's entry count from the distance
     between its LO and HI arrays; those two arrays are therefore known extents
     of bytes that are **not** track-table cells, and neither is a run of bytes
     a player signature matched (`det.code_spans`, the identical vocabulary
-    phantom_patterns uses). A subtune whose pointer cells land in one of them
+    phantom_patterns used). A subtune whose pointer cells land in one of them
     is not a subtune the player can ever have dispatched: the bytes it reads
     belong to another structure.
 

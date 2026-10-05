@@ -2627,6 +2627,21 @@ is HISTORY, the v0.5.488 state the re-grade replaces. The off-lattice remainder
 `off-lattice-phase-records`: one block over the union of phase sets per (speed,
 lo, hi, wrap) fits all five Gremlins records (196 rows against 227 of room) and
 leaves only Human_Race 21 degraded; not built.
+**BUILT on be0aeb1 (v0.5.510) by `pulse-phase-union-blocks` (2026-10-05), and
+"fits all five" did NOT survive the tree it was built on.** Both Gremlins unions
+together ((3, 7) and (6, 20)) keep 10 and 20 swept but leave the table 255/255 with
+record 22 -- 1344 note rows, the file's most played -- on pointer 0, because a union
+lays a later member's rows at the group's FIRST member, ahead of the records in
+between. So a union is adopted group by group only where it improves (silent,
+dropped, rows): Gremlins takes (6, 20) alone, 20 swept and 10 degraded (was 10 and 20),
+252 rows, none silent; Human_Race keeps 23 (20 still degrades); Master_of_Magic /
+Phantoms / Battle_of_Britain ship 172 -> 103, 200 -> 59, 225 -> 147 rows. A union is
+also restricted to records of one `_union_kind`: on 5_Title_Tunes' first table
+records 3 and 6 share a sweep, and a union across kinds ships (under
+`prefer_short`) and plays 22 of 56 entries off the per-phase widths within 3200
+calls. Every index entry and tracked start of the shared layout plays the unlimited
+per-phase layout's widths for 3200 calls on all 11 files with a sweep group
+(`tests/test_pulse_phase_union.py`; probes `C:/t/pulse-phase-union-blocks/r2/`).
 
 **Measured at v0.5.488 (04fdcb5), on a `git archive HEAD` tree with
 `siddump.exe` copied in, each file converted under its own `presets.json`

@@ -601,7 +601,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              sustain=data[base + 4] >> 4, budget=budget,
                              tick_frames=_noise_tick_frames(sid, det),
                              note_rows=typical, row_calls=row_calls,
-                             written=no_test_restart)
+                             written=no_test_restart, gate_skip=gate_skip)
 
     if drum and not tick:
         if effects:
@@ -865,6 +865,36 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             left[2], right[2] = tail, _arp_relative(arp_fixed, arp_note, arp_up)
             left[3], right[3] = hold, 0x80
             right[4] = first
+    # **EMITTER LIMIT: a record setting the rise AND the arpeggio loses the
+    # rise.** This is an `elif` on the arpeggio, so such a record takes the
+    # arpeggio shape above and no rise at all. The player runs both blocks
+    # every frame, rise first (Warhawk $13A2 then $13CD, Spellbound $E2FF then
+    # $E326), and the arpeggio reads the note index the rise has just
+    # incremented -- so the pair CLIMBS together. test_effects.py's comment
+    # "the arpeggio overwrites the frequency, so the arpeggio is what is
+    # heard" is wrong about the original: it is the arpeggio of a moving note.
+    #
+    # MEASURED (raw per-frame semitones from each onset, subtune 0, 120 s;
+    # original at -m1, ours under presets packed at -S5 and traced at -m5):
+    # Spellbound record $11 (ADSR $AFFF, effect $56, the file's only record
+    # setting bit $02), 5 notes of 281-282 frames on voice 1 in both arms.
+    # NOT the only such record: the other four rise files carry rise+arp
+    # records too, unmeasured here -- Kentilla's $11 is this one byte for
+    # byte, Warhawk $17 is `$56` as well, Thrust $0A `$C6`, Bump_Set_Spike
+    # $03 `$F7`. Original:
+    #   +0 +0 -5 +0 -4 +1 -4 +1 -3 +2 +2 -3 +2 -2 +3 -2 +3 -1 +4 -1 +4 ...
+    # -- the (0,-5) pair rising one semitone every 4 counter steps (~4.7
+    # frames), +60 at its highest. Ours: `+0 +0 -5 +0 -5 +0 +0 -5 ...`,
+    # +0 at its highest, on all 5 notes.
+    #
+    # Why not emitted: a wavetable note entry sets the frequency from the
+    # PATTERN note plus its own relative byte (gplay.c:717-725, `note +=
+    # cptr->note`) and skips the tick effects, so neither this branch's
+    # PORTAUP nor a pattern portamento survives the arpeggio's next entry. The
+    # stair can only be unrolled, one entry per counter step: 4 per semitone,
+    # ~240 for the measured 60-semitone climb, against a song-wide table of
+    # 255. A climb belongs on the pattern side (a legato note per semitone),
+    # which this function cannot write.
     elif effects and det.effect_rise and (arp_style & 2) == 2:
         index = _rise_speed_index(fmt, speed_table, multiplier)
         if index:
@@ -890,6 +920,55 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     return left, right
 
 
+def _drum_tick_noise(wave: int, multiplier: int = 1,
+                     written: bool = False) -> int:
+    """The waveform byte of `_drum_entries`' noise tick.
+
+    **The player writes it with the gate OFF**: `LDA #$80 / STA $D404,Y`
+    (Warhawk $1397, Rasputin $C355), the constant `detect.DRUM_NOISE_IMMEDIATE`
+    requires. Rasputin's original reads `$80` on all 660 noise frames that
+    follow an attack of its four drum records (ADSR $0A0B/$0909/$0706/$0F0F,
+    180 s under presets). We wrote `$81` on all 669 of ours.
+
+    **Cleared at -S1 only.** A/B over the 33 files the change reaches, -t 180,
+    presets, --sound. Measured at be0aeb1 (v0.5.510):
+
+    * -S1, 11 files: `gate` up on 9 of them (Gerry_the_Germ 58.4 -> 65.2,
+      Action_Biker 72.5 -> 80.7, Human_Race 60.3 -> 63.1). Action_Biker
+      `nrun` 0.0 -> 1.0. `melody`, `seq` and attack counts did not move on
+      any file. `aud` did not drop on any file. `loud` moved by -0.0008 at
+      worst (Action_Biker).
+    * above -S1, 22 files: `gate` and `nrun` gain as well (Rasputin `nrun`
+      0.0 -> 0.67, `gate` 50.7 -> 56.7). But `loud` falls by 0.1pp or
+      more on ten of the 22 files and rises on two:
+      Formula_1_Simulator -2.4pp, Bump_Set_Spike -1.8, Warhawk -1.4,
+      Proteus -1.4, Last_V8 -1.1, Rasputin -0.9. Kentilla (-S10) loses
+      71 of its 271 voice-2 attacks, and `melody` drops 95.2 -> 90.7.
+      Its frame 0 already reads the noise at HEAD (`12 12 81 81 14`, with no
+      lead frame), so clearing the gate leaves no frame where it reads set.
+      Rasputin rendered with voice 2 solo for 60 s
+      (sidplayfp): original 68.88 dB, gated tick 69.05, gate-off tick
+      67.49. So the cleared gate costs 1.4 dB of the drum voice. This repo
+      does not pay sound for register agreement.
+
+    Why only multispeed loses level is NOT established. One candidate fits
+    the pattern but has not been checked: at -S1 the gate has been on for
+    two frames when the tick clears it (the $09 firstwave frame plus the
+    lead), and at -S2 for one and a half. The presets set
+    `no_hard_restart`, so nothing resets the SID's envelope rate counter
+    before the gate rises, and the rate-counter wrap can hold an attack
+    back for up to ~33 ms. TODO: read it within the frame (`--vice`).
+
+    `written` (`--no-test-restart`, or a `real_firstwave_instruments`
+    record) keeps the gate. There the tick follows the firstwave call
+    directly, with no lead between them, which is the layout the Commando
+    GT 13 onset loss was measured on. No file in the A/B takes that path.
+    """
+    if multiplier <= 1 and not written:
+        return WAVE_NOISE_GATEOFF
+    return WAVE_NOISE_GATEOFF | (wave & 0x01)
+
+
 def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   multiplier: int = 1, min_note: Optional[int] = None,
                   sustain: int = 0,
@@ -897,7 +976,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   tick_frames: int = NOISE_TICK_FRAMES,
                   note_rows: Optional[int] = None,
                   row_calls: int = 0,
-                  written: bool = False) -> tuple:
+                  written: bool = False,
+                  gate_skip: Optional[int] = None) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -991,12 +1071,13 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # publishes. Putting the noise at entry 0 (as this did) ran it two frames
     # early and dropped that opening frame.
     #
-    # The noise keeps the record's own gate bit, where this used to clear it.
-    # The player does clear it, but our first-frame waveform is $09 -- gate
-    # *plus testbit*, and the testbit silences the oscillator -- so an entry 0
-    # that also clears the gate leaves the envelope untriggered and the
-    # instrument silent. Measured on Commando GT 13: 0 onsets against the
-    # original's 14 with $80, and exactly 14 with $81.
+    # The noise's gate bit is `_drum_tick_noise`'s question: cleared at -S1,
+    # as the player clears it, and kept above -S1, where clearing it was
+    # measured to cost loudness and, at -S10, attacks. Its docstring has both
+    # A/Bs. (It was kept everywhere because the noise used to be entry 0,
+    # straight after the $09 firstwave: Commando GT 13 counted 0 onsets
+    # against the original's 14 with $80, and 14 with $81. The lead below
+    # now sits between them.)
     # **The waveform holds for a whole frame, which is `multiplier` calls.**
     # This entry was one call at every -S value until v0.5.220, so on a
     # multispeed file the noise below finished frame 0 and siddump -- which
@@ -1008,7 +1089,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # 45 single-speed ones.
     lead, lead_r = _first_frame_lead(wave, multiplier, force=True,
                                      written=written)
-    left = lead + [WAVE_NOISE_GATEOFF | (wave & 0x01)]
+    noise = _drum_tick_noise(wave, multiplier, written)
+    left = lead + [noise]
     right = lead_r + [0x00]
     # Two frames is `2 * multiplier` calls, of which the entry above is one.
     # A delay entry is current for `value + 1` calls (see _wave_hold_byte), so
@@ -1017,7 +1099,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # call, and anything else would drag the note.
     extra = tick_frames * max(1, multiplier) - 1
     if extra == 1:
-        left.append(WAVE_NOISE_GATEOFF | (wave & 0x01))
+        left.append(noise)
         right.append(0x00)
     elif extra > 1:
         left.append(min(extra - 1, WAVE_MAX_DELAY))
@@ -1046,7 +1128,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     while len(left) < WAVE_ENTRIES_PER_INSTR:
         left.append(0xFF)
         right.append(0x00)
-    index = _drum_speed_index(fmt, speed_table, multiplier)
+    index = _drum_speed_index(fmt, speed_table, multiplier, gate_skip)
     # The sweep goes only on a record whose envelope actually decays. The
     # player's own gate is a single cross-voice cell written at note-start
     # (section 7.ii), which no per-instrument wavetable can encode, so *some*
@@ -1062,13 +1144,18 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # `budget` is how many entries this record may occupy in total; the
         # caller shrinks it when the 255-entry table is running out. Below the
         # fixed five it changes nothing, so a file with room behaves as it did.
-        want = _drum_max_steps(min_note, multiplier)
+        want = _drum_max_steps(min_note, multiplier, gate_skip)
         prefix = left[:-1] if left[-1] == 0xFF else list(left)
         # strip the padding the tick block added, keeping the tick itself
         while len(prefix) > 1 and prefix[-1] == 0xFF:
             prefix.pop()
         pre_r = right[:len(prefix)]
-        room = max(0, budget - len(prefix) - 1)     # ... and the stop
+        # The sweep's first frame changes nothing (`_drum_duration_steps`:
+        # `LDA freqhi / DEC / STA` stores the value it loaded), so the
+        # gate-off waveform entry before it must last that whole frame --
+        # which is one call only at -S1. `_drum_sweep_hold` pads it.
+        hold_l, hold_r = _drum_sweep_hold(prefix[-1], multiplier, gate_skip)
+        room = max(0, budget - len(prefix) - len(hold_l) - 1)  # ... and the stop
         # No `max(1, ...)`: the tick's own four entries plus a stop already
         # fill WAVE_ENTRIES_PER_INSTR exactly, so forcing a step through would
         # push this record to six and, on a table close to full, past the
@@ -1081,19 +1168,52 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # gets to before the note ends. Only ever a reduction, so a record
         # whose notes are long enough -- or one with no measured note at
         # all -- is written exactly as it was.
-        held = _drum_duration_steps(note_rows, row_calls, multiplier)
+        held = _drum_duration_steps(note_rows, row_calls, multiplier,
+                                    gate_skip)
         if held is not None:
             steps = min(steps, held)
-        left = prefix + [WAVECMD_PORTADOWN] * steps + [0xFF]
-        right = pre_r + [index] * steps + [0x00]
+        if not steps:
+            hold_l, hold_r = [], []
+        left = prefix + hold_l + [WAVECMD_PORTADOWN] * steps + [0xFF]
+        right = pre_r + hold_r + [index] * steps + [0x00]
         while len(left) < WAVE_ENTRIES_PER_INSTR:
             left.append(0xFF)
             right.append(0x00)
     return left, right
 
 
+def _drum_sweep_hold(tail: int, multiplier: int = 1,
+                     gate_skip: Optional[int] = None) -> tuple:
+    """(left, right) entries holding the drum's gate-off waveform for a frame.
+
+    The entry that writes it is one call; the player's frame is
+    `_gate_calls(multiplier, gate_skip)` of ours. Until this, the first
+    `CMD_PORTADOWN` ran on the very next call, so at `-S7` the sweep began
+    six sevenths of a frame early. Measured on Warhawk `$0F0A` and Proteus
+    `$090A` (O 7, `-S7`, 120 s, first frame below the attack's frequency):
+    the original's first decrement lands on frame 3 or 4 (22/18 and 24/18
+    notes -- 4 where the outer gate's skipped frame falls in the note's
+    opening), ours on frame 2 (28 and 30 notes of 40 and 41).
+
+    Spelt as `_first_frame_lead` spells its own frame: one repeat of the
+    waveform for a single extra call, otherwise a delay, which is current for
+    `value + 1` calls and whose right side is read on its last call -- hence
+    `$80`. Empty at one call a frame -- and an outer gate of reload 3 or
+    more rounds to one at `-S1` -- so no `-S1` file's drum moves: the corpus
+    byte-hash under presets moved 17 files on this alone, every one packed
+    at `-S2` or above.
+    """
+    rest = _gate_calls(max(1, multiplier), gate_skip) - 1
+    if rest <= 0:
+        return [], []
+    if rest == 1:
+        return [tail], [0x00]
+    return [min(rest - 1, WAVE_MAX_DELAY)], [0x80]
+
+
 def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
-                         multiplier: int = 1) -> Optional[int]:
+                         multiplier: int = 1,
+                         gate_skip: Optional[int] = None) -> Optional[int]:
     """Sweep steps a note of `note_rows` rows leaves the player room for.
 
     Read off the block in `_drum_entries`, in the units its two guards count
@@ -1131,12 +1251,21 @@ def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
     the player's *other* guard, `LDA freqhi,X / BEQ out`, which is the bound
     `_drum_max_steps` already expresses.
 
+    **The frame that comes off is a working frame**, `_gate_calls` of ours:
+    under an outer gate of reload O the tempo stretches every row by
+    `(O + 1) / O` (`SongSpeeds.exact_row`) and `_drum_speed` shrinks the step
+    by the same ratio, so the travel is the player's `(note_rows - 2) * f - 1`
+    decrements exactly. Proteus `$090A` (f 2, O 7, `-S7`, 16-call rows) is
+    `2 * 16 - 8 = 24` steps of `$20`: `$0300`, the original's fall on all 42
+    notes, where `- 7` steps of `$24` read `$0384`.
+
     Returns None where nothing is known, so an unmeasured record keeps
     whatever the pitch bound alone gave it.
     """
     if note_rows is None or row_calls <= 0:
         return None
-    return max(0, (note_rows - 2) * row_calls - max(1, multiplier))
+    return max(0, (note_rows - 2) * row_calls
+               - _gate_calls(max(1, multiplier), gate_skip))
 
 
 
@@ -1206,7 +1335,8 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
     return max(1, gate - 1)
 
 
-def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:
+def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
+                    gate_skip: Optional[int] = None) -> int:
     """Deepest sweep this record can take without wrapping, in wavetable steps.
 
     This is the block's *first* exit -- `LDA freqhi,X / BEQ out`, the frequency
@@ -1230,16 +1360,18 @@ def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:
     """
     if min_note is None:
         return 0
-    hi, lo = _drum_speed(multiplier)
+    hi, lo = _drum_speed(multiplier, gate_skip)
     step = (hi << 8) | lo
     if step <= 0:
         return 0
     room = _note_freq(min_note) - DRUM_DEEPEN_MARGIN
-    return max(0, min(room // step, DRUM_MAX_SWEEP_STEPS * max(1, multiplier)))
+    return max(0, min(room // step, DRUM_MAX_SWEEP_STEPS
+                      * _gate_calls(max(1, multiplier), gate_skip)))
 
 
 def _drum_speed_index(fmt: str, speed_table: List[tuple],
-                      multiplier: int = 1) -> int:
+                      multiplier: int = 1,
+                      gate_skip: Optional[int] = None) -> int:
     """1-based speed-table index for the drum's downward sweep, or 0.
 
     Zero for a GTS2 file for the same reason as _rise_speed_index: it stores no
@@ -1248,7 +1380,7 @@ def _drum_speed_index(fmt: str, speed_table: List[tuple],
     """
     if fmt != FORMAT_GTS5:
         return 0
-    entry = _drum_speed(multiplier)
+    entry = _drum_speed(multiplier, gate_skip)
     if entry not in speed_table:
         if len(speed_table) >= _gw_constants.GT_MAX_TABLELEN:
             return 0
@@ -1408,7 +1540,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       attack_holds: Optional[List[int]] = None,
                       attack_hold_starts: Optional[list] = None,
                       wave_alternate: bool = False,
-                      log=None) -> tuple:
+                      log=None,
+                      instr_row_calls: Optional[dict] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1476,7 +1609,16 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                   wave_program=wave_program,
                                   pitch_seq=pitch_seq,
                                   note_rows=note_rows,
-                                  row_calls=row_calls,
+                                  # The drum's duration bound, its only
+                                  # reader: the shortest row THIS record is
+                                  # played at (`tracks.instrument_row_calls`,
+                                  # the gatetimer's rule), not the file's.
+                                  # Warhawk's `$0F0A` plays only in 16-call
+                                  # subtunes and was charged the 8-call row
+                                  # of its one-frame sound effects: 9 steps,
+                                  # `$0144`, where the original falls `$0300`.
+                                  row_calls=(instr_row_calls or {}).get(
+                                      gt_number, row_calls),
                                   no_test_restart=instrument_written,
                                   voice_two_stage=voice_two_stage,
                                   voice=_record_voice(instr_voices,

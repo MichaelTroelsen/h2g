@@ -897,9 +897,13 @@ def test_the_ticked_multispeed_records_reach_the_sng():
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     sng, _, _ = _converted("Last_V8")
+    # The jump is absolute: `$12` is this record's start (14) + 4, the entry
+    # after the tick. It was `$11` while instrument 1's drum lacked the
+    # one-frame hold before its sweep (test_drum_sweep_gate_skip), which
+    # moved every later record down one entry.
     assert _wavetable_of(sng, 2) == [
         (0x41, 0x00), (0x41, 0x00), (0x81, 0x0C), (0x81, 0x0C),
-        (0x40, 0x00), (0x40, 0x80), (0x40, 0x0C), (0x40, 0x80), (0xFF, 0x11)]
+        (0x40, 0x00), (0x40, 0x80), (0x40, 0x0C), (0x40, 0x80), (0xFF, 0x12)]
     sng, _, _ = _converted("Monty_on_the_Run")
     assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
                                      (0x41, 0x80), (0xFF, 0x1A)]

@@ -1722,7 +1722,7 @@ be packed at, which `convert()` already derives for the tempo:
 |---|---|---|
 | pattern slide | speed-table entry, `build_speed_table` | 16-bit step ÷ m — **exact**, the table stores the whole step |
 | pattern slide, GTS2 | the pattern data column | ÷ m rounded — the column holds an eighth of the step and the loader multiplies (`gsong.c:311-321`) |
-| drum sweep | `_drum_speed` | 256 ÷ m, floored, never 0 |
+| drum sweep | `_drum_speed` | 256 ÷ m, floored, never 0; under an outer gate of reload O, 256·O ÷ (m·(O+1)) — § 7.oooooo |
 | chromatic rise | `_rise_speed_index` | one more right-shift per doubling |
 | attack transient | a wavetable delay entry `$01-$0F`, or the waveform again | held m calls instead of 1 — off by one until v0.5.130, § 7.mm |
 
@@ -1999,10 +1999,23 @@ The mapping, derived rather than fitted:
 * the player's counter steps once per frame between 0 and `bound`, so its
   half-period is `bound` frames; Goattracker's is `cmp + 2` **calls**
   (§ 7.kk). Match the period: `cmp = bound × multiplier − 2`.
-* the player's apply loop only ever *subtracts*, so `(bound >> 1) × depth` is
-  a peak-to-peak, not an amplitude; Goattracker's peak-to-peak is
+* the player's apply loop subtracts `bound >> 1` depths from the note, then
+  adds `ctr` depths back (LVVP `$522A` and `$5251`; Warhawk `$1251` and
+  `$1278`). So the frequency is `note + (ctr − (bound >> 1)) × depth` and the
+  peak-to-peak is `bound × depth`. Goattracker's peak-to-peak is
   `(cmp + 2) × speed`. Match the excursion under the period above:
-  `rshift = shift + 1 + log2(multiplier)`.
+  `rshift = shift + log2(multiplier)`, which is what v0.5.369 onward emits.
+  *Retracted 2026-10-05 (lvvp-vibrato-phase):* this bullet read "the player's
+  apply loop only ever *subtracts*, so `(bound >> 1) × depth` is a
+  peak-to-peak" and gave `shift + 1 + log2(multiplier)`; see § 7.ll.
+* Two properties of the player's oscillator have no speed-table encoding. An
+  odd `bound` swings lopsided: bound 3 runs −1..+2 depths, centred half a
+  depth above the note, where Goattracker centres on the note. And the
+  counter runs freely per voice; nothing resets it at a note. LVVP's
+  `$6B9A` notes start from six phases, 49–53 notes each of 305; ours all
+  start from one (305 of 305), because Goattracker zeroes `vibtime` on every
+  wavetable note step (gplay.c:723). The table and census are in
+  `goatwriter/vibrato.py` `_classic_vibrato_entry`.
 * Both numbers here are the **corrected** ones (v0.5.129). This section
   originally read Goattracker's half-period as `cmp / 2` and emitted
   `cmp = 2 × bound × multiplier`; see § 7.ll.
@@ -3036,7 +3049,8 @@ waveform:
 
 **The `ctrlreg 0` half is confirmed and already correct.** A record whose
 waveform carries no waveform bits gets noise throughout, and `_drum_entries`
-emits exactly that (`$81` → `81 81 81 80`). That half is predictable from the
+emits exactly that (`$81` → `81 81 81 80`; at -S1 it is `81 80 80 80` since the
+tick clears its gate, § 7.ooooooo). That half is predictable from the
 record alone, which is why Hubbard could state it as a rule.
 
 **The 1-versus-2 split is not.** Both routines are identical, so the difference
@@ -4622,6 +4636,18 @@ is `rshift = shift + 1 + log2(multiplier)`, the shipped value. **A period twice
 too long and an excursion convention off by two had cancelled in the shift
 exactly.** Only `cmp` was ever wrong, and a fitted correction that "fixed" both
 would have doubled every file's vibrato depth.
+
+**Retracted 2026-10-05 (lvvp-vibrato-phase): the excursion half of the
+paragraph above.** The loop quoted at `$1251` loads `$15C3`, which is the
+BOUND cell (the split's `STA bound,X` at `$11F5`), not `ctr`. It is followed by
+an add loop the paragraph missed: `1278 LDY $1590,X / DEY / BMI / CLC / ...
+ADC depth`, `ctr` times. The note is therefore not the top of the swing. The
+frequency is `note + (ctr − (bound >> 1)) × depth`, and the peak-to-peak is
+`bound × depth`, which makes `rshift = shift + log2(multiplier)`. v0.5.369
+(3ec87b1) dropped the `+ 1` because the depth measured too shallow, and so
+reached that value. The census in `_classic_vibrato_entry` covers the 61
+files the split matches: all 61 carry the subtract loop, and 59 carry the add
+loop on the counter cell.
 
 #### Reach
 
@@ -11856,6 +11882,27 @@ is NOT yet independently verified -- it is opened as
 `arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-artefact-claim`
 and is the reason this section carries a caveat rather than a verdict.
 
+**The swell starts on the record's gate, not on the first row.** The routine
+runs its triangle and computes the age-grown step every frame, and only then
+skips the frequency store while the age is below a gate the player loads per
+instrument (Mega_Apocalypse `$4C2F LDA $54A8,Y / STA $4CB1` into `$4CB0 CMP
+#$13`, `detect.VIBRATO_GATE_STORE_SHAPE`). A `4xy` runs the oscillator
+from its row's first call whatever `vibdelay` says, so the pass commanded
+Mega_Apocalypse records 3 and 10 (gates 6 and 12, 3-frame rows) from frame 3.
+Since v0.5.510+ (`_expanding_vibrato_gate`) no row whose first age is below
+the gate is commanded; a row the gate falls inside is left to the
+instrument's `vibdelay`, which `_classic_gate_refine` already puts on the
+gate's frame. Measured on siddump, -t 180, presets, first frequency change
+after the attack: ADSR `$09B7` (record 3) original {6: 61, 7: 29, 8: 2,
+none: 117}, before {3: 150, 6: 22, none: 32}, after {6: 89, none: 115};
+`$00B9` (record 10) original {12: 44, 13: 21, none: 25}, before {3: 89},
+after {12: 64, none: 25}. The other columns are mixed and are NOT a verdict
+on depth: Mega_Apocalypse slides 1594 -> 924 against the original's 880 and
+bend 1.27 -> 0.83, but reversals 0.81 -> 0.72; Arcade_Classics (held) melody
+0.917 -> 0.963 and depth 0.54 -> 0.71, bend 1.05 -> 0.42; Ricochet (held)
+depth 0.55 -> 0.68, reversals 1.10 -> 1.02, bend 0.77 -> 0.63. The swing
+that frames 3..5 used to add was hiding a shortfall after the onset.
+
 ### 7.gggggg The classic vibrato is gated on a per-note frame counter, and the emitter bends from frame 1
 
 Found by refuting a lead. Food Feud's instrument transpose (§ 6, version 11's
@@ -12329,3 +12376,184 @@ the same counter residue, so the same half is the long one on every note:
 Formula_1_Simulator stretches the base note, Las_Vegas_Video_Poker the
 interval. `nibble_gate_runs` is capped so a record's cycle cannot outgrow its
 table room.
+
+### 7.oooooo The drum sweep's onset, rate and length on an outer-gated multispeed player
+
+Warhawk `$0F0A` and Proteus `$090A` are drum-only records (+7 = `$01`) on a
+player with an outer gate of reload 7, packed at `-S7`. Traced for 120 s at
+be0aeb1, the original holds the note through frame 3 and falls `$0100` a
+working frame for three frames -- `0DD0 0DD0 0DD0 0DD0 0CD0 0BD0 0AD0` --
+**exactly `$0300` on all 82 notes**, the first decrement on frame 3 (22 and 24
+notes) or 4 (18 and 18, where the skipped call falls in the note's opening).
+The conversion swept from frame 2 (28/40 and 30/41) and fell `$0144`
+(Warhawk) and `$0384` (Proteus). Three causes, one helper each
+(`goatwriter/wavetable.py`, `goatwriter/constants.py`):
+
+- **Onset.** The block's first sweep frame changes nothing -- `LDA freqhi /
+  DEC / STA` stores the value it loaded -- so the gate-off waveform entry
+  before the first `CMD_PORTADOWN` must last a whole frame. It was one call,
+  which is a frame only at `-S1`; every multispeed drum swept a frame early.
+  `_drum_sweep_hold` pads it to a frame (`_gate_calls`, so a working frame
+  under an outer gate), and only where a sweep follows. The first decrement
+  now lands on frame `tick_frames + 2` at every `-S`, as it always did at
+  `-S1`.
+- **Rate.** The player runs nothing, the drum block included, on one call in
+  `O + 1`; our tempo spreads those calls over every row
+  (`SongSpeeds.exact_row`), so a frame of the sweep is `m·(O+1)/O` of our
+  calls. `_drum_speed(m, O)` divides by that, as `pulse._tri_speed` already
+  did: `$20` a call at `-S7`/O 7, where `$24` overshot by 8/7.
+- **Length.** `_drum_duration_steps` takes one *working* frame off
+  (`(note_rows - 2) * row_calls - _gate_calls(m, O)`, 24 steps for Proteus:
+  `24 * $20 = $0300`), and the layout passes the record's own row
+  (`tracks.instrument_row_calls`) instead of the file's: Warhawk's `$0F0A`
+  plays only in 16-call subtunes and was charged the 8-call row of the file's
+  one-frame sound effects.
+
+After: `$0300` on 34/40 and 35/41 traced notes (the rest are pre-existing
+attack-frame misses), first decrement on frame 3 (28, 30) or 4 (6, 5). The
+corpus byte-hash under presets moves 23 files: 17 by the hold (multispeed files
+whose drum sweeps), 13 by the gated rate (outer-gated files), 2 by the record row (Warhawk, Gerry_the_Germ). Game_Killer (`-S9`, O 9)
+moves from frame 2 / `$134` to frame 3 / `$FA` against the original's 3-4 /
+`$100`. **Bump_Set_Spike's `$0F0C` falls less** (`$3C9` -> `$2F4` against
+`$500` in its start subtune): its row is the 12-call minimum over its two
+subtunes while the start subtune plays it at 18, and the gated rate removed
+the 6/5 overshoot that had partly hidden that -- a per-subtune value in a
+global structure, carried open rather than fixed here.
+`tests/test_drum_sweep_gate_skip.py`.
+
+### 7.ooooooo The drum tick's gate bit, and Rasputin's noise a frame late
+
+Measured on Rasputin, 180 s under presets, over the attacks of its four drum
+records (ADSR `$0A0B`/`$0909`/`$0706`/`$0F0F`). The original writes the noise
+tick as `$80` on all 660 frames, gate off, because the block's constant is
+`LDA #$80` (`$C355`). We wrote `$81` on all 669 of ours.
+
+**We clear the gate at -S1 only** (`_drum_tick_noise`). We A/B'd it over the
+33 files it reaches, -t 180, with `--sound`:
+
+* **At -S1 (11 files), it is a gain.** `gate` rises on 9 files, Action_Biker's
+  `nrun` goes 0 -> 1.0, and no file loses `melody`, `aud` or attacks.
+* **Above -S1, register agreement improves but sound gets worse.** `loud`
+  falls on ten of 22 files (Formula_1_Simulator -2.4pp). Kentilla (-S10)
+  loses 71 attacks and `melody` drops 95.2 -> 90.7. Rendered solo, Rasputin's
+  drum voice comes out 1.4 dB quieter than the original's (67.49 against
+  68.88 dB), where keeping the gate is 0.17 dB louder. So the gate stays on
+  above -S1, and Rasputin's bytes do not change. Why only multispeed loses
+  level is still open. A candidate: the gate has been on for 1.5 frames
+  rather than 2 when the tick clears it, and with `no_hard_restart` nothing
+  stops the envelope rate counter from holding back the attack. It has not
+  been read within the frame.
+
+**The noise landing a frame late is the outer gate, not the drum.** Of the
+original's 670 drum attacks, 477 tick at attack+1, the same frame as ours.
+Another 129 tick at +2, after a frame holding the note's own gated waveform.
+These are the frames where Rasputin's outer counter (`$C012`:
+`DEC $C53A / BPL`, reload from `$C539`, the whole play routine skipped) drops
+the call right after the note's own frame. Within a stretch of the song they
+share one residue mod 4. Notes start on ticks, so which notes land on the skip
+depends on each note's position in the song, not on its record. No
+per-instrument wavetable can say this, unlike the nibble arpeggio above, where
+the residue is fixed per record.
+
+The remaining 64 attacks, all on `$0706`, have no tick at +1 or +2. That record
+(`80 01 43 07 06 00 00 07`) also sets effect bit `$02`. Its block (`$C35A`,
+`EOR #$18`) runs after the drum's and writes `$D404` on its own counter: 59 of
+its 128 attacks read `$5B` (`$43 ^ $18`) at +1 where the tick would be.
+
+### 7.ppppppp Effect bit `$02`'s third reading: Hubbard's skydive
+
+Ten corpus files read bit `$02` the way the instrument-format article does
+(HUBBARD-PLAYER-REFERENCE.md:306, "a slower frequency down ... hence I call
+it a skydive"), in a dialect that gates it on the note's length. Hunter_Patrol
+`$A2C9`, the same bytes in all ten:
+
+```
+A2C9  LDA effect / AND #$02 / BEQ out
+      LDA dur,X   / AND #$1F / CMP #$0C / BCC out   ; notes of 12+ ticks
+      LDA ticks,X / CMP #$09 / BCS out              ; only the last 9 ticks
+      LDA $A426   / AND #$01 / BEQ out              ; every other frame
+      LDA savehi,X / BEQ out / DEC savehi,X
+      LDY voice   / STA $D401,Y                     ; the byte BEFORE the DEC
+```
+
+So, on alternate frames, the frequency high byte reads the note's own value,
+then one less, then two less, down to 1. Where the record's vibrato rewrites
+the whole frequency every frame (`$A1B4`, any nonzero vibrato byte), the
+frames in between are back on the vibrato, and the voice alternates between
+the two. siddump of Hunter_Patrol voice 1, frames 298-324: `6813 69DA 67A1
+6AA1 66DA 6913 654C 684C ... 5BA1`. Warhawk's rise shape matches nothing in
+any of the ten, so `effect_rise` read False for all of them and nothing was
+emitted. The two `CMP` operands vary per file, so they are read from each
+block (`detect._find_skydive`):
+
+* `(#$0C, #$09)`: Hunter_Patrol
+* `(#$0C, #$08)`: Gremlins and 5_Title_Tunes
+* `(#$10, #$12)`: Master_of_Magic
+* `(#$10, #$18)`: Zoids, One_Man_and_his_Droid, Formula_1_Simulator and Proteus
+* `(#$1F, #$1E)`: Last_V8 and its C128 version
+
+The block is consulted only where the rise matched nothing.
+
+**Where the window opens depends on the note, not the instrument.** A
+wavetable cannot know how long a note is, but the row grid can: the converter
+emits one row per tick, so the window opens `dur - LAST + 1` rows after the
+note row. `goatwriter.skydive.skydive_plan` puts a `CMD_SETWAVEPTR` on that
+row. `gplay.c` keeps `command` across that row, so the pointer may take a
+column that holds the same vibrato `4xx` as the row before.
+
+The pointer names a program appended to the wavetable:
+
+* A Goattracker portamento is linear in frequency, and one high-byte step is
+  exactly `$0100`. So store k is an `F2` against the speed-table row
+  `(k, $00)`, and the frame after it is an `F1` of the same row, back up.
+* The program first sets the voice to its note (relative note 0). The block
+  stores `savehi`, which is the note's own high byte, wherever the vibrato is.
+  A fall measured from the vibrato sat up to two steps high.
+* The play-entry counter's parity on the row's first frame gives the phase of
+  the first store (`frame_counter_base`, `fixed_arp_first_fetch`).
+* On a record whose attack opens on the test-bit lead, the first store comes
+  one frame later, because the converter lines up the attack.
+
+**What this approximates.** A wavetable command runs instead of the voice's
+vibrato on its frame. So between stores, for the length of the fall, the
+vibrato is held at the note, where the original keeps vibrating. Separately,
+the restore after the last store lands on the next event's fetch frame. The
+original still holds the store there, so the restore is one frame early.
+
+Measured at v0.5.510 with the merged drain applied, under presets, at -t 180,
+with siddump lag-aligned. The count is of frames on which the original's
+gated high byte sits below its note's:
+
+| file | voice | our high byte agrees, before -> after |
+|---|---|---|
+| Hunter_Patrol | 1 / 2 | 0/77 -> 77/77, 1/80 -> 78/80 |
+| Gremlins | 1 / 2 | 36/208 -> 208/208, 0/88 -> 88/88 |
+| 5_Title_Tunes (subtune 1) | 1 / 2 | 0/418 -> 418/418, 0/418 -> 418/418 |
+| Zoids (-t 240, its one window, frame 10011) | 1 | 0/32 -> 32/32 |
+
+Tie counts move the same way:
+
+* Hunter_Patrol: `tie_same_frame` 6686 -> 6985, `tie_orig_only` 1332 -> 1033.
+* Gremlins: `tie_same_frame` 1713 -> 2301, `tie_orig_only` 906 -> 318.
+
+`bend_ratio` falls on Hunter_Patrol (0.995 -> 0.887) and on 5_Title_Tunes
+subtune 1 (0.68 -> 0.57). Splitting the bend travel at the windows says why.
+On Hunter_Patrol voice 1:
+
+* Inside the windows, the original's travel is 32334. Ours went from 42622
+  to 30981.
+* Outside them, the original's is 72270. Ours stays at 63416.
+
+The old match came from vibrato we played where the original ties, and that
+was covering an under-travel elsewhere.
+
+Some cases are logged and not emitted:
+
+* Files above -S1: Last_V8, its C128 version, Master_of_Magic and
+  One_Man_and_his_Droid. Every program step would need `multiplier` calls.
+* Windows that open on the note row itself (`dur < LAST`), which is most of
+  Zoids' long notes. These need the program inside the instrument's own
+  wavetable.
+
+Formula_1_Simulator and Proteus have no record that sets the bit. See
+`tests/test_skydive.py`.

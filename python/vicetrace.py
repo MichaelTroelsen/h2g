@@ -387,7 +387,8 @@ OCTAVE_MAX_SHIFT = 3          # 2^k with k <= 3: up to +36 semitones (Devils_Gal
                               # arp is +24, a ratio of 4). Not a ratio of 3:2.
 
 
-def _octave_verdict(a: int, b: int) -> bool | None:
+def _octave_verdict(a: int, b: int,
+                    whole: frozenset[int] | set[int] = frozenset()) -> bool | None:
     """Is one dumped freq (about) 2^k times the other, k = 1..OCTAVE_MAX_SHIFT:
     True, False, or None when the dump cannot say.
 
@@ -411,9 +412,17 @@ def _octave_verdict(a: int, b: int) -> bool | None:
     (a low-byte match admitted `$FFFD`/`$FFFC`, a ~1-unit wobble). Both are
     blindnesses of the dump, not of the octave test; the oracle that could
     settle them is siddump's high byte (`fidelity.vice_freq_repair`).
+
+    `whole` names values that LOOK sign-extended but whose `$FF` high byte
+    siddump confirmed (`fidelity.vice_oracle_repair`): a slide past `$FF80`
+    is really there. Without it such a value stays None for ever, however
+    many times the oracle read it -- Last_V8's top-of-slide `$FFFD`/`$FFFC`,
+    which siddump also prints `FFFD`/`FFFC`, kept 17 frames blind at -t 45
+    (be0aeb1).
     """
-    ea, eb = sign_extended(a), sign_extended(b)
-    if any(x < OCTAVE_MIN_FREQ for x in (a, b) if not sign_extended(x)):
+    ea = sign_extended(a) and a not in whole
+    eb = sign_extended(b) and b not in whole
+    if any(x < OCTAVE_MIN_FREQ for x, e in ((a, ea), (b, eb)) if not e):
         return False
     if ea and eb:
         return None
@@ -455,7 +464,8 @@ def _octave_partner(a: int, b: int) -> bool:
 def octave_split_frames(samples: list, voices: int = 3,
                         minority: int = OCTAVE_MINORITY_LINES,
                         blind: list[int] | None = None,
-                        first: list[int | None] | None = None) -> list[int]:
+                        first: list[int | None] | None = None,
+                        whole: list[set[int]] | None = None) -> list[int]:
     """Per voice: frames that hold a note and its octave in two halves.
 
     All of: exactly two freq values (silent lines are not values) an octave
@@ -476,6 +486,11 @@ def octave_split_frames(samples: list, voices: int = 3,
     that is counted (None where none is): an osplit of 0 is a statement about
     the window only if the trace reaches the frame where the shape first
     plays -- Thrust's only octave trill starts at 328.7 s.
+
+    `whole`, per voice, is the set of sample indices whose freq siddump
+    confirmed (`fidelity.vice_oracle_repair`). A value in a frame is read as
+    whole -- not sign-extended -- only when EVERY sample of it in that frame
+    is confirmed, so one unconfirmed `$FFxx` sample keeps the frame blind.
     """
     counts = [0] * voices
     if blind is not None:
@@ -494,7 +509,15 @@ def octave_split_frames(samples: list, voices: int = 3,
                 chain = ([prev] if prev else []) + [f for f in seq if f]
                 changes = sum(1 for x, y in zip(chain, chain[1:]) if x != y)
                 if min(na, nb) >= minority and changes >= 2:
-                    verdict = _octave_verdict(fa, fb)
+                    ok: set[int] = set()
+                    seen = whole[v] if whole is not None and v < len(whole) else None
+                    if seen:
+                        for val in (fa, fb):
+                            if sign_extended(val) and all(
+                                    start + i in seen
+                                    for i, f in enumerate(seq) if f == val):
+                                ok.add(val)
+                    verdict = _octave_verdict(fa, fb, ok)
                     if verdict is True:
                         counts[v] += 1
                         if first is not None and first[v] is None:

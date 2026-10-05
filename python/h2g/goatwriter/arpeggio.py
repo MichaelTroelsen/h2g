@@ -148,6 +148,16 @@ def fixed_arp_counter_base(sid: SidFile, det: Detection) -> Optional[int]:
     ctr = _fixed_arp_counter(sid, det)
     if ctr is None:
         return None
+    return frame_counter_base(sid, ctr)
+
+
+def frame_counter_base(sid: SidFile, ctr: int) -> Optional[int]:
+    """What the play-entry counter at `ctr` reads on frame `k`, less `k`.
+
+    `fixed_arp_counter_base`'s reading of the counter, for any block that
+    names one -- the octave's, or the skydive's (`detect.Skydive.counter`,
+    the same `$A426` in Hunter_Patrol). None where its `INC` is not found.
+    """
     data = sid.data
     lo, hi = ctr & 0xFF, ctr >> 8
     inc = search_file(data, f"EE {lo:02X} {hi:02X}")
@@ -2299,9 +2309,15 @@ def gateoff_nibble_arp_budget_pair(half_calls) -> tuple:
     subtune 0: original {1: 198, 2: 24}, per-call {1: 266, 3: 12}, this
     pair (4, 3) {1: 198, 2: 30, 3: 14} (C:/t/nibble-gateoff-tail/runs.py).
     Kentilla 20 and Thrust 25 (each a one-subtune file) give that reader
-    no qualifying note in the first 180 s on either side, so their pairs
-    ((17, 16) against 22; (7, 6) against 6.67) are UNMEASURED against the
-    original.
+    no qualifying note in the first 180 s on either side; Kentilla 20's
+    (17, 16) against 22 is still UNMEASURED against the original. Thrust
+    25 (instrument 26, ADSR $0F0B) first plays at frame ~16430, so it was
+    measured at -t 400 (v0.5.510, presets, voice 2, ADSR $0F0B frames
+    16430-18993): runs of one frequency read once a frame, original
+    {1: 48, 2: 810, 3: 208, 4: 2}, this pair {1: 58, 2: 954, 3: 198}
+    (in calls {6: 570, 7: 576}); `fidelity.py --vice -t 400` osplit 0/0,
+    and 2081/0 with this shape disabled (the per-call loop)
+    (C:/t/thrust-instr26-percall-octave/r2, test_thrust_instr26_octave.py).
     """
     cyc = _half_cycle(half_calls)
     total = min(33, round(2 * Fraction(sum(cyc), len(cyc))))

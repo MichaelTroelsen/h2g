@@ -1178,6 +1178,50 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
     return width, speed, lo << 8, hi << 8, True
 
 
+def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int) -> set:
+    """The phases `_phase_block(share=True)` lays ON its chained legs: those
+    inside [lo, hi] on the speed lattice measured from `lo`, and only where
+    the band itself is a whole number of steps."""
+    if not (lo_v < hi_v and (hi_v - lo_v) % speed == 0):
+        return set()
+    return {(w, d) for (w, d) in want_set
+            if lo_v <= w <= hi_v and (w - lo_v) % speed == 0}
+
+
+def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
+                wrap: bool):
+    """Which union of `_lay_pulse_phase_table`'s shared pass a phase-tracked
+    record may join: "chained" where every phase enters the loop exactly ON
+    the bound its leg starts from, "plain" where it chains no phase at all,
+    None otherwise.
+
+    The distinction is what keeps a union lossless. A chained leg's set rows
+    SET the width (that is how a phase is entered mid-leg), so they are
+    no-ops only for a trajectory already on the lattice. A chained phase is
+    on it by construction; an unchained phase's piece ramps toward its bound
+    and jumps into the loop at a head, and it is on the lattice from there
+    only if it ARRIVED on the bound. In a record's own block a piece that
+    arrives off the bound runs a plain loop when the record chains nothing,
+    so a union with a record that does chain would snap it onto the other
+    record's lattice at the first set row it passes. Measured on
+    5_Title_Tunes' first table (record 3 "plain", 6 "chained", same speed
+    and bounds; be0aeb1 + this change with this function returning one kind
+    for every record): the union ships under `prefer_short` and plays 22 of
+    56 entry points, and record 3's own pointer, off the per-phase widths
+    within 3200 calls. Records of one kind share a loop whose widths are
+    the ones their own blocks played, so every entry plays what it played."""
+    def dist(a: int, b: int) -> int:     # `_phase_block`'s, kept in step
+        return (a - b) & 0xFFF if wrap else max(0, a - b)
+
+    def lands(w: int, d: int) -> bool:
+        if d > 0:
+            return (w + dist(hi_v, w) // speed * speed) & 0xFFF == hi_v
+        return (w - dist(w, lo_v) // speed * speed) & 0xFFF == lo_v
+    if all(lands(w, d) for (w, d) in want_set):
+        return "chained"
+    return None if _chained_phases(want_set, speed, lo_v, hi_v) else "plain"
+
+
 def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                  lo_v: int, hi_v: int, wrap: bool,
                  share: bool = False) -> tuple:
@@ -1233,9 +1277,7 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     def setrow(w: int) -> tuple:
         return ((0x80 | (w >> 8)) & 0xFF, w & 0xFF)
 
-    chainable = (share and lo_v < hi_v and (hi_v - lo_v) % speed == 0)
-    chained = {(w, d) for (w, d) in want_set
-               if chainable and lo_v <= w <= hi_v and (w - lo_v) % speed == 0}
+    chained = _chained_phases(want_set, speed, lo_v, hi_v) if share else set()
 
     phase_index: dict = {}
     block: List[tuple] = []
@@ -1342,7 +1384,15 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     own ramp to the bound; shared, the four overflowing files (Last_V8 and
     its C128 version, Master_of_Magic, Phantoms_of_the_Asteroid) place every
     phase-tracked record and drop none. `_phase_block` says why the shared
-    layout plays the same widths.
+    layout plays the same widths. The shared pass also lays ONE block over
+    the union of the phase sets of records with the same sweep, where that
+    makes it better by (silent, dropped, rows) (`_lay_pulse_phase_table`,
+    `_union_kind`). Measured under forced `pulse_phase` at be0aeb1 + that
+    change, every index entry and tracked start played for 3200 calls
+    against the unlimited per-phase layout: Gremlins keeps 20 swept (10
+    still degrades), Human_Race keeps 23 (20 still degrades), and
+    Master_of_Magic / Phantoms / Battle_of_Britain ship 172 -> 103,
+    200 -> 59, 225 -> 147 rows.
 
     **`prefer_short`: the table is shared with songs appended after this
     one.** On a compilation (`convert._append_players`) the pulse table
@@ -1398,12 +1448,81 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     return entries, starts, index
 
 
+def _union_groups(sid: SidFile, det: Detection, instr_used: int,
+                  multiplier: int, phases: dict, lead: int) -> dict:
+    """The sweep groups `_lay_pulse_phase_table`'s shared pass may lay as
+    one union block: {(speed, lo_v, hi_v, wrap, kind): {num: want_set}}, only
+    groups of two or more records, in allocation order of their first
+    member. `want_set` is the record's planned phases plus its own (width,
+    up), exactly the set the pass lays for it alone."""
+    groups: dict = {}
+    for j in range(max(instr_used - lead, 0)):
+        want = phases.get(j + 1 + lead)
+        params = _phase_sweep_params(sid, det, j, multiplier) if want else None
+        if params is None:
+            continue
+        want_set = set(want) | {(params[0], +1)}
+        kind = _union_kind(want_set, *params[1:])
+        if kind is not None:
+            groups.setdefault(params[1:] + (kind,), {})[j + 1 + lead] = want_set
+    return {k: v for k, v in groups.items() if len(v) > 1}
+
+
 def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            pulse: bool, multiplier: int, phases: dict, log,
                            lead: int, share: bool) -> tuple:
-    """One layout pass of `build_pulse_phase_table`: (entries, starts,
-    index, dropped, silent, attempted, placed). `share` picks
-    `_phase_block`'s shared-ramp layout for every phase-tracked record."""
+    """One layout of `build_pulse_phase_table`: (entries, starts, index,
+    dropped, silent, attempted, placed). `share` picks `_phase_block`'s
+    shared-ramp layout for every phase-tracked record, and may lay ONE
+    block over the union of the phase sets of records sharing a sweep
+    (`_union_groups`, `_lay_pulse_phase_pass`'s `unions`).
+
+    **A union is adopted group by group, only where it makes the layout
+    better by (silent, dropped, rows).** A union costs no more rows than
+    its members' own blocks, but it lays them all at the group's FIRST
+    member, so the rows a later member used to take at its own turn are
+    taken before the records in between -- and a table that was full moves
+    its shortfall onto one of those. Measured on Gremlins under forced
+    `pulse_phase` at be0aeb1: both of its unions together keep records 10
+    and 20 swept and put record 22 -- 1344 note rows, the file's most
+    played -- on pointer 0, no width at all, where the per-record layout
+    had degraded 10 and 20 to static widths and given 22 its block. So
+    pointer 0 is counted first: no union is taken that silences a record
+    the layout without it did not. With no group adopted the pass is the
+    per-record shared layout, byte for byte."""
+    if not share:
+        return _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
+                                     phases, log, lead, False, {})
+
+    def score(t: tuple) -> tuple:
+        return t[4], t[3], len(t[0])
+    best_log: list = []
+    best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
+                                 phases, best_log.append, lead, True, {})
+    chosen: dict = {}
+    for key, members in _union_groups(sid, det, instr_used, multiplier,
+                                      phases, lead).items():
+        trial_unions = dict(chosen)
+        trial_unions[key] = members
+        trial_log: list = []
+        trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
+                                      phases, trial_log.append, lead, True,
+                                      trial_unions)
+        if score(trial) < score(best):
+            best, best_log, chosen = trial, trial_log, trial_unions
+    if log:
+        for line in best_log:
+            log(line)
+    return best
+
+
+def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
+                          pulse: bool, multiplier: int, phases: dict, log,
+                          lead: int, share: bool, unions: dict) -> tuple:
+    """One layout pass: (entries, starts, index, dropped, silent, attempted,
+    placed). `unions` is the subset of `_union_groups` laid as one block
+    each (see `group_left` below); empty, every phase-tracked record lays
+    its own."""
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
     starts = [1] * lead
     index: dict = {}
@@ -1431,6 +1550,22 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     def remember(program: list, loop, start: int) -> None:
         if share and standalone(program, loop):
             seen.setdefault(tuple(program), start)
+
+    # Under `share`, phase-tracked records whose sweeps agree on (speed, lo,
+    # hi, wrap) AND on `_union_kind` -- one group of `unions` -- share ONE
+    # `_phase_block` laid over the union of their phase sets, and each
+    # record's start and index entries point into it. A table row plays the
+    # same whichever instrument's pointer reaches it, and the block's
+    # lattice -- its chained legs, its loop -- is set by those four alone
+    # (`_phase_block` reads `width` for nothing), so one loop serves where
+    # each record carried its own; `_union_kind` says why the kind must
+    # agree too. The union is laid at the group's first record; if it does
+    # not fit there, that record lays its own block and the next member
+    # tries the union of what is left. `group_left` is each group's members
+    # not yet laid, {num: want_set}; `laid` a group's union, once placed, as
+    # {(width, direction): row}.
+    group_left: dict = {k: dict(v) for k, v in unions.items()} if share else {}
+    laid: dict = {}
 
     for i in range(max(instr_used - lead, 0)):
         num = i + 1 + lead
@@ -1468,6 +1603,28 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         # into a local index first so a table-full below can discard just
         # this record without touching what an earlier record already placed.
         want_set = set(want) | {(width, +1)}
+        key = next((k for k, m in group_left.items() if num in m), None)
+        if key is not None:
+            union_rows = laid.get(key)
+            if union_rows is None and len(group_left[key]) > 1:
+                # The first record of a sweep group still to be laid: ONE
+                # block over the union of its own and every later member's
+                # phases. Too big, and this record tries its own block below;
+                # the next member tries the union of what is left.
+                union = set().union(*group_left[key].values())
+                block, u_index = _phase_block(len(entries), 0, union,
+                                              *params, share=True)
+                if len(entries) + len(block) <= _gw_constants.GT_MAX_TABLELEN:
+                    union_rows = {(w, d): at for (_, w, d), at in u_index.items()}
+                    laid[key] = union_rows
+                    entries += block
+            group_left[key].pop(num, None)
+            if union_rows is not None:
+                index.update({(num, w, d): union_rows[(w, d)]
+                              for (w, d) in want_set})
+                placed += 1
+                starts.append(union_rows[(width, +1)])
+                continue
         block, phase_index = _phase_block(len(entries), num, want_set,
                                           *params, share=share)
 

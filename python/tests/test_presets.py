@@ -686,7 +686,7 @@ def test_every_boolean_always_flag_has_a_live_file_count():
     assert not stale, f"LIVE_ON names flags FIXED does not carry: {stale}"
     for k, v in P.LIVE_ON.items():
         assert v is None or (isinstance(v, int) and 0 <= v <= 95), (k, v)
-    assert P.LIVE_ON["reject_phantoms"] == 0 and P.LIVE_ON["compact_instruments"] == 89,         "the two anchoring facts the comment states must match the table"
+    assert "reject_phantoms" not in P.LIVE_ON and P.LIVE_ON["compact_instruments"] == 89,         "the two anchoring facts the comment states must match the table"
 
 
 

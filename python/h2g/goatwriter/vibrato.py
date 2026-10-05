@@ -41,26 +41,81 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
 
           cmp = bound * multiplier - VIBRATO_CMP_BIAS
 
-    * **Excursion.** The player's apply loop only ever subtracts
-      (Warhawk $1245: `LDA ctr,X / LSR / TAY / DEY / BMI out / freq -= depth`),
-      so the note is the top of the swing and `(bound >> 1) * depth` is a
-      **peak-to-peak**, not an amplitude. Goattracker's peak-to-peak is
-      `(cmp + 2) * speed`. Equating the two, with `cmp + 2 = bound *
-      multiplier` from the period, cancels `bound` and leaves
-      `speed = depth / (2 * multiplier)`, i.e. `shift + 1 + log2(multiplier)`.
+    * **Excursion.** The apply loop subtracts AND adds. It first takes
+      `bound >> 1` depths off the note, then adds `ctr` depths back:
 
-      **The code does NOT emit that: it emits**
+          LVVP $522A  LDA bound,X / LSR / TAY / DEY / BMI / freq -= depth
+          LVVP $5251  LDY ctr,X   /             DEY / BMI / freq += depth
+          (Warhawk: the same two loops at $1251 and $1278)
+
+      so the frequency is `note + (ctr - (bound >> 1)) * depth` with `ctr`
+      walking 0..bound, and the **peak-to-peak is `bound * depth`**.
+      Goattracker's is `(cmp + 2) * speed`; with `cmp + 2 = bound *
+      multiplier` from the period, `speed = depth / multiplier`, i.e.
 
           rshift = shift + _rate_shift(multiplier)
 
-      **without the `+ 1`, so the swing is TWICE the derivation above.**
-      The `+ 1` was dropped at v0.5.369 (3ec87b1, "the vibrato depth doubles,
-      paid for with vibdelay instead of melody"), because the derived depth
-      measured too shallow against the originals; halving `rshift` on its
-      own renamed attacks, which is what the classic engine's `vibdelay`
-      pays for. Read from this paragraph alone, the depth factor is 1.3125
-      where the code's is 0.65625 -- exactly 2x and on the wrong side of 1
-      -- so trust the code line, not the derivation, for what is emitted.
+      which is exactly what is emitted. RETRACTED (lvvp-vibrato-phase,
+      2026-10-05): this bullet used to read "The player's apply loop only
+      ever subtracts (Warhawk $1245: `LDA ctr,X / LSR / TAY / DEY / BMI out /
+      freq -= depth`), so the note is the top of the swing and `(bound >> 1)
+      * depth` is a **peak-to-peak**" and derived `shift + 1 +
+      log2(multiplier)` from it. The loop it quoted loads the BOUND cell
+      (Warhawk's split stores `bound` to $15C3, the operand there), and it
+      missed the add loop after it. The `+ 1` dropped at v0.5.369 (3ec87b1,
+      "the vibrato depth doubles", because the derived depth measured too
+      shallow) is that derivation's error removed, not a fit against it.
+      Census over the 61 corpus files `VIBRATO_SHAPES` matches
+      (C:/t/lvvp-vibrato-phase/census.py): all 61 carry the subtract loop;
+      59 carry the add loop as `LDY ctr,X / DEY / BMI / CLC` on the counter
+      the update steps. Mozart and Tarzan spell the update differently and
+      were not resolved.
+
+    * **Phase and centre, which Goattracker cannot carry.** Two properties
+      of that loop have no speed-table encoding. Both are measured, not
+      emitted:
+
+      - **Centre.** The swing spans `-(bound >> 1) .. bound - (bound >> 1)`
+        depths around the note. An odd bound is lopsided: bound 3 swings
+        -1..+2, centred half a depth above the note. Goattracker's
+        oscillation is centred on the note, and it has no sub-note detune
+        to move the centre.
+      - **Phase.** `ctr` and its direction are per voice and nothing resets
+        them at a note. In Las_Vegas_Video_Poker, $54DD,X and $54FD,X are
+        written only by the update at $51DC-$51F7. The update runs every
+        frame a vibrato record is current, so each note picks the
+        oscillator up wherever the last one left it. Goattracker zeroes
+        `vibtime` on every wavetable note step (gplay.c:723, player.s
+        `mt_wavenote` "Reset vibrato phase"), so each note starts at the
+        centre, moving up. The census found 55 of 61 counters with no
+        writer outside the update. Shockway_Rider, W_A_R and Spellbound
+        add only an init-time clear, Star_Paws' longer update is its own
+        DEC, and Mega_Apocalypse's zero-page hits were not resolved.
+
+      Measured at -t 120 s, subtune 0, on Las_Vegas_Video_Poker's bound-3
+      records (vibrato byte $1A). The original is traced at -m1, ours under
+      presets and packed at -S4 (C:/t/lvvp-vibrato-phase/phase.py, base.txt).
+      Offsets are in the original's depth units, `(f(n) - f(n-1)) >> 2` from
+      the player's table at $53F9. The start phase is (the offset at frame
+      1, the direction of the first move), over notes of 8+ frames:
+
+          record          side  notes  start phases               swing
+          $6B9A (instr 6) orig  305    -1u 52  0d 49  0u 49        -1..+2: 303
+                                       +1d 52 +1u 53 +2d 50
+                          ours  305    0u 305                      -1..+1: 280
+          $0AA0 (instr B) orig   80    -1u 22  0d 4  0u 4          -1..+2: 56
+                                       +1d 22 +1u 22 +2d 6
+                          ours   84    0u 84                   -1.5..+1.5: 82
+
+      Against six equally frequent phases, every fixed start phase is the
+      same distance from the original on average: the distribution does not
+      change when the cycle is shifted. So no choice of Goattracker's start
+      phase can beat another. Only a free-running phase would, and the
+      phase reset above rules that out. FIDELITY.md's `depth` is a
+      peak-to-peak, so it reads the swing's size and not its centre. Both
+      records share speed entry 2, yet ours swings 2 depths on $6B9A
+      (voice 2, low notes) and 3 on $0AA0. That gap is open and is not
+      explained here.
 
     * `multiplier` is in both because Goattracker's counter advances per play
       call and the player's per frame -- the same per-frame/per-call division
@@ -126,7 +181,10 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
     and that is not a coincidence: the old derivation equated the player's
     peak-to-peak with a Goattracker *amplitude*, and the two errors -- a period
     twice too long and an excursion convention off by two -- cancelled in the
-    shift exactly. Only `cmp` was ever wrong.
+    shift exactly. Only `cmp` was ever wrong. (The "player's peak-to-peak"
+    in that account is the `(bound >> 1) * depth` retracted under
+    Excursion above. The real one is `bound * depth`, so `rshift` was one
+    too large until v0.5.369 dropped the `+ 1`.)
 
     Two deliberate approximations besides, neither hidden: the player applies
     its counter as a *position* (an absolute offset from the note) where

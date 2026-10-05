@@ -260,15 +260,6 @@ def main(argv=None) -> int:
              "the rest. Off by default: it changes the output bytes of the "
              "files it reaches")
     parser.add_argument(
-        "--reject-phantoms", action="store_true",
-        help="validate the inferred pattern table: an entry whose decode "
-             "runs off the file, or whose bytes overlap the pointer tables "
-             "or signature-matched player code, is provably not pattern "
-             "data (the hi-lo-1 entry count over-counts) and is replaced "
-             "by a one-rest placeholder instead of being decoded as music. "
-             "Off by default: it changes the output bytes of the files it "
-             "reaches")
-    parser.add_argument(
         "--skip-gate", action="store_true",
         help="derive the row length from the counter ABOVE the speed gate as "
              "well as the gate itself. Most Hubbard players decrement the "
@@ -569,7 +560,6 @@ def main(argv=None) -> int:
                            "drop_unnamed_instruments"),
                           ("--ilv-filter-routing", "ilv_filter_routing"),
                           ("--wave-alternate", "wave_alternate"),
-                          ("--reject-phantoms", "reject_phantoms"),
                           ("--skip-gate", "skip_gate"),
                           ("--regrid", "regrid"),
                           ("--fold-transpose", "fold_transpose"),
@@ -667,7 +657,6 @@ def main(argv=None) -> int:
                       ilv_filter_routing=args.ilv_filter_routing,
                       wave_alternate=args.wave_alternate,
                       engine=args.engine,
-                      reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,
                       initial_instrument=args.initial_instrument,
                       sustain_exact=args.sustain_exact,

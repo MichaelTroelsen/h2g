@@ -143,6 +143,11 @@ class Detection:
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
     effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
+    # Bit $02's OTHER reading, Hubbard's own "skydive" (Hunter_Patrol
+    # $A2C9): a fall of the frequency HIGH byte, one step every other
+    # frame, in the last ticks of a long note. Consulted only where the
+    # rise above was not found -- see _find_skydive().
+    skydive: Optional["Skydive"] = None
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
     # Semitones *up* for the second arpeggio dialect, whose interval is
     # hardcoded in the routine rather than taken from the record's high
@@ -377,7 +382,8 @@ class Detection:
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
     # (a pattern-table entry, say) is provably not pointing at pattern data.
-    # See patterns.phantom_patterns.
+    # Read by tracks.track_table_extent (and by patterns.phantom_patterns
+    # until --reject-phantoms was removed at v0.5.511).
     code_spans: List[Tuple[int, int]] = field(default_factory=list)
     # The player's note frequency table, once located, and the semitone
     # offset a pattern's note byte needs to name the same pitch in
@@ -1913,6 +1919,15 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
+    if not det.effect_rise:
+        # A fallback spelling of bit $02, consulted only where Warhawk's
+        # rise matched nothing.
+        det.skydive = _find_skydive(sid, det)
+        if det.skydive is not None:
+            sd = det.skydive
+            log(f"Effect bit $02..........: skydive (notes of length "
+                f">= {sd.min_length}, last {sd.last_ticks} ticks, every "
+                f"other frame on ${sd.counter:04X})")
     if det.effect_arp and not det.arp_fixed_up:
         det.arp_nibble_period = nibble_arp_period(sid, det)
     if any((det.effect_rise, det.effect_arp, det.effect_drum,
@@ -4266,6 +4281,8 @@ def _find_rest_silence_envelope(data: bytes) -> bool:
 #     13B0  FE 7F 15  INC noteindex,X
 #
 # 4 of 83 convertible corpus files have the rise block, 13 the arpeggio block.
+# (Historical. The rise is 5 of 95 since its zero-page spelling, Spellbound,
+# was added below -- measured at be0aeb1 + the v0.5.510 merge.)
 EFFECT_STORE_ABS = 0x8D
 EFFECT_STORE_ZP = 0x85
 
@@ -4467,6 +4484,26 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     any_load = "A5 ??" if zp else "AD ?? ??"
     rise = search_file(
         sid.data, f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? FE") >= 1
+    # A second spelling of the same block, consulted only where the first
+    # matched nothing: the note index held zero-page, so the increment is
+    # `INC zp,X` (`F6`, two bytes) where Warhawk's is `INC abs,X` (`FE`,
+    # three). Spellbound $E2FF, the corpus's only file in this spelling and
+    # otherwise Warhawk $13A2 instruction for instruction:
+    #
+    #     E2FF  A5 BE     LDA $BE        ; effect (+7), zero-page
+    #     E301  29 02     AND #$02 / BEQ out
+    #     E305  A5 C1     LDA $C1        ; the counter the arpeggio divides too
+    #     E307  29 03     AND #$03 / BNE out
+    #     E30B  F6 AD     INC $AD,X      ; the voice's note index
+    #     E30D  B5 AD     LDA $AD,X / ASL / TAY / LDA $E400,Y ... STA $D400,Y
+    #
+    # Pinning `FE` read the routine as absent there, so `effect_rise` was
+    # False on the one record that sets the bit ($11, effect $56). See
+    # tests/test_rise_zp_inc_spelling.py, and the rise branch in
+    # goatwriter/wavetable.py for why detecting it moves no emitted byte.
+    if not rise:
+        rise = search_file(
+            sid.data, f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? F6") >= 1
     arp = search_file(
         sid.data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D") >= 1
     # A second arpeggio dialect, and the reason 12 corpus files arpeggiate
@@ -4574,6 +4611,84 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # PULSE_LO_SHAPES for the zero-page dialect (Samantha Fox, Spellbound).
     pulse_lo = _pulse_lo_block(sid.data, load) is not None
     return rise, arp, drum, pulse_lo, arp_up
+
+
+# Hubbard's own "skydive" -- bit $02 of the effect byte read as the
+# instrument-format article reads it ("a slower frequency down ... AHHHHhhhgh",
+# docs/HUBBARD-PLAYER-REFERENCE.md:306), in the dialect that gates it on the
+# note's length. Hunter_Patrol $A2C9, byte for byte in ten corpus files:
+#
+#     A2C9  AD 24 A4  LDA effect
+#           29 02     AND #$02 / BEQ out
+#           BD FA A3  LDA dur,X      ; the note byte as fetched
+#           29 1F     AND #$1F
+#           C9 0C     CMP #MIN / BCC out      ; notes shorter than MIN: none
+#           BD F7 A3  LDA ticks,X    ; ticks left, DEC'd once a tick
+#           C9 09     CMP #LAST / BCS out     ; only in the last LAST ticks
+#           AD 26 A4  LDA counter    ; INC'd at the play entry, every call
+#           29 01     AND #$01 / BEQ out      ; every other frame
+#           BD 1B A4  LDA savehi,X   ; the note's frequency HIGH byte
+#           F0 09     BEQ out        ; already at the bottom
+#           DE 1B A4  DEC savehi,X
+#           AC F0 A3  LDY voiceofs
+#           99 01 D4  STA $D401,Y    ; A still holds the value BEFORE the DEC
+#
+# So the voice's frequency high byte reads savehi, savehi-1, savehi-2 ... on
+# alternate frames, over the low byte whatever wrote it last; where the
+# record's vibrato rewrites the whole frequency every frame (Hunter_Patrol
+# $A1B4), the pitch ALTERNATES between the vibrato and the falling byte.
+#
+# Warhawk's `29 02 F0 ?? AD ?? ?? 29 03 D0 ?? FE` (the rise) matches nothing
+# in any of the ten, which is why `effect_rise` reads False for all of them.
+# The two CMP operands vary per file -- (#$0C, #$09) Hunter_Patrol, (#$0C,
+# #$08) Gremlins and 5_Title_Tunes, (#$10, #$12) Master_of_Magic, (#$10,
+# #$18) Zoids, One_Man_and_his_Droid, Formula_1_Simulator and Proteus,
+# (#$1F, #$1E) Last_V8 -- so they are read, never assumed.
+SKYDIVE_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? BD ?? ?? C9 ?? "
+                 "B0 ?? AD ?? ?? 29 01 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
+                 "AC ?? ?? 99 01 D4")
+# Offsets into SKYDIVE_SHAPE (past the effect-byte load).
+SKYDIVE_AT_MIN = 10
+SKYDIVE_AT_LAST = 17
+SKYDIVE_AT_COUNTER = 21
+SKYDIVE_AT_SAVE = 28
+SKYDIVE_AT_DEC = 33
+
+
+@dataclass(frozen=True)
+class Skydive:
+    """The skydive block's three operands, read from the block itself."""
+    counter: int        # address of the every-other-frame counter
+    min_length: int     # a note whose `dur & $1F` is below this has none
+    last_ticks: int     # it runs while the ticks-left counter is below this
+
+
+def _find_skydive(sid: SidFile, det: Detection) -> Optional[Skydive]:
+    """The skydive block of SKYDIVE_SHAPE, or None.
+
+    Keyed on the resolved +7 address like every other effect-byte probe, so
+    a player that tests bit $02 of something else does not count; and the
+    `LDA savehi,X` must name the cell the `DEC` decrements, which is what
+    makes the store a falling byte rather than any table read.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    data = sid.data
+    at = search_file(data, f"{load} {SKYDIVE_SHAPE}")
+    if at < 1:
+        return None
+    b = at + lead
+    if data[b + SKYDIVE_AT_SAVE:b + SKYDIVE_AT_SAVE + 2] != \
+            data[b + SKYDIVE_AT_DEC:b + SKYDIVE_AT_DEC + 2]:
+        return None
+    return Skydive(
+        counter=data[b + SKYDIVE_AT_COUNTER] | data[b + SKYDIVE_AT_COUNTER + 1] << 8,
+        min_length=data[b + SKYDIVE_AT_MIN],
+        last_ticks=data[b + SKYDIVE_AT_LAST])
 
 
 # **The nibble arpeggio's half-period is PER RECORD, chosen by the interval.**

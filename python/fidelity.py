@@ -1508,29 +1508,155 @@ def tie_compare(orig: list[Voice], ours: list[Voice], nframes: int,
     fact; and at multiplier>1 a tie that lands and moves on inside one frame
     is never printed for us (so `tie_orig_only` is biased high there, and
     `--equal-calls` removes it). `None` when neither side ties.
+
+    **And blind to whether anyone can HEAR the tie** -- a third blindness,
+    recorded rather than corrected: siddump names a frequency step on a voice
+    whose envelope is already at zero exactly as it names one on a sounding
+    note. So the two one-sided counts carry their reasons, none of which
+    changes any figure above:
+
+    * `tie_orig_only_silent` / `tie_ours_only_silent`: of those ties, the
+      ones on a frame where THAT side's envelope is at zero
+      (`audible_frames`, the rule `depth` cuts on). A pitch change
+      nobody hears; a voice without waveform events counts as audible.
+    * `tie_orig_only_firstwave`: original ties on the frame our voice spends
+      on its firstwave (`_is_firstwave_frame`: below $10 with the test bit,
+      the frame before our attack). siddump prints no note on a frame below
+      $10, so nothing we do there reads as a tie, and an original stepping
+      its arpeggio there is charged to us, one per note. At -S1 the frame
+      writes no frequency at all (Zoids, 135 of 135 in 60 s); at -S2 Last_V8
+      writes the original's own step on it -- printed `751A  ... ..`
+      against the original's `7518 (A-6 D1)` -- and is still charged.
+
+    Measured at be0aeb1, `fidelity.py <corpus> -t 180 --presets`, 95 rows
+    (89 measured), every field both carry equal to that commit's
+    build/fidelity.json but the label and timings (the run omitted `--sound`
+    and the censuses; task pre-attack-frame-swallows-arp-tie; historical):
+    23541 of the corpus's 250840 orig-only ties are firstwave, on 53 rows;
+    32484 orig-only and 9024 ours-only ties are silent. Zoids is the pure
+    case -- firstwave 871, every one also silent (voice 2: 452 of 452
+    orig-only; voice 3: 346 of 354): its player writes ADSR $0000 two frames
+    before each attack and goes on stepping the octave arpeggio into a
+    voice it has silenced, and our `$09` frame is silent too, so the two
+    sound the same and the column charges us. IK_plus is the other face --
+    1203 firstwave, 15 of them silent: there the frame is an audible
+    release (or a held gate) that the `$09` cuts, the one-frame-per-note
+    trade `instruments.py`'s `FIRSTWAVE_TESTBIT` note already prices.
     """
     lo = max(0, lag)
     hi = min(nframes, nframes + lag)
     same = ours_only = orig_only = 0
+    orig_silent = ours_silent = orig_first = 0
     per_voice = []
     for a, b in zip(orig, ours):
         ot = {f + lag for f in a.tie_frames if lo <= f + lag < hi}
         ut = {f for f in b.tie_frames if lo <= f < hi}
         vs, vu, vo = len(ot & ut), len(ut - ot), len(ot - ut)
+        a_aud = audible_frames(a, nframes)
+        b_aud = audible_frames(b, nframes)
+        b_wf = register_timeline(b.wf_events, nframes) if b.wf_events else None
+        b_att = set(b.attack_frames)
+        vos = sum(1 for f in ot - ut if a_aud is not None and not a_aud[f - lag])
+        vus = sum(1 for f in ut - ot if b_aud is not None and not b_aud[f])
+        vof = sum(1 for f in ot - ut
+                  if b_wf is not None and _is_firstwave_frame(b_wf, b_att, f))
         per_voice.append({
             "tie_agreement": (vs / (vs + vu + vo)) if (vs + vu + vo) else None,
-            "same": vs, "ours_only": vu, "orig_only": vo})
+            "same": vs, "ours_only": vu, "orig_only": vo,
+            "orig_only_silent": vos, "ours_only_silent": vus,
+            "orig_only_firstwave": vof})
         same += vs
         ours_only += vu
         orig_only += vo
+        orig_silent += vos
+        ours_silent += vus
+        orig_first += vof
     either = same + ours_only + orig_only
     return {
         "tie_agreement": (same / either) if either else None,
         "tie_same_frame": same,
         "tie_ours_only": ours_only,
         "tie_orig_only": orig_only,
+        "tie_orig_only_silent": orig_silent,
+        "tie_ours_only_silent": ours_silent,
+        "tie_orig_only_firstwave": orig_first,
         "tie_voices": per_voice,
     }
+
+
+def tie_audibility(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
+    """`tie_ratio`'s count split by whether anyone can HEAR the tie, per side.
+
+    **`tie_ratio` counts every frame siddump printed a note on**, and siddump
+    prints one for a frequency write that lands on a note pitch even when the
+    gate is off and the envelope is at zero -- a voice the player is merely
+    parking, or still stepping an arpeggio into after silencing it. Those are
+    ties nobody hears. Hunter_Patrol's first 60 s (task
+    tie-column-counts-silent-frames; opened at 3b1c66d, historical): 215 of
+    voice 1's 333 original ties and 116 of voice 2's 183 sit in the gate-off
+    intro.
+
+    Each side's ties are read against THAT side's own `audible_frames` (attack
+    to `envelope_zero_frame`; every frame before the first attack is silent),
+    so no `lag` is needed -- the same shift-invariance `tie_ratio` has -- and
+    a tie on a frame past `nframes` is neither silent nor audible, it is not
+    counted at all. Reported BESIDE `tie_ratio`, which is unchanged:
+
+    * `orig_ties_silent` / `our_ties_silent`: ties on a frame where that
+      side's envelope is at zero.
+    * `tie_ratio_audible`: `(our_ties - our_ties_silent) / (orig_ties -
+      orig_ties_silent)`, the ratio over ties a listener can hear. `None`
+      when the original has no audible tie.
+
+    A voice with no waveform events cannot show its gate, so none of its ties
+    is called silent (`audible_frames` returns `None`). Omitted under
+    `--equal-calls` and `--vice`, which do not walk the traces against
+    `nframes`.
+    """
+    def side(voices: list[Voice]) -> tuple[int, int]:
+        total = silent = 0
+        for v in voices:
+            aud = audible_frames(v, nframes)
+            total += v.ties
+            if aud is not None:
+                silent += sum(1 for f in v.tie_frames
+                              if 0 <= f < nframes and not aud[f])
+        return total, silent
+    ot, os_ = side(orig)
+    ut, us = side(ours)
+    return {
+        "orig_ties_silent": os_,
+        "our_ties_silent": us,
+        "tie_ratio_audible": ((ut - us) / (ot - os_)) if ot - os_ else None,
+    }
+
+
+def _is_firstwave_frame(wf: list[int], attacks: set[int], f: int) -> bool:
+    """`f` is the note-init call's `FIRSTWAVE_TESTBIT` frame: no waveform
+    selected, the test bit set, and the gate edge siddump names the note on
+    is the very next frame. The predicate `_noise_firstwave_frames` uses,
+    keyed on the attack instead of on noise."""
+    return (0 <= f < len(wf) and not wf[f] & 0xF0 and bool(wf[f] & WF_TEST)
+            and f + 1 in attacks)
+
+
+def audible_frames(v: Voice, nframes: int) -> list[bool] | None:
+    """Per frame, whether `v`'s envelope can be sounding: each note runs from
+    its gate rising edge to `envelope_zero_frame`, and every frame outside
+    such a span -- including all of them before the first attack -- is
+    silent. `None` for a voice with no waveform events (the gate cannot be
+    seen), which callers read as audible, as `oscillation_depths` does."""
+    if not v.wf_events:
+        return None
+    wf = register_timeline(v.wf_events, nframes)
+    env = register_timeline(v.env_adsr_events or v.adsr_events, nframes)
+    out = [False] * nframes
+    atk = sorted(f for f in v.attack_frames if 0 <= f < nframes)
+    for j, s in enumerate(atk):
+        e = atk[j + 1] if j + 1 < len(atk) else nframes
+        for f in range(s, envelope_zero_frame(wf, env, s, e)):
+            out[f] = True
+    return out
 
 
 GATE_KINDS = ("retrigger", "matched", "short", "held")
@@ -4631,15 +4757,17 @@ def vice_octave_split(orig_samples: list, our_samples: list,
     where given, a sign-extended freq siddump saw is rebuilt from it first
     (`vice_oracle_samples`), which is what lets a pair two octaves apart
     (`$106E` against Devils_Galop's `$FFB8` = `$41B8`) be read at all rather
-    than counted blind."""
+    than counted blind; and a `$FFxx` whose `$FF` siddump confirms is read as
+    the whole value it is (`vice_oracle_repair`'s `confirmed`)."""
     out = {}
     for side, samples, keyed in (("orig", orig_samples, orig_keyed_by),
                                  ("our", our_samples, our_keyed_by)):
-        samples = vice_oracle_samples(samples, keyed)
+        samples, whole = vice_oracle_repair(samples, keyed)
         blind: list[int] = []
         first: list = []
         out[f"{side}_octave_split_frames"] = sum(
-            vicetrace.octave_split_frames(samples, blind=blind, first=first))
+            vicetrace.octave_split_frames(samples, blind=blind, first=first,
+                                          whole=whole))
         out[f"{side}_octave_split_blind_frames"] = sum(blind)
         out[f"{side}_octave_first_frame"] = min(
             (f for f in first if f is not None), default=None)
@@ -4728,31 +4856,46 @@ def _oracle_freq(raw: list[int], oracle: list[int],
     return out, hit
 
 
-def vice_oracle_samples(samples: list, keyed_by: list[Voice] | None) -> list:
-    """`samples` with every sign-extended freq that siddump's own trace of the
-    same side can name repaired (`_oracle_freq`) -- and nothing else: no
-    continuity guess, because `osplit` counts a frame on the strength of the
-    values it reads, and a guessed high byte is the one an octave is made of
-    (`vicetrace._octave_verdict`). A sample the oracle did not see stays
-    sign-extended and the verdict stays None. Without `keyed_by` the samples
-    come back as they are."""
+def vice_oracle_repair(samples: list, keyed_by: list[Voice] | None
+                       ) -> tuple[list, list[set[int]]]:
+    """`(samples, confirmed)`: `samples` with every sign-extended freq that
+    siddump's own trace of the same side can name repaired (`_oracle_freq`)
+    -- and nothing else: no continuity guess, because `osplit` counts a frame
+    on the strength of the values it reads, and a guessed high byte is the one
+    an octave is made of (`vicetrace._octave_verdict`). A sample the oracle did
+    not see stays sign-extended and the verdict stays None.
+
+    `confirmed` is, per voice, the sample indices the oracle named. Most
+    leave the `$FFxx` form; the ones that keep it are values whose high byte
+    REALLY is `$FF` (a slide past `$FF80`), which only this set tells from
+    damage -- `vicetrace.octave_split_frames(whole=...)`. Without `keyed_by`
+    the samples come back as they are, with nothing confirmed."""
     if not keyed_by:
-        return samples
+        return samples, [set(), set(), set()]
     lines = vicetrace.PAL_LINES_PER_FRAME
     nframes = len(samples) // lines
     total = nframes * lines
     offset = vice_frame_offset(samples[:total], keyed_by)
     out = list(samples)
+    confirmed: list[set[int]] = [set(), set(), set()]
     for vi in range(min(3, len(keyed_by))):
         raw = [smp.voices[vi].freq if vi < len(smp.voices) else 0
                for smp in samples[:total]]
         fixed, hit = _oracle_freq(
             raw, register_timeline(keyed_by[vi].freq_events, nframes), offset)
+        confirmed[vi].update(hit)
         for i in hit:
+            if fixed[i] == raw[i]:
+                continue
             voices = list(out[i].voices)
             voices[vi] = dataclasses.replace(voices[vi], freq=fixed[i])
             out[i] = dataclasses.replace(out[i], voices=voices)
-    return out
+    return out, confirmed
+
+
+def vice_oracle_samples(samples: list, keyed_by: list[Voice] | None) -> list:
+    """`vice_oracle_repair`'s samples alone."""
+    return vice_oracle_repair(samples, keyed_by)[0]
 
 
 def vice_freq_repair(raw: list[int], attacks: list[int],
@@ -5434,7 +5577,15 @@ DIMENSIONS = (
               "Food_Feud two versions earlier; a ratio below 1.00 by less "
               "than that on a multiplier>1 file is sampling, not a defect, "
               "and --equal-calls removes it. Historical, re-measure before "
-              "quoting a figure. `-` is an original with no ties"),
+              "quoting a figure. **Counts ties nobody hears**: siddump names "
+              "a frequency write that lands on a note pitch a tie even with "
+              "the gate off and the envelope at zero, so a gate-off intro "
+              "is full of them; `orig_ties_silent` / `our_ties_silent` "
+              "(`tie_audibility`) say how many of each side's ties fall on "
+              "a frame where that side's own envelope is at zero, and "
+              "`tie_ratio_audible` is this ratio over the rest -- reported "
+              "beside this column, which does not change. `-` is an "
+              "original with no ties"),
     # `tie_ratio`'s other half: WHERE the ties land, not how many.
     Dimension("tie_agreement", "tiefr", _PITCH_REGS, "fraction",
               "of the frames on which either side ties a voice, the share "
@@ -5444,7 +5595,12 @@ DIMENSIONS = (
               "and not here, and a phase fix that removes spurious ties "
               "raises this while the ratio can read as a loss. It shares "
               "`tie`'s blindnesses (siddump's note-table CLASSIFICATION; "
-              "orig-only ties biased high at multiplier>1) and is omitted "
+              "orig-only ties biased high at multiplier>1), is blind to "
+              "whether a tie is HEARD -- a step on a voice whose envelope "
+              "is at zero counts the same; `tie_orig_only_silent` / "
+              "`tie_ours_only_silent` say how many, and "
+              "`tie_orig_only_firstwave` how many of the original's land "
+              "on our `$09` note-init frame -- and is omitted "
               "under `--equal-calls` and `--vice`, which do not walk the "
               "traces frame against frame. `-` is a file neither side "
               "ties in"),
@@ -5881,8 +6037,9 @@ DIMENSIONS = (
               "toggle is not counted. **BLIND**: the dump sign-extends a "
               "low byte >= $80, so a damaged member is read only where "
               "siddump saw the same value on that side (within one frame, one "
-              "high byte for that low byte); a pair with a damaged member "
-              "siddump did not see, or with two, is refused, and a trill "
+              "high byte for that low byte, which may itself be $FF: a slide "
+              "past $FF80 is read as the value it is); a pair with a damaged "
+              "member siddump did not see is refused, and a trill "
               "across more than two values or a non-octave interval is not "
               "counted. **WINDOW**: Monty_on_the_Run's and Devils_Galop's "
               "octave arps first play at frame ~1818 and Warhawk's at ~2080, "
@@ -6927,6 +7084,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                     mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(tie_compare(a, best_dump, nframes, lag=lag))
+            row.update(tie_audibility(a, best_dump, nframes))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
@@ -9308,6 +9466,95 @@ def drift(orig: Trace, ours: Trace) -> dict:
                     f"first half of the matched onsets and {a2:+.1f} over the "
                     f"second, so the reported {out['per_1000']:+.1f} describes "
                     f"neither half")
+    return out
+
+
+# The second drift measure (ab-9's restated gate). `drift` fits a Theil-Sen
+# line through difflib-matched onsets, so it is only as independent of a
+# second reading as its pairing and its estimator are. This one shares
+# neither: it never looks at a note NAME, it pairs attacks by TIME alone, and
+# it fits an ordinary least-squares line through per-window MEDIAN offsets.
+# Method: `rasputin-noise-placement-disagrees-on-both-firstwave-arms`'s
+# probe_onsets.py, which read the same per-window median offsets.
+TP_WINDOW = 500        # original frames per window (10 s)
+TP_INIT_RADIUS = 100   # first window may sit anywhere within +/- this of zero
+TP_TRACK_RADIUS = 15   # later windows may move this far from the last one
+TP_SNAP = 1            # an attack counts toward an offset within +/- this
+TP_PAIR_TOL = 4        # a pair is the nearest attack within this of the lock
+TP_MIN_PAIRS = 4       # a window with fewer paired attacks reads nothing
+TP_MIN_SHARE = 0.5     # ... and neither does one where fewer of the original's
+                       # attacks found a partner: chance, not music
+TP_MIN_WINDOWS = 3     # a line needs three points and a baseline
+
+
+def time_paired_drift(orig, ours, nframes: int | None = None,
+                      window: int = TP_WINDOW) -> dict:
+    """Frames gained or lost per 1000, from name-blind time-paired attacks.
+
+    Independent of `drift`: no `Voice.attacks` name is read (only
+    `attack_frames`), no difflib, no pairwise slopes. Per window of the
+    original's timeline the three voices' attacks vote -- they share one clock
+    -- for the offset `d` at which most of the original's attacks have one of
+    ours within `TP_SNAP` frames of `a + d`; the search is centred on the last
+    accepted window's offset, so the lock follows a drift of tens of frames
+    that a fixed search could not. Each original attack is then paired with
+    the nearest of ours within `TP_PAIR_TOL` of `a + d`, and the window's
+    offset is the median of `b - a` over those pairs. The rate is the
+    least-squares slope of the window offsets against the window centres.
+
+    Same sign convention as `drift`: offset = ours - theirs, positive = we run
+    late. Returns `{"per_1000": None, "windows": [...]}` when fewer than
+    `TP_MIN_WINDOWS` windows read -- never a guess.
+    """
+    ends = [f for v in orig for f in v.attack_frames]
+    horizon = nframes if nframes is not None else (max(ends) + 1 if ends else 0)
+    out: dict = {"per_1000": None, "windows": [], "window": window}
+    ours_sets = [set(v.attack_frames) for v in ours]
+    ours_sorted = [sorted(v.attack_frames) for v in ours]
+    last = 0
+    first = True
+    for w0 in range(0, horizon, window):
+        theirs = [[f for f in v.attack_frames if w0 <= f < w0 + window]
+                  for v in orig]
+        total = sum(len(t) for t in theirs)
+        if total < TP_MIN_PAIRS:
+            continue
+        radius = TP_INIT_RADIUS if first else TP_TRACK_RADIUS
+        best_d, best_n = None, -1
+        for d in sorted(range(last - radius, last + radius + 1),
+                        key=lambda x: (abs(x - last), x)):
+            n = sum(1 for vi, fs in enumerate(theirs) for a in fs
+                    if any((a + d + s) in ours_sets[vi]
+                           for s in range(-TP_SNAP, TP_SNAP + 1)))
+            if n > best_n:
+                best_d, best_n = d, n
+        if best_n < TP_MIN_PAIRS or best_n / total < TP_MIN_SHARE:
+            continue
+        offs = []
+        for vi, fs in enumerate(theirs):
+            cand = ours_sorted[vi]
+            for a in fs:
+                near = min(cand, key=lambda b: abs(b - (a + best_d)),
+                           default=None)
+                if near is not None and abs(near - (a + best_d)) <= TP_PAIR_TOL:
+                    offs.append(near - a)
+        if len(offs) < TP_MIN_PAIRS:
+            continue
+        offs.sort()
+        med = offs[len(offs) // 2]
+        out["windows"].append((w0 + window // 2, med, len(offs)))
+        last, first = med, False
+    ws = out["windows"]
+    if len(ws) < TP_MIN_WINDOWS or ws[-1][0] - ws[0][0] < MIN_DRIFT_BASELINE:
+        return out
+    mx = sum(x for x, _, _ in ws) / len(ws)
+    my = sum(y for _, y, _ in ws) / len(ws)
+    sxx = sum((x - mx) ** 2 for x, _, _ in ws)
+    slope = sum((x - mx) * (y - my) for x, y, _ in ws) / sxx
+    out["per_1000"] = slope * 1000.0
+    out["total"] = slope * (ws[-1][0] - ws[0][0])
+    out["lag"] = ws[0][1]
+    out["n_windows"] = len(ws)
     return out
 
 

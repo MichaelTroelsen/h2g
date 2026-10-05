@@ -98,7 +98,6 @@ Each option's behaviour, and the measurement behind it, is in
 - [`--compact-instruments` (the wasted instrument slot)](docs/OPTIONS.md#--compact-instruments-the-wasted-instrument-slot)
 - [`--rest-instrument` (the instrument change that clicked)](docs/OPTIONS.md#--rest-instrument-the-instrument-change-that-clicked)
 - [`--status-bit6` (the skipped operand and note)](docs/OPTIONS.md#--status-bit6-the-skipped-operand-and-note)
-- [`--reject-phantoms` (pattern-table validation)](docs/OPTIONS.md#--reject-phantoms-pattern-table-validation)
 - [`--skip-gate` (the row length the gate alone under-reads)](docs/OPTIONS.md#--skip-gate-the-row-length-the-gate-alone-under-reads)
 - [`--fold-transpose` (transposes past Goattracker's ceiling)](docs/OPTIONS.md#--fold-transpose-transposes-past-goattrackers-ceiling)
 - [`--initial-instrument` (the instrument a voice starts on)](docs/OPTIONS.md#--initial-instrument-the-instrument-a-voice-starts-on)

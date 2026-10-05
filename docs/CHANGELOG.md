@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.511 — 2026-10-05
+
+- runqueue drain, two cycles -- 17 tasks recorded, 15 worktree patches merged (one hand-resolved) plus --reject-phantoms removed; 45 converted files move, exactly the union the agents reported
+
 ## 0.5.510 — 2026-10-04
 
 - runqueue drain (three cycles, 23 tasks): Crazy_Comets $7F emits the SFX cell's constant B-4; Spellbound's zero-page accumulate pulse is read; tied-slide fix (tie on row 0, slide on the hold rows, 36 files); 2-call subtune rows use CMD_FUNKTEMPO and two instrument row-bound attribution slips are fixed; Rasputin carries its fractional row tempo; 5_Title_Tunes' appended players share phase blocks; tune_by_fidelity memoises by bytes; --vice depth gated on the envelope and sustain-0 decay modelled; osplit accepts 2^k octaves; tie-shape cutoff 2; VIBRATO.md regenerated

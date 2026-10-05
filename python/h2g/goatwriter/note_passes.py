@@ -412,6 +412,34 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
     instrument; one that would pack past `PACKED_PATTERN_LIMIT`), or where
     the numbers run out: `last_number` defaults to `GT_MAX_INSTRUMENTS`
     (gcommon.h MAX_INSTR - 1). The log names each decline's reason."""
+    out, clone_of, declined, why = _respell_on_clones(
+        patterns, rows, tracks, cloneable, first_number, last_number,
+        clear_command=True)
+    clones = sorted(((b, c) for b, c in clone_of.items()), key=lambda bc: bc[1])
+    if log is not None and (clones or declined):
+        log(f"Legato tie..............: "
+            f"{len(rows) - len(declined)} tie row(s) on "
+            f"{len(clones)} legato clone(s)"
+            + (f", {len(declined)} kept CMD_TONEPORTA ("
+               + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
+               if declined else ""))
+    return out, clones, declined
+
+
+def _respell_on_clones(patterns: List[List[int]], rows: set,
+                       tracks: Optional[List[List[int]]],
+                       cloneable: Set[int], first_number: int,
+                       last_number: int = 0, clear_command: bool = True,
+                       uncloneable: str = "no record to clone"):
+    """`legato_tie_clones`' walk, shared with `free_note_variants`: each of
+    `rows` names a clone of the instrument it plays, numbered from
+    `first_number` per base, and the base is re-latched before anything
+    inherits the clone (the rules and declines `legato_tie_clones` sets
+    out). `clear_command` drops the row's command (the tie's
+    `CMD_TONEPORTA 00`, which the clone replaces); a free note has no
+    command of its own to drop and keeps whatever the column holds.
+    `uncloneable` names the decline of a row whose instrument is not in
+    `cloneable`. Returns (patterns, {base: clone}, declined rows, {reason: count})."""
     last_number = last_number or GT_MAX_INSTRUMENTS
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     successors = _pattern_successors(tracks, len(patterns)) if tracks else {}
@@ -445,7 +473,7 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                         if len(held) > 1 else "instrument unsettled")
                 continue
             if base not in cloneable:
-                decline(pn, r, "no record to clone")
+                decline(pn, r, uncloneable)
                 continue
             onward: List[int] = []
             if not room:
@@ -465,7 +493,8 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                     continue
                 clone_of[base] = number
             pat[k + 1] = clone_of[base]
-            pat[k + 2] = pat[k + 3] = 0
+            if clear_command:
+                pat[k + 2] = pat[k + 3] = 0
             if not room:
                 for q in onward:
                     out[q][1] = base
@@ -486,15 +515,140 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                     break
             if relatch is not None:
                 pat[relatch * 4 + 1] = base
-    clones = sorted(((b, c) for b, c in clone_of.items()), key=lambda bc: bc[1])
-    if log is not None and (clones or declined):
-        log(f"Legato tie..............: "
-            f"{len(rows) - len(declined)} tie row(s) on "
-            f"{len(clones)} legato clone(s)"
-            + (f", {len(declined)} kept CMD_TONEPORTA ("
+    return out, clone_of, declined, why
+
+
+def free_note_skips_two_stage(sid: SidFile, det: Detection) -> bool:
+    """True where a note whose byte carries bit 7 skips the two-stage
+    attack: the legato-marker player (`legato_tie_family`) whose BMI on the
+    flag jumps FORWARD over the read of the per-instrument frame counts
+    (`det.two_stage_frames`, an absolute `LDA arr,X` / `LDA arr,Y` inside
+    the skipped bytes).
+
+    Auf_Wiedersehen_Monty, $E569 `LDA $EB2D / BMI $E5A3`: $E56E-$E5A0 write
+    the pulse ($D402/$D403, the instruction `LEGATO_TIE_GATE_SHAPE` itself
+    anchors on), the envelope ($D405/$D406), clear the sweep state and
+    reload the drum counter $EB72 from `$EE0B,X` -- the frame-count array.
+    A flagged note then finds the counter at 0 (it ran out on the previous
+    note) and plays no attack frame, while $E5A3 still stores the record's
+    waveform and the note re-attacks (C:/t/monty-v3-surplus-drum-ticks:
+    NOPping the BMI adds exactly 30 noise frames in 60 s, one after each
+    flagged note). Read off the code rather than assumed of the family: a
+    player whose skipped block does not hold that read restarts its attack
+    on every note, flag or not, and is left alone.
+
+    Measured beyond Monty (C:/t/monty-bit7-note-skips-drum-and-pulse/r2,
+    siddump-rt, presets): ACE_II (-S3, `$E180 BMI $E1B7` over the
+    `$E627,X` reload, `DEC $E584,X` its consumers) and Deep_Strike (-S3)
+    play neither the attack nor the pulse reset on a flagged note, and the
+    variant matches both frame for frame; Sigma_Seven's `$11` attack frames
+    136 -> 120 and Sanxion sub 0's 40 -> 32 land on the original's 120 and
+    32. NOT modelled: the counter is assumed run out (a flagged note after
+    a note shorter than its own attack would finish that attack), and the
+    variant's envelope is its record's, where the original keeps the
+    previous note's (the same record on every Monty row it takes)."""
+    if (not det.effect_two_stage or det.two_stage_frames < 0
+            or not legato_tie_family(sid, det)):
+        return False
+    data = sid.data
+    gate = search_file(data, LEGATO_TIE_GATE_SHAPE)
+    rel = data[gate + 4]
+    if rel >= 0x80:
+        return False                  # a backward branch skips nothing
+    want = sid.to_address(det.two_stage_frames)
+    end = min(gate + 5 + rel, len(data))
+    return any(data[k] in (0xBD, 0xB9)
+               and data[k + 1] | (data[k + 2] << 8) == want
+               for k in range(gate + 5, end - 2))
+
+
+def free_note_rows(patterns: List[List[int]], bit7: dict) -> set:
+    """(pattern, row) of every note row whose note byte carried bit 7
+    (`note_bit7_rows`) and that restarts its instrument in Goattracker:
+    a row with `CMD_TONEPORTA` does not (gplay.c, `newcommand !=
+    CMD_TONEPORTA` around the whole instrument init), and a tie landing is
+    already that -- legato, which is what a flagged note after a held gate
+    is in the original too (`legato_tie_rows` takes the unflagged ones)."""
+    rows = set()
+    for pn, pat in enumerate(patterns):
+        flags = bit7.get(pn)
+        if not flags:
+            continue
+        for r in flags:
+            k = 4 * r
+            if (k + 3 < len(pat) and GT_FIRST_NOTE <= pat[k] <= GT_LAST_NOTE
+                    and pat[k + 2] != CMD_TONEPORTA):
+                rows.add((pn, r))
+    return rows
+
+
+def free_note_wave_start(sid: SidFile, det: Detection, record: int,
+                         wave_entries: List[tuple], start: int) -> int:
+    """The wavetable row of record `record`'s SECOND stage, in the two-stage
+    block that starts at row `start` (1-based, the instrument's byte 2); 0
+    where the block is not one this can skip into.
+
+    `_two_stage_entries` ends every block that does not hold its attack
+    pitch with `[second, $FF] / [$00, $00]`: the record's own waveform at
+    the played note, then stop -- lead, attack and any fixed-pitch hold all
+    come before it. A free note (`free_note_skips_two_stage`) plays exactly
+    that tail from its first frame. Checked on the finished entries, not
+    re-derived: the first jump after `start` must be a stop, the entry
+    before it the record's second-stage waveform at relative note 0, and
+    the record's attack byte must stand somewhere ahead of it -- otherwise
+    there is no attack in the block to skip (pitch-seq, a held attack that
+    loops, another emitter's block), and 0 is returned."""
+    data = sid.data
+    base = det.instr_start + record * det.instr_stride
+    at = det.two_stage_wave + record * det.instr_stride
+    fr = det.two_stage_frames + record * det.instr_stride
+    if (record < 0 or det.instr_start < 0 or det.two_stage_wave < 0
+            or max(base + 7, at, fr) >= len(data)
+            or not data[base + 7] & 0x04 or not data[at] or not data[fr]
+            or start <= 0):
+        return 0
+    wave = data[base + 2]
+    second = (_wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE)
+    second |= wave & 0x01
+    block = wave_entries[start - 1:start - 1 + _gw_constants.GT_MAX_TABLELEN]
+    stop = next((k for k, (left, _r) in enumerate(block)
+                 if left == GT_WAVE_JUMP), None)
+    if stop is None or stop < 2 or block[stop][1] != 0x00:
+        return 0
+    if block[stop - 1] != (second, 0x00):
+        return 0
+    if data[at] not in (left for left, _r in block[:stop - 1]):
+        return 0
+    return start + stop - 1
+
+
+def free_note_variants(patterns: List[List[int]], rows: set,
+                       tracks: Optional[List[List[int]]],
+                       starts: dict, first_number: int,
+                       last_number: int = 0, log=None):
+    """Respell each of `rows` (`free_note_rows`) on a variant of the
+    instrument it plays whose wavetable starts at the second stage
+    (`starts`: GT number -> `free_note_wave_start`) and whose pulse pointer
+    is 0, so the note neither plays the attack nor reseeds the pulse
+    (gplay.c's `if (iptr->ptr[PTBL])`, player.s `mt_inspulseptr` "if
+    nonzero": the running pulse program carries on, as the original's sweep
+    does). Same walk, re-latch and declines as `legato_tie_clones`
+    (`_respell_on_clones`), except that the row keeps its command.
+    Returns (patterns, [(instrument, variant number)], declined)."""
+    out, clone_of, declined, why = _respell_on_clones(
+        patterns, rows, tracks, set(starts), first_number, last_number,
+        clear_command=False, uncloneable="no two-stage attack to skip")
+    variants = sorted(((b, c) for b, c in clone_of.items()),
+                      key=lambda bc: bc[1])
+    if log is not None and (variants or declined):
+        log(f"Free note (bit 7).......: "
+            f"{len(rows) - len(declined)} flagged note row(s) on "
+            f"{len(variants)} variant(s) with no attack stage and no pulse "
+            "reset"
+            + (f", {len(declined)} kept the full start ("
                + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
                if declined else ""))
-    return out, clones, declined
+    return out, variants, declined
 
 
 def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
@@ -670,7 +824,9 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
         log(f"Vibrato command.........: {placed} note(s) vibrated, "
             f"{damped} damped by length"
             + (f", {busy} with the column in use" if busy else "")
-            + (f", {unknown} on an unnamed instrument" if unknown else "")
+            + (f", {unknown} with no instrument resolved in the pattern "
+               "(commanded nothing; they keep the instrument's own pointer)"
+               if unknown else "")
             + (f", {plain} long on an instrument with no vibrato"
                if plain else ""))
     return vib_ptrs
@@ -1283,6 +1439,30 @@ def _expanding_vibrato_level(target: float, gt_note: int, cmp_value: int,
     return best
 
 
+def _expanding_vibrato_gate(det: Detection, record: int) -> int:
+    """First note age, in the player's frames, whose swing record `record`
+    stores; 0 where no counter gate was read.
+
+    The swell routine runs its triangle and computes the age-grown step on
+    every frame, and only then compares the age against the gate and skips
+    the store below it -- Mega_Apocalypse:
+
+        4C2F  B9 A8 54  LDA $54A8,Y   ; the gate, per instrument...
+        4C32  8D B1 4C  STA $4CB1     ; ...into the operand of
+        4CAE  B5 BC     LDA $BC,X     ; the age (the counter `ADC $BC,X`
+        4CB0  C9 13     CMP #$13      ;   at $4C7E grows the step with)
+        4CB2  90 1D     BCC $4CD1     ; age < gate: no frequency store
+
+    so a note sounds its own pitch until the gate and its swell from there.
+    Only the counter form is a delay; a duration threshold, an UNREAD
+    operand and an unknown record impose nothing here (`VibratoGate.gate_for`).
+    """
+    vg = det.vibrato_gate
+    if vg is None or vg.form != "counter":
+        return 0
+    return vg.gate_for(record) or 0
+
+
 def _expanding_vibrato_pass(sid: SidFile, det: Detection,
                             tracks: List[List[int]],
                             patterns: List[List[int]], vib_ptrs: dict,
@@ -1308,6 +1488,19 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
     empty command column resets the channel to the instrument's pointer
     (gplay.c's CMD_DONOTHING case) and the level would fall back to the
     shallowest step mid-swell.
+
+    **No row starting below the record's gate is commanded**
+    (`_expanding_vibrato_gate`). A `4xy` runs the oscillator from its row's
+    first call whatever `vibdelay` says, so before the gate was read every
+    swell started on the first row after the note: Mega_Apocalypse records
+    3 and 10 (gates 6 and 12, 3-frame rows) first moved at frame 3 where
+    the original moves at 6..8 and 12..13, and notes shorter than the gate
+    -- still in the original -- wobbled. Measured (siddump, -t 180,
+    presets, v0.5.510 + the cycle merge), first move after the attack:
+    `$09B7` original {6: 61, 7: 29, 8: 2, none: 117}, before {3: 150, 6:
+    22, none: 32}, after {6: 89, none: 115}; `$00B9` original {12: 44, 13:
+    21, none: 25}, before {3: 89}, after {12: 64, none: 25}. Onset only:
+    bend and reversals moved apart (docs/H2G-CONVERSION-METHOD.md 7.ffffff).
 
     **Patterns are global and orderlists are per subtune** (CLAUDE.md), so
     a row is written only when every orderlist context that reaches it
@@ -1359,6 +1552,7 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
     mult = max(1, multiplier)
     data = sid.data
     by_slot: dict = {}
+    gate_of: dict = {}      # slot -> first age the player stores the swing
     for rec, (idx, _delay) in vib_ptrs.items():
         base = det.instr_start + rec * det.instr_stride + det.vibrato_offset
         if not 1 <= idx <= len(speed_table) or base >= len(data):
@@ -1372,6 +1566,7 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
             continue
         by_slot[rec + 1 + lead] = (bound, byte & VIBRATO_SHIFT_MASK,
                                    left & ~SPEED_NOTE_RELATIVE, right)
+        gate_of[rec + 1 + lead] = _expanding_vibrato_gate(det, rec)
     if not by_slot:
         return 0
     # (pattern, row) -> the set of entries the contexts reaching it want;
@@ -1435,6 +1630,13 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
                     (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
                      k, on) = block
                     ages = range(k * frames, (k + 1) * frames)
+                    if k * frames < gate_of[live]:
+                        # Below the gate the player stores no swing at all;
+                        # a row the gate falls inside is left to the
+                        # instrument's own vibdelay, which `_classic_gate_
+                        # refine` already starts on the gate's frame.
+                        wants.setdefault(key, set()).add(None)
+                        continue
                     target = bound * sum(
                         _expanding_vibrato_step(hi, lo, a, shift)
                         for a in ages) / len(ages)

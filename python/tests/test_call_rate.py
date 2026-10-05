@@ -286,7 +286,9 @@ def test_the_drum_attack_is_the_noise_tick_and_scales_with_the_call_rate():
     """
     at1 = _entries(DRUM, effects=True, drum=True, multiplier=1)
     assert at1[0][0] == 0x41, "entry 0 is the note's own waveform"
-    assert at1[0][1] == 0x81 and at1[0][2] == 0x81, "two noise frames at -S1"
+    # -S1's tick clears its gate, as the player's #$80 does; above -S1 it
+    # keeps the record's (`_drum_tick_noise`).
+    assert at1[0][1] == 0x80 and at1[0][2] == 0x80, "two noise frames at -S1"
 
     at2 = _entries(DRUM, effects=True, drum=True, multiplier=2)
     assert at2[0][:2] == [0x41, 0x41], \

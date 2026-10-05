@@ -37,7 +37,7 @@ FILTERED = ["ACE_II", "IK_plus", "I_Ball", "Nemesis_the_Warlock", "Pandora",
 UNFILTERED = ["Powerplay_Hockey_USA_vs_USSR"]
 
 OPTS = dict(log=lambda m: None, fmt="gts5", slides=True, effects=True,
-            status_bit6=True, reject_phantoms=True, fold_transpose=True,
+            status_bit6=True, fold_transpose=True,
             legal_restart=True)
 
 
