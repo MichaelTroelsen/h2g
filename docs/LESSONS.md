@@ -1602,7 +1602,13 @@ test dependency).
     different reason -- Kings of the Beach ingame now reads
     `wave` 94.4% / `gate` 85.2%** after the pulse writer reached it (`pul`
     3 -> 1182, `pspan` 0.00 -> 1.00 in the 0.5.475 -> 0.5.481 A/B); `gate` is
-    unchanged, and the 84.8% above is HISTORY.
+    unchanged, and the 84.8% above is HISTORY. **RE-GRADED AGAIN AT v0.5.511
+    (`build/fidelity.json` at 317c259, `-t 180`, presets): the live pair is
+    `wave` 94.1% / `gate` 71.1%.** The 94.4% / 85.2% pair of v0.5.481 is now
+    HISTORICAL too. Both moved somewhere between v0.5.481 and v0.5.511; the
+    v0.5.510 drain (898b491) is one candidate -- `5tt-multirate-subtunes` names
+    this file among its 13 movers -- but which change cost `gate` 14 points is
+    NOT measured. TODO: bisect it before quoting a cause.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
@@ -2642,6 +2648,28 @@ records 3 and 6 share a sweep, and a union across kinds ships (under
 calls. Every index entry and tracked start of the shared layout plays the unlimited
 per-phase layout's widths for 3200 calls on all 11 files with a sweep group
 (`tests/test_pulse_phase_union.py`; probes `C:/t/pulse-phase-union-blocks/r2/`).
+**Freeing the dropped records' rows was REFUTED at 8586101 (v0.5.511, 2026-10-05).**
+The follow-up guessed that the blocks laid for the 11 records `drop_unnamed_instruments`
+removes ($0E, $17-$20) would free the rows Gremlins 10 lacks. They cost the shared pass
+no rows: each is a standalone `XX 00 / FF 00` pair that `reuse` already points at a named
+record's copy. A pass skipping them was built and measured (254 / 255 / 252 / 255 rows
+for no union / (3, 7) / (6, 20) / both, with or without the skip). Both unions need 258
+rows, 3 past `GT_MAX_TABLELEN`, and every record still holding rows sounds notes. Only
+laying record 9's sweep (179 notes) or 15's (156) as its static width closes the gap
+(255 / 253 rows, 10 swept, 22 kept), and that trade is a listening question. On the
+forced corpus the skip moved only Last_V8 and its C128 version, and there it was a
+loss: the 12 pointer-0 records it seemed to rescue sound 0 notes, and the layout it
+preferred silenced 16 (4 notes) and 17 (64). Not shipped; the measurement sits above
+`_lay_pulse_phase_pass` and `tests/test_pulse_phase_shortfall.py` pins it.
+**Re-measured once the statics reserve merged in the same cycle (8586101 + cycle,
+2026-10-05).** "The 12 pointer-0 records it seemed to rescue" describes the layout
+WITHOUT the reserve, which still has exactly those (22-33, 254 / 255 rows, 14 degraded);
+it is no longer what ships. The shipped Last_V8 table has no pointer-0 record (223 rows,
+224 on the C128 version; 2, 7 and 8 swept, 9 alone degraded), so the skip as built, still
+(2, 2) silent/degraded with 16 and 17 on pointer 0, would not be adopted at all, and laid
+under the reserve it keeps the same three records swept and saves only 12 rows (211 /
+212). Gremlins' figures above are unchanged: its chosen layout puts nothing on pointer 0,
+so the reserve never runs for it.
 
 **Measured at v0.5.488 (04fdcb5), on a `git archive HEAD` tree with
 `siddump.exe` copied in, each file converted under its own `presets.json`
@@ -3075,3 +3103,61 @@ presets, and has not been re-taken since. The mechanisms are in
   one-step arpeggio 321/321 (was all inverted), its octave 12/12; 2 files move,
   capped at 4 halves so IK and Kentilla keep their table room; 10 of 11
   sabotages caught (the eleventh redundant, its property named).
+
+## The 0.5.511 drain (2026-10-05, at be0aeb1, committed as 3a76e95)
+
+These figures are historical. Each comes from its task's run record at be0aeb1,
+under presets, and none has been re-taken since. The mechanisms are in
+`docs/H2G-CONVERSION-METHOD.md` § 7.rrrrrrr (free-note variant) and § 7.ll (vibrato).
+
+* **Free-note variant** (`monty-bit7-note-skips-drum-and-pulse`, run r2,
+  siddump-rt). A bit-7 note in the legato-marker family now plays a variant of its
+  record that starts on the second stage with pulse pointer 0
+  (`free_note_variants`).
+  - Monty subtune 0, 60 s:
+    - Voice-3 noise frames: original 240, before 269, after 239.
+    - The 30 flagged notes: the original ticks on none; before, we ticked on all 30; after, on 0.
+    - Plain notes: 208/209 both before and after.
+    - Writes of the `$200` reset PW on voice 3: original 210, before 239, after 209.
+    - The PW sweep runs through a flagged note, `2F0 -> 320 -> 350`, as in the
+      original; before, it reset to `200`.
+    - Log: "21 flagged note row(s) on 2 variant(s)".
+  - Second files:
+    - ACE_II (-S3) at local frames 4945 and 5542: the original has no `$43` attack
+      and keeps sweeping. Before, we attacked and reset to 295/280; after, we match.
+    - Deep_Strike (-S3): the original attacks at 3671, 3692 and 3714 and on none of
+      the 6 flagged notes. After the change we play exactly those 3, shifted +5/+6.
+  - Attack-frame counts (original / before / after):
+    - Sigma_Seven `$11`: 120 / 136 / 120
+    - Sanxion subtune 0 `$11`: 32 / 40 / 32
+    - Food_Feud `$11`: 60 / 69 / 59
+  - Corpus byte-hash: 89 compared, 11 moved: ACE_II, Auf_Wiedersehen_Monty,
+    Deep_Strike, Delta, Flash_Gordon, Food_Feud, Knucklebusters, Pandora, Sanxion,
+    Sigma_Seven, W_A_R. Commando.sng is byte-identical.
+  - Declined as "no two-stage attack to skip", still resetting PW and ADSR: Lightforce
+    82, Delta 22, Saboteur_II 19, Pandora 15, Knucklebusters 7, Flash_Gordon 6.
+  - The agent's own full suite did not finish. The orchestrator's merged-tree run was
+    green apart from the expected `test_output_sha` and one pre-existing failure.
+
+* **RETRACTED: the classic vibrato "only ever subtracts"** (`lvvp-vibrato-phase`).
+  - What was claimed: the `_classic_vibrato_entry` Excursion bullet, and § 7.ll's
+    paragraph, said the player's apply loop only ever subtracts. They quoted Warhawk
+    `$1251` `LDA ctr,X / LSR / TAY / DEY / BMI out / freq -= depth`, so "the note is
+    the top of the swing and `(bound >> 1) * depth` is a peak-to-peak", which gave
+    `rshift = shift + 1 + log2(multiplier)`.
+  - Why it is wrong: the loop loads `$15C3`, the BOUND cell (the split's
+    `STA bound,X` at `$11F5`), not the counter. The derivation also missed the add
+    loop after it: Warhawk `$1278` / LVVP `$5251`, `LDY ctr,X / DEY / BMI / CLC ... ADC depth`.
+  - The corrected reading: the frequency is `note + (ctr - (bound >> 1)) * depth`, so
+    the peak-to-peak is `bound * depth` and `rshift = shift + log2(multiplier)`.
+  - That is what has been emitted since v0.5.369 (3ec87b1). It dropped the `+ 1`
+    because the depth measured too shallow. So that drop removed the old derivation's
+    error; it was not a fit against a correct derivation.
+  - Census (C:/t/lvvp-vibrato-phase/census.py) over the 61 corpus files the
+    `VIBRATO_SHAPES` split matches:
+    - All 61 carry the subtract loop.
+    - 59 carry the add loop on the counter cell. Mozart and Tarzan were not resolved.
+  - No byte moved: the retraction corrects the explanation, not the emitted value.
+  - The retraction text quoting the old words stands in
+    `python/h2g/goatwriter/vibrato.py` (the `_classic_vibrato_entry` Excursion
+    bullet) and in METHOD.md's bullet list and § 7.ll.

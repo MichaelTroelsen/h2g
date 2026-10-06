@@ -781,13 +781,21 @@ def _play_pulse_table(entries: list, ptr: int, calls: int) -> list:
 # opens on more phases -- instrument 8 on 11 where it was 4, 9 on 22 where
 # it was 20 -- so that even the shared layout no longer fits. See
 # `test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8`.
+#
+# **HUMAN_RACE RE-PINNED at the lockstep triangle walk** (was (21, 23)):
+# subtune 0 voice 1 is walked instead of declined, so record 2 (instrument
+# 2) enters the plan with 24 phases and takes the rows record 21 had --
+# 21 now degrades in both layouts ("PULSE PHASE NEEDS 87 TABLE ROWS FOR
+# INSTRUMENT 21"), the per-phase layout keeps {1, 2, 4} and the shared one
+# {1, 2, 4, 18, 23}, so the rescue's own keep is 18 and 23.
+# (tests/test_triangle_lockstep.py has what that costs the output.)
 _OVERFLOWING = {
     "Master_of_Magic.sid": (14,),
     "Phantoms_of_the_Asteroid.sid": (17,),
     "Battle_of_Britain.sid": (11, 15, 16),
     "Crazy_Comets.sid": (17,),
     "Gremlins.sid": (7, 20),
-    "Human_Race.sid": (21, 23),
+    "Human_Race.sid": (18, 23),
 }
 
 
@@ -883,7 +891,15 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     regression on this file under the FORCED flag only -- Last_V8's preset
     does not ship `pulse_phase` -- and the walk is not where it is fixed:
     the table's allocation order is (statics laid after the phase blocks
-    starve). Pinned so the next change to either side sees it move."""
+    starve). Pinned so the next change to either side sees it move.
+
+    **FIXED BY RESERVING THE STATICS** (`build_pulse_phase_table`'s
+    `reserve` rescue, `tests/test_pulse_phase_reserve.py`): the two passes
+    above still measure 14/12 and 16/15 -- they are unchanged -- but where
+    the chosen one leaves a record on pointer 0 the table is laid again
+    holding back every later record's static width, and that layout
+    (shared ramps, 223 rows) ships: instruments 2, 7 and 8 keep their
+    phases, 9 alone degrades to a static width, none to pointer 0."""
     import h2g.goatwriter as G
     (sid, det, iu, pulse, mult, phases, _, lead), table = _forced_table_args("Last_V8.sid")
     assert {k: len(v) for k, v in phases.items()} == {2: 28, 7: 42, 8: 11, 9: 22}
@@ -894,11 +910,12 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     assert (per_phase[3], per_phase[4], per_phase[6]) == (14, 12, 2), per_phase[3:]
     assert (shared[3], shared[4], shared[6]) == (16, 15, 4), shared[3:]
     lines = _forced_pulse_phase_logs("Last_V8.sid")
-    assert ("*** PULSE TABLE FULL UNDER --pulse-phase -- 14 INSTRUMENT(S) "
-            "LOSE THEIR PHASE ENTRIES, 12 SET NO WIDTH AT ALL ***") in lines, lines
-    assert not any("shared ramps --" in l for l in lines), lines
+    assert ("*** PULSE TABLE FULL UNDER --pulse-phase -- 1 INSTRUMENT(S) "
+            "LOSE THEIR PHASE ENTRIES ***") in lines, lines
+    assert not any("SET NO WIDTH AT ALL" in l for l in lines), lines
+    assert any("statics reserved -- shared ramps," in l for l in lines), lines
     assert table is not None, "the file was refused rather than degraded"
-    assert {k[0] for k in table[2]} == {2, 8}
+    assert {k[0] for k in table[2]} == {2, 7, 8}
     assert any(l.startswith("Pulse phase.............: CMD_SETPULSEPTR")
                for l in lines), (
         "a partial table must still ship phase commands for the "

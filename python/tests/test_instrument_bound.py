@@ -252,7 +252,12 @@ def test_ricochets_warning_is_a_pattern_no_orderlist_reaches():
     blob = convert(str(path), log=lambda m: None, **opts)
     song = songview.parse_sng(blob)
     hi, written, reached, total = _played(blob)
-    assert (hi, written) == (7, 16), (hi, written)
+    # 17 and 24 since greloc-multispeed-legato-slip: under FIXED this is an
+    # -S2 note-flag song, so its ties get 7 legato clones (18-24, all on
+    # patterns no orderlist reaches) behind a decoy record 17 named on a
+    # reached rest row (`legato_slip_decoy`). Before: (7, 16). The warning
+    # still says $20, and $20 still lies past every record written.
+    assert (hi, written) == (17, 24), (hi, written)
     assert 0 < len(reached) < total, (len(reached), total)   # 40 of 150
     assert _dangling(path, opts) == 0x20
     assert _dangling_played(path, opts) is None

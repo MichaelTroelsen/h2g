@@ -393,6 +393,153 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
     return out
 
 
+def _step_calls(entries: List[tuple], ptr: int, calls: int) -> dict:
+    """`{entry index (0-based): the call its right side is read on}` for a
+    program from `ptr` (1-based) over calls 1..`calls - 1`, walked exactly
+    as `_effect_call_list` walks it: a delay step is read on its last call,
+    and the note's call 0 runs no wavetable."""
+    out: dict = {}
+    wavetime = 0
+    for c in range(1, calls):
+        if not 0 < ptr <= len(entries):
+            break
+        wave = entries[ptr - 1][0]
+        if wave <= GT_WAVE_LAST_DELAY and wavetime != wave:
+            wavetime += 1
+            continue
+        wavetime = 0
+        out.setdefault(ptr - 1, c)
+        ptr += 1
+        if ptr <= len(entries) and entries[ptr - 1][0] == GT_WAVE_JUMP:
+            ptr = entries[ptr - 1][1]
+    return out
+
+
+def _gate_start_call(calls: List[int], target: int) -> Optional[int]:
+    """The effect call `_classic_gate_delay` starts the oscillator on for
+    `target`: the nearest of `calls`, ties going late. None with no calls."""
+    before = [c for c in calls if c < target]
+    after = next((c for c in calls if c >= target), None)
+    if before and (after is None or target - before[-1] < after - target):
+        return before[-1]
+    return after
+
+
+def _free_gate_calls(det: Detection, vib_ptrs: dict,
+                     entries: List[tuple], blocks: List[tuple],
+                     multiplier: int, row_calls: int,
+                     instr_row_calls: Optional[dict] = None,
+                     lead: int = 1, no_test_restart: bool = False,
+                     real_firstwave_instruments: tuple = (),
+                     swelling=(), log=None) -> tuple:
+    """`(entries, freed)`: the wavetable with each counter-gated record's
+    plain program giving its re-pitching steps back to the effects, where
+    the program would otherwise hold the frequency over the gate's call.
+
+    **The plain program withholds the first three calls of every note.**
+    `[wave/00, tail/00, tail/00, FF/00]` (`_wavetable_entries`' fall-through
+    shape, five entries with the stop padding): each `/00` step writes the
+    note's frequency and skips the continuous effects (player.s `bne
+    mt_wavefreq` past `mt_wavedone`; gplay.c `goto PULSEEXEC`), so the
+    instrument vibrato can start no earlier than call 4 -- frame 3 after the
+    attack siddump names -- whatever `vibdelay` says. Only the FIRST step
+    has to set the pitch; the other two re-write the same note. Where the
+    record's gate (`_counter_gate_call`) asks for a call the program
+    withholds, those later steps are respelled `/80` ("no frequency
+    change", the right side `_effect_call_list` already reads), the
+    waveform writes stay, and `_classic_gate_refine` then places
+    `vibdelay` on the gate's call against the freed program. Mega_Apocalypse
+    records 12 and 15 (stored gate 0, read as 1): the original moves at age
+    1-2, ours at 3 on every note.
+
+    Only a program of delay steps and ONE waveform (the gate bit aside),
+    every right side `$00` or `$80`, ending in a stop (`FF/00`) is
+    touched: a jump loops, any other right side is a note of its own, and
+    a program changing waveform is a byte-code interpreter's, which
+    writes `$D401` itself (`_wave_program_entries`; ACE_II record 9's
+    `41/00 01/80 43/00 07/80 41/00`) -- and only where freeing moves
+    the oscillator's start strictly nearer the target; a record whose gate
+    already falls past the program (records 3 and 10, gates 6 and 12)
+    keeps its bytes. `blocks` is `(record, ptr)` per program to consider,
+    `ptr` 1-based; `freed` is the records whose program changed.
+
+    **A swelling record keeps the step on its first hold row's call.**
+    `swelling` names the records `_expanding_vibrato_pass` commands hold
+    rows for (`_expanding_vibrato_records`), and a `4xy` changes the speed
+    entry without resetting the oscillator's phase (player.s
+    `mt_tick0_34` stores the parameter only; `mt_tick0_12`, the
+    portamentos, is what clears `mt_chnvibtime`). Freed all the way, the
+    instrument's shallow level ran two calls into its triangle before the
+    first hold row's deeper one took over, and the swing ran off-centre:
+    Mega_Apocalypse `$0B08` (record 15) from the attack `0 472 472 -472
+    -1416 -1416 -2360 -1416`, a semitone flat on average, against the
+    original's `0 295 590 423 0 -551 -1102`. The program's own re-pitch on
+    that call (a `/00` step writes the frequency AND zeroes `vibtime`) is
+    the reset the level change needs, so for these the program's LAST
+    step, and every step from the first hold row's call on, stays `/00`;
+    only the steps before it inside the note's row are freed: `0 472 0
+    944 0 0 -944`, the onset on the original's frame and the swell from
+    there exactly as before. (At -S2's 4-call rows -- Ricochet, Skate or
+    Die -- the whole program is inside the note's row, and the last step
+    is the latest reset the program has.)
+    """
+    mult = max(1, multiplier)
+    vg = det.vibrato_gate
+    if (vg is None or vg.form != "counter" or not vib_ptrs
+            or (vg.gate is None and vg.table is None)):
+        return entries, []
+    out = list(entries)
+    freed: List[int] = []
+    for i, ptr in blocks:
+        if i not in vib_ptrs or not vib_ptrs[i][0] or not 0 < ptr <= len(out):
+            continue
+        gt_number = i + lead + 1
+        real = no_test_restart or gt_number in real_firstwave_instruments
+        target = _counter_gate_call(det, mult, 0 if real else 1, i)
+        if target is None:
+            continue
+        span = []
+        k = ptr - 1
+        while k < len(out) and out[k][0] != GT_WAVE_JUMP:
+            span.append(k)
+            k += 1
+        if (not span or k >= len(out) or out[k][1] != 0
+                or out[span[0]][0] <= GT_WAVE_LAST_DELAY
+                or out[span[0]][1] != 0x00
+                or any(out[j][0] >= GT_WAVE_FIRST_CMD
+                       or out[j][1] not in (0x00, GT_WAVE_NO_NOTE)
+                       or (out[j][0] > GT_WAVE_LAST_DELAY
+                           and (out[j][0] ^ out[span[0]][0]) & 0xFE)
+                       for j in span)):
+            continue
+        own = (instr_row_calls or {}).get(gt_number, row_calls)
+        on_call = _step_calls(out, ptr, len(span) * 0x10 + 2)
+        trial = list(out)
+        for j in span[1:]:
+            if i in swelling and (j == span[-1]
+                                  or on_call.get(j, own) >= own):
+                continue                 # the reset before the hold rows
+            trial[j] = (trial[j][0], GT_WAVE_NO_NOTE)
+        if trial == out:
+            continue
+        horizon = target + 0x100
+        was = _gate_start_call(_effect_call_list(out, ptr, horizon, own),
+                               target)
+        now = _gate_start_call(_effect_call_list(trial, ptr, horizon, own),
+                               target)
+        if now is None or (was is not None
+                           and abs(now - target) >= abs(was - target)):
+            continue
+        out = trial
+        freed.append(i)
+    if log and freed:
+        log(f"Gate calls freed........: record(s) "
+            f"{', '.join(f'${r:02X}' for r in sorted(set(freed)))} -- the "
+            "program's re-pitching steps no longer hold the vibrato past "
+            "its gate")
+    return out, freed
+
+
 def _vibrato_delay(det: Detection, multiplier: int,
                    commanded: bool = False, row_calls: int = 0,
                    record: Optional[int] = None) -> int:

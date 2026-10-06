@@ -18,9 +18,10 @@ from .constants import (CMD_SETAD, CMD_SETSR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         LEGATO_TIE_FLAG_STORE_SHAPE, LEGATO_TIE_GATE_SHAPE,
                         PACKED_PATTERN_LIMIT, SONG_START_ROW,
                         SPEED_NOTE_RELATIVE, TEMPO_DUTY_MAX_CLONE,
-                        WAVE_GATE_BIT, WAVE_SILENT_BASE, WAVE_TEST_BIT)
-from .primitives import (_fixed_pitch_yield_field, _note_freq, _speed_index,
-                         _wave_byte)
+                        VIBRATO_CMP_BIAS, WAVE_GATE_BIT, WAVE_SILENT_BASE,
+                        WAVE_TEST_BIT, WAVECMD_BASE, GT_MAX_TABLELEN)
+from .primitives import (_counter_gate_call, _fixed_pitch_yield_field,
+                         _note_freq, _speed_index, _wave_byte)
 from .pulse import (packed_pattern_size, pattern_rows)
 from . import constants as _gw_constants
 def _entry_instruments(tracks: List[List[int]],
@@ -424,6 +425,100 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
                if declined else ""))
     return out, clones, declined
+
+
+def _packed_patterns(tracks: List[List[int]], count: int) -> Set[int]:
+    """The patterns gt2reloc marks `pattused` (greloc.c:200-218): those an
+    orderlist names before its `$FF`, in a subtune whose three orderlists
+    all have nonzero length. Every other pattern is dropped from the packed
+    .sid, and an instrument named only there is not `instrused`
+    (greloc.c:286-291)."""
+    used: Set[int] = set()
+    for g in range(0, len(tracks) - 2, 3):
+        group = [t[:t.index(0xFF)] if 0xFF in t else list(t)
+                 for t in tracks[g:g + 3]]
+        if not all(group):
+            continue
+        for t in group:
+            used.update(b for b in t if b < 0xD0 and b < count)
+    return used
+
+
+def legato_slip_decoy(patterns: List[List[int]],
+                      tracks: Optional[List[List[int]]],
+                      written: int,
+                      number: int) -> Optional[Tuple[int, int, int]]:
+    """A row that can carry gt2reloc's multispeed slip: (pattern, row,
+    instrument it holds), or None.
+
+    At -S2 and above greloc.c maps the instruments -- legato records last,
+    in number order (:362-370) -- and only THEN bumps `numnohr` "for
+    multispeed stability" (:811-815), so FIRSTLEGATOINSTR (:1134,
+    `numnormal + numnohr + 1`) is one past the first legato record, and
+    player.s `mt_nohr_legato` (`cmp #FIRSTLEGATOINSTR / bcc mt_skiphr`)
+    gates that one record off at the fetch like a no-HR note. The packer is
+    not ours to change, so the spelling hands it a record to slip on: a
+    legato copy of the instrument a voice already holds, numbered below
+    every real legato clone, named on a row where no note can play it.
+
+    Such a record changes nothing either player does. Both read the
+    instrument's class only at a NOTE fetch (gplay.c:930, player.s
+    `mt_normalnote` -> `mt_nohr_legato`), and the row chosen is a rest
+    (`GT_REST`, no note) whose next instrument byte comes before the next
+    note in the same pattern, so no note is ever fetched holding it. On the
+    rows it is latched, both players read only what a copy of the held
+    record supplies unchanged: gatetimer (gplay.c:345 `& 0x3f`, player.s
+    `mt_nonewpatt` loads `mt_insgatetimer`, which greloc.c:787 writes
+    `& 0x3f`) and the vibrato parameter (gplay.c:408 `iptr->ptr[STBL]`;
+    player.s reads `mt_insvibparam` per tick only under NOEFFECTS). The
+    record is counted because greloc.c:291 marks any instrument a used
+    pattern names, rest row or not.
+
+    The row must be in a pattern greloc packs (`_packed_patterns`), with
+    no instrument of its own; the instrument it holds is the last one an
+    earlier row of the pattern names, else the one `_entry_instruments`
+    settles every way in on, and must be a record already written
+    (1..`written`); the extra column byte must still pack
+    (`PACKED_PATTERN_LIMIT`), sized with the decoy's own `number`: greloc's
+    packpattern drops an instrument byte equal to the last one the pattern
+    named (greloc.c:1726-1744), so the next row's byte, redundant before,
+    is emitted after the decoy -- the re-latch this spelling relies on.
+    First such row in pattern-then-row order."""
+    if not tracks:
+        return None
+    entry = _entry_instruments(tracks, patterns)
+    for pn in sorted(_packed_patterns(tracks, len(patterns))):
+        pat = patterns[pn]
+        n = len(pat) // 4
+        held = entry.get(pn, set())
+        live = next(iter(held)) if len(held) == 1 else 0
+        for r in range(n):
+            k = 4 * r
+            if pat[k] == 0xFF:
+                break
+            if pat[k + 1]:
+                live = pat[k + 1]
+                continue
+            if pat[k] != GT_REST or not 1 <= live <= written:
+                continue
+            safe = False
+            for q in range(r + 1, n):
+                c = 4 * q
+                if pat[c] == 0xFF:
+                    break
+                if pat[c + 1]:
+                    safe = True
+                    break
+                if GT_FIRST_NOTE <= pat[c] <= GT_LAST_NOTE:
+                    break
+            if not safe:
+                continue
+            trial = list(pat)
+            trial[k + 1] = number
+            if packed_pattern_size(pattern_rows(trial)) > PACKED_PATTERN_LIMIT:
+                continue
+            return pn, r, live
+    return None
 
 
 def _respell_on_clones(patterns: List[List[int]], rows: set,
@@ -1439,6 +1534,49 @@ def _expanding_vibrato_level(target: float, gt_note: int, cmp_value: int,
     return best
 
 
+# The absolute speeds `_expanding_vibrato_loop_entry` may choose: a quarter
+# of an octave apart, so a row's swing is within 2**(1/8) (9%) of the one it
+# asks for, and the speed table gains at most this many entries per `cmp`.
+EXPANDING_VIBRATO_ABS_SPEEDS = tuple(sorted({
+    min(0xFF, round(2 ** (j / 4))) for j in range(0, 33)}))
+
+
+def _expanding_vibrato_loop_entry(target: float, gt_note: int,
+                                  cmp_value: int, base: int) -> tuple:
+    """The speed-table entry, `cmp` fixed, whose swing is nearest `target`
+    in log space: a note-relative shift or an absolute speed.
+
+    Goattracker's peak-to-peak is `(cmp + 2) * speed` either way. A
+    note-relative entry (`ltable >= $80`) takes `speed = interval >> shift`
+    (`mt_calculatedspeed`), so its choices are an octave apart and stop at
+    the whole interval; an absolute one (`ltable < $80`) takes the right
+    byte itself (player.s `mt_effect_4` clears the high byte, gplay.c:787),
+    1..255 per call. **The player's step is not proportional to the
+    interval**: its age term adds to the HIGH byte of the interval before
+    the shift (`_expanding_vibrato_step`), so on a low note it dwarfs the
+    interval -- Mega_Apocalypse `$09B7` at `$0B9E` swings 1634 units
+    peak-to-peak by frame 54, nine of its intervals, where the deepest
+    note-relative entry at `cmp 2` is four. Absolute speeds come from
+    `EXPANDING_VIBRATO_ABS_SPEEDS`; ties go to the note-relative entry,
+    and between those to the shallower, as `_expanding_vibrato_level`'s do.
+    """
+    ivl = _note_freq(gt_note + 1) - _note_freq(gt_note)
+    if target <= 0 or ivl <= 0:
+        return (SPEED_NOTE_RELATIVE | cmp_value, base)
+    n = cmp_value + 2
+    best, err = None, None
+    cands = [((SPEED_NOTE_RELATIVE | cmp_value, s), ivl >> s)
+             for s in range(GT_MAX_VIB_SHIFT, -1, -1)]
+    cands += [((cmp_value, v), v) for v in EXPANDING_VIBRATO_ABS_SPEEDS]
+    for entry, speed in cands:
+        if speed <= 0:
+            continue
+        e = abs(math.log(n * speed) - math.log(target))
+        if err is None or e < err - 1e-9:
+            best, err = entry, e
+    return best
+
+
 def _expanding_vibrato_gate(det: Detection, record: int) -> int:
     """First note age, in the player's frames, whose swing record `record`
     stores; 0 where no counter gate was read.
@@ -1461,6 +1599,32 @@ def _expanding_vibrato_gate(det: Detection, record: int) -> int:
     if vg is None or vg.form != "counter":
         return 0
     return vg.gate_for(record) or 0
+
+
+def _expanding_vibrato_records(sid: SidFile, det: Detection, vib_ptrs: dict,
+                               speed_table: List[tuple]) -> dict:
+    """`record -> (bound, shift, cmp, base shift)` for every record
+    `_expanding_vibrato_pass` writes hold rows for: a nonzero bound in the
+    record's vibrato byte and a note-relative instrument speed entry. Split
+    out so `_free_gate_calls` asks the pass's own question."""
+    data = sid.data
+    out: dict = {}
+    if det.vibrato_offset is None:
+        return out
+    for rec, (idx, _delay) in vib_ptrs.items():
+        base = det.instr_start + rec * det.instr_stride + det.vibrato_offset
+        if not 1 <= idx <= len(speed_table) or base >= len(data):
+            continue
+        byte = data[base]
+        bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
+        if not bound:
+            continue
+        left, right = speed_table[idx - 1]
+        if not left & SPEED_NOTE_RELATIVE:
+            continue
+        out[rec] = (bound, byte & VIBRATO_SHIFT_MASK,
+                    left & ~SPEED_NOTE_RELATIVE, right)
+    return out
 
 
 def _expanding_vibrato_pass(sid: SidFile, det: Detection,
@@ -1549,106 +1713,26 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
     """
     if not vib_ptrs or row_calls < 1:
         return 0
-    mult = max(1, multiplier)
-    data = sid.data
-    by_slot: dict = {}
-    gate_of: dict = {}      # slot -> first age the player stores the swing
-    for rec, (idx, _delay) in vib_ptrs.items():
-        base = det.instr_start + rec * det.instr_stride + det.vibrato_offset
-        if not 1 <= idx <= len(speed_table) or base >= len(data):
-            continue
-        byte = data[base]
-        bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
-        if not bound:
-            continue
-        left, right = speed_table[idx - 1]
-        if not left & SPEED_NOTE_RELATIVE:
-            continue
-        by_slot[rec + 1 + lead] = (bound, byte & VIBRATO_SHIFT_MASK,
-                                   left & ~SPEED_NOTE_RELATIVE, right)
-        gate_of[rec + 1 + lead] = _expanding_vibrato_gate(det, rec)
+    by_slot, gate_of = _expanding_vibrato_slots(sid, det, vib_ptrs,
+                                                speed_table, lead)
     if not by_slot:
         return 0
-    # (pattern, row) -> the set of entries the contexts reaching it want;
-    # None is "nothing", and a row wanted as None by any context is left.
-    wants: dict = {}
-    off_table = 0
-    for track in tracks:
-        live, transpose, repeat, operand = 0, 0, 1, False
-        block = None        # (bound, shift, cmp, base, hi, lo, frames, k, on)
-        for b in track:
-            if operand:                  # $FF's restart position
-                operand = False
-                continue
-            if b == 0xFF:                # patterns.GT_ORDER_RESTART
-                operand = True
-                continue
-            if 0xE0 <= b < 0xFF:         # patterns.GT_TRANSPOSE_DOWN/UP
-                transpose = b - 0xF0
-                continue
-            if 0xD0 <= b < 0xE0:         # patterns.GT_REPEAT: the NEXT entry
-                repeat = b - 0xD0 + 1
-                continue
-            if b >= len(patterns):
-                continue
-            pat = patterns[b]
-            for _ in range(repeat):
-                for r in range(0, len(pat) - 3, 4):
-                    note, instr = pat[r], pat[r + 1]
-                    if note == 0xFF:     # ENDPATT, patterns.GT_END_PATTERN
-                        break
-                    key = (b, r)
-                    if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
-                        if instr:
-                            live = instr
-                        block = None
-                        wants.setdefault(key, set()).add(None)
-                        if live not in by_slot:
-                            continue
-                        bound, shift, cmp_value, base = by_slot[live]
-                        gt_note = note - GT_FIRST_NOTE + transpose
-                        ivl = _player_interval(sid, det, gt_note)
-                        if ivl is None:
-                            off_table += 1
-                            continue
-                        frames = max(1, ((instr_row_calls or {}).get(live)
-                                         or row_calls) // mult)
-                        block = [bound, shift, cmp_value, base, ivl[0],
-                                 ivl[1], frames, gt_note, 0, False]
-                        continue
-                    continues = (
-                        (note == GT_REST and (instr == 0 or (
-                            instr == live and pat[r + 2] == CMD_SETSR)))
-                        or (note == GT_KEYOFF and instr in (0, live)))
-                    if not continues or block is None:
-                        if instr:
-                            live = instr
-                        block = None
-                        wants.setdefault(key, set()).add(None)
-                        continue
-                    block[8] += 1
-                    (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
-                     k, on) = block
-                    ages = range(k * frames, (k + 1) * frames)
-                    if k * frames < gate_of[live]:
-                        # Below the gate the player stores no swing at all;
-                        # a row the gate falls inside is left to the
-                        # instrument's own vibdelay, which `_classic_gate_
-                        # refine` already starts on the gate's frame.
-                        wants.setdefault(key, set()).add(None)
-                        continue
-                    target = bound * sum(
-                        _expanding_vibrato_step(hi, lo, a, shift)
-                        for a in ages) / len(ages)
-                    level = _expanding_vibrato_level(target, gt_note,
-                                                     cmp_value, base)
-                    if level == base and not on:
-                        wants.setdefault(key, set()).add(None)
-                        continue
-                    block[9] = True
-                    wants.setdefault(key, set()).add(
-                        (SPEED_NOTE_RELATIVE | cmp_value, level))
-            repeat = 1
+
+    def choose(block, ages):
+        (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
+         k, on) = block[:10]
+        target = bound * sum(
+            _expanding_vibrato_step(hi, lo, a, shift)
+            for a in ages) / len(ages)
+        level = _expanding_vibrato_level(target, gt_note, cmp_value, base)
+        if level == base and not on:
+            return None
+        block[9] = True
+        return (SPEED_NOTE_RELATIVE | cmp_value, level)
+
+    wants, _where, off_table = _expanding_vibrato_wants(
+        sid, det, tracks, patterns, by_slot, gate_of, multiplier, row_calls,
+        instr_row_calls, choose)
     written = busy = disagree = full = 0
     touched: set = set()
     for (b, r), entries in sorted(wants.items()):
@@ -1676,3 +1760,352 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
             + (f", {off_table} note(s) off the table" if off_table else "")
             + (f", {full} with the speed table full" if full else ""))
     return written
+
+
+def _expanding_vibrato_slots(sid: SidFile, det: Detection, vib_ptrs: dict,
+                             speed_table: List[tuple], lead: int) -> tuple:
+    """`(by_slot, gate_of)`: `_expanding_vibrato_records` keyed by
+    Goattracker instrument number, and each one's counter gate."""
+    by_slot: dict = {}
+    gate_of: dict = {}      # slot -> first age the player stores the swing
+    for rec, entry in _expanding_vibrato_records(sid, det, vib_ptrs,
+                                                 speed_table).items():
+        by_slot[rec + 1 + lead] = entry
+        gate_of[rec + 1 + lead] = _expanding_vibrato_gate(det, rec)
+    return by_slot, gate_of
+
+
+def _expanding_vibrato_wants(sid: SidFile, det: Detection,
+                             tracks: List[List[int]],
+                             patterns: List[List[int]], by_slot: dict,
+                             gate_of: dict, multiplier: int, row_calls: int,
+                             instr_row_calls: Optional[dict],
+                             choose, ties_end: bool = False) -> tuple:
+    """`(wants, where, off_table)`: the orderlist walk of
+    `_expanding_vibrato_pass`, shared with `_expanding_vibrato_loops`.
+
+    `wants` is `(pattern, row) -> the set of what each context reaching it
+    wants`, None being "nothing" -- the note rows, rows past a block's end,
+    rows below the gate, and whatever `choose(block, ages)` declines for a
+    hold row at or past it. `where` is `(pattern, row) -> {(slot, k)}`, the
+    instrument and the row's place after its note (k = 1 is the first hold
+    row) for every context that wanted something there. `off_table` counts
+    the notes whose interval is off the player's table.
+
+    With `ties_end`, a block ended by a tie -- a note row carrying
+    `CMD_TONEPORTA`, the one note that does not re-point the wavetable
+    (gplay.c:352, player.s `mt_newnoteinit`) -- has every row it wanted
+    marked `TIE` as well, so no row of it is unanimous: a wavetable loop
+    entered there would run on under the tie, and a wavetable command
+    keeps the voice off the continuous effects, the portamento included.
+    """
+    mult = max(1, multiplier)
+    wants: dict = {}
+    where: dict = {}
+    off_table = 0
+    for track in tracks:
+        live, transpose, repeat, operand = 0, 0, 1, False
+        block = None        # (bound, shift, cmp, base, hi, lo, frames, k, on)
+        mine: list = []     # the rows the current block wanted something on
+        for b in track:
+            if operand:                  # $FF's restart position
+                operand = False
+                continue
+            if b == 0xFF:                # patterns.GT_ORDER_RESTART
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:         # patterns.GT_TRANSPOSE_DOWN/UP
+                transpose = b - 0xF0
+                continue
+            if 0xD0 <= b < 0xE0:         # patterns.GT_REPEAT: the NEXT entry
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(0, len(pat) - 3, 4):
+                    note, instr = pat[r], pat[r + 1]
+                    if note == 0xFF:     # ENDPATT, patterns.GT_END_PATTERN
+                        break
+                    key = (b, r)
+                    if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                        if instr:
+                            live = instr
+                        if ties_end and pat[r + 2] == CMD_TONEPORTA:
+                            for at in mine:
+                                wants[at].add(EXPANDING_VIBRATO_TIE)
+                        mine = []
+                        block = None
+                        wants.setdefault(key, set()).add(None)
+                        if live not in by_slot:
+                            continue
+                        bound, shift, cmp_value, base = by_slot[live]
+                        gt_note = note - GT_FIRST_NOTE + transpose
+                        ivl = _player_interval(sid, det, gt_note)
+                        if ivl is None:
+                            off_table += 1
+                            continue
+                        frames = max(1, ((instr_row_calls or {}).get(live)
+                                         or row_calls) // mult)
+                        block = [bound, shift, cmp_value, base, ivl[0],
+                                 ivl[1], frames, gt_note, 0, False, live]
+                        continue
+                    continues = (
+                        (note == GT_REST and (instr == 0 or (
+                            instr == live and pat[r + 2] == CMD_SETSR)))
+                        or (note == GT_KEYOFF and instr in (0, live)))
+                    if not continues or block is None:
+                        if instr:
+                            live = instr
+                        # `mine` runs on: a loop entered before this row
+                        # is still running, and only a note re-points it.
+                        block = None
+                        wants.setdefault(key, set()).add(None)
+                        continue
+                    block[8] += 1
+                    (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
+                     k, on) = block[:10]
+                    ages = range(k * frames, (k + 1) * frames)
+                    if k * frames < gate_of[live]:
+                        # Below the gate the player stores no swing at all;
+                        # a row the gate falls inside is left to the
+                        # instrument's own vibdelay, which `_classic_gate_
+                        # refine` already starts on the gate's frame.
+                        wants.setdefault(key, set()).add(None)
+                        continue
+                    want = choose(block, ages)
+                    wants.setdefault(key, set()).add(want)
+                    if want is not None:
+                        where.setdefault(key, set()).add((live, k))
+                        mine.append(key)
+            repeat = 1
+    return wants, where, off_table
+
+
+# What `_expanding_vibrato_wants(ties_end=True)` adds to a row whose block a
+# tie ends: never a speed entry, so the row is never unanimous.
+EXPANDING_VIBRATO_TIE = "tie"
+
+
+
+def _expanding_vibrato_remainder(entries: List[tuple], ptr: int,
+                                 call: int) -> Optional[tuple]:
+    """The steps of the program at `ptr` (1-based) not yet read by `call`,
+    or None where the program never stops.
+
+    Walked as `vibrato._step_calls` walks it (the note's call 0 runs no
+    wavetable, a delay step is read on its last call). A `CMD_SETWAVEPTR`
+    on the row starting at `call` is taken on that call's tick 0, before
+    the wavetable runs (gplay.c:437 then WAVEEXEC; player.s `mt_tick0_8`,
+    "FX, and wavetable afterwards"), so the step the program would have
+    read on `call` is the first one the pointer would skip. A program
+    ending in a jump anywhere but 0 loops and has no end to hand over at.
+    """
+    if not ptr:
+        return ()
+    if not 0 < ptr <= len(entries):
+        return None
+    span: List[int] = []
+    j = ptr - 1
+    while j < len(entries) and entries[j][0] != GT_WAVE_JUMP:
+        span.append(j)
+        j += 1
+    if j >= len(entries) or entries[j][1] != 0:
+        return None
+    # The program's own walk over calls 1 .. call - 1.
+    read: set = set()
+    wavetime, at = 0, ptr
+    for _c in range(1, call):
+        if not 0 < at <= len(entries) or entries[at - 1][0] == GT_WAVE_JUMP:
+            break
+        wave = entries[at - 1][0]
+        if wave <= GT_WAVE_LAST_DELAY and wavetime != wave:
+            wavetime += 1
+            continue
+        wavetime = 0
+        read.add(at - 1)
+        at += 1
+    return tuple(tuple(entries[i]) for i in span if i not in read)
+
+
+def _expanding_vibrato_loops(sid: SidFile, det: Detection,
+                             tracks: List[List[int]],
+                             patterns: List[List[int]], vib_ptrs: dict,
+                             speed_table: List[tuple], lead: int,
+                             multiplier: int, row_calls: int,
+                             wave_entries: List[tuple],
+                             wave_starts: List[int],
+                             instr_row_calls: Optional[dict] = None,
+                             no_test_restart: bool = False,
+                             real_firstwave_instruments: tuple = (),
+                             log=None) -> tuple:
+    """`(wave_entries, converted)`: the swell's hold rows moved off the
+    command column's oscillator onto a wavetable one that runs on EVERY
+    play call -- `CMD_SETWAVEPTR` into an `F4 idx / FF -> F4` loop.
+
+    **A `4xy` row moves the pitch on two calls in three.** The packed
+    player skips every continuous effect on a row's tick 0 (player.s
+    `mt_wavedone`, `REALTIMEOPTIMIZATION`; gplay.c:731), which
+    `_classic_vibrato_entry` pays for by shortening `cmp`. On the swell
+    the cost is the shape. Mega_Apocalypse, siddump from the attack, `-t
+    180`, presets, v0.5.511 + the cycle-2 merge: `$00B9` (bound 3, a
+    6-frame period) original `... 246 123 0 -139 0 155 342 171 0`, every
+    frame moving; ours `... 236 0 0 -236 0 0 236`, `cmp 0` (`+ - - +`)
+    with every third call held. `$09B7` (bound 4, 8 frames) ours `cmp 1`,
+    stretched to 9. A wavetable vibrato command runs on tick 0 as well:
+    `mt_execwavecmd` jumps to `mt_setspeedparam` past the `mt_chncounter`
+    test, and gplay.c's WAVEEXEC executes it whatever `tick` is. So a loop
+    steps the triangle on every call, and its `cmp` is the player's own,
+    nothing taken off: `cmp = bound * multiplier - VIBRATO_CMP_BIAS`, a
+    half-period of `bound` frames and a peak-to-peak `(cmp + 2) * speed`
+    of `bound` speeds, the original's `bound * step`. Each row's entry is
+    chosen against that `cmp` (`_expanding_vibrato_loop_entry`, which may
+    take an absolute speed: the player's step is not proportional to the
+    interval).
+
+    **Rows.** A loop holds until the next note re-points the wavetable
+    (gplay.c:355; an empty command column does not touch it), so every row
+    from the gate on is pointed and a row the contexts disagree on keeps
+    the level before it. A row wholly before the gate's call
+    (`_counter_gate_call`, the call `vibdelay` is put on) is left; the
+    row the gate's call falls inside points at the loop behind one delay
+    step, `value + 1` calls with the effects -- and `vibdelay`, not yet
+    spent -- still running (gplay.c:697-704), so the first step is on the
+    gate's call. A row whose call would still read the instrument's
+    program gets the rest of it first (`_expanding_vibrato_remainder`):
+    records 12 and 15 (gate 1) reach their first hold row on the program's
+    last `/00`, the re-pitch `_free_gate_calls` keeps as the swell's
+    reset, and a pointer that skipped it would skip a gate-off as well. A
+    program that loops is declined, and so is every row of a block a tie
+    ends (`_expanding_vibrato_wants`' `ties_end`): a tie does not re-point
+    the wavetable, and a loop running on under it holds the voice off the
+    portamento. Converted only where the row holds the pass's own `4xy` or
+    nothing; everything declined keeps what `_expanding_vibrato_pass`
+    wrote, and is counted in the log line.
+
+    **Measured** (the same trace): `$00B9` from the gate `128 0 -152 -304
+    -152 29 210 29 -186 -401`, `$09B7` `74 148 57 -34 -125 -253 -125 3 151
+    299`, each moving on every frame with the original's period; the
+    first move is on the frames it was on before (`$09B7` {6: 89}, `$00B9`
+    {12: 64}). Within-note travel (steps under an eighth of the pitch)
+    `$00B9` 425054 -> 545426 against the original's 535024, `depth`
+    amplitude 0.976 -> 1.068 and coverage 0.698 -> 1.014, reversals 731 ->
+    731 (original 709); `$09B7` reversals 204 -> 211 (258), its notes on
+    pattern 15 still unpointed, the orderlists disagreeing on them.
+    `bend` moves AWAY, 0.835 -> 1.570: it sums only the frames siddump
+    prints as `(+ xxxx)`, and the original's swing, lopsided upward by
+    half a step on an odd bound, lands on neighbouring notes' frequencies
+    and prints as ties -- `$00B9` 542 such frames for 535024 units of
+    travel, ours 562 for 545426.
+
+    -S1 only. At -S2 the loop steps twice a frame, and a turn that lands
+    between a frame's two calls reads as a frame with no movement and an
+    extremum one speed short: Skate_or_Die_intro `$0AD9` (held) went from
+    amplitude 0.95, coverage 1.01 to 0.73, 0.82. Aligning the first step
+    and every segment to the frame is not derived here. GTS5 only, as
+    `skydive_plan`: the wavetable names speed-table rows, which a GTS2
+    file does not store.
+    """
+    if not vib_ptrs or row_calls < 1 or max(1, multiplier) != 1:
+        return wave_entries, 0
+    by_slot, gate_of = _expanding_vibrato_slots(sid, det, vib_ptrs,
+                                                speed_table, lead)
+    if not by_slot:
+        return wave_entries, 0
+    mult = max(1, multiplier)
+    # The call each slot's gate opens on, attack call included -- where
+    # `_classic_gate_refine` puts `vibdelay` (`_counter_gate_call`); None
+    # without a counter gate. The walk is given no gate of its own: the
+    # row the gate call falls inside is commanded too, behind a delay.
+    gate_call: dict = {}
+    for slot in by_slot:
+        real = no_test_restart or slot in real_firstwave_instruments
+        gate_call[slot] = _counter_gate_call(det, mult, 0 if real else 1,
+                                             slot - lead - 1)
+
+    def choose(block, ages):
+        bound, shift, _cmp, base, hi, lo, _frames, gt_note = block[:8]
+        cmp_loop = min(0x7F, max(0, bound * mult - VIBRATO_CMP_BIAS))
+        swinging = [a for a in ages if a >= gate_of[block[10]]] or list(ages)
+        target = bound * sum(
+            _expanding_vibrato_step(hi, lo, a, shift)
+            for a in swinging) / len(swinging)
+        return _expanding_vibrato_loop_entry(target, gt_note, cmp_loop, base)
+
+    wants, where, _off = _expanding_vibrato_wants(
+        sid, det, tracks, patterns, by_slot, {s: 0 for s in by_slot},
+        multiplier, row_calls, instr_row_calls, choose, ties_end=True)
+    out = list(wave_entries)
+    starts: dict = {}           # (remainder, speed index) -> loop start
+    converted = taken = disagree = looping = full = early = tied = 0
+    for (b, r), entries in sorted(wants.items()):
+        if EXPANDING_VIBRATO_TIE in entries:
+            tied += 1
+            continue
+        if len(entries) != 1 or None in entries:
+            if entries != {None}:
+                disagree += 1
+            continue
+        pat = patterns[b]
+        if not (pat[r + 2] == CMD_VIBRATO
+                or (pat[r + 2] == 0 and pat[r + 3] == 0)):
+            taken += 1
+            continue
+        rests = set()
+        soon = False
+        for slot, k in where.get((b, r), ()):
+            calls = (instr_row_calls or {}).get(slot) or row_calls
+            first, gate = k * calls, gate_call[slot]
+            ptr = (wave_starts[slot - 1]
+                   if 0 < slot <= len(wave_starts) else 0)
+            rest = _expanding_vibrato_remainder(out, ptr, first)
+            if gate is not None and first + calls <= gate:
+                soon = True          # the whole row is before the gate
+            elif gate is not None and first < gate and rest is not None:
+                # The gate's call is inside the row: a delay step spans
+                # `value + 1` calls (gplay.c:697-704) with the effects,
+                # and `vibdelay`, still pending, so the loop's first step
+                # lands on the gate's call. Not after a program's
+                # remainder, whose own steps have lengths of their own.
+                delay = gate - first - 1
+                rest = (((delay, GT_WAVE_NO_NOTE),)
+                        if not rest and delay <= GT_WAVE_LAST_DELAY
+                        else None)
+            rests.add(rest)
+        if soon:
+            early += 1
+            continue
+        if None in rests or len(rests) != 1:
+            looping += None in rests
+            disagree += None not in rests
+            continue
+        rest = next(iter(rests))
+        idx = _speed_index(speed_table, next(iter(entries)))
+        if not idx:
+            full += 1
+            continue
+        start = starts.get((rest, idx))
+        if start is None:
+            block = list(rest) + [(WAVECMD_BASE + CMD_VIBRATO, idx),
+                                  (GT_WAVE_JUMP, len(out) + len(rest) + 1)]
+            if len(out) + len(block) > GT_MAX_TABLELEN:
+                full += 1
+                continue
+            start = starts[(rest, idx)] = len(out) + 1
+            out += block
+        pat[r + 2] = CMD_SETWAVEPTR
+        pat[r + 3] = start
+        converted += 1
+    if log and (converted or taken or disagree or looping or full or early
+                or tied):
+        log(f"Expanding vibrato loops.: {converted} row(s) on "
+            f"{len(starts)} wavetable loop(s)"
+            + (f", {taken} with the column in use" if taken else "")
+            + (f", {disagree} the contexts disagree on" if disagree else "")
+            + (f", {looping} on a looping program or a long delay"
+               if looping else "")
+            + (f", {early} before the gate's call" if early else "")
+            + (f", {tied} in a block a tie ends" if tied else "")
+            + (f", {full} with a table full" if full else ""))
+    return out, converted

@@ -679,7 +679,9 @@ CMD_SETSR = 0x06                # gcommon.h:10 -- patterns.CMD_SETSR
 # The overshoot past 240 is not in the additions: 30 of the common 210 sit
 # 4-6 frames from every original tick (nearest-offset census, both arms).
 # Gate-on edges 106/149/194 in all three.
-# Only -S1 songs are respelled: see the multispeed note in `build_sng`.
+# Above -S1 the clones are numbered behind a decoy legato record that takes
+# gt2reloc's FIRSTLEGATOINSTR slip (`note_passes.legato_slip_decoy`); see
+# the multispeed note in `build_sng`.
 #
 # Goattracker's spelling for "gate held, instrument started" is a LEGATO
 # instrument: gatetimer bit $40 skips the hard-restart gate-off at the note
@@ -1197,8 +1199,23 @@ ILV_FILTER_ROUTING = 0x07
 #       routed note. Every `B` lands on its own row.
 #     "params": each program keeps its params row, whose routing nibble is
 #       the union its notes most often open on; a note opening on any other
-#       union takes its `B` one row late (`lagged`). The only spelling for a
-#       file whose programs need different passbands (Sun_Never_Shines).
+#       union takes its `B` one row late (`lagged`).
+#     "restore": walked only where the programs need different passbands
+#       (Sun_Never_Shines: $30 for records 2 and 8, $20 for 12). The
+#       MAJORITY passband's programs open at CUTOFF, as in "shared", and
+#       the minority's keep their params rows. A majority note finding a
+#       passband it did not set -- power-on's 0, or one a minority program
+#       left -- takes a `CMD_SETFILTERPTR` on its own command column to a
+#       copy of its program opening [PARAMS majority, this row's union]:
+#       tick 0 runs the `A` AFTER the note's own pointer load (player.s
+#       "Execute tick 0 FX after newnote init"; gplay.c:388 before :459), so
+#       the copy is what runs, and gplay.c:265-275 / player.s `mt_setfilt`
+#       take the CUTOFF row in the same call as the params row. Where that
+#       column is taken the copy runs from the first free column of a later
+#       row before the next program note (`late_restores`: the program
+#       restarts that late); rows on the wrong passband are counted
+#       (`passband_late`) in every spelling, and the plan keeps the spelling
+#       with the fewest late rows of either kind.
 #
 # Never on pattern row 0 (CLAUDE.md: row 0's command column belongs to the
 # subtune's clock), never over an occupied command column. A change that

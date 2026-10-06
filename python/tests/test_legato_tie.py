@@ -184,15 +184,26 @@ def test_the_envelope_pass_leaves_a_respelled_tie_to_its_clone():
 
 
 @needs_corpus
-def test_a_multispeed_song_keeps_the_old_spelling_because_greloc_slips():
+def test_a_multispeed_song_keeps_the_old_spelling_without_a_decoy_row():
     """gt2reloc bumps `numnohr` after mapping the instruments when -S > 1
     (greloc.c:811-815), so FIRSTLEGATOINSTR is one past the first legato
     record and player.s plays that one as a plain no-HR note. Measured on
-    Star_Paws (-S2) before this decline: voice-1 siddump attacks 572 -> 967
-    (original 571). Delta is in the family and packs at -S2."""
+    Star_Paws (-S2) before the decline: voice-1 siddump attacks 572 -> 967
+    (original 571). Delta is in the family and packs at -S2. The clones go
+    ahead only behind `legato_slip_decoy`'s record
+    (tests/test_greloc_legato_slip.py); with no row to name it on, the old
+    spelling stays whole."""
     old, _ = _convert("Delta.sid", legato=False)
     new, lines = _convert("Delta.sid")
-    assert new == old
+    assert new != old
+    assert any("decoy legato record" in l for l in lines)
+    real = G.note_passes.legato_slip_decoy
+    G.note_passes.legato_slip_decoy = lambda *a, **k: None
+    try:
+        none, lines = _convert("Delta.sid")
+    finally:
+        G.note_passes.legato_slip_decoy = real
+    assert none == old
     assert any("kept CMD_TONEPORTA -- -S2 packs the first legato" in l
                for l in lines)
 

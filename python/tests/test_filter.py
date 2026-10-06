@@ -471,13 +471,15 @@ def test_the_two_voice_files_write_both_union_states():
 
 def test_a_single_filtering_voice_never_lags():
     """A params row carries the union its notes most often open on; where one
-    voice alone filters that is every opening, so nothing lags. Sun's three
-    passbands force the params spelling on a two-voice file, which does."""
+    voice alone filters that is every opening, so nothing lags. Sun's two
+    passbands used to force the params spelling on a two-voice file, which
+    lagged 130 rows; its majority programs now open at CUTOFF ("restore",
+    tests/test_ilv_passband_restore.py) and nothing it plays lags either."""
     for stem in ("Radio_ACE", "Lion_Heart", "Pacific_Coast", "Sun_Never_Shines"):
         _blob, _song, lines = _routed_conversion(stem, ilv_filter_routing=True)
         line = next(m for m in lines if m.startswith("ILV filter routing"))
         lagged = int(line.split(" lagged")[0].rsplit(", ", 1)[1])
-        assert (lagged > 0) == (stem == "Sun_Never_Shines"), line
+        assert lagged == 0, line
 
 
 @pytest.mark.parametrize("stem", ["Lakers_vs_Celtics", "ACE_II", "Sanxion"])

@@ -81,7 +81,7 @@ def test_frames_are_312_rasterlines():
 
 
 @pytest.mark.skipif(not pathlib.Path(V.VSID).exists(), reason="VICE not installed")
-def test_the_live_trace_agrees_with_siddump_where_siddump_is_reliable():
+def test_the_live_trace_agrees_with_siddump_where_siddump_is_reliable(tmp_path):
     """Commando is multiplier 1, so siddump's frame sample loses nothing and
     the two must agree exactly. That control is what makes the disagreement
     on a multiplier-5 file evidence rather than noise.
@@ -91,7 +91,7 @@ def test_the_live_trace_agrees_with_siddump_where_siddump_is_reliable():
     corpus = pathlib.Path(F.reads_video_flag.__module__ and
                           r"C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob")
     src = corpus / "Commando.sid" if (corpus / "Commando.sid").exists() else sid
-    samples = V.run(src, 10, 0)
+    samples = V.run(src, 10, 0, out=tmp_path / "vice_dump.txt")
     assert len(samples) == 10 * 50 * V.PAL_LINES_PER_FRAME
     edges = sum(len(V.gate_edges(samples, v)) for v in range(3))
     # A gate edge siddump prints at freq $0000 that no tie ever names has no

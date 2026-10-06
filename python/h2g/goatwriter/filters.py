@@ -274,6 +274,10 @@ class IlvRouting:
     late_rows: int = 0      # rows ending with the routing wrong
     clones: int = 0         # pattern copies added
     dropped: int = 0        # commands lost to MAX_PATTERNS / packed size
+    restores: int = 0       # passband-restore CMD_SETFILTERPTR ("restore")
+    restore_unplaceable: int = 0  # majority notes wanting one, no free cell
+    late_restores: int = 0  # of `restores`, placed on a row after the note
+    passband_late: int = 0  # rows ending on the wrong passband
 
 
 def _ilv_routed_records(sid: SidFile, det: Detection, instr_used: int) -> set:
@@ -341,18 +345,29 @@ def _ilv_voice_rows(track: List[int], patterns: List[List[int]],
 
 def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                       instr_base: int, routed: set, programs: dict,
-                      mode: str, params: dict, init_row: dict) -> tuple:
+                      mode: str, params: dict, init_row: dict,
+                      restore: Optional[dict] = None) -> tuple:
     """One walk of every subtune on Goattracker's row clock.
 
     Returns (plan, stats): plan maps (track index, orderlist position) to
     {pattern row: (command, value)}, stats the counts `IlvRouting` carries.
-    `params` is each program's params-row value ("params" mode, else
-    ignored); `init_row` maps a subtune to the (track, position, row) its
-    `CMD_SETFILTERPTR` takes ("shared" mode; placed by the caller).
+    `params` is each program's params-row value ("params" and "restore"
+    modes, else ignored); `init_row` maps a subtune to the (track,
+    position, row) its `CMD_SETFILTERPTR` takes ("shared" mode; placed by
+    the caller). `restore` ("restore" mode only) is the passband-restore
+    bookkeeping `ilv_filter_routing_plan` lays the table out from: the
+    majority passband `pb`, its programs `majority`, the 1-based table
+    index the first restore block may take (`next`), each majority
+    program's block length (`len`), and `blocks`, (program, $D417 value) ->
+    index, which this walk fills in first-use order.
     """
     from ..patterns import GT_FIRSTNOTE, GT_LASTNOTE
     plan: dict = {}
     stats = Counter()
+    if mode == "restore":
+        majority = restore["majority"]
+        # What a restore block's params row writes, by table index.
+        a_info: dict = {idx: key for key, idx in restore["blocks"].items()}
     for g, (horizon, timeline) in enumerate(groups):
         if g in init_row:
             key, r, value = init_row[g]
@@ -362,6 +377,9 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
         bits = [False, False, False]
         res = 0
         have = 0                    # gplay.c:174 / player.s: filterctrl = 0
+        pb_have = 0                 # gplay.c:39 / player.s: filttype = 0
+        pb_want = None              # the passband the last program set
+        pending = None              # a majority program awaiting its restore
         first_play: dict = {}
         prev_want, prev_wrong = None, False
         for t in range(horizon):
@@ -369,6 +387,11 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
             noted = []
             started = None          # the program the table runs from here
             executed = None
+            # "restore": what loads the filter pointer last this row, in
+            # channel order -- a note's instrument, or a replayed `A`, which
+            # tick 0 runs AFTER the note init (player.s "Execute tick 0 FX
+            # after newnote init"; gplay.c:388 before :459).
+            ptr = None
             for v in range(3):
                 if t >= len(timeline[v]):
                     continue
@@ -388,19 +411,81 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                         # last channel's program is the one that runs.
                         started = rec
                         res = programs[rec][1]
+                        ptr = ("prog", rec, v)
                 if mine is not None and not first:
                     # A replayed occurrence's own command: a `B` writes its
                     # value; the init's `A` runs a params row writing $00.
-                    executed = (mine[1] if mine[0] == CMD_SETFILTERCTRL
-                                else 0)
+                    if mine[0] == CMD_SETFILTERCTRL:
+                        executed = mine[1]
+                    elif mode == "restore":
+                        ptr = ("A", mine[1], v)
+                    else:
+                        executed = 0
                 cells.append((v, key, r, first, cmd, dat, mine))
             if executed is not None:
                 have = executed
+            if started is not None:
+                pb_want = programs[started][0]
             params_hit = mode == "params" and started is not None
             if params_hit:
                 have = params[started]
+                pb_have = pb_want
+            elif mode == "shared":
+                pb_have = pb_want   # its one block runs before any program
+            elif mode == "restore" and ptr is not None:
+                if ptr[0] == "A":
+                    pb_have, have = a_info[ptr[1]][2], a_info[ptr[1]][1]
+                    params_hit = True
+                elif ptr[1] not in majority:
+                    pb_have, have = programs[ptr[1]][0], params[ptr[1]]
+                    params_hit = True
             mask = sum(1 << v for v in range(3) if bits[v])
             want = (res | mask) if mask else None
+            target = None
+            if mode == "restore":
+                if (ptr is not None and ptr[0] == "prog"
+                        and ptr[1] in majority and pb_have != restore["pb"]):
+                    # A majority note on a passband other than its own: its
+                    # own command column takes an `A` to a copy of its
+                    # program that opens with [PARAMS majority, want], so
+                    # the passband and this row's union land together.
+                    target = (ptr[1], [ptr[2]], True)
+                elif (ptr is None and pending is not None
+                        and pb_have != restore["pb"]):
+                    # Its own column was taken: the copy runs from the first
+                    # free column of a later row while that program is still
+                    # the one running -- the program restarted that late,
+                    # which is counted (`late_restores`), not hidden.
+                    target = (pending, noted + [v for v in range(3)
+                                                if v not in noted], False)
+                if ptr is not None:
+                    pending = None
+            if target is not None:
+                rec, order, at_note = target
+                value = want if want is not None else (res or ILV_EMPTY_UNION)
+                free = [c for v in order for c in cells if c[0] == v
+                        and c[3] and c[2] and not c[4] and not c[5]
+                        and c[6] is None]
+                idx = restore["blocks"].get((rec, value))
+                if (idx is None and free and restore["next"]
+                        + restore["len"][rec] - 1 <= GT_MAX_FILT):
+                    idx = restore["next"]
+                    restore["blocks"][(rec, value)] = idx
+                    a_info[idx] = (rec, value, restore["pb"])
+                    restore["next"] += restore["len"][rec]
+                if idx is not None and free:
+                    _, key, r, *_rest = free[0]
+                    plan.setdefault(key, {})[r] = (CMD_SETFILTERPTR, idx)
+                    pb_have, have = restore["pb"], value
+                    params_hit = True
+                    stats["restores"] += 1
+                    stats["late_restores"] += not at_note
+                    pending = None
+                elif at_note:
+                    stats["restore_unplaceable"] += 1
+                    pending = rec
+            if pb_want is not None and pb_have != pb_want:
+                stats["passband_late"] += 1
             if want != prev_want:
                 stats["changes"] += 1
             wrong = (have & 0x0F) != 0 if want is None else have != want
@@ -532,14 +617,41 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
             candidates.append(("shared", _ilv_routing_walk(
                 groups, patterns, instr_base, routed, programs, "shared", {},
                 init_row)))
+    # "restore": where the programs need different passbands, the MAJORITY
+    # passband's programs open at CUTOFF -- so a `B` on their note rows is
+    # never overwritten -- and keep the minority's params rows. A majority
+    # note finding a passband other than its own (power-on's 0, or one a
+    # minority program set) takes a CMD_SETFILTERPTR on its own command
+    # column to a copy of its program opening [PARAMS majority, union]; the
+    # `A` runs after the note's own pointer load, so the copy is what runs.
+    restore = None
+    if len(passbands) > 1:
+        notes_by_pb = Counter()
+        for i, seen in opened.items():
+            notes_by_pb[programs[i][0]] += sum(seen.values())
+        pb = max(sorted(notes_by_pb), key=lambda b: notes_by_pb[b])
+        majority = frozenset(i for i, prog in programs.items()
+                             if prog[0] == pb)
+        base_len = sum(2 + bool(s) + (i not in majority)
+                       for i, (_pb, _r, _c, s) in programs.items())
+        if base_len <= GT_MAX_FILT:
+            restore = {"pb": pb, "majority": majority, "next": base_len + 1,
+                       "len": {i: 3 + bool(programs[i][3]) for i in majority},
+                       "blocks": {}}
+            candidates.append(("restore", _ilv_routing_walk(
+                groups, patterns, instr_base, routed, programs, "restore",
+                params, {}, restore)))
     mode, (plan, stats) = min(
-        candidates, key=lambda c: (c[1][1]["late_rows"],
-                                   c[1][1]["placed"] + c[1][1]["inits"]))
+        candidates, key=lambda c: (c[1][1]["late_rows"]
+                                   + c[1][1]["passband_late"],
+                                   c[1][1]["placed"] + c[1][1]["inits"]
+                                   + c[1][1]["restores"]))
 
     entries: List[tuple] = []
     pointers: dict = {}
     for i, (passband, res, cutoff, per_call) in programs.items():
         block = ([] if mode == "shared"
+                 or (mode == "restore" and i in restore["majority"])
                  else [(FILT_SET_PARAMS | passband, params[i])])
         block.append((FILT_SET_CUTOFF, cutoff))
         if per_call:
@@ -553,6 +665,18 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
         assert len(entries) + 1 == init_index, (len(entries), init_index)
         entries += [(FILT_SET_PARAMS | passbands.pop(), 0x00),
                     (FILT_STOP, 0x00)]
+    if mode == "restore":
+        assert len(entries) + 1 == min(restore["blocks"].values(),
+                                       default=len(entries) + 1), entries
+        for (i, value), idx in sorted(restore["blocks"].items(),
+                                      key=lambda kv: kv[1]):
+            _pb, _res, cutoff, per_call = programs[i]
+            assert idx == len(entries) + 1, (idx, len(entries))
+            entries.append((FILT_SET_PARAMS | restore["pb"], value))
+            entries.append((FILT_SET_CUTOFF, cutoff))
+            if per_call:
+                entries.append((FILT_MODULATE, per_call))
+            entries.append((FILT_STOP, 0x00))
 
     # Each pattern's occurrences, keyed as the walk keyed them; one copy per
     # distinct command set, and the unedited pattern kept for occurrences
@@ -601,13 +725,21 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                         clones=clones, dropped=dropped,
                         **{k: stats[k] for k in ("changes", "placed", "inits",
                                                  "unplaceable", "lagged",
-                                                 "late_rows")})
+                                                 "late_rows", "restores",
+                                                 "restore_unplaceable",
+                                                 "late_restores",
+                                                 "passband_late")})
     if log:
         log(f"ILV filter routing......: {mode}, {result.changes} change(s), "
             f"{result.placed} CMD_SETFILTERCTRL + {result.inits} "
             f"CMD_SETFILTERPTR, {result.unplaceable} unplaceable, "
             f"{result.lagged} lagged, {result.late_rows} row(s) late, "
             f"{clones} pattern copy(ies)"
+            + (f", {result.restores} passband restore(s), "
+               f"{result.late_restores} late, "
+               f"{result.restore_unplaceable} unplaceable at the note, "
+               f"{result.passband_late} row(s) on the wrong passband"
+               if mode == "restore" else "")
             + (f", {dropped} DROPPED" if dropped else ""))
     return result
 

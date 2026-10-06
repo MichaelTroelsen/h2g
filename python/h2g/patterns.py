@@ -621,7 +621,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        transpose_exit: Optional[List[tuple]] = None,
                        free_rows: Optional[List[int]] = None,
                        event_log: Optional[List[tuple]] = None,
-                       wave_notes: Optional[Dict[int, int]] = None
+                       wave_notes: Optional[Dict[int, int]] = None,
+                       event_rows: Optional[List[int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -734,6 +735,17 @@ def _build_raw_pattern(data: bytes, addr: int,
     it is what the OTHER voices hold at that moment. See
     `stored_wave.stored_wave_notes`. Consulted before `rest_notes` and
     `const_notes`; an event not in it reads exactly as before.
+
+    `event_rows`, when given a list, receives the row index (in this event
+    stream, hold rows counted) of EVERY event's first row -- the rows on
+    which the player fetched from the pattern, as opposed to the `wait`
+    hold rows it only counted down. A Goattracker row cannot say which it
+    is: a no-note event that names no instrument decodes to `$BD 00`
+    with the command its hold rows repeat, byte for byte a hold row. The
+    triangle pulse walk needs the difference, since that player spends
+    its fetch tick without stepping the sweep (`collect_pulse_phases`).
+    The terminator is not an event. Like `free_rows` it is an
+    out-parameter that changes no byte of the stream.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -1430,6 +1442,8 @@ def _build_raw_pattern(data: bytes, addr: int,
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)
+        if event_rows is not None:
+            event_rows.append(len(events) // 4)
         events += [g_note, g_instrument, *(row0_cmd or (cmd1, cmd2))]
         if event_log is not None:
             event_log.append((wait, log_record, log_entry))
@@ -2263,7 +2277,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  transpose_exit: Optional[List[tuple]] = None,
                  free_rows: Optional[List[int]] = None,
                  event_log: Optional[List[tuple]] = None,
-                 wave_notes: Optional[Dict[int, int]] = None
+                 wave_notes: Optional[Dict[int, int]] = None,
+                 event_rows: Optional[List[int]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2285,6 +2300,11 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     to learn what `det.instr_entry_transposes` should say. The classic
     grammar is the only one with the mechanism, and the only one that fills
     the list.
+
+    `event_rows` is _build_raw_pattern's out-parameter of that name, every
+    event's first row. Classic grammar only, like `free_rows`; on the other
+    dialects the list stays EMPTY, which does not mean "no event starts" --
+    `convert_patterns` records such an entry as unknown (None).
     """
     data = sid.data
     step = i * det.table_stride
@@ -2330,7 +2350,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               transpose_exit=transpose_exit,
                               free_rows=free_rows,
                               event_log=event_log,
-                              wave_notes=wave_notes)
+                              wave_notes=wave_notes,
+                              event_rows=event_rows)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -2629,12 +2650,23 @@ class TrackIndex(list):
     `free_rows`), re-based to the slice. Filled only when `convert_patterns`
     is asked for it, and empty otherwise -- see `inherit_free_rows` for why
     the dedup key has to change when it is.
+
+    `event_rows` is keyed the same way: `event_rows[p]` is the set of rows
+    of `new_patterns[p]` on which an event STARTS (`_build_raw_pattern`'s
+    `event_rows`), re-based to the slice -- the rest are hold rows. None
+    where it is unknown: a non-classic dialect, or `dedup` sharing one
+    output pattern between sources that disagree. Unlike `free_rows` the
+    request does NOT change the dedup key (`PatternList.note_bit7`'s rule),
+    so asking for it moves no byte; `inherit_event_rows` extends it to the
+    later passes' copies.
     """
 
-    def __init__(self, items=(), exits_tied=None, free_rows=None):
+    def __init__(self, items=(), exits_tied=None, free_rows=None,
+                 event_rows=None):
         super().__init__(items)
         self.exits_tied: List[bool] = list(exits_tied or ())
         self.free_rows: Dict[int, frozenset] = dict(free_rows or {})
+        self.event_rows: Dict[int, Optional[frozenset]] = dict(event_rows or {})
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,
@@ -2654,7 +2686,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_envelope: bool = False,
                      free_rows: bool = False,
                      wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
-                     wave_copies: Optional[List[tuple]] = None):
+                     wave_copies: Optional[List[tuple]] = None,
+                     event_rows: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -2711,6 +2744,13 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     MAX_PATTERNS**: its positions then play the source, the majority note --
     the pre-copy compromise, which costs a pitch, where the abort would cost
     the whole file.
+
+    `event_rows` asks for `TrackIndex.event_rows`: per output pattern, the
+    rows on which an event starts, as opposed to its hold rows. A variant
+    inherits its source's and a slice owns the raw rows it was cut from,
+    exactly as for `free_rows`; but the dedup key is left alone, and a
+    shared pattern whose sources disagree is recorded as None (unknown).
+    Classic grammar only -- every other dialect's entries read None.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -2730,6 +2770,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     # moves no byte.
     want_bit7 = tie and det.note_flag
     collect = free_rows or want_bit7
+    # Entry -> raw rows on which an event starts, or None where unknown
+    # (only when asked for; see `event_rows` in the docstring).
+    starts: Dict[int, Optional[List[int]]] = {}
+    want_ev = event_rows and det.pattern_dialect == "classic"
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -2749,6 +2793,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
         ex: List[bool] = []
         fr: List[int] = []
+        ev: List[int] = []
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -2756,9 +2801,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_envelope=rest_envelope, exits_tied=ex,
                               arps=arps,
                               free_rows=fr if collect else None,
-                              wave_notes=(wave_notes or {}).get(i))
+                              wave_notes=(wave_notes or {}).get(i),
+                              event_rows=ev if want_ev else None)
         exits[i] = bool(ex and ex[0])
         free[i] = fr
+        starts[i] = ev if want_ev and events is not None else None
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -2771,6 +2818,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         if base is None:
             ex = []
             fr = []
+            ev = []
             # A variant is a transposition of a pattern the loop above
             # already decoded, so `arps` has already collected whatever it
             # arms; passing the list again would append the same pairs a
@@ -2789,15 +2837,19 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                                 rest_wave=rest_wave,
                                 rest_envelope=rest_envelope,
                                 exits_tied=ex, arps=arps,
-                                free_rows=fr if collect else None)
+                                free_rows=fr if collect else None,
+                                event_rows=ev if want_ev else None)
             exits[src] = bool(ex and ex[0])
             free[src] = fr
+            starts[src] = ev if want_ev and base is not None else None
         # A variant is the source's own event stream with its notes shifted, so
         # it ends on the source's status byte and leaves the gate exactly as
-        # the source does -- and its bit-7 notes are the source's, row for
-        # row, since shift_notes moves no row.
+        # the source does -- and its bit-7 notes and its event starts are the
+        # source's, row for row, since shift_notes moves no row.
         exits[len(raw_patterns)] = exits.get(src, False)
         free[len(raw_patterns)] = list(free.get(src, ()))
+        starts[len(raw_patterns)] = (None if base is None
+                                     else starts.get(src))
         if base is None:
             log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -2816,6 +2868,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         copy_from[n] = src
         ex = []
         fr = []
+        ev = []
         events = decode_entry(sid, det, src, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -2823,9 +2876,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_envelope=rest_envelope, exits_tied=ex,
                               arps=arps,
                               free_rows=fr if collect else None,
-                              wave_notes=notes)
+                              wave_notes=notes,
+                              event_rows=ev if want_ev else None)
         exits[n] = bool(ex and ex[0])
         free[n] = fr
+        starts[n] = ev if want_ev and events is not None else None
         if events is None:
             log(f"*** PATTERN ${n:X} (WAVEFORM-STATE COPY OF ${src:X}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -2840,6 +2895,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     pattern_free: Dict[int, frozenset] = {}
     note_bit7: Dict[int, Optional[frozenset]] = {}
+    pattern_starts: Dict[int, Optional[frozenset]] = {}
 
     for i, events in enumerate(raw_patterns):
         if events is None:
@@ -2867,6 +2923,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 data_rows -= 1
             flags = frozenset(r - base_row for r in entry_free
                               if base_row <= r < base_row + data_rows)
+            entry_starts = starts.get(i)
+            ev_rows = (None if entry_starts is None else
+                       frozenset(r - base_row for r in entry_starts
+                                 if base_row <= r < base_row + data_rows))
             base_row += data_rows
             key = None
             if dedup:
@@ -2876,6 +2936,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 reused += 1
                 if want_bit7 and note_bit7.get(idx) != flags:
                     note_bit7[idx] = None     # two sources disagree
+                if event_rows and pattern_starts.get(idx) != ev_rows:
+                    pattern_starts[idx] = None    # two sources disagree
             else:
                 idx = len(new_patterns)
                 new_patterns.append(s)
@@ -2885,6 +2947,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                     pattern_free[idx] = flags
                 if want_bit7:
                     note_bit7[idx] = flags
+                if event_rows:
+                    pattern_starts[idx] = ev_rows
             indices.append(idx)
             if k < len(slices) - 1:
                 # idx+1 equals len(new_patterns) when nothing is shared, so the
@@ -2918,7 +2982,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     return new_patterns, TrackIndex(
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
-        pattern_free)
+        pattern_free, pattern_starts)
 
 
 def _new_slices(slices: List[List[int]], entry_free, terminate: bool,
@@ -2987,6 +3051,45 @@ def inherit_free_rows(patterns: List[List[int]], free_rows: Dict[int, frozenset]
     if log and ambiguous:
         log(f"Pulse phase.............: {ambiguous} pattern copy(ies) match "
             "two sources with different bit-7 rows; their notes all reseed")
+    return out
+
+
+def inherit_event_rows(patterns: List[List[int]],
+                       event_rows: Dict[int, Optional[frozenset]],
+                       log=None) -> Dict[int, frozenset]:
+    """`TrackIndex.event_rows` extended to the patterns appended since, with
+    the unknown (None) entries dropped.
+
+    `inherit_free_rows`' rule and for its reason: the passes between
+    `convert_patterns` and the walk append copies with a column edited and
+    no side channel, and none of them moves a note, so a copy is attributed
+    by its NOTE COLUMN -- only where that matches one known set. A note
+    column shared with a source whose starts are unknown, or with two
+    sources that disagree, leaves the copy unattributed, and the walk then
+    reads that pattern by the bytes alone (`collect_pulse_phases`).
+    """
+    def notes(p):
+        return tuple(p[4 * r] for r in range(len(p) // 4))
+
+    by_notes: Dict[tuple, Set[Optional[frozenset]]] = {}
+    for idx, rows in event_rows.items():
+        if idx < len(patterns):
+            by_notes.setdefault(notes(patterns[idx]), set()).add(rows)
+    out = {idx: rows for idx, rows in event_rows.items() if rows is not None}
+    ambiguous = 0
+    for idx in range(len(patterns)):
+        if idx in event_rows:
+            continue
+        found = by_notes.get(notes(patterns[idx]))
+        if not found:
+            continue
+        if len(found) == 1 and None not in found:
+            out[idx] = next(iter(found))
+        else:
+            ambiguous += 1
+    if log and ambiguous:
+        log(f"Pulse phase.............: {ambiguous} pattern copy(ies) match "
+            "no single source's event starts; read by their bytes")
     return out
 
 
@@ -4650,13 +4753,16 @@ def _apply_wrap_tie(new_track: List[int], patterns: List[List[int]],
 # phases needs two copies, never an in-place edit.
 # --------------------------------------------------------------------------
 
-def _expand_repeats(track: List[int]) -> tuple:
+def _expand_repeats(track: List[int], fit: bool = True) -> tuple:
     """The track with every $D0-$DF fold written out, plus the index map.
 
     Playback-neutral by construction -- a fold IS its expansion -- but the
     restart operand indexes into the track, so it is remapped through the
     same table every other index goes through. Returns (new_track, old->new
-    index map) or (None, None) where the expansion would not fit.
+    index map) or (None, None) where the expansion would not fit -- unless
+    `fit` is False, which returns it anyway: the lockstep triangle walk
+    still has to PLAY a voice it cannot write (that voice sweeps records
+    another voice may sound), and never stores that expansion.
     """
     out: List[int] = []
     remap: dict = {}
@@ -4680,7 +4786,7 @@ def _expand_repeats(track: List[int]) -> tuple:
             continue
         out.append(b)
         i += 1
-    if len(out) >= MAX_TRACK_LEN:
+    if fit and len(out) >= MAX_TRACK_LEN:
         return None, None
     # the restart operand is an index and must survive the shift
     songlen = next((k for k, v in enumerate(out) if v == GT_ORDER_RESTART), None)
@@ -4716,19 +4822,24 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                          tempos: List[int], sims: dict, log=None,
                          free_rows: Optional[Dict[int, frozenset]] = None,
                          calls_per_frame: int = 1,
-                         tri_start: Optional[list] = None):
+                         tri_start: Optional[list] = None,
+                         event_rows: Optional[Dict[int, frozenset]] = None):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
       phases -- {instrument byte: set of (width, direction)}
       writes -- [(track index, slot index, {row: (instr, (width, dir))})]
 
-    Declines -- whole voices or whole groups, logged -- rather than guessing:
-    a record sounded by two voices of one group shares one accumulator and
-    the walk simulates voices independently; a loop whose second pass opens
-    its notes on different phases than its first cannot be expressed by a
-    per-position command at all. Tracks are MUTATED only by `_expand_repeats`
-    (playback-neutral); the caller holds a snapshot to restore on decline.
+    Declines a voice whose repeats will not expand inside the orderlist
+    limit, logged, rather than guessing; a loop whose second pass opens its
+    notes on different phases than its first cannot be expressed by a
+    per-position command at all, so its first pass is anchored (logged).
+    Tracks are MUTATED only by `_expand_repeats` (playback-neutral); the
+    caller holds a snapshot to restore on decline. RETRACTED (the walk
+    before the lockstep below): "a record sounded by two voices of one
+    group shares one accumulator and the walk simulates voices
+    independently" as a reason to decline -- the triangle engine's voices
+    are now walked together (`_walk_triangle_group`).
 
     `sims` is one of two shapes and the sim says which (class attributes
     `RESEEDS` and `PER_VOICE`, both False on goatwriter.PulsePhaseSim and
@@ -4736,8 +4847,11 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
 
     * The triangle engine's accumulator is per RECORD and never reseeded.
       Every note is planned, at whatever phase the free-running sweep has
-      reached, and a record sounding on two voices declines the group. Its
-      direction and delay counter are per VOICE -- see `tri_start` below.
+      reached. Its direction and delay counter are per VOICE -- see
+      `tri_start` below -- and a record two voices sweep is stepped by
+      both, which is why its three voices are walked in LOCKSTEP, tick by
+      tick in the player's order (`_walk_triangle_group`). RETRACTED: "a
+      record sounding on two voices declines the group".
     * The bounds engine's accumulator is per VOICE (Saboteur_II `$F59C,X` /
       `$F59F,X`, direction `$F572,X`, X the voice) and is RESEEDED to the
       record's width at every note whose note byte has bit 7 clear; only a
@@ -4823,6 +4937,18 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     Without `tri_start` the triangle walk has no preroll and seeds every
     voice's cell up at a zero count; convert.py always passes one, and
     declines the triangle walk where `triangle_start` cannot read it.
+
+    `event_rows` is the decoder's event starts per output pattern
+    (`TrackIndex.event_rows` via `inherit_event_rows`): the rows on which
+    the player FETCHED, every other row being a hold row it only counted
+    down. The triangle player spends the fetch tick without stepping its
+    sweep, on a note and a no-note event alike, so a pattern it names is
+    read by it alone. A pattern it does not name -- or every pattern, with
+    it None -- is read by its bytes, which see a note, a KEYOFF and a
+    no-note row carrying an instrument byte, and are blind to a no-note
+    event naming no instrument: that decodes to `$BD 00` with the command
+    its hold rows repeat, byte for byte a hold row. Ignored by the bounds
+    engine, which sweeps through a no-note fetch.
     """
     groups = len(tracks) // 3
     if len(tempos) != groups:
@@ -4830,85 +4956,20 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     per_voice = bool(sims) and all(getattr(s, "PER_VOICE", False)
                                    for s in sims.values())
     free_rows = free_rows or {}
+    event_rows = event_rows or {}
     phases: dict = {}
     writes: list = []
     for g in range(groups):
-        # a record on two voices shares one accumulator: decline the group
-        # (the per-record engine only; a per-voice accumulator is not shared)
-        owner: dict = {}
-        clash = False
-        leads: dict = {}
-        for v in range(3):
-            live = 0
-            # The triangle engine's lead-in (see `lead_in` below): the
-            # record a voice sweeps before its first instrument byte.
-            lead = (tri_start[g][1][v][0] if tri_start is not None
-                    and v < len(tri_start[g][1]) else 0)
-            for b in tracks[3 * g + v]:
-                if b == GT_ORDER_RESTART:
-                    break
-                if b >= MAX_PATTERNS:
-                    continue
-                if b >= len(patterns):
-                    continue
-                for _, kind, instr in _phase_note_rows(patterns[b], live, sims):
-                    if kind == "note" and instr in sims:
-                        if owner.setdefault(instr, v) != v and not per_voice:
-                            clash = True
-                    if not instr and lead in sims:
-                        leads[v] = lead
-                    if instr:
-                        live = instr
-        if clash:
-            if log:
-                log("Pulse phase.............: a record sounds on two voices "
-                    f"of subtune {g}; the accumulator is shared and the plan "
-                    "declines the subtune")
-            continue
-        # A lead-in record no voice sounds is the leading voice's to sweep
-        # (Crazy_Comets subtune 0: voice 2 sweeps record 16 for 96 rows, and
-        # the direction its cell is left in is the one its first note
-        # opens on). One another voice sounds is NOT modelled -- the width
-        # is swept by two voices at once, each in its own direction, which
-        # a walk taking voices one at a time cannot follow (Human_Race
-        # subtune 0: voices 0 and 1 both step record 0 for the first 16
-        # frames) -- so the leading voice, whose cell is then unknown, is
-        # declined.
-        unmodelled = set()
-        for v, lead in sorted(leads.items()):
-            if owner.setdefault(lead, v) != v:
-                unmodelled.add(v)
-                if log:
-                    log(f"Pulse phase.............: subtune {g} voice {v} "
-                        f"sweeps instrument {lead} before its first "
-                        "instrument byte while another voice sounds it; "
-                        "that lead-in is not modelled and the voice is "
-                        "declined")
-
-        tempo = max(1, tempos[g])
-        # The triangle engine's per-voice cells and its startup preroll --
-        # see `tri_start` above. The records are copied per group (each
-        # subtune starts from the file image) and every voice's clones
-        # below take their widths from these copies, after the preroll has
-        # moved them.
-        group_sims = sims
-        cells = None
         if not per_voice:
-            prefetch, voices = (tri_start[g] if tri_start is not None
-                                else (0, ()))
-            cells = [PulseVoiceCell(*voices[x][1:]) if x < len(voices)
-                     else PulseVoiceCell() for x in range(3)]
-            group_sims = {num: sim.clone() for num, sim in sims.items()}
-            for _ in range(prefetch):
-                for x in (2, 1, 0):
-                    sim = (group_sims.get(voices[x][0])
-                           if x < len(voices) else None)
-                    if sim is not None:
-                        sim.cell = cells[x]
-                        sim.advance(1)
+            _walk_triangle_group(g, patterns, tracks, max(1, tempos[g]), sims,
+                                 calls_per_frame, tri_start, phases, writes,
+                                 log, event_rows)
+            continue
+        # The bounds engine: a per-voice accumulator, so each voice is
+        # walked on its own copy of every record and no voice can move
+        # another's phase.
+        tempo = max(1, tempos[g])
         for v in range(3):
-            if v in unmodelled:
-                continue
             ti = 3 * g + v
             expanded, _ = _expand_repeats(tracks[ti])
             if expanded is None:
@@ -4922,27 +4983,16 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             songlen = next((k for k, b in enumerate(track)
                             if b == GT_ORDER_RESTART), len(track))
             restart = track[songlen + 1] if songlen + 1 < len(track) else 0
-            voice_sims = {num: (sim.clone() if cells is None
-                                else sim.clone(cell=cells[v]))
-                          for num, sim in group_sims.items()
-                          if per_voice or owner.get(num) == v}
+            voice_sims = {num: sim.clone() for num, sim in sims.items()}
             if not voice_sims:
                 continue
 
-            # The instrument the voice sweeps until a row names one: the
-            # image's, for the triangle engine (`tri_start`). Subtune 4 of
-            # Gerry_the_Germ holds record 17 on voice 0 from frame 0 to its
-            # first note at 289, sweeping through every rest before it.
-            lead_in = (tri_start[g][1][v][0] if tri_start is not None
-                       and v < len(tri_start[g][1]) else 0)
-
-            def one_pass(start: int, live: int, lead_in: int = 0):
+            def one_pass(start: int, live: int):
                 out: dict = {}
                 pos = start
-                # The sim the voice's accumulator last ran under, for the
-                # per-voice engine: an instrument change carries the state
-                # over, and a run of rows under a record with no sim loses
-                # it (None).
+                # The sim the voice's accumulator last ran under: an
+                # instrument change carries the state over, and a run of
+                # rows under a record with no sim loses it (None).
                 cur = None
                 # Our calls not yet turned into a whole frame of the
                 # original's sweep -- see `calls_per_frame`.
@@ -4964,11 +5014,11 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                             patterns[b], live, voice_sims):
                         if instr:
                             live = instr
-                        sim = voice_sims.get(instr or lead_in)
+                        sim = voice_sims.get(instr)
                         if sim is None:
                             cur = None
                             continue
-                        if per_voice and cur is not None and cur is not sim:
+                        if cur is not None and cur is not sim:
                             sim.width, sim.direction = cur.width, cur.direction
                         known = cur is not None
                         cur = sim
@@ -4991,57 +5041,200 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                                 # 19 writes on Saboteur_II before this.
                                 pass
                             elif instr:
-                                # (A note before any row names an
-                                # instrument sweeps the lead-in record but
-                                # is not planned: our side plays it on
-                                # whatever Goattracker's channel holds.)
                                 out.setdefault(pos, {})[r] = (instr, sim.phase())
                             run(sim, tempo, skip_first=True)
                         else:
-                            # A row that OPENS an event without a note is a
-                            # fetch too, and the triangle player spends its
-                            # fetch tick there as on a note. Two such rows
-                            # can be read off the pattern: a KEYOFF (a rest
-                            # under `rest_keyoff`, a past-table rest note, a
-                            # pre-instrument note silenced -- Gerry_the_Germ
-                            # subtune 3 holds $D40 across frame 817, the
-                            # KEYOFF row four rows after its D-5), and a
-                            # no-note row carrying an instrument byte, which
-                            # only an event's first row does (Zoids voice 0
-                            # holds $E40 across frame 1105, a `$BD 01` row).
-                            # A no-note event with neither is a plain hold
-                            # row here and is not seen.
-                            run(sim, tempo, skip_first=cells is not None
-                                and (patterns[b][4 * r] == GT_KEYOFF
-                                     or bool(patterns[b][4 * r + 1])))
+                            run(sim, tempo)
                     pos += 1
                 return out, live
 
-            first, live = one_pass(0, 0, lead_in)
-            second, _ = one_pass(restart, live, lead_in)
-            # The loop's second pass re-enters wherever the free-running
-            # accumulator happens to be, and a per-position command cannot
-            # follow that -- so the FIRST pass's phases are anchored and
-            # every later loop repeats them. That is not a shim: the
-            # original's own re-entry phase is an accident of arithmetic,
-            # not a composed value (5_Title_Tunes' whole 120s trace is a
-            # single pass, so no re-entry was ever even observed), and the
-            # cost is one width jump at the loop seam against a whole pass
-            # of restored phasing. Logged so a reader knows which kind of
-            # file this is.
-            stable = all(second.get(pos, first[pos]) == first[pos]
-                         for pos in first if pos >= restart)
-            if not stable and log:
-                log(f"Pulse phase.............: subtune {g} voice {v} "
-                    "re-enters its loop mid-sweep; the first pass's phases "
-                    "are anchored and every repeat plays them")
-            for pos, rows in first.items():
-                writes.append((ti, pos, rows))
-                for (num, ph) in rows.values():
-                    phases.setdefault(num, set()).add(ph)
+            first, live = one_pass(0, 0)
+            second, _ = one_pass(restart, live)
+            _anchor_first_pass(g, v, ti, first, second, restart, phases,
+                               writes, log)
     if not writes:
         return None
     return phases, writes
+
+
+def _anchor_first_pass(g: int, v: int, ti: int, first: dict, second: dict,
+                       restart: int, phases: dict, writes: list, log) -> None:
+    """Record one voice's FIRST-pass phases as its writes.
+
+    The loop's second pass re-enters wherever the free-running accumulator
+    happens to be, and a per-position command cannot follow that -- so the
+    FIRST pass's phases are anchored and every later loop repeats them.
+    That is not a shim: the original's own re-entry phase is an accident of
+    arithmetic, not a composed value (5_Title_Tunes' whole 120s trace is a
+    single pass, so no re-entry was ever even observed), and the cost is
+    one width jump at the loop seam against a whole pass of restored
+    phasing. Logged so a reader knows which kind of file this is."""
+    stable = all(second.get(pos, first[pos]) == first[pos]
+                 for pos in first if pos >= restart)
+    if not stable and log:
+        log(f"Pulse phase.............: subtune {g} voice {v} "
+            "re-enters its loop mid-sweep; the first pass's phases "
+            "are anchored and every repeat plays them")
+    for pos, rows in first.items():
+        writes.append((ti, pos, rows))
+        for (num, ph) in rows.values():
+            phases.setdefault(num, set()).add(ph)
+
+
+def _triangle_rows(track: List[int], songlen: int, restart: int,
+                   patterns: List[List[int]],
+                   event_rows: Optional[Dict[int, frozenset]] = None):
+    """Every row one voice plays, in play order, as
+    (pass, position, row, kind, instr, fetch): the first pass from position
+    0, then the loop from `restart` over and over. Ends where a pass plays
+    no row or the restart is a stop (at or past the song's end).
+
+    `instr` carries the last instrument byte, 0 before any row names one
+    (the lead-in). `fetch` is whether the row OPENS an event, and so spends
+    its first tick in the player's fetch rather than its sweep: a note, and
+    the two no-note rows that can be read off a pattern as an event's
+    first -- a KEYOFF (a rest under `rest_keyoff`, a past-table rest note,
+    a pre-instrument note silenced: Gerry_the_Germ subtune 3 holds $D40
+    across frame 817, the KEYOFF row four rows after its D-5) and a no-note
+    row carrying an instrument byte (Zoids voice 0 holds $E40 across frame
+    1105, a `$BD 01` row). A no-note event with neither is byte for byte a
+    hold row, so where the decoder's event starts reach the pattern
+    (`event_rows`, see `collect_pulse_phases`) they decide which no-note
+    rows are fetches, and the bytes only where they do not."""
+    live, start, npass = 0, 0, 0
+    while True:
+        played = False
+        for pos in range(start, songlen):
+            b = track[pos]
+            if b >= MAX_PATTERNS or b >= len(patterns):
+                continue
+            pat = patterns[b]
+            fetches = (event_rows or {}).get(b)
+            for r, kind, instr in _phase_note_rows(pat, live, {}):
+                played = True
+                if instr:
+                    live = instr
+                fetch = (kind == "note"
+                         or (r in fetches if fetches is not None
+                             else (pat[4 * r] == GT_KEYOFF
+                                   or bool(pat[4 * r + 1]))))
+                yield npass, pos, r, kind, instr, fetch
+        if not played or restart >= songlen:
+            return
+        start, npass = restart, npass + 1
+
+
+def _walk_triangle_group(g: int, patterns: List[List[int]],
+                         tracks: List[List[int]], tempo: int, sims: dict,
+                         calls_per_frame: int, tri_start: Optional[list],
+                         phases: dict, writes: list, log,
+                         event_rows: Optional[Dict[int, frozenset]] = None
+                         ) -> None:
+    """The triangle engine's walk of one group: its three voices in
+    LOCKSTEP, tick by tick, X = 2, 1, 0 within each tick -- the player's
+    own loop order.
+
+    **Why lockstep.** The width is per RECORD and the direction and delay
+    counter are per VOICE, so a record two voices sweep is stepped by both,
+    each in its own direction on its own count. Rows are synchronous across
+    a group's voices (one speed gate, `frames_for` ticks a row for all
+    three), so the walk can run them together: on each tick every voice
+    either spends it in a fetch -- and a note's phase is the record's width
+    at that moment, with the voices after it in the loop not yet stepped --
+    or steps the record it is sweeping with its own cell. Human_Race
+    subtune 0 is the carrier: voice 1 sweeps image instrument 1 (record 0)
+    for its first 16 frames while voice 0 sounds it, and the original
+    reads $880 on voice 1 and $900 on voice 0 at frame 1 -- two $80 steps
+    on one record in one tick, X = 1 then X = 0. The walk taking voices one
+    at a time had to decline voice 1 there ("that lead-in is not modelled
+    and the voice is declined", RETRACTED), and a record two voices SOUND
+    declined the whole group ("a record sounds on two voices of subtune N;
+    the accumulator is shared and the plan declines the subtune",
+    RETRACTED). Where every record is swept by one voice only the lockstep
+    plans exactly what the voice-at-a-time walk did: a voice's records are
+    then touched by that voice alone, in the same order. (That walk also
+    swept only the records a voice SOUNDS; a no-note instrument row naming
+    some other record now sweeps it with the voice's cell, as `LDA instr,X`
+    does. Measured: under forced `pulse_phase` the six files the old walk
+    declined move and no other file does -- see
+    tests/test_triangle_lockstep.py.)
+
+    Every voice is PLAYED -- including one whose repeats will not expand
+    inside the orderlist limit, which is not planned (logged) but still
+    sweeps what it sweeps. A voice plans its FIRST pass and is played until
+    its second is through (`_anchor_first_pass`), the other voices looping
+    on meanwhile as the original's would. The records are copies per group
+    (each subtune starts from the file image), moved first by the preroll
+    -- see `tri_start` in `collect_pulse_phases`."""
+    prefetch, voices = (tri_start[g] if tri_start is not None else (0, ()))
+    cells = [PulseVoiceCell(*voices[x][1:]) if x < len(voices)
+             else PulseVoiceCell() for x in range(3)]
+    # The instrument each voice sweeps until a row names one: the image's.
+    # Subtune 4 of Gerry_the_Germ holds record 17 on voice 0 from frame 0
+    # to its first note at 289, sweeping through every rest before it;
+    # Crazy_Comets subtune 0 voice 2 sweeps record 16 for 96 rows, and the
+    # direction its cell is left in is the one its first note opens on.
+    lead = [voices[x][0] if x < len(voices) else 0 for x in range(3)]
+    recs = {num: sim.clone() for num, sim in sims.items()}
+    for _ in range(prefetch):
+        for x in (2, 1, 0):
+            sim = recs.get(lead[x])
+            if sim is not None:
+                sim.cell = cells[x]
+                sim.advance(1)
+    rows: list = [None] * 3
+    restarts = [0] * 3
+    planned: list = []
+    for v in range(3):
+        ti = 3 * g + v
+        expanded, _ = _expand_repeats(tracks[ti])
+        if expanded is None:
+            if log:
+                log(f"Pulse phase.............: subtune {g} voice {v} "
+                    "cannot expand its repeats inside the orderlist "
+                    "limit; declined (still played: it sweeps what it "
+                    "sweeps)")
+            track = _expand_repeats(tracks[ti], fit=False)[0]
+        else:
+            tracks[ti] = track = expanded
+            planned.append(v)
+        songlen = next((k for k, b in enumerate(track)
+                        if b == GT_ORDER_RESTART), len(track))
+        restarts[v] = track[songlen + 1] if songlen + 1 < len(track) else 0
+        rows[v] = _triangle_rows(track, songlen, restarts[v], patterns,
+                                 event_rows)
+    passes = {v: ({}, {}) for v in planned}
+    cur = [next(rows[x], None) for x in range(3)]
+    carry = 0
+    while any(cur[v] is not None and cur[v][0] < 2 for v in planned):
+        total = carry + tempo
+        carry = total % calls_per_frame
+        ticks = total // calls_per_frame
+        for k in range(max(1, ticks)):
+            for x in (2, 1, 0):
+                if cur[x] is None:
+                    continue
+                npass, pos, r, kind, instr, fetch = cur[x]
+                sim = recs.get(instr or lead[x])
+                if sim is None:
+                    continue
+                if k == 0 and fetch:
+                    # (A note before any row names an instrument sweeps the
+                    # lead-in record but is not planned: our side plays it
+                    # on whatever Goattracker's channel holds.)
+                    if kind == "note" and instr and x in passes and npass < 2:
+                        passes[x][npass].setdefault(pos, {})[r] = (
+                            instr, (sim.width, cells[x].direction))
+                    continue
+                if k < ticks:
+                    sim.cell = cells[x]
+                    sim.advance(1)
+        cur = [next(rows[x], None) if cur[x] is not None else None
+               for x in range(3)]
+    for v in planned:
+        first, second = passes[v]
+        _anchor_first_pass(g, v, 3 * g + v, first, second, restarts[v],
+                           phases, writes, log)
 
 
 def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],

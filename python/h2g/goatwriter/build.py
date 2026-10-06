@@ -23,7 +23,8 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           legato_tie_clones, legato_tie_rows, note_bit7_rows,
                           past_table_drum_plan, _tied_instrument_envelopes,
                           _vibrato_command_pass)
-from .vibrato import (_classic_gate_refine, _vibrato_layout)
+from .vibrato import (_classic_gate_refine, _free_gate_calls,
+                      _vibrato_layout)
 from .wavetable import (_wavetable_layout, _write_wavetable)
 from . import arpeggio as _gw_arpeggio
 from . import pulse as _gw_pulse
@@ -281,7 +282,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     legato_rows = (legato_tie_rows(
         patterns, note_bit7_rows(patterns, known_bit7, decoded))
         if legato else set())
-    if legato_rows and multiplier > 1:
+    if (legato_rows and multiplier > 1
+            and _gw_note_passes.legato_slip_decoy(
+                patterns, tracks, instr_used, instr_used + 1) is None):
         # gt2reloc cannot pack a legato instrument at -S2 and above: it
         # maps the instruments (greloc.c:362-370, legato last) and THEN
         # bumps `numnohr` "for multispeed stability" (:811-815), so
@@ -290,8 +293,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # the fetch and a re-attack. Star_Paws (-S2) voice 1: siddump
         # attacks 572 -> 967 against the original's 571, every one on that
         # first clone. The editor's gplay.c:930 tests the bit itself and
-        # has no such slip; the packed .sid is a deliverable, so the old
-        # spelling stays.
+        # has no such slip. The clones go ahead only behind a decoy record
+        # for the slip to land on (`legato_slip_decoy`, below); with no row
+        # to name one on, the old spelling stays.
         if log:
             log(f"Legato tie..............: {len(legato_rows)} tie row(s) "
                 f"kept CMD_TONEPORTA -- -S{multiplier} packs the first "
@@ -387,6 +391,32 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         attack_hold_starts=attack_hold_starts,
         wave_alternate=wave_alternate, log=log,
         instr_row_calls=instr_row_calls)
+    # A counter-gated record whose plain program holds the frequency over
+    # its gate's call gives the re-pitching steps back to the effects
+    # (`_free_gate_calls`), before anything copies a record's block and
+    # before `_classic_gate_refine` counts the calls it frees.
+    if effects and vib_ptrs:
+        blocks = [(i, wave_starts[i + lead])
+                  for i in range(max(instr_used - lead, 0))
+                  if i + lead < len(wave_starts)]
+        for plan, starts in (
+                (duty_split.clones if duty_split is not None else [],
+                 clone_starts),
+                (phase_split.clones if phase_split is not None else [],
+                 phase_clone_starts)):
+            blocks += [(record - lead - 1, start)
+                       for (record, _c, _x), start in zip(plan, starts)
+                       if start]
+        # The records the swell pass commanded hold rows for, as it asks.
+        swelling = (set(_gw_note_passes._expanding_vibrato_records(
+                        sid, det, vib_ptrs, table))
+                    if (vibrato_command and det.vibrato_offset is not None
+                        and _expanding_vibrato_counter(sid, det) is not None)
+                    else set())
+        wave_entries, _freed = _free_gate_calls(
+            det, vib_ptrs, wave_entries, blocks, multiplier, row_calls,
+            instr_row_calls, lead, no_test_restart,
+            real_firstwave_instruments, swelling=swelling, log=log)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     # After the arpeggio pointers are resolved (they own every CMD_SETWAVEPTR
     # operand until then) and before the pulse budget, which must see every
@@ -427,6 +457,23 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if sky is not None:
             patterns = sky.patterns
             wave_entries = wave_entries + sky.entries
+    # The swell's hold rows onto wavetable loops that step the triangle on
+    # every call, tick 0 included (`_expanding_vibrato_loops`). After the
+    # skydive for the same reason it is after the drums -- its loops are
+    # appended past every block whose start is already known -- and before
+    # the passes that fill free columns, since it may take one. Not beside
+    # the tempo or phase split, whose clones carry programs of their own.
+    if (vibrato_command and vib_ptrs and fmt == FORMAT_GTS5
+            and duty_split is None and phase_split is None
+            and det.vibrato_offset is not None
+            and _expanding_vibrato_counter(sid, det) is not None):
+        wave_entries, _looped = _gw_note_passes._expanding_vibrato_loops(
+            sid, det, tracks, patterns, vib_ptrs, table, lead, multiplier,
+            row_calls, wave_entries, wave_starts,
+            instr_row_calls=instr_row_calls,
+            no_test_restart=no_test_restart,
+            real_firstwave_instruments=tuple(real_firstwave_instruments),
+            log=log)
     # The zero-page triangle player reseeds its pulse on a REST event as on
     # a note (`rest_reseed`). After every pass that fills a command column,
     # so it takes only columns nobody else wanted, and before the budget,
@@ -516,8 +563,38 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                  if p < len(patterns) and 4 * r + 3 < len(patterns[p])
                  and patterns[p][4 * r + 2] == CMD_TONEPORTA
                  and patterns[p][4 * r + 3] == 0}
+        # At -S2 and above the first legato number is the decoy's, which
+        # gt2reloc's slip turns into a no-HR record (see the decline above);
+        # the clones are numbered after it.
+        slip = 1 if multiplier > 1 else 0
+        before = patterns
         patterns, legato_clones, declined = legato_tie_clones(
-            patterns, still, tracks, cloneable, written_instr + 1, log=log)
+            patterns, still, tracks, cloneable, written_instr + 1 + slip,
+            log=log)
+        decoy = (_gw_note_passes.legato_slip_decoy(
+            patterns, tracks, written_instr, written_instr + 1)
+            if slip and legato_clones else None)
+        if slip and legato_clones and decoy is None:
+            # The cloning re-latched the rows the early check found; keep
+            # the old spelling for every tie rather than pack a slipped clone.
+            if log:
+                log(f"Legato tie..............: no decoy row after cloning -- "
+                    f"{len(still)} tie row(s) kept CMD_TONEPORTA at "
+                    f"-S{multiplier} (greloc.c:811-815)")
+            patterns, legato_clones, declined = before, [], set(still)
+        if decoy is not None:
+            dp, dr, held = decoy
+            patterns[dp][4 * dr + 1] = written_instr + 1
+            rec = instr_at + 1 + (held - 1) * 25
+            pad = bytearray(out[rec:rec + 25])
+            pad[7] |= GATETIMER_LEGATO
+            out += pad
+            written_instr += 1
+            if log:
+                log(f"Legato tie..............: decoy legato record "
+                    f"{written_instr} (instrument {held}'s, latched on "
+                    f"pattern {dp:02X} row {dr}) takes gt2reloc's -S"
+                    f"{multiplier} slip (greloc.c:811-815)")
         for base, _number in legato_clones:
             rec = instr_at + 1 + (base - 1) * 25
             clone = bytearray(out[rec:rec + 25])

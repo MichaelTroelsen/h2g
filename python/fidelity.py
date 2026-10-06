@@ -425,6 +425,47 @@ def register_timeline(events: list[tuple[int, int]], nframes: int) -> list[int]:
     return out
 
 
+def legato_starts(v: "Voice", nframes: int) -> list[int]:
+    """Frames a NOTE STARTS on without the gate rising: the instrument
+    register rewritten to a new value while the gate stays set.
+
+    `Voice.attack_frames` are gate rises, and the per-note splits
+    (`reversals_by_instrument`, `oscillation_depths`, `moving_frames`) keyed
+    every note on one. A player that switches instrument with the gate held
+    starts a new note -- new envelope, new waveform, new pitch program --
+    with no rise, so the whole note was attributed to the PREVIOUS note's
+    instrument. Spellbound's `$0FFF` -> `$0F0A` happens 13 times: the
+    original's 159 `$0F0A` reversals were counted under `$0FFF` (172 vs 0)
+    while ours, which re-attacks, counted them under `$0F0A` (375 vs 228) --
+    an apparent 1.5x excess that was the split's, not the conversion's.
+
+    "Gate held" is read off the waveform register on BOTH frames, so a gate
+    rise that siddump printed at freq $0000 and `parse_dump` dropped from
+    `attack_frames` (`unnamed_attack_frames`) is not mistaken for one; and a
+    voice with no `wf_events` (nothing says where the gate is) has none. A
+    change on an attack frame is the attack's own, and a change before the
+    voice's first attack is an init write, not a note.
+
+    Only a *split* key: `pitch_motion` and every column built on its totals
+    still segment on gate rises alone, and `reversals_by_instrument` keeps
+    summing to them.
+    """
+    if not v.wf_events or not v.attack_frames:
+        return []
+    adsr = register_timeline(v.adsr_events, nframes)
+    wf = register_timeline(v.wf_events, nframes)
+    atk = set(v.attack_frames)
+    first = min(atk)
+    return [f for f in range(max(1, first + 1), nframes)
+            if f not in atk and adsr[f] != adsr[f - 1] and adsr[f]
+            and wf[f] & WF_GATE and wf[f - 1] & WF_GATE]
+
+
+def note_starts(v: "Voice", nframes: int) -> list[int]:
+    """Gate rises and `legato_starts`, in frame order."""
+    return sorted(set(v.attack_frames) | set(legato_starts(v, nframes)))
+
+
 # siddump's own middle C, the register value it names `C-4` unless -c says
 # otherwise (siddump.c prints it as "Middle C frequency is $1168").
 SIDDUMP_MIDDLE_C = 0x1168
@@ -2533,8 +2574,9 @@ def oscillation_depths(voices: list[Voice], nframes: int,
                        per_frame: int = 1) -> dict:
     """`{ADSR: median cycle swing, as a fraction of the pitch}`.
 
-    **Segmented on gate rising edges** -- `Voice.attack_frames`, the frames
-    siddump prints a bare note on (siddump.c:376-380) -- and never on note
+    **Segmented on note starts** -- `Voice.attack_frames`, the frames
+    siddump prints a bare note on (siddump.c:376-380), plus `legato_starts`,
+    where the instrument is switched with the gate held -- and never on note
     *names*. siddump names the frequency's nearest note, which flickers up and
     down while a vibrato runs, so segmenting on the printed name chops one
     note into fragments shorter than a half-cycle: the first attempt at this
@@ -2588,7 +2630,9 @@ def oscillation_depths(voices: list[Voice], nframes: int,
         skip = set()
         for a in v.attack_frames:
             skip |= set(range(a - before, a + after + 1))
-        atk = sorted(v.attack_frames)
+        # Gate rises AND instrument switches with the gate held: a legato
+        # note is read under its own instrument (`legato_starts`).
+        atk = note_starts(v, nframes)
         for j, a in enumerate(atk):
             key = adsr[a] if a < nframes else 0
             if keys is not None and key not in keys \
@@ -2847,7 +2891,9 @@ def moving_frames(voices: list[Voice], nframes: int,
         skip = set()
         for a in v.attack_frames:
             skip |= set(range(a - before, a + after + 1))
-        atk = sorted(v.attack_frames)
+        # Gate rises AND instrument switches with the gate held: a legato
+        # note is read under its own instrument (`legato_starts`).
+        atk = note_starts(v, nframes)
         for j, a in enumerate(atk):
             key = adsr[a] if a < nframes else 0
             if keys is not None and key not in keys \
@@ -3438,7 +3484,16 @@ def reversals_by_instrument(voices: list[Voice], nframes: int) -> dict:
     attack-adjacent frames skipped, the same sign-change test -- so the
     per-instrument numbers add to the column's own totals rather than being a
     second measurement of the same thing.
+
+    **A note an instrument switch starts with the gate held is attributed to
+    its own instrument** (`legato_starts`). The segments and the sign-change
+    count stay exactly `pitch_motion`'s -- one run per gate rise, so the sum
+    is unchanged -- and each reversal is charged to the instrument sounding at
+    the frame the reversing move ENDS on: the latest note start (gate rise or
+    legato start) at or before it. A legato note's jump into its first pitch
+    is therefore the new instrument's, as an attack's is.
     """
+    from bisect import bisect_right
     out: dict = {}
     for v in voices:
         fq = register_timeline(v.freq_events, nframes)
@@ -3447,16 +3502,26 @@ def reversals_by_instrument(voices: list[Voice], nframes: int) -> dict:
         for a in v.attack_frames:
             skip |= {a - 1, a, a + 1}
         atk = sorted(v.attack_frames)
+        starts = note_starts(v, nframes)
         for j, a in enumerate(atk):
             nxt = atk[j + 1] if j + 1 < len(atk) else nframes
-            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
-            if len(seg) < 2:
+            frames = [f for f in range(a, min(nxt, nframes)) if f not in skip]
+            if len(frames) < 2:
                 continue
-            deltas = [seg[k + 1] - seg[k] for k in range(len(seg) - 1)]
-            signs = [d > 0 for d in deltas if d]
-            n = sum(1 for k in range(1, len(signs)) if signs[k] != signs[k - 1])
-            key = adsr[a] if a < nframes else 0
-            out[key] = out.get(key, 0) + n
+            # (frame the move ends on, direction) for every nonzero delta.
+            moves = [(frames[k + 1], fq[frames[k + 1]] > fq[frames[k]])
+                     for k in range(len(frames) - 1)
+                     if fq[frames[k + 1]] != fq[frames[k]]]
+            for k in range(1, len(moves)):
+                if moves[k][1] != moves[k - 1][1]:
+                    f = moves[k][0]
+                    s0 = starts[bisect_right(starts, f) - 1]
+                    key = adsr[s0] if s0 < nframes else 0
+                    out[key] = out.get(key, 0) + 1
+            # Every note's instrument is a key even at zero reversals, as it
+            # was when the count was added unconditionally.
+            for s0 in starts[bisect_right(starts, a) - 1:bisect_right(starts, nxt - 1)]:
+                out.setdefault(adsr[s0] if s0 < nframes else 0, 0)
     return out
 
 

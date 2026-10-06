@@ -1108,8 +1108,13 @@ def test_free_rows_are_read_per_output_pattern():
 
 def test_a_record_on_two_voices_does_not_decline_the_bounds_engine():
     """The accumulator is per voice ($F59C,X), so two voices sounding one
-    record do not share it: each voice is walked with its own copy, where
-    the per-record triangle engine declines the whole subtune."""
+    record do not share it: each voice is walked with its own copy. The
+    per-record triangle engine's ONE width is stepped by both voices, which
+    its walk now follows in lockstep (tests/test_triangle_lockstep.py) --
+    RE-PINNED there: this test used to assert that the triangle walk
+    declines the subtune (`is None`). Here both voices fetch on row 0 at
+    $900, each steps the record once a row (delay 2), and both open row 2
+    at $A00: four steps, two per voice."""
     pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
     tracks = [[0, 0xFF, 0x00], [0, 0xFF, 0x00], [0xFF, 0x00]]
     got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
@@ -1118,8 +1123,11 @@ def test_a_record_on_two_voices_does_not_decline_the_bounds_engine():
     _, writes = got
     assert sorted(ti for ti, _, _ in writes) == [0, 1]
     tri = PulsePhaseSim(0x900, 0x40, 2, 8, 0xE)
-    assert collect_pulse_phases([pat], [list(t) for t in tracks], [2],
-                                {2: tri}) is None
+    got = collect_pulse_phases([pat], [list(t) for t in tracks], [2],
+                               {2: tri})
+    assert got is not None
+    want = {0: (2, (0x900, +1)), 2: (2, (0xA00, +1))}
+    assert got[1] == [(0, 0, want), (1, 0, want)], got[1]
 
 
 def test_the_owner_scan_stops_at_the_restart_and_does_not_read_its_operand():
@@ -1277,11 +1285,16 @@ def test_the_lead_in_sweeps_the_image_instrument_until_a_row_names_one():
     assert got[1] == [(0, 0, {3: (2, (0xA40, +1))})]
 
 
-def test_a_lead_in_on_a_record_another_voice_sounds_declines_that_voice():
+def test_a_lead_in_on_a_record_another_voice_sounds_is_walked_with_it():
     """Voice 1 leads in on instrument 2 while voice 0 sounds it: one width
-    swept by two voices in two directions, which the voice-at-a-time walk
-    cannot follow (Human_Race subtune 0). Voice 1 is declined and logged;
-    voice 0 is still planned."""
+    swept by two voices (Human_Race subtune 0). RE-PINNED at the lockstep
+    triangle walk (this test was
+    `test_a_lead_in_on_a_record_another_voice_sounds_declines_that_voice`,
+    asserting voice 1 declined and logged): the voices are now walked
+    together, X = 2, 1, 0 each tick, so on tick 0 voice 1 steps record 2
+    ($900 -> $940) BEFORE voice 0's fetch reads it, and voice 0's note
+    opens at $940 where the voice-at-a-time walk planned $900. Voice 1's
+    own note (instrument 3, untouched) opens at $900."""
     from h2g.goatwriter import PulsePhaseSim
     pat0 = _note_pattern([(0x70, 2, 0), (None, 0, 0)])
     pat1 = _note_pattern([(None, 0, 0), (0x72, 3, 0)])
@@ -1293,9 +1306,9 @@ def test_a_lead_in_on_a_record_another_voice_sounds_declines_that_voice():
     got = collect_pulse_phases([pat0, pat1, _rest4()], tracks, [2], sims,
                                logs.append, tri_start=start)
     assert got is not None
-    assert [ti for ti, _, _ in got[1]] == [0], got[1]
-    assert any("voice 1 sweeps instrument 2 before its first" in m
-               and "declined" in m for m in logs), logs
+    assert got[1] == [(0, 0, {0: (2, (0x940, +1))}),
+                      (1, 0, {1: (3, (0x900, +1))})], got[1]
+    assert not any("declined" in m for m in logs), logs
 
 
 def test_a_keyoff_and_an_instrument_row_are_fetch_ticks_for_the_triangle():

@@ -48,6 +48,14 @@ declines voice 1. Voice 0's record-0 notes then miss the steps voice 1 added:
 all 35 of voice 0's misses are on instrument 1, and its 417 instrument-4 notes
 are exact. Fixing this is the lockstep walk, task triangle-lockstep-walk. When
 that walk lands, the Human_Race figures here are expected to change.
+
+THE LOCKSTEP WALK LANDED (patterns._walk_triangle_group) and they did, as
+predicted: voice 1 is walked instead of declined and opens on the original's
+exact width 120 of 120 (all instrument 2), and voice 0's 35 instrument-1
+misses are gone -- 457 of 457 (instrument 1: 40, instrument 4: 417). The pin
+below moved from {0: (422, 457)}; the test after it now asserts the walk,
+not the decline (it was `test_human_races_misses_are_the_record_its_declined_
+voice_shares`).
 """
 from __future__ import annotations
 
@@ -68,7 +76,8 @@ _NAMED = [
     ("Phantoms_of_the_Asteroid.sid", {0: (288, 288)}),
     ("Last_V8.sid", {0: (152, 152), 1: (540, 540), 2: (32, 32)}),
     ("Last_V8_C128_version.sid", {0: (152, 152), 1: (540, 540), 2: (32, 32)}),
-    ("Human_Race.sid", {0: (422, 457)}),
+    # Re-pinned at the lockstep triangle walk: was {0: (422, 457)}.
+    ("Human_Race.sid", {0: (457, 457), 1: (120, 120)}),
     # Re-pinned 2026-10-05 (runqueue merge): one-man-restrike-at-attack-856
     # stops the tied-slide restrikes, so more notes pair by name; every pair
     # is still exact. Was {0: (46, 46), 1: (94, 94), 2: (5, 5)}.
@@ -157,17 +166,21 @@ def test_the_named_voices_open_on_the_originals_width():
     assert not bad, bad
 
 
-def test_human_races_misses_are_the_record_its_declined_voice_shares():
-    """Human_Race subtune 0: voice 1 is not planned (declined: its lead-in
-    sweeps record 0 while voice 0 sounds it). Every voice-0 miss is on
-    instrument 1, which is that record. The original shows both voices
-    stepping record 0 in one tick."""
+def test_human_race_walks_the_voice_that_shares_record_0():
+    """Human_Race subtune 0: voice 1's lead-in sweeps record 0 while voice 0
+    sounds it, and the original shows both voices stepping record 0 in one
+    tick. Under the lockstep walk voice 1 is planned and every pair on both
+    voices is exact -- voice 0's instrument-1 notes included, the 35 it
+    missed while voice 1 was declined (this test asserted that decline
+    until the walk landed)."""
     pairs = _pairs("Human_Race.sid")
-    assert 1 not in pairs, "voice 1 is planned -- the decline has moved"
-    miss = collections.Counter(i for i, p, o in pairs[0] if p != o)
-    hit = collections.Counter(i for i, p, o in pairs[0] if p == o)
-    assert miss == {1: 35}, miss
-    assert hit == {1: 5, 4: 417}, hit
+    assert 1 in pairs, "voice 1 is not planned -- the lockstep walk is gone"
+    for v in (0, 1):
+        miss = collections.Counter(i for i, p, o in pairs[v] if p != o)
+        assert not miss, (v, miss)
+    hit = {v: collections.Counter(i for i, p, o in pairs[v] if p == o)
+           for v in (0, 1)}
+    assert hit == {0: {1: 40, 4: 417}, 1: {2: 120}}, hit
     import fidelity as F
     trace = _trace("Human_Race.sid")
     t0, t1 = (F.register_timeline(trace[v].pulse_events, 3) for v in (0, 1))

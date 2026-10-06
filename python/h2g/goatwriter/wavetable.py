@@ -951,13 +951,42 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
       67.49. So the cleared gate costs 1.4 dB of the drum voice. This repo
       does not pay sound for register agreement.
 
-    Why only multispeed loses level is NOT established. One candidate fits
-    the pattern but has not been checked: at -S1 the gate has been on for
-    two frames when the tick clears it (the $09 firstwave frame plus the
-    lead), and at -S2 for one and a half. The presets set
-    `no_hard_restart`, so nothing resets the SID's envelope rate counter
-    before the gate rises, and the rate-counter wrap can hold an attack
-    back for up to ~33 ms. TODO: read it within the frame (`--vice`).
+    **Why only multispeed loses level: the SID's ADSR delay.** Read within
+    the frame at 8586101 (v0.5.511): VICE's `dump` device, 312 lines a
+    frame, 60 s under presets, with the drum voice swapped onto voice 3 so
+    that ENV3 reports its real envelope. When the gate rises, the 15-bit
+    envelope rate counter has to reach the attack period (9 cycles at
+    A=0). Nothing has lowered the period beforehand (`no_hard_restart`, and
+    the drum's ADSR is written one line before the rise), so the counter is
+    above it and must run on through $7FFF and wrap first. The attack starts
+    up to $8000 cycles = 520 lines (1.67 frames) after the rise. From the
+    rise to the first ENV3 increase, median/max in lines: Rasputin 504/520,
+    Formula_1_Simulator 513/521, Bump_Set_Spike 503/519, Gerry_the_Germ
+    517/520.
+
+    The gate is on for `m + 1` calls before the tick, 312 (m+1)/m lines.
+    Measured: 624 at -S1 (Gerry_the_Germ, Action_Biker), 465-468 at -S2
+    (Rasputin, Formula_1_Simulator), 373 at -S5 (Bump_Set_Spike). Only -S1
+    outlasts the delay. Above -S1 a gate-off tick releases the voice before
+    its attack has started. With the $80 tick, the attack starts inside the
+    gate on 26 of Rasputin's 157 drum attacks (ENV3 peak mean 167, against
+    255 with the gate kept). On Formula_1_Simulator it starts on 0 of 63
+    gate-off ticks (peak 93), and on Bump_Set_Spike on 1 of 104 (peak 150).
+    At -S1 it starts before the $80 tick on 15 of 15 (Gerry_the_Germ, peak
+    255). A gated tick holds the gate through the delay, and every attack
+    peaks at 255.
+
+    The original never meets the delay. Its player writes ADSR $0000 before
+    every gate rise (730 of 730 rises, all three voices), which drops the
+    period to 9, so the wrap is done before the gate rises. Its attack
+    starts within one line (156 of 156 drum attacks). ENV3 energy over the 4
+    frames from each drum rise: original 78.31 dB, gated tick 77.40,
+    gate-off tick 75.02. The gate-off tick with Goattracker's hard restart
+    back on (no `no_hard_restart`) gives 77.41, but costs Rasputin `adsr`
+    68.3 -> 63.8. So the gate stays on above -S1 until something lowers the
+    period ahead of the drum. Holding the gate past 520 lines instead would
+    move the tick a frame late. Probes: C:/t/rasputin-drum-noise-blip-one-
+    frame-early/b4 (dump.py, dump2.py, attack.py, attack2.py).
 
     `written` (`--no-test-restart`, or a `real_firstwave_instruments`
     record) keeps the gate. There the tick follows the firstwave call

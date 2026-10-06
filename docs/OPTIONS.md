@@ -2357,6 +2357,32 @@ compensation does not reach that file's phase error at all, so there is no
 measured decision to record. The other three are damaged, which is the
 incompatibility below.
 
+**Through v0.5.511 it could not reach a multispeed file at all**, whatever
+the flag said. `convert` compared `effective_frames` (frames per row) with the
+subtune's tempo value (CALLS per row, frames x multiplier), and the two are the
+same number only at `-S1`. All 17 reached files above and all 15 shipped
+`regrid: true` songs are `-S1`, which is why nobody saw it. The comparison is
+now `regrid_deficits` in `convert.py`, in frames on both sides. Corpus
+byte-hash on the staged tree after 8586101: under presets **0 of 89 move**.
+With `regrid` forced on, 4 more files are reached, all `-S2`: `Delta`,
+`Dragons_Lair_Part_II`, `Ricochet` and `Star_Paws`.
+
+Star_Paws is the file that found it. Its player freezes the speed counter one
+frame in 128 (`DEC $B712 / BPL / LDA #$7F / STA $B712 / JMP $B06B`), so its
+row is 256/127 frames. Without regrid it ran one frame in 128 fast.
+`tests/test_regrid_multispeed.py` pins the fix. Star_Paws A/B at `-t 180`,
+regrid off -> on:
+
+- `drift`: -7.81 -> -1.83 per 1000
+- `melody`: 99.6 -> 99.9
+- `wave`: 66.7 -> 69.7
+- `tie_orig_only_firstwave`: 1369 -> 757
+
+Ricochet reads drift -7.81 -> 0.00. Delta and Dragons_Lair_Part_II move bytes
+and no column at all, because their compensation lands in subtunes other than
+the one measured. Adopting the flag for any of these files is a separate
+`presets.json` decision.
+
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
 perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is

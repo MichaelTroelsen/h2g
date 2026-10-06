@@ -924,7 +924,9 @@ def test_bmx_kidzs_conversion_carries_the_staircase():
     """End to end through `convert` under the shipped presets: the pass
     runs (the log says so), the speed table holds the four levels under the
     instrument's cmp, and pattern rows carry CMD_VIBRATO -- so the call in
-    build_sng cannot be dropped silently."""
+    build_sng cannot be dropped silently. Since `_expanding_vibrato_loops`
+    (-S1, GTS5) a row the pass commanded may instead point at a wavetable
+    loop `F4 idx / FF`; both count."""
     import json
     if not CORPUS.is_dir():
         return
@@ -942,8 +944,12 @@ def test_bmx_kidzs_conversion_carries_the_staircase():
     song = songview.parse_sng(blob)
     stbl = song.tables["STBL"]
     assert {(0x81, s) for s in range(4)} <= set(stbl), stbl
+    wtbl = song.tables["WTBL"]
+    looped = lambda d: any(e[0] == 0xF4 for e in wtbl[d - 1:d + 2])
     rows = sum(1 for pat in song.patterns
-               for i in range(0, len(pat), 4) if pat[i + 2] == CMD_VIBRATO)
+               for i in range(0, len(pat), 4)
+               if pat[i + 2] == CMD_VIBRATO
+               or (pat[i + 2] == 0x08 and looped(pat[i + 3])))
     assert rows >= 60, rows
 
 

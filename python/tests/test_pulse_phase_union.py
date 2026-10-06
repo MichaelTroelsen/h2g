@@ -142,7 +142,11 @@ def test_unions_buy_rows_and_records():
         "Battle_of_Britain.sid": ((147, {7, 8, 9, 10, 11, 15, 16}),
                                   (225, {7, 8, 9, 10, 11, 15, 16})),
         "Gremlins.sid": ((252, {3, 6, 7, 20}), (254, {3, 6, 7})),
-        "Human_Race.sid": ((252, {1, 4, 18, 21, 23}), (249, {1, 4, 18, 21})),
+        # Re-pinned at the lockstep triangle walk (was ((252, {1, 4, 18,
+        # 21, 23}), (249, {1, 4, 18, 21}))): subtune 0 voice 1 is walked,
+        # record 2 joins the plan, 21 no longer fits, and record 2 lays its
+        # plain loop (`_phase_block` chains only a "chained" record).
+        "Human_Race.sid": ((237, {1, 2, 4, 18, 23}), (234, {1, 2, 4, 18})),
     }
     for name, (with_u, without) in want.items():
         sid, det, iu, pulse, mult, phases, _, lead = _table_calls(name)[0]

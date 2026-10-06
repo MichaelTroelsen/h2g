@@ -24,7 +24,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        pattern_references,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
-                       inherit_free_rows)
+                       inherit_free_rows, inherit_event_rows)
 from .instrument_drop import (
     drop_unnamed_instruments as drop_unnamed_instruments_from)
 from .sidfile import SidFile, load_sid
@@ -144,6 +144,39 @@ def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
         return file_multiplier(sid, speeds, skip_gate)
     except Exception:                                          # noqa: BLE001
         return 1
+
+
+def regrid_deficits(speeds, values: List[int], skip_gate: bool,
+                    multiplier: int) -> List[float]:
+    """Per subtune, the FRAMES per row `regrid_tempos` must make up, or 0.0.
+
+    Only where `effective_frames` DECLINED the exact row and the subtune's
+    tempo is that declined row -- if it was encodable, the tempo already
+    carries it and compensating again would double-count.
+
+    **UNITS.** `exact` and `eff` are frames per row; `values` are CALLS (the
+    CMD_SETTEMPO value, frames * multiplier); `regrid_tempos` wants frames and
+    multiplies by `multiplier` itself. Through v0.5.511 this compared `eff`
+    with `values[k]` directly, which is the same number only at -S1 -- so no
+    multispeed file could ever be reached, whatever `--regrid` said. Star_Paws
+    is the file that found it: its subtune 0 reads 256/127 frames (a two-frame
+    speed gate under `DEC $B712 / BPL / LDA #$7F / STA $B712 / JMP $B06B`,
+    which freezes the speed counter one frame in 128), encoded as 2 frames =
+    tempo 4 at -S2, and `2.0 != 4.0` declined it. Ours ran one frame in 128
+    fast, `drift` -7.81 per 1000, 71 frames ahead by 180 s -- read on the
+    8-frame drum grid of voices 2 and 3 as attacks landing "3 frames late",
+    the -5 aliased by nearest-neighbour pairing.
+    """
+    deficits = []
+    for k in range(len(values)):
+        exact = speeds.exact_row(k) if speeds is not None else None
+        eff = effective_frames(speeds, k, skip_gate)
+        if (exact is None or eff is None
+                or float(eff) * multiplier != float(values[k])):
+            deficits.append(0.0)
+        else:
+            deficits.append(max(0.0, float(exact) - float(eff)))
+    return deficits
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -471,6 +504,10 @@ def convert(sid_path: str, log: Logger = print,
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
         instr_base=instr_base, tie=tie,
         wave_notes=wave_notes, wave_copies=wave_copies,
+        # The triangle walk's fetch rows (patterns.collect_pulse_phases'
+        # `event_rows`). Unlike `free_rows` the request moves no byte -- the
+        # dedup key is left alone -- so it is made wherever that walk can run.
+        event_rows=bool(pulse_phase and pulse and det.pulse_tri_hi >= 0),
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
@@ -619,15 +656,8 @@ def convert(sid_path: str, log: Logger = print,
             # where `effective_frames` DECLINED the exact row -- if it was
             # encodable, the tempo already carries it and compensating again
             # would double-count. See patterns.regrid_tempos.
-            speeds = find_song_speeds(sid, det)
-            deficits = []
-            for k in range(groups):
-                exact = speeds.exact_row(k) if speeds is not None else None
-                eff = effective_frames(speeds, k, skip_gate)
-                if exact is None or eff is None or float(eff) != float(values[k]):
-                    deficits.append(0.0)
-                else:
-                    deficits.append(max(0.0, float(exact) - float(values[k])))
+            deficits = regrid_deficits(find_song_speeds(sid, det), values,
+                                       skip_gate, multiplier)
             if any(deficits):
                 regrid_tempos(new_patterns, tracks, values, deficits,
                               multiplier, log)
@@ -797,6 +827,20 @@ def convert(sid_path: str, log: Logger = print,
     # stays a real refusal; a full table is our encoding and now degrades
     # gracefully instead of failing outright.
     #
+    # **RETRACTED (the lockstep triangle walk): "That is the player's one
+    # pulse accumulator per record, not a table limit -- a real refusal,
+    # and correct" and "a shared accumulator is the player and stays a real
+    # refusal".** The accumulator is shared, but the walk can follow it:
+    # rows are synchronous across a group's voices, so
+    # `patterns._walk_triangle_group` steps every voice's record tick by
+    # tick in the player's order (X = 2, 1, 0) and a record two voices sweep
+    # is stepped by both. No subtune or voice is declined for sharing any
+    # more. Under forced `pulse_phase` the six files it declined move --
+    # Chimera, Devils_Galop, Human_Race, Monty_on_the_Run, Ninja,
+    # Thing_on_a_Spring -- and nothing else (tests/test_triangle_lockstep.py
+    # has their widths against the originals); under shipped presets none
+    # does, since none of the six ships the flag.
+    #
     # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------
     # **THE GATE ADMITS BOTH SWEEPING ENGINES.** `det.pulse_tri_hi >= 0` is
@@ -871,10 +915,13 @@ def convert(sid_path: str, log: Logger = print,
             snapshot = [list(t) for t in tracks]
             free_rows = (inherit_free_rows(new_patterns, track_index.free_rows, log)
                          if bounds_sims else None)
+            event_rows = (inherit_event_rows(new_patterns,
+                                             track_index.event_rows, log)
+                          if start is not None else None)
             plan = collect_pulse_phases(
                 new_patterns, tracks, walk_tempos, sims, log,
                 free_rows=free_rows, calls_per_frame=calls_per_frame,
-                tri_start=start)
+                tri_start=start, event_rows=event_rows)
             table = None
             if plan:
                 phases, writes = plan

@@ -781,8 +781,11 @@ class PulsePhaseSim:
     # What `patterns.collect_pulse_phases` asks a sim about itself: whether
     # a note reseeds the accumulator (never, here -- the sweep free-runs
     # across notes) and whether the accumulator is per voice (no -- per
-    # record, shared by every voice sounding it, which is the "two voices"
-    # decline in the walk). `PulseBoundsSim` answers both the other way.
+    # record, shared by every voice sweeping it, which is why the walk
+    # runs the three voices in lockstep, `patterns._walk_triangle_group`).
+    # `PulseBoundsSim` answers both the other way. RETRACTED: "shared by
+    # every voice sounding it, which is the "two voices" decline in the
+    # walk" -- the walk no longer declines a record two voices share.
     RESEEDS = False
     PER_VOICE = False
 
@@ -890,8 +893,11 @@ class PulseBoundsSim:
     (`$F2AC LDA $F572,X` / `$F2B5 ADC $F59C,X` / `$F2B9 LDA $F59F,X`, X the
     voice from `$F185 LDX $F56B`): **THE ACCUMULATOR IS PER VOICE**, not per
     record. A record sounding on two voices does not share it, so the
-    triangle walk's "two voices" decline does not apply, and the state
-    carries across an instrument change on one voice. `PER_VOICE` says so.
+    triangle walk's lockstep (one width stepped by every voice sweeping
+    it) does not apply, and the state carries across an instrument change
+    on one voice. `PER_VOICE` says so. (Written when the triangle walk
+    still DECLINED a shared record: "so the triangle walk's "two voices"
+    decline does not apply" -- RETRACTED with that decline.)
 
     **The walk drives this sim through `free_rows`.** The decoder carries
     the note byte's bit 7 out beside `exits_tied` (`_build_raw_pattern`'s
@@ -1258,7 +1264,9 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     where the band itself is a whole number of steps; any other phase (the
     triangle sim's at-bound value a step PAST the bound, say) keeps its own
     piece, which jumps into the chained legs at their heads as it jumped
-    into the plain ones. A row is never a jump's target if it is a jump
+    into the plain ones -- and so a record is chained only where every such
+    piece ARRIVES on its bound (`_union_kind`'s "chained"; see the gate
+    below). A row is never a jump's target if it is a jump
     itself (the two players follow one jump per call, gplay.c:865-869 before
     the step and player.s `mt_nextpulsestep` after it).
     """
@@ -1277,7 +1285,19 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     def setrow(w: int) -> tuple:
         return ((0x80 | (w >> 8)) & 0xFF, w & 0xFF)
 
-    chained = _chained_phases(want_set, speed, lo_v, hi_v) if share else set()
+    # Chained only where EVERY phase lands on its bound -- `_union_kind`'s
+    # "chained", the precondition the pass-through argument above rests
+    # on. An unchained piece that arrives OFF its bound runs into a
+    # chained leg's set rows and is snapped onto the lattice there, where
+    # the plain loop of its per-phase block carried it on: Human_Race's
+    # record 2 under the lockstep triangle walk opens a note at ($080,
+    # down) beside 24 lattice phases, and from that entry the shared block
+    # played $080 $0C0 $880 ... against the per-phase block's $080 $0C0
+    # $100 ... (tests/test_pulse_phase_union.py). Such a record lays the
+    # plain loop instead -- its per-phase block, rows and all.
+    chained = (_chained_phases(want_set, speed, lo_v, hi_v)
+               if share and _union_kind(want_set, speed, lo_v, hi_v, wrap)
+               == "chained" else set())
 
     phase_index: dict = {}
     block: List[tuple] = []
@@ -1394,6 +1414,20 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     Master_of_Magic / Phantoms / Battle_of_Britain ship 172 -> 103,
     200 -> 59, 225 -> 147 rows.
 
+    **Where the chosen layout still leaves a record on pointer 0, both are
+    laid again with every later record's static width RESERVED** before a
+    record may spend rows on movement (`_lay_pulse_phase_pass`'s `reserve`),
+    and the reserved one ships if it silences fewer. Measured under forced
+    `pulse_phase` at 8586101: Last_V8 (and its C128 version) went 14
+    degraded / 12 on pointer 0 in 254 (255) rows to 1 / 0 in 223 (224):
+    instrument 7 keeps its phases, and 9 alone degrades -- its shared block
+    asks 47 rows where 32 are left. The 12 were records 22-33, which the
+    shipped song prunes; what is audible is instrument 7, whose voice-0
+    onset widths went 0.66 -> 0.84 same-bucket against the original over
+    180 s. The reserve is exact (tests/test_pulse_phase_reserve.py sweeps
+    every limit), and no file whose layout leaves every record a width
+    moves.
+
     **`prefer_short`: the table is shared with songs appended after this
     one.** On a compilation (`convert._append_players`) the pulse table
     subtune 0 leaves is the budget every appended player's sweeps must fit
@@ -1436,6 +1470,30 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                 f"table row(s) place {shared[6]} of {shared[5]} phase-tracked "
                 f"record(s), where one ramp per phase placed {first[6]} and "
                 f"degraded {first[3]} record(s), {first[4]} to pointer 0"))
+    if chosen[4]:
+        # Still a record on pointer 0: the blocks laid ahead of it took the
+        # rows its static width needed. Lay both layouts again holding back
+        # every later record's static first (`reserve`), and ship the one
+        # that silences fewest, then degrades fewest, then is shortest.
+        trials = []
+        for share in (False, True):
+            trial_log: list = []
+            trial = _lay_pulse_phase_table(sid, det, instr_used, pulse,
+                                           multiplier, phases,
+                                           trial_log.append, lead, share,
+                                           reserve=True)
+            trials.append(((trial[4], trial[3], len(trial[0])), share,
+                           trial, trial_log))
+        (rank, share, trial, trial_log) = min(trials, key=lambda t: t[:2])
+        if rank[0] < chosen[4]:
+            trial_log.insert(0, (
+                f"Pulse phase.............: statics reserved -- "
+                f"{'shared ramps, ' if share else ''}{len(trial[0])} table "
+                f"row(s) place {trial[6]} of {trial[5]} phase-tracked "
+                f"record(s) and degrade {trial[3]} record(s), {trial[4]} to "
+                f"pointer 0, where the layout without the reserve degraded "
+                f"{chosen[3]}, {chosen[4]} to pointer 0"))
+            chosen, chosen_log = trial, trial_log
     if log:
         for line in chosen_log:
             log(line)
@@ -1470,7 +1528,8 @@ def _union_groups(sid: SidFile, det: Detection, instr_used: int,
 
 def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            pulse: bool, multiplier: int, phases: dict, log,
-                           lead: int, share: bool) -> tuple:
+                           lead: int, share: bool,
+                           reserve: bool = False) -> tuple:
     """One layout of `build_pulse_phase_table`: (entries, starts, index,
     dropped, silent, attempted, placed). `share` picks `_phase_block`'s
     shared-ramp layout for every phase-tracked record, and may lay ONE
@@ -1489,16 +1548,18 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     had degraded 10 and 20 to static widths and given 22 its block. So
     pointer 0 is counted first: no union is taken that silences a record
     the layout without it did not. With no group adopted the pass is the
-    per-record shared layout, byte for byte."""
+    per-record shared layout, byte for byte. `reserve` is passed to every
+    pass (`_lay_pulse_phase_pass`)."""
     if not share:
         return _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
-                                     phases, log, lead, False, {})
+                                     phases, log, lead, False, {}, reserve)
 
     def score(t: tuple) -> tuple:
         return t[4], t[3], len(t[0])
     best_log: list = []
     best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
-                                 phases, best_log.append, lead, True, {})
+                                 phases, best_log.append, lead, True, {},
+                                 reserve)
     chosen: dict = {}
     for key, members in _union_groups(sid, det, instr_used, multiplier,
                                       phases, lead).items():
@@ -1507,7 +1568,7 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         trial_log: list = []
         trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                       phases, trial_log.append, lead, True,
-                                      trial_unions)
+                                      trial_unions, reserve)
         if score(trial) < score(best):
             best, best_log, chosen = trial, trial_log, trial_unions
     if log:
@@ -1516,13 +1577,44 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     return best
 
 
+# **WHAT GREMLINS 10 IS SHORT OF, MEASURED, and why skipping the records
+# `drop_unnamed_instruments` removes does not buy it.** Under forced
+# `pulse_phase` at 8586101 (v0.5.511), Gremlins' shared pass with BOTH union
+# groups ((3, 7) and (6, 20)) and no table limit takes 258 rows: 3 past
+# `GT_MAX_TABLELEN`, so the last block laid -- record 22's, 1344 note rows,
+# the file's most played -- goes to pointer 0, and the pass that ships
+# instead takes (6, 20) alone and leaves 10 (280 note rows) on a static
+# width. The 11 records the drop removes ($0E, $17-$20) cost the shared pass
+# NO rows: each is a standalone `XX 00 / FF 00` pair that `reuse` already
+# points at an earlier named record's copy (14 at record 5's, 23-32 at 16's).
+# A pass that laid nothing for them was built and measured
+# (C:/t/pulse-phase-union-blocks/r3/skip_probe.patch): 254 rows either way
+# with no union, 252 with (6, 20), 255 with both. On the whole forced corpus it
+# moved only Last_V8 and its C128 version, and there it was a LOSS hidden
+# by this pass's counts: their 12 pointer-0 records at 8586101, before the
+# statics reserve (22-33), sound 0 notes, so `silent` counted records
+# nobody hears, and the layout it preferred kept 7 and 9 swept by putting
+# 16 (4 notes) and 17 (64) on pointer 0. So it was not shipped. Since the
+# reserve (`build_pulse_phase_table`'s "statics reserved" rescue) the
+# shipped Last_V8 table has NO pointer-0 record -- 223 rows (224 on the
+# C128 version), 2, 7 and 8 swept, 9 alone degraded -- so the skip as
+# built, still (2, 2) silent/degraded, would not be adopted at all, and
+# laid under the reserve it keeps the same records swept and saves only
+# 12 rows (211 / 212). Every record still holding rows sounds
+# notes; the 3 rows exist only as a trade -- laying record 9's sweep (179
+# notes, `88 00 / 05 2B`) or record 15's (156 notes, `82 00 / 7F 01 ...`) as
+# its static width fits both unions with 22 kept (255 / 253 rows), and
+# which record should lose its sweep is a listening question.
+# tests/test_pulse_phase_shortfall.py pins all of this.
 def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                           pulse: bool, multiplier: int, phases: dict, log,
-                          lead: int, share: bool, unions: dict) -> tuple:
+                          lead: int, share: bool, unions: dict,
+                          reserve: bool = False) -> tuple:
     """One layout pass: (entries, starts, index, dropped, silent, attempted,
     placed). `unions` is the subset of `_union_groups` laid as one block
     each (see `group_left` below); empty, every phase-tracked record lays
-    its own."""
+    its own. `reserve` holds back every later record's static width first
+    (`held_back` below)."""
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
     starts = [1] * lead
     index: dict = {}
@@ -1567,7 +1659,42 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
     group_left: dict = {k: dict(v) for k, v in unions.items()} if share else {}
     laid: dict = {}
 
-    for i in range(max(instr_used - lead, 0)):
+    nrec = max(instr_used - lead, 0)
+    # Under `reserve`, the rows every record after `i` needs for its static
+    # width -- the fallback any degraded record takes -- are held back before
+    # record `i` may spend rows on a sweep, a phase block or a union. A
+    # standalone static already in `seen`, or the same rows as an earlier
+    # pending one, costs nothing (`reuse`); a record a union block laid now
+    # would cover (`skip`), or one an already-laid union covers, costs
+    # nothing either. So while the statics alone fit, a record can lose its
+    # movement to the records ahead of it but never its width:
+    # `_lay_out_pulse`'s `reserve_for`, over every record.
+    statics = ([_pulse_program(sid, det, j, False, multiplier)
+                for j in range(nrec)] if reserve else [])
+
+    def held_back(i: int, skip=(), laying=None) -> int:
+        # `laying` is the (program, loop) record `i` is about to lay: a later
+        # static with the same standalone rows will reuse it, so it is not
+        # held a second time (Phantoms_of_the_Asteroid's shared table at a
+        # 59-row limit degraded 5 records that fit without this).
+        if not reserve:
+            return 0
+        rows, pending = 0, set()
+        if laying is not None and share and standalone(*laying):
+            pending.add(tuple(laying[0]))
+        for j in range(i + 1, nrec):
+            n = j + 1 + lead
+            if n in skip or any(n in unions[k] for k in laid):
+                continue
+            program, loop = statics[j]
+            if share and standalone(program, loop):
+                if tuple(program) in seen or tuple(program) in pending:
+                    continue
+                pending.add(tuple(program))
+            rows += len(program) + (loop is not None)
+        return rows
+
+    for i in range(nrec):
         num = i + 1 + lead
         want = phases.get(num)
         params = _phase_sweep_params(sid, det, i, multiplier) if want else None
@@ -1579,7 +1706,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                 continue
             start = len(entries) + 1
             block = program if loop is None else program + [(0xFF, start + loop)]
-            if len(entries) + len(block) > _gw_constants.GT_MAX_TABLELEN:
+            if (len(entries) + len(block) + held_back(i, laying=(program, loop))
+                    > _gw_constants.GT_MAX_TABLELEN):
                 # Out of table: keep the instrument, lose only its movement.
                 program, loop = _pulse_program(sid, det, i, False, multiplier)
                 dropped += 1
@@ -1614,7 +1742,9 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                 union = set().union(*group_left[key].values())
                 block, u_index = _phase_block(len(entries), 0, union,
                                               *params, share=True)
-                if len(entries) + len(block) <= _gw_constants.GT_MAX_TABLELEN:
+                if (len(entries) + len(block)
+                        + held_back(i, skip=group_left[key])
+                        <= _gw_constants.GT_MAX_TABLELEN):
                     union_rows = {(w, d): at for (_, w, d), at in u_index.items()}
                     laid[key] = union_rows
                     entries += block
@@ -1628,7 +1758,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
         block, phase_index = _phase_block(len(entries), num, want_set,
                                           *params, share=share)
 
-        if len(entries) + len(block) > _gw_constants.GT_MAX_TABLELEN:
+        if (len(entries) + len(block) + held_back(i)
+                > _gw_constants.GT_MAX_TABLELEN):
             # The sweep's own phase set will not fit: fall back exactly as
             # _pulse_layout does for a non-sweeping instrument -- a static
             # width first (no phase entries for this instrument, so its
