@@ -2347,6 +2347,26 @@ three refusals the schedule makes (row 0 belongs to the subtune's clock, the
 restore must stay inside the pattern, and a pattern reached by subtunes with
 different clocks is left alone).
 
+**A pair whose row is already carrying a command is MOVED, not dropped**
+(`patterns._shifted_regrid_spot`). The budget is debited before rows are
+chosen, so a declined pair is a call paid for and never delivered, once per
+play of the pattern. The moved pair goes to the nearest row whose own and next
+command cells are empty and which does not inherit a running 1XY-4XY (a
+`CMD_SETTEMPO` is one-shot and would carry a slide or a tie's `3 00` through
+both rows; 0XY is what stops one). Measured at 075a175 + this change, presets,
+the 15 `regrid` adopters: 69 declined pairs before (36 on a tie cell), 6
+after. 11 files' bytes move, which is exactly the 11 that had a declined pair.
+Their whole-orderlist ledger (calls delivered minus owed, subtune 0) goes Monty
+-16.5 -> -2.5 and Rikky -22.4 -> -0.4. At `-t 180`, `drift` per 1000 goes
+Monty -0.45 -> 0.00, Nemesis -0.33 -> 0.00, Pandora -0.46 -> 0.00,
+Sigma_Seven -0.81 -> 0.00, Nineteen -3.02 -> -1.61, Rikky -1.44 -> -0.77 and
+Trans-Atlantic -0.33 -> -0.22. Arcade_Classics (a held DIGI file, moved
+as a corpus-wide side effect) goes 0.00 -> +0.13. Bangkok, IK_plus and I_Ball do not move
+(their moved pairs are outside subtune 0's traced path). Monty's `gate` falls
+0.60 -> 0.50 at the harness's lag 5. That is alignment, not damage: the new
+build's gate scores 0.70 at lag 7, above the old build's best of 0.66 at
+lag 4.
+
 **It reaches 17 corpus files and is adopted on 13.** Measured by corpus
 byte-hash at f0fd20c: every file converted on its shipped preset with `regrid`
 forced False and then True, 89 of 89 converting in both arms, exactly 17 moved.

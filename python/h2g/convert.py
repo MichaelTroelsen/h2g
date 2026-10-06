@@ -488,6 +488,7 @@ def convert(sid_path: str, log: Logger = print,
     wave_notes, wave_copies = stored_wave_copies(
         sid, det, tracks, det.pattern_used + 1 + len(variants), floor, log,
         slides=slides, status_bit6=status_bit6)
+    want_event_rows = bool(pulse_phase and pulse and det.pulse_tri_hi >= 0)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -507,7 +508,7 @@ def convert(sid_path: str, log: Logger = print,
         # The triangle walk's fetch rows (patterns.collect_pulse_phases'
         # `event_rows`). Unlike `free_rows` the request moves no byte -- the
         # dedup key is left alone -- so it is made wherever that walk can run.
-        event_rows=bool(pulse_phase and pulse and det.pulse_tri_hi >= 0),
+        event_rows=want_event_rows,
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
@@ -562,7 +563,11 @@ def convert(sid_path: str, log: Logger = print,
         # restart position to choose.
         legalise_restarts(tracks, log,
                           new_patterns if silent_park else None,
-                          force_park=force_park)
+                          force_park=force_park,
+                          # The silent pattern's event starts, beside the
+                          # ones convert_patterns entered (only where asked).
+                          event_rows=(track_index.event_rows
+                                      if want_event_rows else None))
     # Every subtune dropped means the file carries no orderlist at all -- the
     # same refusal the empty-tracks case gets, for the same reason.
     if all(t == DEFAULT_TRACK for t in tracks):

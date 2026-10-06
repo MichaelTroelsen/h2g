@@ -562,10 +562,13 @@ def test_the_simulated_clock_is_re_measured_against_the_original():
 
 def test_the_standalone_phased_block_spells_frame_0_then_the_period():
     """`_pitch_seq_phased_entries`: entry `e` is frame `(e + 1) // m`, so
-    `m - 1` entries of the attack frame's own note, then the counter's whole
-    period one frame per `m` entries, looped onto the period's first entry.
-    No corpus record reaches this path (Food_Feud's two clocked records both
-    carry bit $04 and take the two-stage block), so it is pinned here."""
+    `m - 1` entries of the attack frame's own note -- never fewer than one,
+    because at -S1 entry 0 is the attack's named frame (task
+    mega-0a06-frame-2-pitch-move) -- then the counter's whole period one
+    frame per `m` entries, looped onto the period's first entry. Food_Feud's
+    two clocked records both carry bit $04 and take the two-stage block;
+    Mega_Apocalypse's four `$0A06` records reach this path at -S1
+    (tests/test_pitch_seq_flat_clock.py)."""
     from h2g import goatwriter as G
     notes, phases = [0x00, 124], (1, 0, 0, 0, 0, 1, 1, 1)
     left, right = G._pitch_seq_phased_entries(notes, phases, 0x11, 3,
@@ -574,7 +577,7 @@ def test_the_standalone_phased_block_spells_frame_0_then_the_period():
     assert right == [0, 0] + [124] * 3 + [0] * 12 + [124] * 9 + [5 + 2]
     left, right = G._pitch_seq_phased_entries(notes, phases, 0x11, 1,
                                               start=5, budget=200)
-    assert right == [124, 0, 0, 0, 0, 124, 124, 124, 5]
+    assert right == [0, 124, 0, 0, 0, 0, 124, 124, 124, 5 + 1]
     # a cell value with no step behind it declines rather than guessing
     assert G._pitch_seq_phased_entries(notes, (2,) * 8, 0x11, 1, 5, 200) is None
     # and a block that does not fit its budget declines

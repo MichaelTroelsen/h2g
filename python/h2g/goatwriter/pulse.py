@@ -1154,10 +1154,15 @@ def triangle_start(sid: SidFile, det: Detection,
 
 def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
                         multiplier: int) -> tuple | None:
-    """(width, GT speed, lo_v, hi_v, wrap) of record `i`'s sweep for the
-    phase table, whichever engine the file carries, or None where it does not
-    sweep. `wrap` says whether distances cross $FFF (the bounds engine) or
-    clamp (the triangle engine).
+    """(width, GT speed, lo_v, hi_v, wrap, step) of record `i`'s sweep for
+    the phase table, whichever engine the file carries, or None where it does
+    not sweep. `wrap` says whether distances cross $FFF at every width (the
+    bounds engine) or only where the equality turn says so (the triangle
+    engine); `step` is the triangle's own per-tick step, which decides that
+    (`_leg_ramps`), and None for the bounds engine. RETRACTED: "`wrap` says
+    whether distances cross $FFF (the bounds engine) or clamp (the triangle
+    engine)" -- the triangle's sweep crosses $FFF too, from any phase
+    outside its band.
 
     The two engines reach the same table shape from different record bytes:
     the triangle's step and delay are packed into +6 and its bounds are the
@@ -1175,27 +1180,93 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
         step, delay = _tri_step_delay(det, d[rec + 6])
         width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
         speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid))
-        return width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8, False
+        return (width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8,
+                False, step)
     rec = _bounds_record(sid, det, i)
     if rec is None:
         return None
     width, rate, lo, hi = rec
     speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / max(1, multiplier))))
-    return width, speed, lo << 8, hi << 8, True
+    return width, speed, lo << 8, hi << 8, True, None
 
 
-def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int) -> set:
+def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
+               step: Optional[int]) -> tuple[int, int]:
+    """(out, back): how far a phase (w, d)'s entry piece ramps in its own
+    direction, then back the other way, before it joins the loop at the
+    head of the other leg -- in width units, aimed at `hi_v` going up and
+    `lo_v` going down.
+
+    The bounds engine's distance is modulo $1000 at every width
+    (`_pulse_triangle_wrapped`), and it never comes back. The triangle
+    engine's is the distance its sweep actually TRAVELS, on its own step
+    lattice, to the first width whose high nibble EQUALS the bound it is
+    heading for (`PulsePhaseSim.advance`, the routine's `CMP #$0E / BNE`),
+    measured to the same edge the in-band ramp has always aimed at: arrival
+    less its overshoot past `hi_v` going up, arrival plus its height above
+    `lo_v` going down. Inside the band that is `hi_v - w` and `w - lo_v`,
+    exactly what the old clamp gave. Outside it the sweep runs on and wraps
+    where the clamp laid an empty ramp: Human_Race's instrument 2 at ($080,
+    down), step $80, descends $080 $000 $F80 ... to nibble 8 ($880 of
+    travel); Devils_Galop's instrument 10 at ($F00, up) climbs through $FFF
+    to nibble E ($F00); and a phase ON the low nibble whose first step
+    leaves it (Commando's instrument 7 at ($800, down), step $E0: $720 ...)
+    runs a whole $1000 lap.
+
+    `back` is non-zero in one case: a phase going up whose own nibble is
+    already the bound, so its first step turns it (Devils_Galop's and
+    Monty_on_the_Run's ($E00, up), step $80: $E80, turn, $E00 ...). There is
+    no edge ahead to aim at, so the piece climbs that one step and comes
+    back down to `hi_v`, which the sweep passes on its way down, and joins
+    the down leg there -- arriving ON the bound, so a record carrying such a
+    phase still chains (`_union_kind`). The clamp turned it at once, and the
+    attack read a step down.
+
+    RETRACTED: "The triangle engine's distances are clamped at zero, as they
+    always were here (its sim stores an at-bound value a step PAST the bound,
+    and a clamp is what keeps that phase's ramp empty)" -- with the equality
+    turn the sim stores no such value (it turns ON the step that reaches the
+    nibble), and the clamp emptied the ramps of the phases outside the band.
+    """
+    if wrap:
+        return ((hi_v - w) & 0xFFF if d > 0 else (w - lo_v) & 0xFFF), 0
+    if not step:
+        return (max(0, hi_v - w) if d > 0 else max(0, w - lo_v)), 0
+    bound = (hi_v if d > 0 else lo_v) >> 8
+    x, travel = w, 0
+    for _ in range(0x1000 // step + 2):
+        x = (x + step * d) & 0xFFF
+        travel += step
+        if x >> 8 == bound:
+            break
+    else:                            # never reaches the nibble: no turn
+        return (max(0, hi_v - w) if d > 0 else max(0, w - lo_v)), 0
+    if d < 0:
+        return travel + ((x - lo_v) & 0xFFF), 0
+    over = (x - hi_v) & 0xFFF
+    return (travel - over, 0) if travel > over else (travel, over)
+
+
+def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int,
+                    wrap: bool = False, step: Optional[int] = None) -> set:
     """The phases `_phase_block(share=True)` lays ON its chained legs: those
     inside [lo, hi] on the speed lattice measured from `lo`, and only where
-    the band itself is a whole number of steps."""
+    the band itself is a whole number of steps -- and only where the sweep
+    from the phase really runs the rest of that leg (`_leg_ramps` is the
+    in-band distance and no way back). A phase ON a bound heading out of
+    the band is on the lattice and on no leg: Human_Race's instrument 2 at
+    ($800, down), step $80, steps to $780 and laps $1000 before it turns,
+    where the chained down leg ends on it and turns at once."""
     if not (lo_v < hi_v and (hi_v - lo_v) % speed == 0):
         return set()
     return {(w, d) for (w, d) in want_set
-            if lo_v <= w <= hi_v and (w - lo_v) % speed == 0}
+            if lo_v <= w <= hi_v and (w - lo_v) % speed == 0
+            and _leg_ramps(w, d, lo_v, hi_v, wrap, step)
+            == ((hi_v - w if d > 0 else w - lo_v), 0)}
 
 
 def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
-                wrap: bool):
+                wrap: bool, step: Optional[int] = None):
     """Which union of `_lay_pulse_phase_table`'s shared pass a phase-tracked
     record may join: "chained" where every phase enters the loop exactly ON
     the bound its leg starts from, "plain" where it chains no phase at all,
@@ -1216,20 +1287,19 @@ def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
     56 entry points, and record 3's own pointer, off the per-phase widths
     within 3200 calls. Records of one kind share a loop whose widths are
     the ones their own blocks played, so every entry plays what it played."""
-    def dist(a: int, b: int) -> int:     # `_phase_block`'s, kept in step
-        return (a - b) & 0xFFF if wrap else max(0, a - b)
-
-    def lands(w: int, d: int) -> bool:
-        if d > 0:
-            return (w + dist(hi_v, w) // speed * speed) & 0xFFF == hi_v
-        return (w - dist(w, lo_v) // speed * speed) & 0xFFF == lo_v
+    def lands(w: int, d: int) -> bool:   # `_phase_block`'s ramps, `_leg_ramps`
+        out, back = _leg_ramps(w, d, lo_v, hi_v, wrap, step)
+        n = out // speed * speed - back // speed * speed
+        return (w + n * d) & 0xFFF == (hi_v if d > 0 else lo_v)
     if all(lands(w, d) for (w, d) in want_set):
         return "chained"
-    return None if _chained_phases(want_set, speed, lo_v, hi_v) else "plain"
+    return (None if _chained_phases(want_set, speed, lo_v, hi_v, wrap, step)
+            else "plain")
 
 
 def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                  lo_v: int, hi_v: int, wrap: bool,
+                 step: Optional[int] = None,
                  share: bool = False) -> tuple:
     """(rows, phase_index) for one sweeping record whose block opens after
     table row `base`: the alternating loop plus one entry point per phase in
@@ -1261,8 +1331,8 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     leg's head, and the jump from the other leg names the head, so the
     pass-through does not pay that row's held call. Only phases inside
     [lo, hi] on the speed lattice measured from `lo` are chained, and only
-    where the band itself is a whole number of steps; any other phase (the
-    triangle sim's at-bound value a step PAST the bound, say) keeps its own
+    where the band itself is a whole number of steps; any other phase (one
+    outside the band, say, whose piece wraps -- `_leg_ramps`) keeps its own
     piece, which jumps into the chained legs at their heads as it jumped
     into the plain ones -- and so a record is chained only where every such
     piece ARRIVES on its bound (`_union_kind`'s "chained"; see the gate
@@ -1271,11 +1341,8 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     the step and player.s `mt_nextpulsestep` after it).
     """
     def dist(a: int, b: int) -> int:
-        # The triangle engine's distances are clamped at zero, as they always
-        # were here (its sim stores an at-bound value a step PAST the bound,
-        # and a clamp is what keeps that phase's ramp empty). The bounds
-        # engine's are taken modulo $1000, because its sweep crosses $FFF
-        # rather than clamping (`_pulse_triangle_wrapped`).
+        # The loop's span only: an entry piece's ramps are `_leg_ramps`, which
+        # says why the triangle's no longer clamps.
         return (a - b) & 0xFFF if wrap else max(0, a - b)
     up_spd, down_spd = speed, (0x100 - speed) & 0xFF
 
@@ -1294,10 +1361,13 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     # down) beside 24 lattice phases, and from that entry the shared block
     # played $080 $0C0 $880 ... against the per-phase block's $080 $0C0
     # $100 ... (tests/test_pulse_phase_union.py). Such a record lays the
-    # plain loop instead -- its per-phase block, rows and all.
-    chained = (_chained_phases(want_set, speed, lo_v, hi_v)
-               if share and _union_kind(want_set, speed, lo_v, hi_v, wrap)
-               == "chained" else set())
+    # plain loop instead -- its per-phase block, rows and all. (Both of
+    # those plays were wrong: the sweep descends $080 $000 $F80 ..., which
+    # the piece now ramps (`_leg_ramps`), and a ramp of $880 at that record's
+    # speed $40 arrives ON $800, so the phase no longer blocks the chain.)
+    chained = (_chained_phases(want_set, speed, lo_v, hi_v, wrap, step)
+               if share and _union_kind(want_set, speed, lo_v, hi_v, wrap,
+                                        step) == "chained" else set())
 
     phase_index: dict = {}
     block: List[tuple] = []
@@ -1353,11 +1423,14 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
             continue
         at = base + len(block) + 1
         piece = [setrow(w)]
+        out, back = _leg_ramps(w, direction, lo_v, hi_v, wrap, step)
         if direction > 0:
-            piece += ramp(dist(hi_v, w) // speed, up_spd)
+            piece += ramp(out // speed, up_spd)
+            piece += ramp(back // speed, down_spd)
             piece += [(0xFF, down_head)]
         else:
-            piece += ramp(dist(w, lo_v) // speed, down_spd)
+            piece += ramp(out // speed, down_spd)
+            piece += ramp(back // speed, up_spd)
             piece += [(0xFF, up_head)]
         phase_index[(num, w, direction)] = at
         block += piece
@@ -1509,7 +1582,7 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 def _union_groups(sid: SidFile, det: Detection, instr_used: int,
                   multiplier: int, phases: dict, lead: int) -> dict:
     """The sweep groups `_lay_pulse_phase_table`'s shared pass may lay as
-    one union block: {(speed, lo_v, hi_v, wrap, kind): {num: want_set}}, only
+    one union block: {(speed, lo_v, hi_v, wrap, step, kind): {num: want_set}}, only
     groups of two or more records, in allocation order of their first
     member. `want_set` is the record's planned phases plus its own (width,
     up), exactly the set the pass lays for it alone."""
@@ -1605,7 +1678,13 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 # notes, `88 00 / 05 2B`) or record 15's (156 notes, `82 00 / 7F 01 ...`) as
 # its static width fits both unions with 22 kept (255 / 253 rows), and
 # which record should lose its sweep is a listening question.
-# tests/test_pulse_phase_shortfall.py pins all of this.
+# tests/test_pulse_phase_shortfall.py pins all of this. SUPERSEDED for
+# Gremlins by the triangle's wrap ramps (`_leg_ramps`): record 10's 12
+# phases outside the band ramp through the wrap, its block grows from 92 to
+# 113 rows, it degrades in every layout, and both unions now fit with 22
+# kept -- 168 rows, 3, 6, 7 and 20 swept (presets, forced `pulse_phase`,
+# 075a175 + that change). The figures above are the clamp's table, and the
+# test re-lays it with the ramps clamped to keep pinning them.
 def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                           pulse: bool, multiplier: int, phases: dict, log,
                           lead: int, share: bool, unions: dict,
@@ -1644,11 +1723,12 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
             seen.setdefault(tuple(program), start)
 
     # Under `share`, phase-tracked records whose sweeps agree on (speed, lo,
-    # hi, wrap) AND on `_union_kind` -- one group of `unions` -- share ONE
+    # hi, wrap, step) AND on `_union_kind` -- one group of `unions` -- share ONE
     # `_phase_block` laid over the union of their phase sets, and each
     # record's start and index entries point into it. A table row plays the
     # same whichever instrument's pointer reaches it, and the block's
-    # lattice -- its chained legs, its loop -- is set by those four alone
+    # lattice -- its chained legs, its loop, and (through `step`) the ramps
+    # of its phases outside the band -- is set by those five alone
     # (`_phase_block` reads `width` for nothing), so one loop serves where
     # each record carried its own; `_union_kind` says why the kind must
     # agree too. The union is laid at the group's first record; if it does

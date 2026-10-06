@@ -25,6 +25,14 @@ forced, measured at 8586101 (v0.5.511):
 
 The Gremlins clauses are unchanged by the reserve: its chosen layout puts
 no record on pointer 0, so `build_pulse_phase_table` never lays it again.
+
+They are NOT unchanged by the triangle's wrap ramps (`_leg_ramps`): record
+10's 12 phases outside the band now ramp through the 12-bit wrap, its block
+grows from 92 to 113 rows, it degrades in every layout, and both unions fit
+with 22 kept (168 rows; `test_pulse_phase_union.py` pins that). So every
+test here lays the table as it was measured, with the triangle's entry
+ramps clamped (`_the_clamp`); Last_V8 has no phase outside the band, so the
+clamp changes nothing there.
 """
 from __future__ import annotations
 
@@ -39,6 +47,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_pulse_phase import _corpus_and_presets  # noqa: E402
 
 _CACHE: dict = {}
+
+
+@pytest.fixture(autouse=True)
+def _the_clamp(monkeypatch):
+    """The table these clauses were measured on: the triangle's entry ramps
+    clamped at the bound, as `_phase_block` laid them before `_leg_ramps`
+    (its step-less reading). `_CACHE` only ever holds captures taken under
+    it."""
+    from h2g.goatwriter import pulse as P
+    real = P._leg_ramps
+    monkeypatch.setattr(P, "_leg_ramps", lambda w, d, lo_v, hi_v, wrap, step:
+                        real(w, d, lo_v, hi_v, wrap, None))
 
 
 def _capture(name: str) -> dict:

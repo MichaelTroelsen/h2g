@@ -12244,6 +12244,31 @@ gives each instrument the majority phase of its notes, walked with the same
 `_walk_note_rows` `fixed_arp_phases` now uses. It is reached only under
 `pitch_seq`, which Food_Feud's preset does not carry.
 
+**Mega_Apocalypse's UNDIVIDED phase is a clock too** (task
+mega-0a06-frame-2-pitch-move). Its four `$0A06` records (06, 07, 09, 0A,
+effect `$30`) carry bit `$10` with chord pairs `(5,8) (3,8) (5,9) (4,9)`, and
+the phase cell `$51BF` is stepped DOWN once a call behind the voice loop
+(`$4E78 DEX / BMI / JMP`, `$4E7E DEC $51BF / BPL / LDA #$02 / STA`), by the
+new-song call too (`$4ACF JMP $4E7E`). The row clock is `$4AEA DEC $DF / BPL /
+LDA $4F61 / STA $DF` with `LDA $DF / CMP $4F61 / BNE` in the voice loop and no
+outer gate; `$DF` is zero page, zeroed by the first song's init (`$580F LDX
+#$44 / LDA #0 / STA $B0,X`). So rows are 3 calls from call 1, every note
+attacks with the cell at 1, and the original plays `0, 0, hi, lo, 0, hi` from
+each of its 110 attacks in 180 s. The modal rotation gave `0, lo, hi` -- the
+counter read upward and a frame early -- 826 reversals against 716.
+`_pitch_seq_flat_clock` reads all of that (None on every other corpus file),
+`_pitch_seq_any_clock` hands it to the same phase walk, and at -S1 the phased
+block now leads with one entry of the attack's own note, because entry 0 is
+the frame the `$09` firstwave leaves the attack to be named from. Measured
+(siddump, -t 180, presets plus `pitch_seq` forced on both arms): `$0A06`
+reversals 826 -> 716 (original 716), the file's 4046 -> 3936 (0.907 -> 0.883:
+the old surplus on `$0A06` was offsetting deficits on `$09F9`/`$07E7`), ties
+9209 -> 9099, tie agreement 0.634 -> 0.640; melody 0.9334, sequence 0.9685 and
+pitch_jaccard 0.8298 identical on all four arms (preset off/on, before/after).
+Still behind `pitch_seq`, which the shipped preset does not carry for this
+file -- a one-song `presets.py --fidelity` search at 180 s selects it on both
+trees.
+
 **`$68` reads a stored waveform, not a note.** In ten players one instruction,
 `STA cell,X`, writes the voice's current waveform byte into the cell a `$68`
 fetch lands on, after the frequency lookup and in voice order 2,1,0 -- so the
@@ -12377,7 +12402,13 @@ written back on the first later row that would inherit the clone -- the next
 note row with an empty column, or the row after the tie as a re-latch -- and
 no pattern ends on a clone. A row declines and keeps the old spelling where its
 instrument cannot be settled, has no record to clone, is the pattern's last
-row, or where the instrument numbers run out. **Above -S1 the clones go
+row, or where the instrument numbers run out -- and they run out one below
+the lowest **dangling** reference, an instrument byte some pattern names above
+the records written (`clone_number_ceiling`), since a clone numbered onto it
+would satisfy it and silence the DANGLING warning; under FIXED options this
+stops Ricochet's decoy and clone 24 landing on `$11` and `$18` in patterns no
+orderlist reaches (none of the 89 preset conversions moves; 2026-10-06,
+075a175, `tests/test_clone_number_ceiling.py`). **Above -S1 the clones go
 behind a decoy** (`legato_slip_decoy`): `greloc.c:811-815` bumps `numnohr`
 after mapping the instruments, so `FIRSTLEGATOINSTR` (`:1134`) is one past the
 first legato record and `player.s` `mt_nohr_legato` gates that record off like
@@ -12708,6 +12739,11 @@ this engine's sweep wraps, which is also why Devils_Galop's at-bound $F00 and
 $E00 phases read a step down at a `-S2` attack. That is a separate, older
 limit of the table.
 
+(RETRACTED by section 7.ttttttt, as a description of the table: "Neither
+layout plays the original's wrap. The table's distances clamp where this
+engine's sweep wraps". The triangle's entry ramps now follow the sweep out of
+the band, and record 2's ($080, down) plays $080, $040, $000, $FC0.)
+
 **Corpus byte-hash** (`fidelity._preset_opts`, 89 preset files):
 
 * Under shipped presets: 89 converted, 0 refused, 89 compared, 0 moved. None
@@ -12800,3 +12836,147 @@ whose renamed columns hold no record of their own there.
   legato-family players these are declined, and opened as `free-note-pulse-only-variant`.
 - The "entered with two instruments" and "instrument unsettled" declines are opened
   as `free-note-two-instrument-entry-declines`.
+
+### 7.sssssss A plain program withholds three calls from the effects: `_free_gate_calls`
+
+Shipped in v0.5.512 (00d67fb), from task `expanding-vibrato-early-frames`; figures
+historical at 8586101, `-t 420` for Mega_Apocalypse and `-t 180` elsewhere, under presets.
+
+**The fall-through wavetable program holds back effect calls 1-3 of every note.**
+`[wave/00, tail/00, tail/00, FF/00]`, the shape `_wavetable_entries` falls through to, has
+three steps whose right side is `$00`. A step whose right side is not `$80` writes the
+note's frequency, zeroes `vibtime`, and skips the continuous effects for that call:
+`gplay.c` jumps to `PULSEEXEC` past `TICKNEFFECTS`, and `player.s` branches `bne
+mt_wavefreq` past `mt_wavedone`. So an instrument vibrato cannot move before call 4,
+frame 3 after the attack siddump names, whatever `vibdelay` says. Only the first step has
+to set the pitch; the other two re-write the same note.
+
+**The repair respells the later steps `/80`** ("no frequency change", the right side
+`_effect_call_list` already reads). The waveform writes stay. `_free_gate_calls`
+(`goatwriter/vibrato.py`) does this for each counter-gated record (`det.vibrato_gate.form
+== "counter"`) whose gate, `_counter_gate_call`, asks for a call the program withholds.
+`build.py` calls it before `_classic_gate_refine`, which then places `vibdelay` on the
+gate's call against the freed program. `_step_calls` and `_gate_start_call` are its
+helpers. It changes only:
+
+- a program of delay steps and one waveform (ignoring the gate bit);
+- every right side `$00` or `$80`;
+- a program ending in `FF/00`.
+
+A jump loops, any other right side is a note of its own, and a program that changes
+waveform is a byte-code interpreter's, which writes `$D401` itself (ACE_II record 9).
+A record whose gate already falls past the program keeps its bytes.
+
+**A swelling record keeps one reset.** `_expanding_vibrato_records` names the records
+`_expanding_vibrato_pass` commands hold rows for. A `4xy` changes the speed without
+resetting the oscillator's phase (`player.s` `mt_tick0_34` stores the parameter only;
+`mt_tick0_12`, the portamentos, is what clears `mt_chnvibtime`). Freed all the way,
+Mega_Apocalypse `$0B08` swung off-centre, a semitone flat on average. So for those
+records the last step, and every step from the first hold row's call on, stays `/00`.
+
+Measured:
+
+- Mega_Apocalypse `$0B08` first move: original `{1:75, 2:21}`, before `{3:96}`, after `{1:96}`.
+- Mega_Apocalypse `$09F9`: original `{1:437, 2:52, ...}`, before `{1:370, 3:116, ...}`,
+  after `{1:486, 19:4}`.
+- Nemesis_the_Warlock `$0B09` (original 1): 5 -> 4. That gap is opened as
+  `nemesis-counter-gate-age-1-move`.
+- Corpus byte-hash: 6 of 89 move (IK_plus, Mega_Apocalypse, Nemesis_the_Warlock, held
+  Ricochet, Star_Paws, Thundercats). Every changed byte is a `$00 -> $80` right side or a
+  `vibdelay` byte. Commando is unchanged.
+- `tests/test_free_gate_calls.py` pins it.
+
+### 7.ttttttt The triangle's entry ramps follow the sweep out of its band
+
+From task `triangle-table-wraps-out-of-band-phases`, opened by the lockstep walk
+(section 7.qqqqqqq). Figures taken at 075a175 plus this change, presets with
+`pulse_phase` forced unless said otherwise, 180 s.
+
+**The defect.** `_phase_block` laid each phase's entry piece as a ramp to its bound,
+and for the triangle engine it clamped that distance at zero. Inside the band this
+is the same as the player. Outside it, the player's sweep keeps going. It steps a
+12-bit accumulator and turns only when the high nibble EQUALS the bound it is
+heading for (`PulsePhaseSim.advance`), so it runs through the wrap. The clamp gave
+those phases an empty ramp, and they turned at once.
+
+**The ramp** (`goatwriter.pulse._leg_ramps`) walks the record's own step lattice
+from the phase to the first width whose nibble is the bound. It then measures to
+the same edge the in-band ramp has always aimed at: `hi_v` going up, `lo_v` going
+down. Inside the band that gives exactly the old distances. The test checks every
+width and every step. Outside the band there are four shapes:
+
+* Below the band going down, it wraps. Human_Race's instrument 2 at ($080, down),
+  step $80, travels $880.
+* Above the band going up, it wraps. Devils_Galop's instrument 10 at ($F00, up)
+  travels $F00.
+* On the low nibble going down, a first step that leaves the nibble laps $1000.
+  An example is Commando's instrument 7 at ($800, down), step $E0.
+* On the high nibble going up, a first step that stays in the nibble climbs one
+  step and turns. An example is ($E00, up), step $80, on Devils_Galop and
+  Monty_on_the_Run. Nothing lies ahead to aim at, so the piece climbs that step
+  and ramps back down to `hi_v`, which the sweep passes on its way down. It
+  arrives ON the bound.
+
+`_phase_sweep_params` now also carries the triangle's step, so the shared pass
+groups unions by step as well. `_chained_phases` leaves out a lattice phase whose
+sweep leaves the band, because it lies on no leg. Without that exclusion, Human_Race
+instrument 2's ($800, down) in a union played $800, $840 where its own block plays
+$800, $7C0. The test that caught it is
+`test_pulse_phase_union.py::test_union_blocks_play_the_widths_each_record_played_alone`.
+
+Over the whole corpus, 31 of 1918 planned triangle phases change ramp. They fall in
+six files: Commando 2, Devils_Galop 2, Gremlins 12, Human_Race 8, Monty_on_the_Run 4
+and Thing_on_a_Spring 3.
+
+**Corpus byte-hash** (`fidelity._preset_opts`, 89 preset files):
+
+* Shipped presets: 89 converted, 0 refused, 89 compared, 1 moved, Commando. Its
+  presets ship `pulse_phase`. `Commando.sng`, the default-options fixture, stays
+  byte-identical.
+* Forced `pulse_phase`: 89/0/89, 6 moved: Commando, Devils_Galop, Gremlins,
+  Human_Race, Monty_on_the_Run and Thing_on_a_Spring. These are exactly the six
+  files above.
+
+**Commanded but wrong at the packed attack.** This uses `test_triangle_lockstep._reach`'s
+rule, so figures are reached/paired.
+
+* Devils_Galop v0: 494/551 → 551/551.
+* Devils_Galop v1: 60/61 → 61/61.
+* Monty_on_the_Run v0: 387/405 → 401/405.
+  * Its 2 wrong attacks go to 0.
+  * Instrument 10 now chains and unions with 1 and 11. That frees the rows
+    instrument 16 needed, so 12 un-commanded notes get their command.
+  * v1 goes from 1/61 to 0/61.
+* Every other paired voice of the six is unchanged.
+
+Table rows:
+
+| File | Before | After |
+|---|---|---|
+| Human_Race | 237 | 179 |
+| Gremlins | 252 | 168 |
+| Monty_on_the_Run | 251 | 245 |
+| Commando | 127 | 129 |
+| Devils_Galop | 175 | 174 |
+| Thing_on_a_Spring | 126 | 133 |
+
+Human_Race's instrument 2 now chains and unions with instrument 1. Gremlins'
+instrument 10 grows from 92 to 113 rows. It already lost its phases to a static
+width before this change and still does, and both unions now fit. Monty gains
+instrument 16.
+
+**What the reached count does not say.** The packed trace was compared frame by
+frame with the original's, from each paired attack, for up to 12 frames. Agreement
+means within one table step. Across the 110 paired notes planned on these phases
+(commanded or not), agreement goes
+from 90 to 127 of 1170 frames. Human_Race subtune 0 voice 1 goes from 3/24 to
+24/24, and Thing_on_a_Spring v2 from 8/60 to 20/60.
+
+Devils_Galop's 57 notes are 57/588 before and after. Instrument 10 is swept by v0
+(planned $F00 up) and v1 ($F00 down) on the same notes, and the original HOLDS $F00
+through them. The wrap ramp now climbs where the clamp descended. Only the attack
+frame agrees, in either layout. Monty_on_the_Run v0's two notes go from 4/24 to
+2/24, on its instrument 10 with the same two-voice shape.
+
+A per-voice phase (w, d) cannot say "hold". This is the limit the reached count
+hides, and it is left open.

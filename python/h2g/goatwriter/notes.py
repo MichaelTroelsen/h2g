@@ -353,16 +353,27 @@ def _pitch_seq_phased_entries(notes: List[int], phases: tuple, wave: int,
     `multiplier - 1` entries of frame 0, then the period, one frame being
     `multiplier` entries, looped onto its own first entry -- which is
     continuous because the period is the counter's whole cycle.
+
+    **At -S1 frame 0 is entry 0, not the firstwave call.** The note's call
+    0 writes only the `$09` firstwave, below `$10` (siddump.c:436), so the
+    attack is named -- and first heard -- on call 1, entry 0: the same reason
+    `_pitch_seq_entries` puts the zero step there at `hold == 1`. So one
+    entry of the attack's own note leads, never fewer (task
+    mega-0a06-frame-2-pitch-move: Mega_Apocalypse `$0A06`, the first -S1
+    record on this path, read `0, 8, 3, 0` from its attack without it
+    against the original's `0, 0, 8, 3` on all 110 notes). At -S2 and up
+    `multiplier - 1` is already at least one.
     """
     m = max(1, multiplier)
+    lead = max(1, m - 1)
     body: List[int] = []
     for f in range(1, len(phases) + 1):
         n = _phase_note(notes, phases, f)
         if n is None:
             return None
         body += [n] * m
-    right = [WAVE_NOTE_BASE] * (m - 1) + body
+    right = [WAVE_NOTE_BASE] * lead + body
     if len(right) + 1 > budget:
         return None
     left = [wave] * len(right) + [0xFF]
-    return left, right + [start + m - 1]
+    return left, right + [start + lead]

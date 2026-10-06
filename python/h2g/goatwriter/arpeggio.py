@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 from bisect import (bisect_right)
 from collections import (Counter)
 from dataclasses import (dataclass)
@@ -18,6 +19,7 @@ from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         FIXED_ARP_SPLIT_FACTOR, FIXED_ARP_TIE_SHARE,
                         GT_FIRST_NOTE, GT_LAST_NOTE, NIBBLE_GATE_MAX_HALVES,
                         OUTER_GATE, OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE,
+                        SPEED_GATE_ZP,
                         TEMPO_DUTY_MAX_CLONE, WAVE_JUMP, WAVE_MAX_DELAY,
                         WAVE_NOTE_BASE)
 from .primitives import (_fixed_arp_block, _gate_calls, _wave_hold_byte)
@@ -342,8 +344,138 @@ class PitchSeqClock:
     divider_reload: int
     phase: int              # initial byte of the phase cell
     phase_reload: int       # steps - 1
-    outer: int              # initial byte of the outer gate's cell
+    outer: Optional[int]    # initial byte of the outer gate's cell; None:
+    #                         the player has no outer gate (every call runs
+    #                         the row clock -- `_pitch_seq_flat_clock`)
     inner: int              # initial byte of the speed gate's cell
+
+
+# `_pitch_seq_flat_clock`'s pieces, Mega_Apocalypse's spelling ($4AEA,
+# $4AF9, $4E78, $580F). The voice loop's exit sits directly in front of the
+# phase's `DEC`, so the cell steps once per call after all three voices.
+PITCH_SEQ_VOICE_EXIT = bytes([0xCA, 0x30, 0x03, 0x4C])     # DEX / BMI +3 / JMP
+# `LDA zp / CMP abs / BNE` -- a voice takes a row only on the call that
+# reloaded the zero-page speed counter (`fixed_arp_first_fetch`'s guard).
+PITCH_SEQ_ZP_FETCH_GUARD = re.compile(rb"\xa5(.)\xcd(..)\xd0", re.DOTALL)
+PITCH_SEQ_ZP_GUARD_WINDOW = 16
+# `LDX #n / LDA #0 / STA zp,X / DEX / BPL -5`: the init's clear of the
+# player's zero-page state, cells `zp .. zp + n`.
+PITCH_SEQ_ZP_CLEAR = re.compile(rb"\xa2(.)\xa9\x00\x95(.)\xca\x10\xfb",
+                                re.DOTALL)
+PITCH_SEQ_INIT_WINDOW = 0x60     # bytes of the PSID init searched for its JSR
+# Every opcode that can write an absolute cell -- STA/STX/STY abs[,X/Y],
+# INC/DEC abs[,X], ASL/LSR/ROL/ROR abs[,X].
+_ABS_WRITERS = (0x8D, 0x9D, 0x99, 0x8E, 0x8C, 0xEE, 0xFE, 0xCE, 0xDE,
+                0x0E, 0x1E, 0x4E, 0x5E, 0x2E, 0x3E, 0x6E, 0x7E)
+
+
+def _init_clears_zp(sid: SidFile, cell: int) -> bool:
+    """Whether the PSID init's first-song path zeroes zero-page `cell`.
+
+    Mega_Apocalypse's init ($5822) ends `PLA / BNE $5882 / JSR $4AA0` -- the
+    first song (A = 0) takes the `JSR` -- and `$4AA0` is the player's own
+    `JMP init` ($580F: `LDX #$44 / LDA #$00 / STA $B0,X / DEX / BPL`), so the
+    whole of `$B0-$F4`, the speed counter `$DF` among it, reads 0 on the
+    first play call. Required in that order -- a `JSR` in the init's first
+    `PITCH_SEQ_INIT_WINDOW` bytes onto a `JMP` onto the clear loop, the cell
+    inside the loop's range -- and False otherwise: a zero-page cell holds no
+    file byte, so this is the only reading of its first value there is.
+    """
+    data = sid.data
+    start = sid.to_offset(sid.init_addr)
+    if not 0 <= start < len(data):
+        return False
+    for p in range(start, min(start + PITCH_SEQ_INIT_WINDOW, len(data) - 2)):
+        if data[p] != 0x20:
+            continue
+        t = sid.to_offset(data[p + 1] | data[p + 2] << 8)
+        if not 0 <= t < len(data) - 2 or data[t] != 0x4C:
+            continue
+        j = sid.to_offset(data[t + 1] | data[t + 2] << 8)
+        if not 0 <= j < len(data):
+            continue
+        m = PITCH_SEQ_ZP_CLEAR.match(data, j)
+        if m is not None and m.group(2)[0] <= cell <= (
+                m.group(2)[0] + m.group(1)[0]):
+            return True
+    return False
+
+
+def _pitch_seq_flat_clock(sid: SidFile,
+                          det: Detection) -> Optional[PitchSeqClock]:
+    """The UNDIVIDED bit-$10 clock, read from Mega_Apocalypse's shape.
+
+    The phase cell steps once per call and the row clock has no outer gate:
+
+        4AA6  ... BIT $E5 / BMI / BVC $4AE8        ; play entry
+        4AB1  (new song) clear the voices ... JMP $4E7E
+        4AE8  LDX #$02 / DEC $DF / BPL +5 / LDA $4F61 / STA $DF   ; speed
+        4AF3  voice loop: LDA $DF / CMP $4F61 / BNE (no fetch) ...
+        4DF2  ... the bit-$10 block: LDY $51BF ...
+        4E78  DEX / BMI +3 / JMP $4AF3              ; voice loop exit
+        4E7E  DEC $51BF / BPL / LDA #$02 / STA $51BF ; the phase
+
+    so the new-song call steps the phase and nothing else, and each later
+    call reloads `$DF` on its underflow, fetches a row on that call, reads
+    the phase in the voice loop and steps it after. `$DF` is zero page, so
+    its first value is the init's (`_init_clears_zp`); the phase cell's is
+    its file byte, and nothing but the reload writes it. Every piece is
+    required, as `_pitch_seq_clock`'s are, and None otherwise.
+
+    Expressed as a `PitchSeqClock` with a divider that reloads to 0 (so the
+    phase steps every call) and `outer=None`.
+    """
+    seq = det.pitch_seq
+    if seq is None or seq.frames_per_step != 1 or seq.pairs < 0:
+        return None
+    data = sid.data
+    at = -1
+    for shape, _ in PITCH_SEQ_SHAPES:
+        at = search_file(data, shape)
+        if at >= 1:
+            break
+    if at < 1:
+        return None
+    lo, hi = data[at + PITCH_SEQ_AT_PHASE], data[at + PITCH_SEQ_AT_PHASE + 1]
+    dec = bytes([0xCE, lo, hi, 0x10])
+    reload_at = data.find(dec)
+    while reload_at >= 0:
+        j = reload_at
+        if (j + 9 < len(data) and data[j + 5] == 0xA9
+                and data[j + 7] == 0x8D and data[j + 8] == lo
+                and data[j + 9] == hi):
+            break
+        reload_at = data.find(dec, reload_at + 1)
+    if reload_at < 6:
+        return None
+    if data[reload_at - 6:reload_at - 2] != PITCH_SEQ_VOICE_EXIT:
+        return None
+    writes = sum(data.count(bytes([op, lo, hi])) for op in _ABS_WRITERS)
+    if writes != 2:                      # the DEC and the reload's STA only
+        return None
+    phase_addr = sid.to_address(reload_at)
+    if data.find(bytes([0x4C, phase_addr & 0xFF, phase_addr >> 8])) < 0:
+        return None                      # no new-song JMP to the phase
+    if OUTER_GATE.search(data) is not None:
+        return None
+    hits = [m for m in SPEED_GATE_ZP.finditer(data)
+            if m.group(1) == m.group(3)]
+    if not hits:
+        return None
+    g = min(hits, key=lambda m: abs(m.start() - det.instr_start))
+    cell = g.group(1)[0]
+    guard = PITCH_SEQ_ZP_FETCH_GUARD.search(
+        data, g.end(), g.end() + PITCH_SEQ_ZP_GUARD_WINDOW)
+    if guard is None or guard.group(1)[0] != cell or guard.group(2) != g.group(2):
+        return None
+    if not _init_clears_zp(sid, cell):
+        return None
+    off = sid.to_offset(lo | hi << 8)
+    if not 0 <= off < len(data):
+        return None
+    return PitchSeqClock(divider=0, divider_reload=0, phase=data[off],
+                         phase_reload=data[reload_at + 6], outer=None,
+                         inner=0)
 
 
 def _pitch_seq_clock(sid: SidFile, det: Detection) -> Optional[PitchSeqClock]:
@@ -369,6 +501,9 @@ def _pitch_seq_clock(sid: SidFile, det: Detection) -> Optional[PitchSeqClock]:
     ten bytes before the phase reload, and a `JMP` to that divider -- and
     None otherwise: no other corpus player has a divider, and a clock
     assumed rather than read would put a wrong phase on every note.
+
+    The UNDIVIDED counter is `_pitch_seq_flat_clock`'s; `_pitch_seq_any_clock`
+    is the one the phase walks ask.
     """
     seq = det.pitch_seq
     if seq is None or seq.frames_per_step <= 1 or seq.pairs < 0:
@@ -423,6 +558,14 @@ def _pitch_seq_clock(sid: SidFile, det: Detection) -> Optional[PitchSeqClock]:
                          outer=cells[2], inner=cells[3])
 
 
+def _pitch_seq_any_clock(sid: SidFile,
+                         det: Detection) -> Optional[PitchSeqClock]:
+    """The bit-$10 clock the phase walks simulate: the divided one
+    (`_pitch_seq_clock`, Food_Feud) or the undivided one
+    (`_pitch_seq_flat_clock`, Mega_Apocalypse), or None."""
+    return _pitch_seq_clock(sid, det) or _pitch_seq_flat_clock(sid, det)
+
+
 def _countdown(value: int, reload: int) -> tuple:
     """One `DEC cell / BPL / LDA #reload / STA cell`: (new value, reloaded)."""
     value = (value - 1) & 0xFF
@@ -452,11 +595,29 @@ def _pitch_seq_calls(clock: PitchSeqClock, frames: int, skip: int):
     outer, inner = clock.outer, clock.inner
     while True:
         seen = state
-        outer, under = _countdown(outer, skip)
-        if not under:
+        if outer is None:                # no outer gate: every call counts
             inner, _ = _countdown(inner, frames - 1)
+            fetch = inner == frames - 1
+        else:
+            outer, under = _countdown(outer, skip)
+            if not under:
+                inner, _ = _countdown(inner, frames - 1)
+            fetch = outer != 0 and inner == frames - 1
         state = _pitch_seq_advance(clock, state)
-        yield seen, outer != 0 and inner == frames - 1, state
+        yield seen, fetch, state
+
+
+def _pitch_seq_rate_read(clock: PitchSeqClock, frames, skip,
+                         group: int) -> bool:
+    """Whether subtune `group`'s row clock is one `clock` can walk: a row
+    length, and an outer gate exactly where the clock read one. The flat
+    clock (`outer=None`) is the first subtune's only -- its speed counter's
+    first value was read on the init's first-song path (`_init_clears_zp`)."""
+    if not frames:
+        return False
+    if clock.outer is None:
+        return not skip and group == 0
+    return bool(skip)
 
 
 def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -489,9 +650,10 @@ def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     notes split three ways by row mod 3 -- and `pitch_seq_phase_split_plan`
     gives each minority state a clone of its own; this stays the record's.
 
-    Empty wherever the clock is not read, which is every file but Food_Feud.
+    Empty wherever no clock is read (`_pitch_seq_any_clock`), which is every
+    file but Food_Feud and Mega_Apocalypse.
     """
-    clock = _pitch_seq_clock(sid, det)
+    clock = _pitch_seq_any_clock(sid, det)
     if clock is None:
         return {}
     speeds = _gw_tempo.find_song_speeds(sid, det)
@@ -503,7 +665,7 @@ def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     votes: dict = {}
     for g in range(groups):
         frames, skip = speeds.frames_for(g), speeds.skip_for(g)
-        if not frames or not skip:
+        if not _pitch_seq_rate_read(clock, frames, skip, g):
             continue
         notes = []
         for ti in range(3 * g, 3 * g + 3):
@@ -532,7 +694,7 @@ def _pitch_seq_fetched(clock: PitchSeqClock, frames: int, skip: int,
     `need` row fetches -- row `k`'s attack state is element `k`."""
     fetched: List[tuple] = []
     calls = _pitch_seq_calls(clock, frames, skip)
-    for _ in range(need * (frames + 1) * (skip + 1) + 64):
+    for _ in range(need * (frames + 1) * ((skip or 0) + 1) + 64):
         if len(fetched) >= need:
             break
         seen, fetch, _after = next(calls)
@@ -563,7 +725,7 @@ def pitch_seq_note_phases(sid: SidFile, det: Detection,
     note the whole vote. None wherever `pitch_seq_phases` is empty for want
     of a clock or a row length.
     """
-    clock = _pitch_seq_clock(sid, det)
+    clock = _pitch_seq_any_clock(sid, det)
     if clock is None:
         return None
     speeds = _gw_tempo.find_song_speeds(sid, det)
@@ -575,7 +737,7 @@ def pitch_seq_note_phases(sid: SidFile, det: Detection,
     tuples: dict = {}
     for g in range(len(tracks) // 3):
         frames, skip = speeds.frames_for(g), speeds.skip_for(g)
-        if not frames or not skip:
+        if not _pitch_seq_rate_read(clock, frames, skip, g):
             continue
         laid = []                            # (ti, pos, play, {k: row})
         need = 0
@@ -629,7 +791,8 @@ def pitch_seq_phase_split_plan(sid: SidFile, det: Detection,
     `_wavetable_entries` as `pitch_phase`); a state whose block would be the
     record's (`distinct`) gets none. Callers gate on `pitch_seq`, GTS5 and
     `det.pitch_seq`, exactly as `pitch_seq_phases`' caller does; empty
-    wherever the clock is not read, which is every file but Food_Feud.
+    wherever no clock is read, which is every file but Food_Feud and
+    Mega_Apocalypse.
     """
     if det.pitch_seq is None:
         return None

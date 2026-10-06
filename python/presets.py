@@ -903,6 +903,11 @@ CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
 # all seven toggles free regardless of window (at 60 s because nothing
 # improves, at 180 s because melody falls), which is the per-song trade this
 # file's docstring elsewhere says the search cannot select.
+# RE-MEASURED at 075a175 (task mega-0a06-frame-2-pitch-move, -t 180): melody
+# 0.9334, sequence 0.9685 and pitch_jaccard 0.8298 with `pitch_seq` off and
+# on alike, and a one-song `--fidelity` search into scratch SELECTS it, on
+# 075a175 and on the flat-clock change alike -- the refusal above is
+# historical; shipped presets.json still lacks it until the next search.
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the

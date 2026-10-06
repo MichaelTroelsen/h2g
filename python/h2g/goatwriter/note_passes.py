@@ -427,6 +427,25 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
     return out, clones, declined
 
 
+def clone_number_ceiling(patterns: List[List[int]], written: int) -> int:
+    """The highest number a clone appended after record `written` may take:
+    one below the lowest DANGLING reference -- an instrument byte some
+    pattern names above `written` -- else `GT_MAX_INSTRUMENTS`.
+
+    Clones are numbered upward from `written + 1`, and a dangling byte is
+    only dangling because nothing sits at its number yet. A clone given that
+    number would satisfy it: every row naming it (bytes that were never note
+    data, in the patterns no orderlist reaches, on every corpus case so far)
+    silently plays the clone, and build_sng's DANGLING warning, which tests
+    `> written_instr`, stops reporting it. Every pattern is scanned, played
+    or not, the same set that warning scans (`_highest_instrument_referenced`):
+    the converter must not satisfy a reference it did not mean to."""
+    taken = [p[k] for p in patterns for k in range(1, len(p), 4)
+             if p[k] > written]
+    return min(GT_MAX_INSTRUMENTS, min(taken) - 1) if taken \
+        else GT_MAX_INSTRUMENTS
+
+
 def _packed_patterns(tracks: List[List[int]], count: int) -> Set[int]:
     """The patterns gt2reloc marks `pattused` (greloc.c:200-218): those an
     orderlist names before its `$FF`, in a subtune whose three orderlists

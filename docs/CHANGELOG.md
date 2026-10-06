@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.513 — 2026-10-06
+
+- runqueue cycle 1 at 075a175 -- 9 tasks, 6 worktree patches merged (one METHOD section renumbered by hand); 12 converted files move under presets, exactly the union the agents reported
+
 ## 0.5.512 — 2026-10-06
 
 - runqueue drain, two cycles at 8586101 -- 18 tasks, 14 worktree patches merged (two hand-resolved, then two rebase patches); 20 converted files move, exactly the union the agents reported

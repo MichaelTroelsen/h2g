@@ -21,6 +21,9 @@ from .patterns import (DEFAULT_TRACK, GT_END_PATTERN, GT_KEYOFF, GT_LASTNOTE,
 # "stop", so this is the nearest thing to one that the format can express --
 # see legalise_restarts.
 SILENT_PATTERN = [GT_KEYOFF, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+# Its event starts (`TrackIndex.event_rows`, read by the triangle walk): the
+# KEYOFF row is the one event the pattern holds, ENDPATT is not a row.
+SILENT_EVENT_ROWS = frozenset({0})
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
@@ -1432,7 +1435,9 @@ def voices_end_together(group: List[List[int]],
 
 def legalise_restarts(tracks: List[List[int]], log=None,
                       patterns: List[List[int]] | None = None,
-                      force_park: bool = False) -> int:
+                      force_park: bool = False,
+                      event_rows: Optional[Dict[int, Optional[frozenset]]] = None
+                      ) -> int:
     """Replace restart positions Goattracker's exporter refuses, in place.
 
     Hubbard's `$FE` track marker means *this tune has ended*. Every dialect
@@ -1469,6 +1474,20 @@ def legalise_restarts(tracks: List[List[int]], log=None,
     pattern table, a track that ended is parked on a SILENT pattern appended
     to its own orderlist instead of being restarted at 0. See the branch
     below. Without it the behaviour is exactly as before.
+
+    `event_rows` is `TrackIndex.event_rows`, given where the triangle walk
+    reads it: the appended silent pattern is entered there as
+    `SILENT_EVENT_ROWS`, as convert_patterns enters its variants and
+    waveform-state copies. It is a pattern of our own, not a copy, so
+    `inherit_event_rows`' note-column match found no source for it, and it
+    was the ONE pattern per parking file that reached the walk unattributed
+    (measured at 075a175, presets with `pulse_phase` forced: 11 files, the
+    silent pattern on 3-24 positions each; tests/test_silent_park_event_rows.py).
+    The walk read it by its bytes, where a KEYOFF row is a fetch -- the same
+    answer, so entering it moves no byte (corpus byte-hash at 075a175: 0
+    moved, shipped and forced); what it buys is that the walk reads every
+    pattern it plays by the decoder's channel, and that a copy a later pass
+    might make of the silent pattern would inherit by note column.
 
     `force_park` parks a track whose restart is ALREADY LEGAL, which is the
     only way to end a tune whose data never says it ended. Confuzion is the
@@ -1643,6 +1662,8 @@ def legalise_restarts(tracks: List[List[int]], log=None,
             if silent[0] is None:
                 silent[0] = len(patterns)
                 patterns.append(list(SILENT_PATTERN))
+                if event_rows is not None:
+                    event_rows[silent[0]] = SILENT_EVENT_ROWS
             track.insert(songlen, silent[0])
             track[songlen + 2] = songlen     # the parked entry's own index
             parked += 1

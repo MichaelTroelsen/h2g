@@ -7,7 +7,7 @@ from ..detect import (Detection)
 from ..sidfile import (SidFile)
 from .constants import (CMD_SETPULSEPTR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         DEFAULT_FORMAT, FIRSTWAVE_TESTBIT, FORMAT_GTS5,
-                        FORMATS, GATETIMER_LEGATO)
+                        FORMATS, GATETIMER_LEGATO, GT_MAX_INSTRUMENTS)
 from .instruments import (_build_header, _instruments_used, record_envelope,
                           _table_length_byte, _write_instruments)
 from .arpeggio import (apply_tempo_duty_edits, fixed_arp_phase_split_plan,
@@ -349,9 +349,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # those lock the octave to the row (`fixed_arp_tie_row_entries`).
     arp_tie_rows = (fixed_arp_tie_rows(sid, det, tracks, patterns)
                     if effects and det.arp_fixed_up else None)
-    # Bit $10's global phase, the same walk: only where the counter is
-    # divided and its clock is read (`_pitch_seq_clock` -- Food_Feud), and
-    # only behind the option that emits the arpeggio at all.
+    # Bit $10's global phase, the same walk: only where its clock is read
+    # (`_pitch_seq_any_clock` -- Food_Feud's divided one, Mega_Apocalypse's
+    # undivided one), and only behind the option that emits the arpeggio at
+    # all.
     pitch_phases = (_gw_arpeggio.pitch_seq_phases(sid, det, tracks, patterns)
                     if pitch_seq and fmt == FORMAT_GTS5
                     and det.pitch_seq is not None else None)
@@ -567,10 +568,17 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # gt2reloc's slip turns into a no-HR record (see the decline above);
         # the clones are numbered after it.
         slip = 1 if multiplier > 1 else 0
+        # The clones (and the decoy, written_instr + 1) stay below every
+        # dangling reference, which a clone numbered onto it would satisfy
+        # (`clone_number_ceiling`).
+        ceiling = _gw_note_passes.clone_number_ceiling(patterns, written_instr)
         before = patterns
         patterns, legato_clones, declined = legato_tie_clones(
             patterns, still, tracks, cloneable, written_instr + 1 + slip,
-            log=log)
+            last_number=ceiling, log=log)
+        if log and declined and ceiling < GT_MAX_INSTRUMENTS:
+            log(f"Legato tie..............: clone numbers stop at {ceiling}, "
+                f"below dangling instrument ${ceiling + 1:X}")
         decoy = (_gw_note_passes.legato_slip_decoy(
             patterns, tracks, written_instr, written_instr + 1)
             if slip and legato_clones else None)
@@ -631,7 +639,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             patterns, note_bit7_rows(patterns, known_bit7, decoded))
         patterns, free_variants, _kept = _gw_note_passes.free_note_variants(
             patterns, free_rows, tracks, free_starts, written_instr + 1,
-            log=log)
+            last_number=_gw_note_passes.clone_number_ceiling(
+                patterns, written_instr), log=log)
         for base, _number in free_variants:
             rec = instr_at + 1 + (base - 1) * 25
             clone = bytearray(out[rec:rec + 25])

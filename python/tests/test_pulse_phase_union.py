@@ -9,7 +9,8 @@ and index pointing into it. Three properties hold that up, one test each:
   phase plays from the unlimited per-phase layout -- including on
   5_Title_Tunes' first table, where records 3 and 6 share a sweep but not a
   `_union_kind`, and a union across kinds plays 22 of 56 entries off;
-* a union is never taken where it silences a record -- on Gremlins both
+* a union is never taken where it silences a record -- on Gremlins, with
+  the triangle's out-of-band ramps laid empty as before `_leg_ramps`, both
   unions together put record 22 (1344 note rows) on pointer 0;
 * the unions are taken where they help: fewer rows, fewer records degraded.
 
@@ -112,13 +113,29 @@ def test_5_title_tunes_records_3_and_6_share_a_sweep_not_a_kind():
     assert P._union_groups(sid, det, iu, mult, phases, lead) == {}
 
 
-def test_no_union_silences_a_record():
-    """Gremlins: unioning (3, 7) and (6, 20) together keeps 10 and 20 swept
-    but puts record 22 -- 1344 note rows -- on pointer 0; (6, 20) alone keeps
-    20 swept and degrades only 10, to its static width. The layout takes the
-    one that silences nothing."""
+def test_no_union_silences_a_record(monkeypatch):
+    """Gremlins, with its triangle phases outside the band laid as the
+    clamp laid them (empty ramps -- the table before `_leg_ramps`): unioning
+    (3, 7) and (6, 20) together keeps 10 and 20 swept but puts record 22 --
+    1344 note rows -- on pointer 0; (6, 20) alone keeps 20 swept and
+    degrades only 10, to its static width. The layout takes the one that
+    silences nothing.
+
+    The clamp is put back by hand because the real file no longer poses the
+    choice: with wrap ramps record 10's block is 113 rows, not 92, it
+    degrades in either layout, and both unions then fit with nothing
+    silenced (168 rows, pinned below). The selection rule under test is
+    `_lay_pulse_phase_table`'s, which `_leg_ramps` does not touch."""
     from h2g.goatwriter import pulse as P
     sid, det, iu, pulse, mult, phases, _, lead = _table_calls("Gremlins.sid")[0]
+    groups = P._union_groups(sid, det, iu, mult, phases, lead)
+    assert sorted(sorted(m) for m in groups.values()) == [[3, 7], [6, 20]]
+    both = P._lay_pulse_phase_pass(sid, det, iu, pulse, mult, phases, None,
+                                   lead, True, groups)
+    assert [i + 1 for i, v in enumerate(both[1]) if v == 0] == []
+    real = P._leg_ramps
+    monkeypatch.setattr(P, "_leg_ramps", lambda w, d, lo_v, hi_v, wrap, step:
+                        real(w, d, lo_v, hi_v, wrap, None))
     groups = P._union_groups(sid, det, iu, mult, phases, lead)
     assert sorted(sorted(m) for m in groups.values()) == [[3, 7], [6, 20]]
     both = P._lay_pulse_phase_pass(sid, det, iu, pulse, mult, phases, None,
@@ -141,12 +158,20 @@ def test_unions_buy_rows_and_records():
         "Phantoms_of_the_Asteroid.sid": ((59, {1, 7, 16, 17}), (200, {1, 7, 16, 17})),
         "Battle_of_Britain.sid": ((147, {7, 8, 9, 10, 11, 15, 16}),
                                   (225, {7, 8, 9, 10, 11, 15, 16})),
-        "Gremlins.sid": ((252, {3, 6, 7, 20}), (254, {3, 6, 7})),
+        # Re-pinned at the triangle's wrap ramps (was ((252, {3, 6, 7,
+        # 20}), ...)): record 10's out-of-band ramps grow its block to 113
+        # rows, it degrades either way, and both unions now fit.
+        "Gremlins.sid": ((168, {3, 6, 7, 20}), (254, {3, 6, 7})),
         # Re-pinned at the lockstep triangle walk (was ((252, {1, 4, 18,
         # 21, 23}), (249, {1, 4, 18, 21}))): subtune 0 voice 1 is walked,
         # record 2 joins the plan, 21 no longer fits, and record 2 lays its
         # plain loop (`_phase_block` chains only a "chained" record).
-        "Human_Race.sid": ((237, {1, 2, 4, 18, 23}), (234, {1, 2, 4, 18})),
+        # Re-pinned again at the wrap ramps (was ((237, ...), (234, ...))):
+        # record 2's ($080, down) now ramps $880 and lands ON $800, so the
+        # record's kind goes from None to "chained" (its own shared block
+        # 77 -> 54 rows) and it unions with record 1; records 18 and 23
+        # each pay 3 rows for their wrap ramps (55 -> 58, 58 -> 61).
+        "Human_Race.sid": ((179, {1, 2, 4, 18, 23}), (214, {1, 2, 4, 18})),
     }
     for name, (with_u, without) in want.items():
         sid, det, iu, pulse, mult, phases, _, lead = _table_calls(name)[0]

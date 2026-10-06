@@ -3786,7 +3786,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         for pat, n in want.items():
             plan[pat] = (base, n)
 
-    written = skipped = 0
+    written = skipped = shifted = 0
     for pat, (base, n) in plan.items():
         rows = len(patterns[pat]) // 4
         # Spread them: never row 0, and never the last row, whose restore
@@ -3818,16 +3818,81 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
             # answering it per position is the per-copy cost this schedule is
             # pattern-global to avoid.
             if patterns[pat][row] or patterns[pat][nxt]:
-                skipped += 1             # the column is spoken for; leave it
-                continue
+                # The column is spoken for, and an existing command is never
+                # overwritten. But the debt this pair pays was ALREADY DEBITED
+                # above, so declining it outright under-delivers by one call
+                # per play -- see `_shifted_regrid_spot`.
+                moved = _shifted_regrid_spot(patterns[pat], r, rows)
+                if moved is None:
+                    skipped += 1         # no clean free pair in the pattern
+                    continue
+                shifted += 1
+                row, nxt = moved * 4 + 2, (moved + 1) * 4 + 2
             patterns[pat][row], patterns[pat][row + 1] = CMD_SETTEMPO, base + 1
             patterns[pat][nxt], patterns[pat][nxt + 1] = CMD_SETTEMPO, base
             written += 1
     if log:
         log(f"Re-grid.................: {written} compensating row(s) in "
             f"{len(plan)} pattern(s) for a fractional row"
+            + (f", {shifted} shifted off an occupied command column"
+               if shifted else "")
             + (f", {skipped} skipped (command column in use)" if skipped else ""))
     return written
+
+
+# Commands 1XY-4XY run every call until a row replaces them; 0XY resets the
+# channel to instrument vibrato (player.s `mt_tick0_0` -> `mt_tick0_34`,
+# gplay.c:406 `CMD_DONOTHING: command = 0`), but 5XY-FXY are one-shot and
+# leave the running one in place underneath (player.s jumps them past the
+# `sta mt_chnfx,x`; GoatTracker readme "allow the previous 1XY-4XY command
+# ... to continue underneath them").
+_CONTINUOUS_COMMANDS = frozenset((1, 2, 3, 4))
+
+
+def _inherits_continuous_effect(pattern: List[int], r: int) -> bool:
+    """Whether a one-shot command written on row `r` would keep a 1XY-4XY of
+    an earlier row running through it. True where it cannot be told -- every
+    row back to the pattern's start is one-shot, so the answer is whatever the
+    orderlist played before, which is position-dependent."""
+    for k in range(r - 1, -1, -1):
+        cmd = pattern[k * 4 + 2]
+        if cmd == 0:
+            return False
+        if cmd in _CONTINUOUS_COMMANDS:
+            return True
+    return True
+
+
+def _shifted_regrid_spot(pattern: List[int], want: int,
+                         rows: int) -> Optional[int]:
+    """The nearest row to `want` that can carry a regrid pair `want` could not.
+
+    **A SKIPPED PAIR IS A DEFICIT, NOT A REFUSAL.** `regrid_tempos` debits the
+    accumulator for `n` rows before choosing where they go, so a spot its
+    occupancy guard declines is compensation paid for and never delivered --
+    one call per play of the pattern. Measured at 8586101 on Monty
+    (`monty-tie-false-voice3-plus-two`): the tie's `CMD_TONEPORTA 00` cells
+    declined 2 pairs in voice 0's pattern 70 and each one left every voice a
+    whole frame later than tie=False's grid. At 075a175 the 15 regrid adopters
+    declined 69 spots, 36 of them on a tie cell.
+
+    The same refusals hold for the moved pair as for the first choice: rows
+    1..rows-3 only (row 0 is the subtune's clock; the restore must not be the
+    end marker), both command cells empty. Plus one the first choice is not
+    held to, because a shift is drawn TOWARD occupied rows and the nearest
+    free row is typically the one straight after a slide run: the pair must
+    not inherit a running 1XY-4XY (`_inherits_continuous_effect`), which a
+    `CMD_SETTEMPO` would carry through two more rows. Ties at equal distance
+    take the earlier row. `None` where the pattern has no such row.
+    """
+    last = rows - 3
+    for d in range(1, rows):
+        for r in (want - d, want + d):
+            if (1 <= r <= last and pattern[r * 4 + 2] == 0
+                    and pattern[(r + 1) * 4 + 2] == 0
+                    and not _inherits_continuous_effect(pattern, r)):
+                return r
+    return None
 
 
 def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
