@@ -309,7 +309,7 @@ def test_a_clearing_record_gets_a_block_that_routes_nothing(stem, monkeypatch):
 # Sun_Never_Shines 0+2 and 0).
 
 from h2g.goatwriter import (CMD_SETFILTERCTRL, CMD_SETFILTERPTR,  # noqa: E402
-                            ILV_EMPTY_UNION, PACKED_PATTERN_LIMIT,
+                            ILV_ROUTE_NOTHING, PACKED_PATTERN_LIMIT,
                             _ilv_routing_walk, _ilv_voice_rows,
                             packed_pattern_size, pattern_rows)
 
@@ -387,15 +387,16 @@ def test_no_command_on_row_0_or_over_a_taken_column():
     assert (stats["unplaceable"], stats["late_rows"]) == (1, 2)
 
 
-def test_an_empty_union_is_never_written_as_zero():
-    """`B $00` also stops the filter table (gplay.c:471); with a resonance of
-    0 the empty union is written ILV_EMPTY_UNION instead."""
+def test_an_empty_union_is_written_as_b_00_and_stops_the_table():
+    """`B $00` also stops the filter table (gplay.c:471), which is what the
+    player does with nothing routed: its cutoff holds still (ILV_ROUTE_NOTHING,
+    tests/test_ilv_route_nothing.py)."""
     patterns, groups = _song({1: (0x90, _ROUTED, 0, 0), 3: (0x90, _PLAIN, 0, 0)},
                              {}, {})
     plan, _ = _walk(patterns, groups, "shared",
                     programs={0: (0x10, 0x00, 0x80, 0)})
     assert plan == {(0, 0): {1: (CMD_SETFILTERCTRL, 0x01),
-                             3: (CMD_SETFILTERCTRL, ILV_EMPTY_UNION)}}, plan
+                             3: (CMD_SETFILTERCTRL, ILV_ROUTE_NOTHING)}}, plan
 
 
 def test_a_repeat_replays_the_occurrence_without_rewriting_it():
@@ -408,7 +409,7 @@ def test_a_repeat_replays_the_occurrence_without_rewriting_it():
     assert [x[:2] for x in timeline[0][::8]] == [(1, 0), (1, 1)]
     plan, stats = _walk(patterns, [(16, timeline)], "shared")
     assert plan == {(0, 1): {1: (CMD_SETFILTERCTRL, 0x41),
-                             3: (CMD_SETFILTERCTRL, 0x40)}}, plan
+                             3: (CMD_SETFILTERCTRL, 0x00)}}, plan
     assert stats["late_rows"] == 0
 
 
@@ -436,20 +437,19 @@ def test_the_routing_written_is_the_voices_the_original_routes(stem):
     Lion_Heart and Pacific_Coast write $x7 in their params rows and every
     file's `B` set is empty or $x7 -- both fail here."""
     _blob, song, lines = _routed_conversion(stem, ilv_filter_routing=True)
-    nibbles, row0, zero = set(), 0, 0
+    nibbles, row0 = set(), 0
     for p in song.patterns:
         for r, (_n, _i, cmd, dat) in enumerate(pattern_rows(p)):
             if cmd in (CMD_SETFILTERCTRL, CMD_SETFILTERPTR):
                 row0 += r == 0
             if cmd == CMD_SETFILTERCTRL:
                 nibbles.add(dat & 0x0F)
-                zero += dat == 0
     params = {right & 0x0F for left, right in song.tables["FTBL"]
               if FILT_SET_PARAMS <= left < FILT_STOP and right}
     assert nibbles and nibbles <= ILV_MOVERS[stem], (stem, nibbles)
     if stem != "Sun_Never_Shines":
         assert params <= ILV_MOVERS[stem], (stem, params)
-    assert not row0 and not zero, (stem, row0, zero)
+    assert not row0, (stem, row0)
     assert all(packed_pattern_size(pattern_rows(p)) <= PACKED_PATTERN_LIMIT
                for p in song.patterns)
     logged = [m for m in lines if m.startswith("ILV filter routing")]

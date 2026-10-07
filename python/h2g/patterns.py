@@ -622,7 +622,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        free_rows: Optional[List[int]] = None,
                        event_log: Optional[List[tuple]] = None,
                        wave_notes: Optional[Dict[int, int]] = None,
-                       event_rows: Optional[List[int]] = None
+                       event_rows: Optional[List[int]] = None,
+                       gate_clear_records: frozenset = frozenset()
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -746,11 +747,23 @@ def _build_raw_pattern(data: bytes, addr: int,
     its fetch tick without stepping the sweep (`collect_pulse_phases`).
     The terminator is not an event. Like `free_rows` it is an
     out-parameter that changes no byte of the stream.
+
+    `gate_clear_records` is the set of instrument RECORDS whose waveform
+    byte (+2) has the gate bit clear (`record_gate_clear`). The classic
+    fetch writes that byte to `$D404` on every event, tied or not
+    (Chimera `$C315 LDA $C664,X / AND $C640 / STA $D404,Y`; Commando
+    `$5133`), so such an event closes the gate itself: it is not a tie
+    target, and the note after it attacks. See the `tie` block below.
+    Empty by default, which is the old reading: every tie kept.
     """
     if addr <= 1 or addr >= len(data):
         return None
 
     events: List[int] = []
+    # The record the voice's last named instrument byte selected, or None
+    # before this pattern names one (the carried-in instrument is not known
+    # here, so a pattern's opening events keep the old tie reading).
+    cur_record = None
     g_instrument = 0
     i2 = 0
     # Events decoded so far, terminator excluded: the key `wave_notes` uses.
@@ -1032,6 +1045,7 @@ def _build_raw_pattern(data: bytes, addr: int,
             else:
                 g_instrument = (b2 & instr_mask) + instr_base
                 log_record = b2 & instr_mask
+                cur_record = log_record
                 named_instr = True
                 if instr_transpose is not None:
                     # `LDA table,X` with X = the operand the player stored;
@@ -1315,7 +1329,26 @@ def _build_raw_pattern(data: bytes, addr: int,
         # that belongs; the outer was the mistake. Corpus-wide the guard
         # discarded 2562 events across 43 files -- Chimera's pattern $6 is 96
         # consecutive one-frame events and came out completely empty.
-        if (tie and pending_tie and cmd1 == 0
+        #
+        # **AN EVENT WHOSE RECORD'S WAVEFORM HAS THE GATE CLEAR IS NOT A TIE,
+        # AND IT ENDS THE ONE BEFORE IT.** A tie is the player NOT closing the
+        # gate at the previous note's end; it says nothing about the gate the
+        # fetch itself writes. The classic fetch stores the record's waveform
+        # into `$D404` on every event (Chimera `$C315 LDA $C664,X / AND $C640
+        # / STA $D404,Y`, no bit-5 or counter test on that path), so a record
+        # whose byte is `$10` shuts the gate on its own fetch frame, and the
+        # next note -- gate set -- attacks. Chimera's record 8 (`$10`, ADSR
+        # `$BF05`) closes every six-row group of its wait-0 arpeggio chains
+        # this way: siddump of subtune 0, voice 1, `$10`/`$BF05` at 5615,
+        # 5633, ... and `$11`/`$BF00` three frames later, 49 regates in
+        # frames 5618-5888, 6194-6464, 8210-8354 and 8498-8624 (all 18
+        # frames apart). Read as ties, the 40-row chains (patterns 13/15/3F,
+        # 3D/3E x16) carried none of them. `free_note` keeps the old reading:
+        # that bit skips the note-start path, and with it, in the players
+        # that test it, the write this rule rests on.
+        gate_closes = (cur_record is not None and not free_note
+                       and cur_record in gate_clear_records)
+        if (tie and pending_tie and cmd1 == 0 and not gate_closes
                 and g_note != GT_NO_NOTE):
             # The *previous* event carried status bit 5, so the player never
             # closed the gate at its end (Commando $517F) and this note arrives
@@ -1344,7 +1377,7 @@ def _build_raw_pattern(data: bytes, addr: int,
             # the tie on the files it happens to show up in.
             cmd1, cmd2 = 3, 0x00
         elif (tie and pending_tie and cmd1 in (1, 2) and wait >= 1
-                and g_note != GT_NO_NOTE):
+                and not gate_closes and g_note != GT_NO_NOTE):
             # **A SLIDE EVENT THAT FOLLOWS A TIED NOTE IS A TIE TOO, AND IT
             # USED TO RE-STRIKE.** The slide event (`status, $8x operand,
             # note`) carries a note byte, and the previous event's bit 5 left
@@ -1437,8 +1470,9 @@ def _build_raw_pattern(data: bytes, addr: int,
         # its KEYOFF closed the gate, and a TONEPORTA into a closed gate is a
         # note nobody hears. The original's next note there arrives on an
         # envelope that ran its attack over silent DC frames; ours attacks.
-        pending_tie = tie and not no_note and not past_rest and (
-            bool(no_adsr) or (wait == 0 and gate_hold))
+        pending_tie = tie and not no_note and not past_rest \
+            and not gate_closes and (
+                bool(no_adsr) or (wait == 0 and gate_hold))
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)
@@ -2351,7 +2385,42 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               free_rows=free_rows,
                               event_log=event_log,
                               wave_notes=wave_notes,
-                              event_rows=event_rows)
+                              event_rows=event_rows,
+                              gate_clear_records=(record_gate_clear(sid, det)
+                                                  if tie else frozenset()))
+
+
+def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
+    """The instrument records whose waveform byte (+2) has the gate bit clear.
+
+    Every record an operand can name (`_instrument_mask`), read where the
+    player reads it, `instr_start + record * instr_stride + 2`: the fetch
+    ANDs that byte into `$D404` whatever the table's real length, so a
+    record past `instr_used` is what the player writes too. A record with no
+    waveform selected (`& $F0` zero) is left out -- `$00`/`$08` is the
+    silencing/testbit family's business (`rest_wave`), not a gate edge this
+    rule should read. See `_build_raw_pattern`'s `gate_clear_records`.
+
+    Empty unless the player's fetch is the block the rule rests on:
+    `goatwriter.note_passes.classic_tie_restart_family` reads `LDA wave,X /
+    AND mask / STA $D404,Y` behind a per-fetch `LDA #$FF / STA mask`, with
+    no `AND #$20` between the status fetch and the store -- the waveform is
+    written on every non-rest event, tied or not. A legato-marker player
+    (`note_flag`) or any other block keeps every tie.
+    """
+    from .goatwriter.note_passes import classic_tie_restart_family
+    data = sid.data
+    if det.instr_start < 0 or classic_tie_restart_family(sid, det) is None:
+        return frozenset()
+    out = set()
+    for rec in range(_instrument_mask(det.instr_stride) + 1):
+        at = det.instr_start + rec * det.instr_stride + 2
+        if at >= len(data):
+            break
+        wave = data[at]
+        if wave & 0xF0 and not wave & 0x01:
+            out.add(rec)
+    return frozenset(out)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -2468,6 +2537,85 @@ def referenced_patterns(tracks: List[List[int]],
     Lair II references 71 of the 202 patterns it emits).
     """
     return set(pattern_references(tracks, floor))
+
+
+def drop_unplayed_patterns(tracks: List[List[int]],
+                           patterns: List[List[int]]
+                           ) -> Tuple[List[List[int]], List[List[int]], List[int]]:
+    """`(tracks, patterns, dropped)` with every pattern no finished orderlist
+    names removed and the rest renumbered in order; `dropped` is the removed
+    indices, ascending. Neither argument is touched: a caller that kept a
+    reference (the triangle walk's own arguments, a test's capture) keeps
+    the table the side tables it was handed are keyed to.
+
+    `convert_patterns`' `used=` prune runs on the RAW orderlists, before the
+    passes that rewrite them. Those passes (`reindex_tracks`' tempo, fraction
+    and tie copies, `apply_pulse_phase`, `apply_initial_instruments`) repoint
+    a position at a COPY appended past the table, so a source whose every
+    position moved is left in the table unplayed, still costing a pattern
+    number toward MAX_PATTERNS -- C64ME reached `build_sng` with 10 such.
+    So the question is asked again, of the finished orderlists, and only
+    where the caller asked for `prune`.
+
+    **Why a new list and not an in-place edit.** The first attempt renumbered
+    in place and failed 11 tests, none of them on the output: the walks
+    (`collect_pulse_phases`, `inherit_event_rows`) run BEFORE this and were
+    handed `event_rows` keyed by the OLD numbers, and a test that holds the
+    table it passed the walk and the orderlists it snapshotted read them
+    renumbered under it. Every per-pattern side table that is keyed by
+    index -- `TrackIndex.event_rows`, `free_rows`, `exits_tied` -- is dead
+    by here (nothing after this reads it); the one that survives into
+    `build_sng` is `PatternList.note_bit7` / `decoded`, and it is rekeyed.
+
+    Those dropped patterns that were DECODED ones are kept as
+    `PatternList.ghosts` (note column, rows): `goatwriter.note_bit7_rows`
+    attributes a pass's copy by matching its note column against the decoded
+    patterns, and without them a copy of a dropped one lands on the one
+    pattern left sharing its notes -- measured at 6e467ff on Thanatos,
+    Star_Paws and Knucklebusters, where it turned restarted notes into ties.
+    **Nothing is dropped if an orderlist names an index the table does not
+    hold**: renumbering would make a dangling reference land on a real
+    pattern, and no corpus file has one.
+    """
+    n = len(patterns)
+    refs = set(pattern_references(tracks))
+    if not refs or max(refs) >= n:
+        return tracks, patterns, []
+    drop = [i for i in range(n) if i not in refs]
+    if not drop:
+        return tracks, patterns, []
+    remap: Dict[int, int] = {}
+    for i in range(n):
+        if i in refs:
+            remap[i] = len(remap)
+    out_tracks: List[List[int]] = []
+    for track in tracks:
+        new = list(track)
+        expect_operand = False
+        for at, b in enumerate(new):
+            if expect_operand:
+                expect_operand = False
+            elif b == GT_ORDER_RESTART:
+                expect_operand = True
+            elif b < GT_COMMAND_FLOOR:
+                new[at] = remap[b]
+        out_tracks.append(new)
+    kept = [patterns[i] for i in range(n) if i in refs]
+    bit7 = getattr(patterns, "note_bit7", None)
+    decoded = getattr(patterns, "decoded", None)
+    if bit7 is None or decoded is None:
+        return out_tracks, kept, drop
+    out = PatternList(kept, {remap[i]: f for i, f in bit7.items()
+                             if i in remap})
+    out.decoded = sum(1 for i in remap if i < decoded)
+    # A dropped DECODED pattern was a candidate in `note_bit7_rows`' match by
+    # note column, so it is remembered there rather than letting its absence
+    # attribute a copy to the one pattern left.
+    out.ghosts = tuple(getattr(patterns, "ghosts", ())) + tuple(
+        (tuple(patterns[i][4 * r] for r in range(len(patterns[i]) // 4)),
+         bit7.get(i))
+        for i in drop if i < decoded)
+    return out_tracks, out, drop
 
 
 def _overlap(a_start: int, a_len: int, b_start: int, b_len: int) -> bool:
@@ -2623,6 +2771,9 @@ class PatternList(list):
         super().__init__(items)
         self.note_bit7: Dict[int, Optional[frozenset]] = dict(note_bit7 or {})
         self.decoded = len(self)
+        # `(note column, bit-7 rows)` of decoded patterns dropped since; see
+        # drop_unplayed_patterns.
+        self.ghosts: tuple = ()
 
 
 class TrackIndex(list):
@@ -3407,9 +3558,113 @@ def _entry_reference(track: List[int]) -> int | None:
     return None
 
 
+def _regrid_order(track: List[int], n_patterns: int,
+                  repeats: bool = True) -> List[int]:
+    """One voice's orderlist as ONE ENTRY PER PLAY, for `regrid_tempos`' budget.
+
+    **A PACKED REPEAT IS PLAYS, NOT A COMMAND.** By the time `regrid_tempos`
+    runs, `pack_repeats` has already folded runs into `$D0+n, P` -- P played
+    n+1 times (gplay.c:983-988) -- and without `full_debt` (always, through
+    v0.5.513) the budget walk reads `$D0+n` as a non-pattern byte and P as ONE
+    play. Both halves of the budget are then short: the debt a run raises
+    (`d * rows` per play) is counted once, and a bought row in P is debited
+    for one play and delivered n+1 times. Star_Paws (-S2, subtune 0, 256/127
+    frames a row) is the file that found it: nine `$D2`/`$D3` runs hold 34 of
+    voice 0's 96 plays and the walk saw 9, so it counted 4155 of 4676 rows and
+    its debt per pass read 130.87 calls against a real 147.28 -- 16.4 calls,
+    about 8 frames a pass, never charged (measured at 6e467ff).
+    Transposes and the restart pair carry no play; the restart operand is
+    skipped as before. `repeats=False` is the pre-fix walk, one entry per
+    orderlist BYTE naming a pattern, which `regrid_full_debt=False` keeps so
+    the files that adopted `--regrid` under it keep their bytes.
+    """
+    order: List[int] = []
+    operand = False
+    times = 1
+    for entry in track:
+        if operand:
+            operand = False
+        elif entry == GT_ORDER_RESTART:
+            operand = True
+        elif repeats and GT_REPEAT <= entry < GT_TRANSPOSE_DOWN:
+            times = entry - GT_REPEAT + 1
+        elif entry < GT_COMMAND_FLOOR:
+            if entry < n_patterns:
+                order += [entry] * times
+            times = 1
+    return order
+
+
+def _regrid_spots(pattern: List[int], n: int, rows: int):
+    """Where `regrid_tempos` places `n` compensating rows in one pattern.
+
+    Returns `(placed, skipped)`: `placed` lists `(row, shifted)` for every pair
+    that is actually written, in writing order, and `skipped` counts the spots
+    no free pair could take. Simulated on a COPY so the budget can ask the
+    same question the writer answers -- **a bought row the writer cannot place
+    is, without `full_debt` (and was always, through v0.5.513), debited
+    anyway**, so the debt it stood for vanishes.
+    Star_Paws again: pattern 29 bought 6 rows and has one free pair, and
+    patterns 58/61/62/64 bought one each with a command column full of
+    `3XY 00` tie cells, 9 rows paid for and never delivered. Two spots that
+    round onto the same row collapse to one (`dict.fromkeys`), which is the
+    same loss in a quieter form; `placed` counts it too.
+    """
+    work = list(pattern)
+    placed = []
+    skipped = 0
+    # Spread them: never row 0, and never the last row, whose restore
+    # would land in whatever the orderlist plays next.
+    spots = [max(1, min(rows - 3, round((i + 1) * rows / (n + 1))))
+             for i in range(n)]
+    for r in dict.fromkeys(spots):
+        row, nxt = r * 4 + 2, (r + 1) * 4 + 2
+        # ONE VOICE'S COLUMN IS THE WHOLE OF WHAT THIS GUARD OWES, and it
+        # was proposed at v0.5.411 that it should consult voices 1 and 2
+        # at the same row, since CMD_SETTEMPO lengthens all three. That
+        # conflates two different things and is a category error.
+        # Overwriting a command is this guard's job; the tempo reaching
+        # the other voices is a TIMING effect, and no column-occupancy
+        # test can address it -- v0.5.408 measured the command's mere
+        # presence at 0.0pp on both casualties (base+0, column occupied
+        # identically, row not lengthened), so the damage is the extra
+        # CALL, which declining columns cannot prevent.
+        # And there is nothing there to clobber: `exclusive` above admits
+        # only patterns whose `where` is exactly {(k, 0)}, so voices 1 and
+        # 2 never play a pattern this writes into. Checked over all 12
+        # files that ship --regrid: 304 patterns written, and every one
+        # has `where == {(k, 0)}`. (A first census said 2 of them leaked;
+        # it was counting the byte AFTER GT_ORDER_RESTART as a pattern
+        # reference, which the `operand` skip above exists to avoid.)
+        # A positional guard would also be ill-defined: 169 of those 304
+        # (55.6%) are replayed, Wiz's up to 14 times, so "what voices 1
+        # and 2 are doing at the same row" has up to 14 answers -- and
+        # answering it per position is the per-copy cost this schedule is
+        # pattern-global to avoid.
+        moved = False
+        if work[row] or work[nxt]:
+            # The column is spoken for, and an existing command is never
+            # overwritten -- move to the nearest clean pair instead, see
+            # `_shifted_regrid_spot`.
+            r2 = _shifted_regrid_spot(work, r, rows)
+            if r2 is None:
+                skipped += 1             # no clean free pair in the pattern
+                continue
+            moved = True
+            r = r2
+            row, nxt = r * 4 + 2, (r + 1) * 4 + 2
+        # The argument bytes are placeholders: every check above reads the
+        # command byte only, so the copy answers exactly as the real pattern.
+        work[row], work[row + 1] = CMD_SETTEMPO, 1
+        work[nxt], work[nxt + 1] = CMD_SETTEMPO, 1
+        placed.append((r, moved))
+    return placed, skipped
+
+
 def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                   bases: List[int], deficits: List[float],
-                  multiplier: int = 1, log=None) -> int:
+                  multiplier: int = 1, log=None,
+                  full_debt: bool = False) -> int:
     """Spend the fractional part of a row the tempo cannot express.
 
     A Goattracker row is a whole number of play calls, so a player whose row
@@ -3725,17 +3980,12 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # 15-frame deficit became a 21-frame surplus, and the 2.4x is the
         # three voices minus what the occupied-column check declined. The
         # debt is one subtune's, so the schedule that pays it is one voice's.
-        order = []
-        ti = 3 * k
-        if ti < len(tracks):
-            operand = False
-            for entry in tracks[ti]:
-                if operand:
-                    operand = False
-                elif entry == GT_ORDER_RESTART:
-                    operand = True
-                elif entry < GT_COMMAND_FLOOR and entry < len(patterns):
-                    order.append(entry)
+        # `full_debt` budgets every PLAY (packed repeats expanded) and
+        # charges only rows the writer places; without it the budget is the
+        # one the -S1 adopters were measured under. See `_regrid_order`,
+        # `_regrid_spots` and convert's `regrid_full_debt`.
+        order = (_regrid_order(tracks[3 * k], len(patterns), full_debt)
+                 if 3 * k < len(tracks) else [])
         if not order:
             continue
         # Exclusive to this subtune AND to this voice: a pattern voice 1 also
@@ -3760,6 +4010,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
             order_plays[pat] = order_plays.get(pat, 0) + 1
         acc = 0.0
         want: dict = {}
+        placed: dict = {}
         for pat in order:
             rows = len(patterns[pat]) // 4
             acc += d * rows * multiplier
@@ -3777,57 +4028,45 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                 # afford across all `p` plays; where it is 0 the row is simply
                 # not bought yet and the debt carries forward, exactly as a
                 # shared pattern's does.
+                #
+                # **Pay for what is PLACED, not for what is bought.** The
+                # writer may decline a spot (command column full, no clean
+                # pair to shift to) or collapse two spots onto one row, and a
+                # debit for a row that is never written makes the debt it
+                # stood for vanish -- the carry-forward above only works if
+                # an unplaceable row leaves its debt in `acc`. `got` is what
+                # the current buy places (`_regrid_spots`, the writer's own
+                # placement on a copy); the largest buy whose increment the
+                # accumulator can afford is taken, and nothing is charged if
+                # no buy places more than `got`. Only under `full_debt`;
+                # without it a buy is charged in full, placed or not.
                 p = max(1, order_plays.get(pat, 1))
                 prev = want.get(pat, 0)
-                n = min(prev + int(acc / p), max(1, (rows - 3) // 2))
-                if n > prev:
-                    want[pat] = n
-                    acc -= (n - prev) * p
+                got = placed.get(pat, 0)
+                afford = int(acc / p)
+                top = min(prev + afford, max(1, (rows - 3) // 2))
+                if not full_debt:
+                    if top > prev:
+                        want[pat] = top
+                        acc -= (top - prev) * p
+                    continue
+                for n in range(top, prev, -1):
+                    w = len(_regrid_spots(patterns[pat], n, rows)[0])
+                    if got < w <= got + afford:
+                        want[pat], placed[pat] = n, w
+                        acc -= (w - got) * p
+                        break
         for pat, n in want.items():
             plan[pat] = (base, n)
 
     written = skipped = shifted = 0
     for pat, (base, n) in plan.items():
         rows = len(patterns[pat]) // 4
-        # Spread them: never row 0, and never the last row, whose restore
-        # would land in whatever the orderlist plays next.
-        spots = [max(1, min(rows - 3, round((i + 1) * rows / (n + 1))))
-                 for i in range(n)]
-        for r in dict.fromkeys(spots):
+        spots, skips = _regrid_spots(patterns[pat], n, rows)
+        skipped += skips
+        for r, moved in spots:
+            shifted += moved
             row, nxt = r * 4 + 2, (r + 1) * 4 + 2
-            # ONE VOICE'S COLUMN IS THE WHOLE OF WHAT THIS GUARD OWES, and it
-            # was proposed at v0.5.411 that it should consult voices 1 and 2
-            # at the same row, since CMD_SETTEMPO lengthens all three. That
-            # conflates two different things and is a category error.
-            # Overwriting a command is this guard's job; the tempo reaching
-            # the other voices is a TIMING effect, and no column-occupancy
-            # test can address it -- v0.5.408 measured the command's mere
-            # presence at 0.0pp on both casualties (base+0, column occupied
-            # identically, row not lengthened), so the damage is the extra
-            # CALL, which declining columns cannot prevent.
-            # And there is nothing there to clobber: `exclusive` above admits
-            # only patterns whose `where` is exactly {(k, 0)}, so voices 1 and
-            # 2 never play a pattern this writes into. Checked over all 12
-            # files that ship --regrid: 304 patterns written, and every one
-            # has `where == {(k, 0)}`. (A first census said 2 of them leaked;
-            # it was counting the byte AFTER GT_ORDER_RESTART as a pattern
-            # reference, which the `operand` skip above exists to avoid.)
-            # A positional guard would also be ill-defined: 169 of those 304
-            # (55.6%) are replayed, Wiz's up to 14 times, so "what voices 1
-            # and 2 are doing at the same row" has up to 14 answers -- and
-            # answering it per position is the per-copy cost this schedule is
-            # pattern-global to avoid.
-            if patterns[pat][row] or patterns[pat][nxt]:
-                # The column is spoken for, and an existing command is never
-                # overwritten. But the debt this pair pays was ALREADY DEBITED
-                # above, so declining it outright under-delivers by one call
-                # per play -- see `_shifted_regrid_spot`.
-                moved = _shifted_regrid_spot(patterns[pat], r, rows)
-                if moved is None:
-                    skipped += 1         # no clean free pair in the pattern
-                    continue
-                shifted += 1
-                row, nxt = moved * 4 + 2, (moved + 1) * 4 + 2
             patterns[pat][row], patterns[pat][row + 1] = CMD_SETTEMPO, base + 1
             patterns[pat][nxt], patterns[pat][nxt + 1] = CMD_SETTEMPO, base
             written += 1

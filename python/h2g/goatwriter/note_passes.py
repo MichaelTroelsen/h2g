@@ -8,7 +8,8 @@ from ..detect import (Detection, TRIANGLE_VIBRATO_GATE, VIBRATO_BOUND_MASK,
                       VIBRATO_BOUND_SHIFT, VIBRATO_SHIFT_MASK)
 from ..search import (search_file)
 from ..sidfile import (SidFile)
-from .constants import (CMD_SETAD, CMD_SETSR, CMD_SETWAVEPTR, CMD_TONEPORTA,
+from .constants import (CLASSIC_TIE_START_SHAPES, CLASSIC_TIE_START_WINDOW,
+                        CMD_SETAD, CMD_SETSR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         CMD_VIBRATO, EFFECT_SFX_DRUM_MASK,
                         EXPANDING_VIBRATO_COUNTER_AT, EXPANDING_VIBRATO_SHAPES,
                         EXPANDING_VIBRATO_TABLE_AT, GT_FIRST_NOTE, GT_KEYOFF,
@@ -16,7 +17,8 @@ from .constants import (CMD_SETAD, CMD_SETSR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         GT_REST, GT_WAVE_FIRST_CMD, GT_WAVE_JUMP,
                         GT_WAVE_LAST_CMD, GT_WAVE_LAST_DELAY, GT_WAVE_NO_NOTE,
                         LEGATO_TIE_FLAG_STORE_SHAPE, LEGATO_TIE_GATE_SHAPE,
-                        PACKED_PATTERN_LIMIT, SONG_START_ROW,
+                        PACKED_PATTERN_LIMIT,
+                        _SONG_MAX_PATTERNS,
                         SPEED_NOTE_RELATIVE, TEMPO_DUTY_MAX_CLONE,
                         VIBRATO_CMP_BIAS, WAVE_GATE_BIT, WAVE_SILENT_BASE,
                         WAVE_TEST_BIT, WAVECMD_BASE, GT_MAX_TABLELEN)
@@ -77,7 +79,8 @@ def _entry_instruments(tracks: List[List[int]],
 def _tied_instrument_envelopes(patterns: List[List[int]], envelopes: dict,
                                tracks: Optional[List[List[int]]] = None,
                                log=None, skip: Optional[set] = None,
-                               only: Optional[set] = None) -> List[List[int]]:
+                               only: Optional[set] = None,
+                               alias: Optional[dict] = None) -> List[List[int]]:
     """Write the envelope a tied note's NEW instrument carries, which the tie
     itself never loads.
 
@@ -169,14 +172,20 @@ def _tied_instrument_envelopes(patterns: List[List[int]], envelopes: dict,
     `envelopes` maps a Goattracker instrument number to the `(ad, sr)` pair
     `_write_instruments` will emit for it -- from `record_envelope`, so the
     two cannot disagree.
+
+    `alias` maps a legato clone's number to its instrument's, for a pass run
+    after `legato_tie_clones`: a channel holding the clone holds its
+    instrument's envelope (`clone` is the record's bytes), so a tie back
+    into that instrument changes nothing.
     """
+    alias = alias or {}
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     out: List[List[int]] = []
     placed = short = unknown = 0
     for pn, pattern in enumerate(patterns):
         rows = list(pattern)
         n = len(rows) // 4
-        held = entry.get(pn, set())
+        held = {alias.get(i, i) for i in entry.get(pn, set())}
         live = next(iter(held)) if len(held) == 1 else 0
 
         def free(q: int) -> bool:
@@ -188,7 +197,7 @@ def _tied_instrument_envelopes(patterns: List[List[int]], envelopes: dict,
             note, instr, cmd, data = rows[k], rows[k + 1], rows[k + 2], rows[k + 3]
             prev = live
             if instr:
-                live = instr
+                live = alias.get(instr, instr)
             if not GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
                 continue
             if cmd != CMD_TONEPORTA or data != 0 or not instr:
@@ -248,15 +257,61 @@ def legato_tie_family(sid: SidFile, det: Detection) -> bool:
     return data[gate + 1:gate + 3] == data[store + 4:store + 6]
 
 
+def classic_tie_restart_family(sid: SidFile, det: Detection) -> Optional[str]:
+    """Where a classic player with no legato marker re-runs its instrument
+    start on EVERY fetched event, a tie's landing included: "record" or
+    "voice" by what its pulse write means, else None (see
+    `CLASSIC_TIE_START_SHAPES`).
+
+    Read off the code: the block `LDA wave,X / AND mask / STA $D404,Y / LDA
+    pulse,X / STA $D402,Y`, whose `mask` is the cell an `LDA #$FF / STA
+    mask` reloads right before the status fetch (`LDA (ptr),Y`) -- so the
+    gate goes back on for every event that is not a rest -- with no `AND
+    #$20` between that fetch and the block: the tie's bit is read at the
+    note's end and nowhere on the way in. "voice" where the `STA $D402,Y` is
+    followed by `PHA` (the start reseeds per-voice sweep cells: a tie
+    restarts the sweep), "record" where it is not (the sweep lives in the
+    record and the fetch writes its live value: a tie into the same
+    instrument moves no pulse). A note_flag player is
+    `legato_tie_family`'s, whatever its block looks like."""
+    if det.pattern_dialect != "classic" or det.note_flag:
+        return None
+    data = sid.data
+    for shape in CLASSIC_TIE_START_SHAPES:
+        at = search_file(data, shape)
+        if at < 0:
+            continue
+        zp = data[at + 3] == 0x25
+        mask = data[at + 4:at + (5 if zp else 6)]
+        reload = bytes((0xA9, 0xFF, 0x85 if zp else 0x8D)) + mask
+        k = data.rfind(reload, max(0, at - CLASSIC_TIE_START_WINDOW), at)
+        if k < 0:
+            continue
+        fetch = k + len(reload)
+        if not (fetch + 1 < at and data[fetch] == 0xB1):
+            continue
+        if data.find(b"\x29\x20", fetch, at) >= 0:
+            continue
+        pulse = at + (14 if zp else 15)
+        return "voice" if data[pulse] == 0x48 else "record"
+    return None
+
+
 def note_bit7_rows(patterns: List[List[int]], known: dict,
-                   decoded: int) -> dict:
+                   decoded: int, ghosts: tuple = ()) -> dict:
     """Pattern index -> the rows whose note byte carried bit 7 (or None:
     unknown). `known` is `patterns.PatternList.note_bit7` for the first
     `decoded` patterns; every pattern appended since is a copy some pass made
     with its notes in place, attributed by note column where exactly one
     known pattern's notes match and every such match carries one set
     (`patterns.inherit_free_rows`' rule, with an unknown source counting as
-    a set of its own so a copy that might be its is unattributed)."""
+    a set of its own so a copy that might be its is unattributed).
+
+    `ghosts` is `patterns.PatternList.ghosts`: the `(note column, rows)` of
+    decoded patterns `drop_unplayed_patterns` removed. They no longer have
+    a number but were candidates for the match above, and a copy whose
+    notes they shared stays unattributed exactly as it was with them in
+    the list."""
     def notes(p):
         return tuple(p[4 * r] for r in range(len(p) // 4))
 
@@ -266,6 +321,8 @@ def note_bit7_rows(patterns: List[List[int]], known: dict,
         flags = known.get(idx)
         out[idx] = flags
         by_notes.setdefault(notes(patterns[idx]), set()).add(flags)
+    for col, flags in ghosts:
+        by_notes.setdefault(col, set()).add(flags)
     for idx in range(decoded, len(patterns)):
         found = by_notes.get(notes(patterns[idx]), set())
         out[idx] = next(iter(found)) if len(found) == 1 else None
@@ -382,14 +439,168 @@ def _successor_relatch(out: List[List[int]], pn: int, base: int,
     return need, None
 
 
+def _position_entries(tracks: List[List[int]],
+                      patterns: List[List[int]]) -> dict:
+    """(track index, orderlist position) -> the set of instruments a channel
+    holds entering the pattern named there: `_entry_instruments`' walk,
+    lapped the same way, kept per position instead of per pattern. A
+    position the restart re-enters is the same position on both laps, and a
+    repeat (`$D0+n`) plays one position n times, so either can give one
+    position two instruments."""
+    out: dict = {}
+    for ti, track in enumerate(_lapped_tracks(tracks)):
+        raw = tracks[ti]
+        end = raw.index(0xFF) if 0xFF in raw else len(raw)
+        current, repeat, operand = 1, 1, False
+        for pos, b in enumerate(track):
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            # The second lap is `raw[restart:end]` appended at `end`.
+            at = pos if pos < end else raw[end + 1] + pos - end
+            pat = patterns[b]
+            for _ in range(repeat):
+                out.setdefault((ti, at), set()).add(current)
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+            repeat = 1
+    return out
+
+
+def _first_named_row(pat: List[int]) -> int:
+    """The first row whose instrument column names one (the row count where
+    none does): every row before it plays what the channel entered with."""
+    n = len(pat) // 4
+    for r in range(n):
+        if pat[4 * r] == 0xFF:
+            return r
+        if pat[4 * r + 1]:
+            return r
+    return n
+
+
+def entry_instrument_split(tracks: List[List[int]],
+                           patterns: List[List[int]], rows: set,
+                           limit: int = _SONG_MAX_PATTERNS, log=None):
+    """Copy each pattern a clone respell (`_respell_on_clones`) would decline
+    as "entered with two instruments" once per instrument it is entered
+    with, and repoint every orderlist position at the copy for the
+    instrument that position enters holding. Returns (tracks, patterns,
+    {copy: source}); the arguments are not touched.
+
+    A copy is byte-identical and every position still plays the same
+    bytes, so nothing anyone hears changes here: the instrument a position
+    is entered with is set by the patterns before it, which no copy moves.
+    What changes is that each copy is entered with ONE instrument, which
+    `_entry_instruments` then settles, so a respell row before the
+    pattern's first named instrument has a base to clone. Wanted: a pattern
+    with two entry instruments holding one of `rows` before its first named
+    instrument; and a successor of a pattern whose LAST row is one of
+    `rows`, where the successor has two entry instruments and names none
+    before its first note (`_successor_relatch` declines it as "successor
+    entered holding another instrument" -- the re-latch needs the successor
+    settled on the tie's base).
+
+    A position that is itself entered with two instruments -- a repeat whose
+    pattern names one, or the restart re-entering on another lap's -- has no
+    copy to point at and stays on the source, still unsettled; where none
+    does, the instrument met first (by track, then position) keeps the
+    source number.
+    The copies are numbered past the table; a pattern whose copies would
+    take it past `limit` (gcommon.h MAX_PATT) is left whole."""
+    entry = _entry_instruments(tracks, patterns)
+    successors = _pattern_successors(tracks, len(patterns))
+    want: Set[int] = set()
+    by_pattern: dict = {}
+    for pn, r in rows:
+        if pn < len(patterns):
+            by_pattern.setdefault(pn, []).append(r)
+    for pn, rs in by_pattern.items():
+        pat = patterns[pn]
+        n = len(pat) // 4
+        if len(entry.get(pn, ())) > 1 and min(rs) < _first_named_row(pat):
+            want.add(pn)
+        if not any(r + 1 >= n or pat[4 * r + 4] == 0xFF for r in rs):
+            continue
+        for q in successors.get(pn, ()):
+            if len(entry.get(q, ())) < 2:
+                continue
+            first = _first_named_row(patterns[q])
+            note = next((r for r in range(len(patterns[q]) // 4)
+                         if GT_FIRST_NOTE <= patterns[q][4 * r] <= GT_LAST_NOTE),
+                        None)
+            if note is not None and note < first:
+                want.add(q)
+    if not want:
+        return tracks, patterns, {}
+    at = _position_entries(tracks, patterns)
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = [list(p) for p in patterns]
+    copies: dict = {}
+    for p in sorted(want):
+        groups: dict = {}
+        mixed = False
+        for (ti, pos), held in sorted(at.items()):
+            if tracks[ti][pos] != p:
+                continue
+            if len(held) == 1:
+                groups.setdefault(next(iter(held)), []).append((ti, pos))
+            else:
+                mixed = True
+        order = list(groups)       # first met in track, then position
+        moved = order if mixed else order[1:]
+        if not moved or len(new_patterns) + len(moved) > limit:
+            continue
+        for ins in moved:
+            c = len(new_patterns)
+            new_patterns.append(list(patterns[p]))
+            copies[c] = p
+            for ti, pos in groups[ins]:
+                new_tracks[ti][pos] = c
+    if log is not None and copies:
+        log(f"Entry instrument split..: {len(copies)} pattern cop(ies) of "
+            + ", ".join(f"{p:02X}" for p in sorted(set(copies.values())))
+            + ", one per instrument a position enters with, for the "
+            "clone respell")
+    return new_tracks, new_patterns, copies
+
+
+def split_bit7_rows(rows: dict, copies: dict) -> dict:
+    """`rows` (`note_bit7_rows`) with each `entry_instrument_split` copy given
+    its source's bit-7 rows, in the order the copies were made (a copy of a
+    copy follows its source). `note_bit7_rows` attributes a copy by its
+    note column, which leaves it unknown where two decoded patterns share
+    that column with different rows -- but a split copy is known to be its
+    source's, so it is not asked. Updates `rows` and returns it."""
+    for copy, source in copies.items():
+        rows[copy] = rows.get(source)
+    return rows
+
+
 def legato_tie_clones(patterns: List[List[int]], rows: set,
                       tracks: Optional[List[List[int]]],
                       cloneable: Set[int], first_number: int,
-                      last_number: int = 0, log=None):
+                      last_number: int = 0, log=None, kind=None,
+                      kinds: Optional[dict] = None):
     """Respell each of `rows` (`legato_tie_rows`) as a plain note on a legato
     clone of the instrument it plays. Returns (patterns, clones, declined):
     `clones` is [(instrument, clone number)] in number order from
     `first_number`; `declined` the rows that kept `CMD_TONEPORTA 00`.
+    `kind` splits an instrument's clones (`_respell_on_clones`); `kinds`,
+    where given, is filled with {clone number: its kind}.
 
     The instrument column latches (gplay.c:912-913, player.s `mt_instr`), so
     a clone left latched would make the NEXT note legato too. The base is
@@ -406,17 +617,22 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
 
     A row declines, and keeps the old spelling, where the instrument it
     plays cannot be settled (an empty column before any row names one, the
-    pattern entered with two instruments -- the orderlists are fixed here,
-    so the pattern cannot be split per entry), where that instrument has no
-    record to clone (`cloneable`), where a last-row tie's successors cannot
+    pattern entered with two instruments -- the orderlists are fixed here;
+    `build_sng` splits such a pattern per entry instrument BEFORE writing
+    them (`entry_instrument_split`), and what still declines is a position
+    entered with two itself, or a split past MAX_PATT), where that
+    instrument has no record to clone (`cloneable`), where a last-row tie's successors cannot
     take the re-latch (no `tracks`; a successor entered holding another
     instrument; one that would pack past `PACKED_PATTERN_LIMIT`), or where
     the numbers run out: `last_number` defaults to `GT_MAX_INSTRUMENTS`
     (gcommon.h MAX_INSTR - 1). The log names each decline's reason."""
     out, clone_of, declined, why = _respell_on_clones(
         patterns, rows, tracks, cloneable, first_number, last_number,
-        clear_command=True)
-    clones = sorted(((b, c) for b, c in clone_of.items()), key=lambda bc: bc[1])
+        clear_command=True, kind=kind)
+    if kind is not None and kinds is not None:
+        kinds.update({c: key[1] for key, c in clone_of.items()})
+    clones = sorted((((key[0] if kind is not None else key), c)
+                     for key, c in clone_of.items()), key=lambda bc: bc[1])
     if log is not None and (clones or declined):
         log(f"Legato tie..............: "
             f"{len(rows) - len(declined)} tie row(s) on "
@@ -544,7 +760,8 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
                        tracks: Optional[List[List[int]]],
                        cloneable: Set[int], first_number: int,
                        last_number: int = 0, clear_command: bool = True,
-                       uncloneable: str = "no record to clone"):
+                       uncloneable="no record to clone",
+                       kind=None, refuse=None):
     """`legato_tie_clones`' walk, shared with `free_note_variants`: each of
     `rows` names a clone of the instrument it plays, numbered from
     `first_number` per base, and the base is re-latched before anything
@@ -553,7 +770,16 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
     `CMD_TONEPORTA 00`, which the clone replaces); a free note has no
     command of its own to drop and keeps whatever the column holds.
     `uncloneable` names the decline of a row whose instrument is not in
-    `cloneable`. Returns (patterns, {base: clone}, declined rows, {reason: count})."""
+    `cloneable` -- a string, or a callable from that instrument to one --
+    also of one entered with two instruments where NONE is and every one
+    of them gives the same reason, since it declines for that whichever
+    plays. `refuse(base, held)`, where given, may decline a cloneable row:
+    it returns the reason, or None to take it. `kind(base, held)` -- `held`
+    the instrument the channel holds just before the row, 0 where
+    unsettled -- splits a base's clones
+    by its value: one clone per (base, kind), keyed so in the returned map;
+    None keys by base alone. Returns (patterns, {base or (base, kind):
+    clone}, declined rows, {reason: count})."""
     last_number = last_number or GT_MAX_INSTRUMENTS
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     successors = _pattern_successors(tracks, len(patterns)) if tracks else {}
@@ -566,6 +792,9 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
         declined.add((pn, r))
         why[reason] = why.get(reason, 0) + 1
 
+    def no_clone(base: int) -> str:
+        return uncloneable(base) if callable(uncloneable) else uncloneable
+
     for pn, pat in enumerate(out):
         mine = sorted(r for p, r in rows if p == pn)
         if not mine:
@@ -576,6 +805,7 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
         want = set(mine)
         for r in range(n):
             k = r * 4
+            held_before = live
             if pat[k + 1]:
                 live = pat[k + 1]
             if r not in want:
@@ -583,11 +813,21 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
             base = live
             room = r + 1 < n and pat[k + 4] != 0xFF
             if not base:
-                decline(pn, r, "entered with two instruments"
+                # Entered with two instruments none of which can be cloned,
+                # all for one reason: whichever plays, the row declines for
+                # that, so say so.
+                reasons = ({no_clone(b) for b in held}
+                           if len(held) > 1 and not held & cloneable else ())
+                decline(pn, r, next(iter(reasons)) if len(reasons) == 1
+                        else "entered with two instruments"
                         if len(held) > 1 else "instrument unsettled")
                 continue
             if base not in cloneable:
-                decline(pn, r, uncloneable)
+                decline(pn, r, no_clone(base))
+                continue
+            reason = refuse(base, held_before) if refuse is not None else None
+            if reason:
+                decline(pn, r, reason)
                 continue
             onward: List[int] = []
             if not room:
@@ -600,13 +840,16 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
                     decline(pn, r, f"last row, {reason}")
                     continue
                 onward = need
-            if base not in clone_of:
+            # `live` is read from each row BEFORE its respell, so a tie chain
+            # sees the base, not the clone the row before was given.
+            key = base if kind is None else (base, kind(base, held_before))
+            if key not in clone_of:
                 number = first_number + len(clone_of)
                 if number > last_number:
                     decline(pn, r, "instrument numbers run out")
                     continue
-                clone_of[base] = number
-            pat[k + 1] = clone_of[base]
+                clone_of[key] = number
+            pat[k + 1] = clone_of[key]
             if clear_command:
                 pat[k + 2] = pat[k + 3] = 0
             if not room:
@@ -696,6 +939,118 @@ def free_note_rows(patterns: List[List[int]], bit7: dict) -> set:
     return rows
 
 
+def free_note_attack_bits(sid: SidFile, det: Detection) -> Optional[int]:
+    """The effect-byte bits under which the player reads the frame counter a
+    flagged note leaves unloaded -- $04, $40 or both -- or None where that
+    is not read off the code, or a reader sits behind any other bit.
+
+    The block `free_note_skips_two_stage` finds pushes the frame count last,
+    so its first `PLA / STA counter,X` stores the counter (Lightforce $F226
+    `STA $F5FC,X`). Every `LDA counter,X` in the file must sit behind a guard
+    on the record's effect byte (record +7, copied to a cell by `LDA
+    instr+7,Y / STA cell`): `LDA cell / AND #bits / BEQ` (the two-stage
+    waveform, $04, Lightforce $F414) or `BIT cell / BVC` (the fixed attack
+    pitch, $40, Lightforce $F4A1). Then the counter drives nothing but those
+    two stages, and `free_note_record_has_attack` accounts for every one our
+    wavetable writes -- so a record it says has none plays, on a flagged
+    note, exactly its full start without the pulse reseed
+    (`free_note_variants`' pulse-only variant). Read at 6e467ff plus the
+    cycle-5 merge: all 34 corpus files `free_note_skips_two_stage` accepts
+    resolve to $44, or to $04 alone (Chain_Reaction, Flash_Gordon,
+    Kings_of_the_Beach_ingame, Thanatos, W_A_R, W_A_R_Preview, Zoolook)."""
+    if not free_note_skips_two_stage(sid, det):
+        return None
+    data = sid.data
+    gate = search_file(data, LEGATO_TIE_GATE_SHAPE)
+    end = min(gate + 5 + data[gate + 4], len(data))
+    k = data.find(b"\x68\x9D", gate + 5, end)
+    if k < 0 or k + 4 > end:
+        return None
+    counter = data[k + 2:k + 4]
+    fx_at = sid.to_address(det.instr_start + 7)
+    fx_load = (bytes((0xB9, fx_at & 0xFF, fx_at >> 8)),
+               bytes((0xBD, fx_at & 0xFF, fx_at >> 8)))
+    bits = 0
+    at = data.find(b"\xBD" + counter)
+    if at < 0:
+        return None
+    while at >= 0:
+        if at >= 7 and data[at - 4] == 0x29 and data[at - 2] == 0xF0:
+            cell = data[at - 6:at - 4] if data[at - 7] == 0xAD else None
+            bits |= data[at - 3]
+        elif at >= 5 and data[at - 5] == 0x2C and data[at - 2] == 0x50:
+            cell = data[at - 4:at - 2]
+            bits |= 0x40
+        else:
+            return None
+        if cell is None or not any(
+                data.find(load + b"\x8D" + cell) >= 0 for load in fx_load):
+            return None
+        at = data.find(b"\xBD" + counter, at + 1)
+    return bits if not bits & ~0x44 else None
+
+
+def free_note_record_has_attack(sid: SidFile, det: Detection,
+                                record: int) -> bool:
+    """Record `record`'s full start plays a counter-driven attack -- one a
+    flagged note skips in the original: its effect byte's bit 2 set, and a
+    nonzero attack waveform and frame count (the two-stage block, the record
+    half of `free_note_wave_start`'s test, readable before any wavetable is
+    laid out); or, on a player with the bit-$80 drum, bits $80 and $40 and
+    a nonzero frame count (the drum's fixed-pitch prologue, which
+    `_sfx_drum_entries` plays once per note on the same counter).
+
+    The ONE definition both free-note respells read. A record the player's
+    counter also drives but our wavetable writes nothing for counts as none:
+    $40 alone (Lightforce record 6, Knucklebusters 13 -- the fixed attack
+    pitch, which `_two_stage_entries` emits only inside the two-stage block)
+    and $04 with attack waveform 0 (`_two_stage_entries` returns None).
+    Their full start already plays no attack, so a pulse-only variant drops
+    nothing a flagged note keeps. No corpus row the free-note pass sees
+    plays one (C:/t/free-note-pulse-only-variant/attack_rows.py, presets, at
+    6e467ff plus the cycle-5 merge)."""
+    data = sid.data
+    base = det.instr_start + record * det.instr_stride
+    at = det.two_stage_wave + record * det.instr_stride
+    fr = det.two_stage_frames + record * det.instr_stride
+    if (record < 0 or det.instr_start < 0 or det.two_stage_wave < 0
+            or max(base + 7, at, fr) >= len(data) or not data[fr]):
+        return False
+    fx = data[base + 7]
+    if fx & 0x04 and data[at]:
+        return True
+    return bool(det.sfx_pitch >= 0 and det.effect_bit40
+                and fx & 0xC0 == 0xC0)
+
+
+def free_note_split_rows(patterns: List[List[int]], rows: set,
+                         tracks: List[List[int]], skippable: Set[int]) -> set:
+    """The `free_note_rows` worth an `entry_instrument_split`: those whose
+    instrument could be one of `skippable` (the GT numbers whose record
+    `free_note_record_has_attack`). A row before its pattern's first named
+    instrument can be any instrument the pattern is entered with
+    (`_entry_instruments`); a later one plays the last instrument named
+    above it. A row that can only play records with no attack is left
+    out: there it can at most take a pulse-only variant, which this split
+    is not extended to (`free_note_variants`)."""
+    entry = _entry_instruments(tracks, patterns)
+    out = set()
+    for pn, r in rows:
+        if pn >= len(patterns):
+            continue
+        pat = patterns[pn]
+        live = 0
+        for q in range(min(r + 1, len(pat) // 4)):
+            if pat[4 * q] == 0xFF:
+                break
+            if pat[4 * q + 1]:
+                live = pat[4 * q + 1]
+        can = {live} if live else entry.get(pn, set())
+        if can & skippable:
+            out.add((pn, r))
+    return out
+
+
 def free_note_wave_start(sid: SidFile, det: Detection, record: int,
                          wave_entries: List[tuple], start: int) -> int:
     """The wavetable row of record `record`'s SECOND stage, in the two-stage
@@ -712,15 +1067,13 @@ def free_note_wave_start(sid: SidFile, det: Detection, record: int,
     the record's attack byte must stand somewhere ahead of it -- otherwise
     there is no attack in the block to skip (pitch-seq, a held attack that
     loops, another emitter's block), and 0 is returned."""
+    if start <= 0 or not free_note_record_has_attack(sid, det, record):
+        return 0
     data = sid.data
     base = det.instr_start + record * det.instr_stride
     at = det.two_stage_wave + record * det.instr_stride
-    fr = det.two_stage_frames + record * det.instr_stride
-    if (record < 0 or det.instr_start < 0 or det.two_stage_wave < 0
-            or max(base + 7, at, fr) >= len(data)
-            or not data[base + 7] & 0x04 or not data[at] or not data[fr]
-            or start <= 0):
-        return 0
+    if not data[base + 7] & 0x04:
+        return 0                      # the drum's prologue: no second stage
     wave = data[base + 2]
     second = (_wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE)
     second |= wave & 0x01
@@ -739,7 +1092,9 @@ def free_note_wave_start(sid: SidFile, det: Detection, record: int,
 def free_note_variants(patterns: List[List[int]], rows: set,
                        tracks: Optional[List[List[int]]],
                        starts: dict, first_number: int,
-                       last_number: int = 0, log=None):
+                       last_number: int = 0, log=None,
+                       pulse_only: Set[int] = frozenset(),
+                       no_variant: Optional[dict] = None):
     """Respell each of `rows` (`free_note_rows`) on a variant of the
     instrument it plays whose wavetable starts at the second stage
     (`starts`: GT number -> `free_note_wave_start`) and whose pulse pointer
@@ -748,17 +1103,44 @@ def free_note_variants(patterns: List[List[int]], rows: set,
     nonzero": the running pulse program carries on, as the original's sweep
     does). Same walk, re-latch and declines as `legato_tie_clones`
     (`_respell_on_clones`), except that the row keeps its command.
+
+    `pulse_only` are the numbers in `starts` whose record has no attack
+    (`free_note_record_has_attack` False; `starts` holds its own wavetable
+    start): the variant only drops the pulse pointer. The skipped block is
+    the same whatever the record holds, so the original still keeps the
+    running width there -- but sweeps it with the NEW record's rate and
+    bounds, read through the record each frame (Lightforce $F329-$F387),
+    where pointer 0 carries on the previous INSTRUMENT's pulse program. The
+    two agree only where that is the same record, so a pulse-only row is
+    taken only where the channel holds its own instrument just before it:
+    "follows another instrument" otherwise, "follows an unsettled
+    instrument" where that is not known. `no_variant` maps a number
+    outside `starts` to the reason its rows decline (default "no two-stage
+    attack to skip").
     Returns (patterns, [(instrument, variant number)], declined)."""
+    reasons = no_variant or {}
+
+    def refuse(base: int, held: int) -> Optional[str]:
+        if base not in pulse_only or held == base:
+            return None
+        return ("follows another instrument" if held
+                else "follows an unsettled instrument")
+
     out, clone_of, declined, why = _respell_on_clones(
         patterns, rows, tracks, set(starts), first_number, last_number,
-        clear_command=False, uncloneable="no two-stage attack to skip")
+        clear_command=False,
+        uncloneable=lambda b: reasons.get(b, "no two-stage attack to skip"),
+        refuse=refuse)
     variants = sorted(((b, c) for b, c in clone_of.items()),
                       key=lambda bc: bc[1])
+    only = sum(b in pulse_only for b, _c in variants)
     if log is not None and (variants or declined):
         log(f"Free note (bit 7).......: "
             f"{len(rows) - len(declined)} flagged note row(s) on "
             f"{len(variants)} variant(s) with no attack stage and no pulse "
             "reset"
+            + (f" ({only} pulse-only: the record has no attack)"
+               if only else "")
             + (f", {len(declined)} kept the full start ("
                + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
                if declined else ""))
@@ -881,10 +1263,20 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
     notes were unresolved when they sit on instrument 04, whose shift byte
     is $00. Like the unnamed ones it is written nothing, so the split moves
     only the log.
+
+    **A SHORT note on a known instrument with no vibrato record is not
+    damped either.** The damp cancels the instrument's own pointer, and
+    this instrument has none (pointer 0: the player's `!cmddata` break
+    already gives it nothing), so `$04 00` only took the command column --
+    C64ME instrument 04, Rasputin's plain instruments. It is counted as
+    `plain_short` and the column left free. An UNNAMED instrument
+    (`live == 0`) still damps, because it may carry a pointer this pass
+    cannot see. Measured over the shipped presets: 25 files move, every
+    differing byte a `$04` -> `$00` command byte, no fidelity column moves.
     """
     gate = det.triangle_gate or TRIANGLE_VIBRATO_GATE
     by_slot = {rec + 1 + lead: idx for rec, (idx, _delay) in vib_ptrs.items()}
-    placed = damped = busy = unknown = plain = 0
+    placed = damped = busy = unknown = plain = plain_short = 0
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     for pn, pat in enumerate(patterns):
         held = entry.get(pn, set())
@@ -911,7 +1303,17 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
             index = 0
             if (end - i) // 4 > gate:
                 index = by_slot.get(live, -1)
-            if index < 0:
+            elif live and live not in by_slot:
+                # A short note on a KNOWN instrument with no vibrato record:
+                # the instrument's own pointer is 0, so the player's
+                # `!cmddata` break already gives it nothing and the damp
+                # would only take the command column. Only an unnamed
+                # instrument (`live == 0`) may still carry a pointer this
+                # pass cannot see, which is what the damp is for.
+                index = -2
+            if index == -2:
+                plain_short += 1
+            elif index < 0:
                 if live:
                     plain += 1
                 else:
@@ -942,7 +1344,9 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                "(commanded nothing; they keep the instrument's own pointer)"
                if unknown else "")
             + (f", {plain} long on an instrument with no vibrato"
-               if plain else ""))
+               if plain else "")
+            + (f", {plain_short} short on an instrument with no vibrato "
+               "left free" if plain_short else ""))
     return vib_ptrs
 
 
@@ -1014,61 +1418,6 @@ def _successor_heads(tracks: List[List[int]],
     return heads
 
 
-def _predecessor_tails(tracks: List[List[int]],
-                       patterns: List[List[int]]) -> dict:
-    """Pattern number -> the LAST rows the orderlists play right before it;
-    `_successor_heads` turned round.
-
-    Walked the same way (repeats honoured, transposes skipped). An
-    orderlist's first pattern gets `SONG_START_ROW`; the pattern the restart
-    operand lands on also gets the last pattern before `$FF`, because the
-    loop plays that one right before it. The operand is a byte position
-    (player.s `mt_sequencer`: `LDA (seq),Y` again at the operand's index, so
-    a transpose or repeat byte there still plays the pattern after it); one
-    that lands on no pattern gives every pattern of that orderlist `None`,
-    unknown, rather than guessing which one the loop re-enters.
-    """
-    def last_row(p: int):
-        pat = patterns[p]
-        r = 0
-        while r + 3 < len(pat) and pat[r] != 0xFF:
-            r += 4
-        return tuple(pat[r - 4:r]) if r else None
-
-    tails: dict = {}
-    for track in tracks:
-        seq, groups, repeat, group_start = [], [], 1, None
-        restart = None
-        for pos, b in enumerate(track):
-            if b == 0xFF:
-                restart = track[pos + 1] if pos + 1 < len(track) else None
-                break
-            if group_start is None:
-                group_start = pos
-            if 0xE0 <= b < 0xFF:
-                continue
-            if 0xD0 <= b < 0xE0:
-                repeat = b - 0xD0 + 1
-                continue
-            if b < len(patterns):
-                groups.append((group_start, pos, len(seq)))
-                seq += [b] * repeat
-            repeat, group_start = 1, None
-        if not seq:
-            continue
-        tails.setdefault(seq[0], set()).add(SONG_START_ROW)
-        for a, b in zip(seq, seq[1:]):
-            tails.setdefault(b, set()).add(last_row(a))
-        landing = [k for first, pat_pos, k in groups
-                   if restart is not None and first <= restart <= pat_pos]
-        if landing:
-            tails.setdefault(seq[landing[0]], set()).add(last_row(seq[-1]))
-        else:
-            for p in seq:
-                tails.setdefault(p, set()).add(None)
-    return tails
-
-
 def _held_to_attack(pat: List[int], end: int, gate: int,
                     heads: set) -> bool:
     """Whether a short note whose block ends at row offset `end` keeps the
@@ -1123,18 +1472,19 @@ def _attack_hold_pass(patterns: List[List[int]], targets: dict, gate: int,
     the command, which is what every note had before; counted, not dropped
     silently:
 
-    * **busy**: the note row's command column is taken, or the row before
-      it in the pattern carries any command. `CMD_SETWAVEPTR` does not
-      reset the channel's running effect (gplay.c:436-438 sets only the
-      wave pointer; player.s `mt_tick0_8` the same), so a portamento on the
-      row before would carry into the note. Row 0's row before is the last
-      row of every pattern the orderlists play ahead of it
-      (`_predecessor_tails`), read once every other row is placed; one
-      unknown predecessor makes it busy, and so does a one-row pattern,
-      whose row 0 is a row before for its successors. Row 0 is also the row
-      a subtune's `CMD_SETTEMPO` owns, but `apply_tempos` has written it by
-      now (convert.py, before `build_sng`), so an occupied column is busy
-      here and a free one costs no subtune its clock -- and
+    * **busy**: the note row's own command column is taken. The row BEFORE
+      it is not read: `CMD_SETWAVEPTR` leaves the running effect alone
+      (gplay.c `case CMD_SETWAVEPTR`; player.s `mt_tick0_8`), but on a note
+      row nothing is left to carry -- new-note init zeroes it first on every
+      note (gplay.c `cptr->command = 0` with `cmddata` back to the
+      instrument's vibrato; player.s `mt_newnoteinit`, `sta mt_chnfx,x
+      ;Reset effect` and `mt_chnparam` from `mt_insvibparam`), which is the
+      state `CMD_DONOTHING` (`mt_tick0_0`) would have left. So the pointer
+      on a note row changes the wave pointer and nothing else, whatever the
+      row before says, and row 0 is placed like any other row. Row 0 is
+      also the row a subtune's `CMD_SETTEMPO` owns, but `apply_tempos` has
+      written it by now (convert.py, before `build_sng`), so an occupied
+      column is busy here and a free one costs no subtune its clock -- and
       `CMD_SETWAVEPTR` is in `patterns.TEMPO_OVERWRITABLE` in any case.
     * **unknown**: no row of this pattern has named the instrument yet and
       the orderlists enter the pattern holding more than one
@@ -1156,7 +1506,6 @@ def _attack_hold_pass(patterns: List[List[int]], targets: dict, gate: int,
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     heads = _successor_heads(tracks, patterns) if tracks else {}
     out: List[List[int]] = []
-    row0: List[tuple] = []
     placed = busy = unknown = over = tied = 0
     for number, pat in enumerate(patterns):
         copy = None
@@ -1189,12 +1538,8 @@ def _attack_hold_pass(patterns: List[List[int]], targets: dict, gate: int,
                 i = end
                 continue
             cur = copy if copy is not None else pat
-            if cur[i + 2] or cur[i + 3] or (i and cur[i - 2]):
+            if cur[i + 2] or cur[i + 3]:
                 busy += 1
-                i = end
-                continue
-            if i == 0:
-                row0.append((number, live))
                 i = end
                 continue
             trial = list(cur)
@@ -1209,26 +1554,6 @@ def _attack_hold_pass(patterns: List[List[int]], targets: dict, gate: int,
                     used.add(live)
             i = end
         out.append(pat if copy is None else copy)
-    # Row 0 last, against the finished rows: no placement below changes a
-    # tail, because a one-row pattern (row 0 IS its tail) is refused.
-    tails = _predecessor_tails(tracks, out) if row0 and tracks else {}
-    for number, live in row0:
-        cur = out[number]
-        before = tails.get(number, {None})
-        if (len(cur) < 9 or cur[4] == 0xFF
-                or any(t is None or (t and t[2]) for t in before)):
-            busy += 1
-            continue
-        trial = list(cur)
-        trial[2] = CMD_SETWAVEPTR
-        trial[3] = targets[live] & 0xFF
-        if packed_pattern_size(pattern_rows(trial)) > PACKED_PATTERN_LIMIT:
-            over += 1
-            continue
-        out[number] = trial
-        placed += 1
-        if used is not None:
-            used.add(live)
     if log and (placed or busy or unknown or over or tied):
         log(f"Attack pitch held.......: {placed} short note(s) keep the $40 "
             f"pitch (vibrato gate {gate})"

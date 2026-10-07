@@ -60,7 +60,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import dis6502 as D  # noqa: E402
 import hold  # noqa: E402
-from h2g.detect import FILTER_ENABLE_BIT, FILTER_SHAPE, detect  # noqa: E402
+from h2g.detect import (FILTER_ENABLE_BIT, FILTER_SHAPE,  # noqa: E402
+                        FILTER_SHAPE_CLAMP, detect)
 from h2g.search import search_file  # noqa: E402
 from h2g.sidfile import load_sid  # noqa: E402
 from test_filter_fetch_hold import fetch_frame_reading  # noqa: E402
@@ -71,13 +72,21 @@ DRUM_BIT = 0x01
 NAMED = ("Delta_Mix-E-Load_loader", "Dragons_Lair_Part_II", "Food_Feud",
          "Knucklebusters", "Lightforce", "Sanxion")
 
+# The second line of each set is the files `find_filter` reads since
+# tests/test_filter_absent_four.py: Tarzan (the entry mode write) reaches the
+# filter on its $21 records 10 and 14; Thanatos (the BMI spelling) and
+# Sigma_Seven (free-running) test no bit $01; the held After_8, Mr_Meaner and
+# Rikky (free-running) bypass, but enable no record, so nothing rides it.
 BYPASSES = {"Bangkok_Knights", "Nemesis_the_Warlock", "Nineteen", "Pandora",
             "Powerplay_Hockey_USA_vs_USSR", "Saboteur_II", "Star_Paws",
-            "Thundercats", "Wiz"}
+            "Thundercats", "Wiz",
+            "After_8", "Mr_Meaner", "Rikky"}
 REACHES = {"Deep_Strike", "Delta_Mix-E-Load_loader", "Dragons_Lair_Part_II",
-           "Food_Feud", "Knucklebusters", "Lightforce", "Sanxion"}
+           "Food_Feud", "Knucklebusters", "Lightforce", "Sanxion",
+           "Tarzan"}
 NO_BIT01 = {"ACE_II", "Auf_Wiedersehen_Monty", "I_Ball", "IK_plus",
-            "Trans-Atlantic_Balloon_Challenge"}
+            "Trans-Atlantic_Balloon_Challenge",
+            "Sigma_Seven", "Thanatos"}
 
 
 def _decode_at(sid, data: bytes, addr: int):
@@ -131,6 +140,8 @@ def bit01_reading(sid, data: bytes):
     test.
     """
     i = search_file(data, FILTER_SHAPE)
+    if i <= -1:                       # Thanatos' `BMI` spelling: same status operand
+        i = search_file(data, FILTER_SHAPE_CLAMP)
     if i <= -1:
         return None
     filt = sid.to_address(i)

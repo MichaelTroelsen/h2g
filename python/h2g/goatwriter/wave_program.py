@@ -9,6 +9,8 @@ from .constants import (FORMAT_GTS5, WAVE_GATE_BIT, WAVE_NOTE_BASE,
                         WAVE_NOTE_KEEP, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .primitives import (_first_frame_lead, _sfx_note_byte, _speed_index,
                          _wave_byte, _wave_hold_byte)
+from .vibrato import (_classic_vibrato_entry, _table_vibrato_entry,
+                      _triangle_vibrato_entry)
 def _hold_wave_program_entry(left: List[int], right: List[int],
                              wave: int, multiplier: int) -> None:
     """Extend the entry just appended to cover a whole frame at `-S{m}`.
@@ -75,9 +77,76 @@ def _wave_program_travels(multiplier: int, fmt: str, running: int) -> bool:
     return fmt == FORMAT_GTS5 and multiplier >= 2 and bool(running & 0xFFFF)
 
 
+def _wave_program_hold_travels(fmt: str, running: int) -> bool:
+    """Whether the travel that puts the `$85` hold on the accumulator's
+    pitch can be emitted -- at EVERY call rate, `-S1` included.
+
+    `_wave_program_travels` refuses `-S1` for a portamento sitting BESIDE an
+    opcode's waveform entry, because there it makes the opcode two calls
+    where the player spends one, and every opcode after it runs a frame late
+    (v0.5.203). The closing travel is not beside an opcode. It follows the
+    restore entry, and only the stop follows it, so nothing after it can run
+    late: the restore's waveform still lands on the hold's own frame, and the
+    one frame the travel costs is the pitch of that frame alone -- the note's,
+    where the original sounds the accumulator. Every frame after it, for the
+    rest of the note, is the accumulator's pitch, which is what the
+    interpreter's `$85` writes. Mega_Apocalypse's own: `$4D8C CMP #$85 /
+    $4D90 JMP $4E63`, and `$4E63` is the per-frame writer, `LDA $C0,X / STA
+    $D401,Y / LDA $C3,X / STA $D400,Y` -- the accumulator the slides
+    (`$4DAB-$4DB6`, `SBC ($F8),Y` into `$C3,X` / `$C0,X`) count down.
+
+    Refusing it at `-S1` held the NOTE for the whole tail instead.
+    Mega_Apocalypse's `$09F9` record 3 (`set $81 / slide $10 $0200 / slide
+    $40 $03C0 / set $80 x8 / hold`) reads `$0EEF` = `$14AF - $05C0` (-1472)
+    for the rest of every note longer than its 12 frames; ours read `$14AF`.
+
+    **This is the encoding's question only.** Whether the travel belongs on
+    a record at all at `-S1` is `_wave_program_entries`' `hold_travel` and
+    `_wave_program_record_vibrates`.
+    """
+    return fmt == FORMAT_GTS5 and bool(running & 0xFFFF)
+
+
+def _wave_program_record_vibrates(sid: SidFile, det: Detection,
+                                  i: int) -> bool:
+    """Whether the player's own instrument vibrato runs on record `i`.
+
+    **A vibrating record's tail is centred on the NOTE, not on the
+    accumulator.** Every vibrato engine this converter reads computes the
+    pitch from the note (`_classic_vibrato_entry`: `freq(note) + counter x
+    interval`), so once it runs it rewrites the frequency the `$85` hold
+    would have left. Nemesis_the_Warlock measured it: `$0B09` (record 11,
+    `slide $41 $20 / $150 / $180`, sum `$2F0`) reads `-32 -368 -384` and
+    then `-37 0 37 0` around the note for the rest of every note, and
+    `$0C5A` (record 12, sum `$15D0`) `-147 -294 -147 0 147` around it. A
+    closing travel there put ours `-752` and `-5584` below it for the whole
+    tail. So the `-S1` travel is declined for such a record.
+
+    The test is the player's: each engine's entry function returns None on
+    exactly the byte the player's own `BNE`/`BEQ` reads as "no vibrato"
+    (Warhawk `$11EA`, Hollywood or Bust `$05D1`). Read whatever the
+    `vibrato` option says, because the original vibrates either way.
+    """
+    if det.vibrato_offset is not None:
+        offset, entry_of = (det.vibrato_offset,
+                            lambda b: _classic_vibrato_entry(b, 1))
+    elif det.table_vibrato is not None:
+        offset, entry_of = (det.table_vibrato.offset,
+                            lambda b: _table_vibrato_entry(
+                                b, det.table_vibrato, 1))
+    elif det.triangle_vibrato is not None:
+        offset, entry_of = (det.triangle_vibrato,
+                            lambda b: _triangle_vibrato_entry(b, 1))
+    else:
+        return False
+    at = det.instr_start + i * det.instr_stride + offset
+    return 0 <= at < len(sid.data) and entry_of(sid.data[at]) is not None
+
+
 def _wave_program_travel_entry(left: List[int], right: List[int],
                                running: int, speed_table: List[tuple],
-                               fmt: str, multiplier: int) -> bool:
+                               fmt: str, multiplier: int,
+                               closing: bool = False) -> bool:
     """Append the portamento carrying `running`, the slides' summed operands.
 
     The player subtracts each `< $80` opcode's 16-bit operand from a frequency
@@ -107,7 +176,10 @@ def _wave_program_travel_entry(left: List[int], right: List[int],
     (`gplay.c:548-552`, `player.s:1027`), which is a different quantity
     entirely.
     """
-    if not _wave_program_travels(multiplier, fmt, running):
+    # `closing`: the entry after the `$85` restore, gated on its own rule --
+    # see `_wave_program_hold_travels`.
+    if not (_wave_program_hold_travels(fmt, running) if closing
+            else _wave_program_travels(multiplier, fmt, running)):
         return False
     s = running & 0xFFFF
     if s < 0x8000:
@@ -124,10 +196,103 @@ def _wave_program_travel_entry(left: List[int], right: List[int],
     return True
 
 
+def _gated_slide_chain(sid: SidFile, det: Detection, i: int, prog: list,
+                       lead_l: List[int], lead_r: List[int],
+                       speed_table: List[tuple], multiplier: int,
+                       budget: int) -> Optional[tuple]:
+    """At `-S1`, the slides of a program the player's vibrato takes over
+    from, as a chain of portamentos -- or None where the shape is not this.
+
+    **What the original moves on frame 1.** Nemesis_the_Warlock records
+    3/11 (`$0B09`/`$0C0A`, program `slide $41 $0020 / $0150 / $0180 / hold`)
+    and 12 (`$0C5A`, five `$11` slides `$0C20 $02C0 $01F0 $0200 $0300`)
+    read, from the attack: `0 -32 -368 vib-384 vib vib ...` and `0 -3104
+    -3808 vib-496 vib-512 vib-768 vib ...`, where the counter gate says
+    the vibrato (`$E261 LDA $E6D7,X / CMP #$03 / BCC`) cannot store before
+    age 3. The frame-1 move is the PROGRAM, not the vibrato: `$E32E-$E341`
+    subtracts each slide's operand from the frequency cell `$E55D/$E517`
+    that `$E3F0` writes to `$D400/$D401`, one opcode a frame from age 1.
+    Below the gate nothing else writes that cell, so the slides accumulate;
+    from the gate on, `$E280/$E285` re-store the vibrato's ABSOLUTE pitch
+    (computed from the note) into it every frame BEFORE the program's
+    subtraction runs, so each later slide is a one-frame dip below the
+    vibrato and the sum is discarded. IK_plus record 13 (`$00C9`, gate 4,
+    slides `-$0380 -$0280 +$0180 +$0380`) reads the same: `+896 +1536
+    +1152 vib-896 vib`.
+
+    At `-S1` `_wave_program_entries` drops the slides (an opcode's one call
+    is spent on its waveform entry, v0.5.203), so those records held the
+    note flat to the hold. Where every opcode is a slide on the waveform
+    the lead already latched, no waveform entry is needed: a wavetable
+    command changes the frequency and leaves `wave` alone (`gplay.c`
+    `CMD_PORTADOWN`: `cptr->freq -= speed`, then `goto PULSEEXEC`), one
+    call each -- the chain shape `_wave_program_travels` describes, at the
+    player's rate exactly. Each command carries the change between the
+    original's offsets, `sum(s_1..s_a)` below the gate and `s_a` from it.
+    The restore after the last slide writes the note (`/00`, which also
+    zeroes `vibtime`), because the original's vibrato is centred on the
+    note and Goattracker's runs from wherever the frequency stands.
+
+    Only where: `-S1`; a counter gate is read for the record and the
+    record vibrates (`_wave_program_record_vibrates`); every opcode before
+    the hold is a slide on the record's own `+2` waveform with at least one
+    non-zero operand; and the hold's age is at or past the gate, so the
+    note never sounds the bare accumulator after the program (a later gate
+    would need a re-anchor this chain does not emit). A full speed table
+    refuses the whole chain, leaving the old entries.
+    """
+    if multiplier != 1:
+        return None
+    vg = det.vibrato_gate
+    if vg is None or vg.form != "counter":
+        return None
+    gate = vg.gate_for(i)
+    if gate is None or not _wave_program_record_vibrates(sid, det, i):
+        return None
+    gate = max(1, gate)
+    wave = sid.data[det.instr_start + i * det.instr_stride + 2]
+    if not prog or prog[-1][0] != "hold":
+        return None
+    slides = prog[:-1]
+    if (not slides or any(k != "slide" or w != wave for k, w, _ in slides)
+            or not any(a for _, _, a in slides)):
+        return None
+    if len(slides) + 1 < gate:
+        return None
+    if len(lead_l) + len(slides) + 2 > budget:
+        return None
+    left, right = list(lead_l), list(lead_r)
+    acc = was = 0
+    for age, (_, _, arg) in enumerate(slides, 1):
+        acc = (acc + arg) & 0xFFFF
+        now = acc if age < gate else arg & 0xFFFF
+        delta = (now - was) & 0xFFFF
+        was = now
+        if not delta:
+            left.append(_wave_byte(wave))
+            right.append(WAVE_NOTE_KEEP)
+            continue
+        cmd, speed = ((WAVECMD_PORTADOWN, delta) if delta < 0x8000
+                      else (WAVECMD_PORTAUP, 0x10000 - delta))
+        index = _speed_index(speed_table, (speed >> 8, speed & 0xFF))
+        if not index:
+            return None
+        left.append(cmd)
+        right.append(index)
+    # The same restore byte the general path writes (`persist`, gate
+    # cleared), on the note rather than the accumulator.
+    left.append(_wave_byte(wave & ~WAVE_GATE_BIT & 0xFF))
+    right.append(WAVE_NOTE_BASE)
+    left.append(0xFF)
+    right.append(0x00)
+    return left, right
+
+
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           speed_table: List[tuple], fmt: str,
                           multiplier: int, budget: int,
-                          written: bool = False) -> Optional[tuple]:
+                          written: bool = False,
+                          hold_travel: bool = False) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
     The interpreter `detect.find_wave_program` reads, in 29 corpus files -- the
@@ -180,6 +345,21 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     frequency write, `$00` re-asserts the pattern's own note, and the hold was
     therefore undoing the absolute pitch of every `>= $80` opcode one call
     after it was set. See `_hold_wave_program_entry`.
+
+    **`hold_travel`: the `$85` hold's travel at `-S1` too**
+    (`_wave_program_hold_travels`), for a record the player does not
+    vibrate (`_wave_program_record_vibrates`). The caller passes it only
+    where no instrument of the song writes a real or gate-off firstwave
+    (`build_sng`), because the tail's pitch is still in the register when
+    the voice's NEXT note opens: Goattracker's note-init call writes the
+    waveform alone (`player.s` `jmp mt_loadregswaveonly`), so a real
+    firstwave gates the next note on at the previous tail's pitch for one
+    frame. Under the test-bit firstwave that frame is silent. Measured on
+    the three corpus files with a real firstwave the travel reached
+    (Auf_Wiedersehen_Monty, Pygmies_Revenge, held Arcade_Classics): melody
+    0.9876 -> 0.6868, 0.9741 -> 0.7828, 0.9205 -> 0.5102, and identical on
+    both trees when every attack is named one frame in -- the whole loss is
+    that frame. Above `-S1` the travel is emitted as it always was.
     """
     if fmt != FORMAT_GTS5:
         return None
@@ -209,6 +389,11 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # latent here only because the multiplier gate above made it unreachable.
     lead_l, lead_r = _first_frame_lead(data[rec + 2], multiplier,
                                        written=written)
+    chain = _gated_slide_chain(sid, det, i, decode_wave_program(data, at),
+                               lead_l, lead_r, speed_table, multiplier,
+                               budget)
+    if chain is not None:
+        return chain
     left: List[int] = list(lead_l)
     right: List[int] = list(lead_r)
     seed = len(left)
@@ -243,18 +428,24 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # existed. See the slide branch: it decides between re-anchoring on the
     # note and stepping on from where the last one left off.
     carried = False
-    # What the block after the loop needs: the restore entry, the stop, and --
-    # wherever the call rate lets a slide's travel be emitted at all -- the
-    # portamento that puts the restore on the accumulator's pitch. Reserved
-    # whatever this opcode does, because the closing travel is decided by the
-    # sum of *every* slide and a `set` can be the last opcode a full budget
-    # admits.
-    tail = 2 + (1 if _wave_program_travels(multiplier, fmt, 1) else 0)
+    # What the block after the loop needs: the restore entry, the stop, and
+    # the portamento that puts the restore on the accumulator's pitch. Above
+    # `-S1` that third entry is reserved whatever this opcode does, because the
+    # closing travel is decided by the sum of *every* slide and a `set` can be
+    # the last opcode a full budget admits. At `-S1` it is reserved from the
+    # first opcode that leaves the sum non-zero (`_wave_program_hold_travels`),
+    # so a program with no travel to close keeps every opcode it had.
+    closing = hold_travel and not _wave_program_record_vibrates(sid, det, i)
+
+    def tail(r: int) -> int:
+        return 2 + (1 if (_wave_program_travels(multiplier, fmt, 1)
+                          or (closing and _wave_program_hold_travels(fmt, r)))
+                    else 0)
     for kind, wave, arg in decode_wave_program(data, at):
         if kind == "hold":
             break
         if kind == "set":
-            if len(left) + per_opcode + tail > budget:
+            if len(left) + per_opcode + tail(running) > budget:
                 break
             left.append(_wave_byte(wave))
             right.append(_sfx_note_byte(arg))
@@ -331,7 +522,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         delta = arg & 0xFFFF if carried else (running + arg) & 0xFFFF
         travel = int(_wave_program_travels(multiplier, fmt, delta))
         cost = 1 + travel + (_wave_hold_byte(multiplier - travel) is not None)
-        if len(left) + cost + tail > budget:
+        if len(left) + cost + tail(running + arg) > budget:
             break
         left.append(_wave_byte(wave))
         right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
@@ -399,9 +590,13 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # the interpreter's `$85` does.
     left.append(_wave_byte(persist & ~WAVE_GATE_BIT & 0xFF))
     right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
+    # **At `-S1` too, where `closing` says so** (`hold_travel`,
+    # `_wave_program_hold_travels`): there the restore writes the note on
+    # the hold's frame and this entry moves it onto the accumulator on the
+    # next, which then stands for the rest of the note.
     if not carried:
         _wave_program_travel_entry(left, right, running, speed_table,
-                                   fmt, multiplier)
+                                   fmt, multiplier, closing=closing)
     left.append(0xFF)
     right.append(0x00)
     return left, right

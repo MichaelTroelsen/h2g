@@ -22,7 +22,7 @@ on note names, runs of 8 or more):
 | file | traced/walked | base | lockstep |
 |---|---|---|---|
 | Human_Race | 0/0 | v0 422/457, v1 declined | v0 457/457, v1 120/120 |
-| Chimera | 0/0 | declined | v0 132/132, v1 96/135 |
+| Chimera | 0/0 | declined | v0 132/132, v1 135/135 (96/135 before record 8's regates) |
 | Devils_Galop | auto/0 | declined | v0 551/551, v1 60/60, v2 32/33 |
 | Monty_on_the_Run | 0/0 | declined | v0 405/405, v1 60/60, v2 33/33 |
 | Ninja | auto/0 | declined | v0 93/93, v1 28/28, v2 102/102 |
@@ -47,6 +47,10 @@ tests below say which; the third is gone since the merge:
   original never sounds: its frame-0 register is still empty). Voice 1 of
   Chimera plays many notes the original does not attack (no gate edge), so
   the name alignment pairs some planned notes with the wrong attack.
+  Chimera's half of it closed once the 49 attacks after record 8's `$10`
+  rows stopped being spelt as ties (patterns.record_gate_clear,
+  tests/test_gate_clear_record.py): the name pairing reads 135/135 and the
+  packed output reaches 135 of 135 (134 of 134 before).
 * **Thing_on_a_Spring v0 and v1 were the decoder's, not the walk's.** Voice 0
   holds $8C0 for three frames at 1151-1153 where the bytes-only walk stepped
   on 1153: the original FETCHES there (its ADSR is rewritten on frame 1153,
@@ -262,7 +266,7 @@ def test_where_no_record_is_shared_the_voices_plan_as_if_alone():
 _LIFTED = [
     # (file, seconds, subtune traced, group walked, {voice: (exact, paired)})
     ("Human_Race.sid", 180, 0, 0, {0: (457, 457), 1: (120, 120)}),
-    ("Chimera.sid", 180, 0, 0, {0: (132, 132), 1: (96, 135)}),
+    ("Chimera.sid", 180, 0, 0, {0: (132, 132), 1: (135, 135)}),
     ("Devils_Galop.sid", 180, None, 0, {0: (551, 551), 1: (60, 60), 2: (32, 33)}),
     ("Monty_on_the_Run.sid", 180, 0, 0, {0: (405, 405), 1: (60, 60), 2: (33, 33)}),
     ("Ninja.sid", 180, None, 0, {0: (93, 93), 1: (28, 28), 2: (102, 102)}),
@@ -352,7 +356,8 @@ def _time_paired(name: str, seconds: int, sub: int, group: int, v: int):
     tick, tempo = cap["tri_start"][group][0], cap["tempos"][group]
     out = []
     for npass, pos, r, kind, instr, fetch in P._triangle_rows(
-            track, songlen, track[songlen + 1], cap["patterns"]):
+            track, songlen, track[songlen + 1], cap["patterns"],
+            cap["event_rows"]):
         if npass or tick >= nf:
             break
         ph = planned.get((ti, pos, r))
@@ -363,7 +368,8 @@ def _time_paired(name: str, seconds: int, sub: int, group: int, v: int):
 
 
 def test_the_two_note_pairing_slips_are_exact_paired_by_time():
-    """Chimera v1 (96/135 by name) and Devils_Galop v2 (32/33): by TIME
+    """Chimera v1 (96/135 by name before record 8's regates, 135/135 since)
+    and Devils_Galop v2 (32/33): by TIME
     every planned note row (ties included) opens on the original's width
     on its fetch tick's frame, except Devils_Galop
     v2's tick-0 note, which the original never sounds (no register write
@@ -442,7 +448,7 @@ def test_thing_on_a_springs_frame_1153_fetch_is_the_decoders():
 
 _REACH = {
     # name: {(group, voice): (reached, paired)} -- see `_reach`
-    "Chimera.sid": {(0, 0): (132, 132), (0, 1): (134, 134)},
+    "Chimera.sid": {(0, 0): (132, 132), (0, 1): (135, 135)},
     "Thing_on_a_Spring.sid": {(0, 0): (225, 225), (0, 1): (25, 25),
                               (0, 2): (871, 871)},
     # The cost: subtune 0 voice 1 is new, subtunes 2-4 lose what the

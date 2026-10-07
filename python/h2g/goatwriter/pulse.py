@@ -35,8 +35,8 @@ def _split_ticks(ticks: int) -> List[int]:
     return steps or [1]
 
 
-def _pulse_triangle(width: int, low: int, high: int,
-                    speed: int) -> tuple[List[tuple], int]:
+def _pulse_triangle(width: int, low: int, high: int, speed: int,
+                    step: Optional[int] = None) -> tuple[List[tuple], int]:
     """A triangle between two high nibbles, opening at the record's own width.
 
     Shared by the two engines that sweep the whole 12-bit width -- the
@@ -74,8 +74,27 @@ def _pulse_triangle(width: int, low: int, high: int,
     still open: per-note excursion is not exactly gap x speed (predicted
     256/512/1024 against the 449/771/899 measured), so the turn-around
     arithmetic is unaccounted for.
+
+    **With `step` (the triangle engine's own per-tick step), the legs turn
+    where the player turns** (`_tri_turns`): on the first width of the
+    record's step lattice whose high nibble EQUALS the bound -- the first
+    width at or past `high << 8` going up, the first at or below
+    `(low << 8) + $FF` going down -- not on the bound itself. Without it
+    every triangle record descended a whole nibble too far: Game_Killer's
+    record 2 ran 808..DF6 (1518) where the player runs 8E0..E20 (1344), and
+    111 of 111 triangle records under presets turned off the player's
+    widths. Each leg is the tick count whose arrival is NEAREST the
+    player's turn width at the emitted speed, measured from where the
+    previous leg actually stopped; where the speed divides the step (every
+    `-S1` delay-1 step up to 127) that is the turn width exactly. Without
+    `step` -- the per-record-bounds engine, `_pulse_program` -- the old
+    edges stand: it turns on the same equality, but that engine was not
+    measured here.
     """
     lo_v, hi_v = low << 8, high << 8
+    turns = _tri_turns(width, step, low, high) if step else None
+    if turns is not None:
+        return _lattice_legs(width, speed, *turns)
     # Clamped to the top only. A record's width may legitimately sit *below* the
     # low bound -- Trans-Atlantic's GT 1 opens on $880 with bounds $D00/$F00 --
     # and the player does not clamp it: it sweeps up from there until a bound
@@ -91,6 +110,72 @@ def _pulse_triangle(width: int, low: int, high: int,
     loop = len(entries)
     entries += [(t, (0x100 - speed) & 0xFF) for t in ticks]
     entries += [(t, speed) for t in ticks]
+    return entries, loop
+
+
+def _tri_turns(width: int, step: int, low: int,
+               high: int) -> Optional[tuple[int, int, int]]:
+    """(first top, bottom, top): the widths the triangle engine turns on
+    from `width` going up -- its first turn, the turn after it, and the top
+    of the cycle it then repeats -- or None if a nibble is never reached.
+
+    Read off `PulsePhaseSim.advance`, the routine's own arithmetic, so the
+    two cannot disagree: a 12-bit add and a turn on EQUALITY of the high
+    nibble after the step (`ADC #$00 / AND #$0F / CMP #$0E / BNE`, Commando
+    $5275-$527C). A step is at most $F0, so no nibble is skipped, and the
+    turn lands on the first lattice point inside the bound's nibble:
+    Game_Killer's record 2 ($9C0, step $E0) climbs $AA0 ... $D40, $E20 and
+    turns; descends $D40 ... $9C0, $8E0 and turns; and from $8E0 reaches
+    $E20 again -- a cycle 8E0..E20, 1344 a leg, where the bounds alone say
+    800..E00. The first top differs from the cycle's only where the record
+    opens inside the top nibble with a step that stays in it (Devils_Galop's
+    record 9, $E00 step $80: $E80, then 880..E00 for ever after)."""
+    sim = PulsePhaseSim(width, step, 1, low, high)
+    out = []
+    for want in (-1, +1, -1):
+        for _ in range(0x1000 // step + 2):
+            sim.advance(1)
+            if sim.direction == want:
+                break
+        else:
+            return None
+        out.append(sim.width)
+    return out[0], out[1], out[2]
+
+
+def _nearest_ticks(distance: int, speed: int) -> int:
+    """The tick count whose arrival at `speed` is nearest `distance`, half
+    up (never Python's round-half-even, which would depend on parity)."""
+    return (2 * distance + speed) // (2 * speed)
+
+
+def _lattice_legs(width: int, speed: int, first_top: int, bottom: int,
+                  top: int) -> tuple[List[tuple], int]:
+    """`_pulse_triangle`'s entries for the player's lattice turns: a set to
+    the record's width, the first ascent, then the loop. Every leg's tick
+    count is measured from where the previous leg ACTUALLY stopped, so the
+    rounding never accumulates; the loop is one down leg and one up leg of
+    the same count, so it returns exactly to where it started. Where the
+    first top is not the cycle's (`_tri_turns`), the first descent is laid
+    before the loop and the loop opens on the ascent instead."""
+    def legs(ticks: int, spd: int) -> List[tuple]:
+        return [(t, spd) for t in _split_ticks(ticks)]
+    down_spd = (0x100 - speed) & 0xFF
+    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
+    first = _nearest_ticks((first_top - width) & 0xFFF, speed)
+    if first:
+        entries += legs(first, speed)
+    at = (width + first * speed) & 0xFFF
+    down = max(1, _nearest_ticks((at - bottom) & 0xFFF, speed))
+    if first_top == top:
+        loop = len(entries)
+        entries += legs(down, down_spd) + legs(down, speed)
+        return entries, loop
+    entries += legs(down, down_spd)
+    at = (at - down * speed) & 0xFFF
+    up = max(1, _nearest_ticks((top - at) & 0xFFF, speed))
+    loop = len(entries)
+    entries += legs(up, speed) + legs(up, down_spd)
     return entries, loop
 
 
@@ -325,9 +410,14 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
       `-S1` a step that large is emitted at 127 and sweeps ~1.8x slow. The span
       stays right because the tick count is recomputed from the speed actually
       emitted -- the same trade the other two engines make.
-    * The player turns around when the high nibble *equals* a bound, so a step
-      that does not divide the span overshoots by up to one step; the tick
-      count here turns a fraction of a step early instead.
+    * The player turns around when the high nibble *equals* a bound, on the
+      first width of its step lattice inside that nibble, and the legs here
+      turn there too (`_pulse_triangle`'s `step`, `_tri_turns`) -- to the
+      nearest tick at the emitted speed, which is the width exactly only
+      where the speed divides the step. RETRACTED: "the tick count here
+      turns a fraction of a step early instead" -- it turned on the bound
+      itself, a whole nibble below the player's bottom turn: Game_Killer's
+      legs spanned 1518 against the player's 1344.
     """
     data = sid.data
     rec = det.instr_start + i * det.instr_stride
@@ -344,7 +434,8 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
         return None
     speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid))
     width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
-    return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed)
+    return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
+                           step)
 
 
 def _tri_speed(step: int, delay: int, multiplier: int,
@@ -376,15 +467,16 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     stays, only its clock changes. Undivided, Game_Killer's speed clamps at
     127 a call against the original's ~22.
 
-    **WHAT THIS EXPOSES, NOT FIXES: the audible leg is a separate defect.**
-    `_pulse_triangle` turns on the bound itself, while the player turns on
-    the first lattice point whose high nibble EQUALS the bound -- Game_Killer
-    sweeps 8E0..E20 (1344 a leg) where our table spans ~1500. At /9 the two
-    errors cancelled (leg 6.81 frames against the original's 6.62); at /10
-    the rate is right and the leg reads 7.33. A probe giving the legs the
-    player's lattice span on top of this divisor put Game_Killer at 6.82,
-    Ninja at 15 (original 14.66, /1 shipped 12) and One_Man at 6.0 (6.1,
-    shipped 6.58). Rasputin's gate is not read at all: its R comes from
+    **WHAT THIS EXPOSED, FIXED SINCE: the audible leg was a separate
+    defect.** `_pulse_triangle` turned on the bound itself, while the player
+    turns on the first lattice point whose high nibble EQUALS the bound --
+    Game_Killer sweeps 8E0..E20 (1344 a leg) where our table spanned 1518.
+    At /9 the two errors cancelled (leg 6.81 frames against the original's
+    6.62); at /10 the rate is right and the leg read 7.33. The legs now turn
+    on the player's lattice (`_tri_turns`; table 8E4..E22, 61 ticks of 22):
+    measured packed at 6e467ff + that change, 120 s, Game_Killer 7.34 ->
+    6.81 frames a leg (original 6.62), Ninja 16 -> 15 (14.66), One_Man 6.6
+    -> 6.0 (6.1), Human_Race 24 -> 22 (22). Rasputin's gate is not read at all: its R comes from
     the track's `$FE nn` (`outer_gate_skip` returns None), so it keeps
     `multiplier` -- shipped 128 a frame against the original's 101.
 

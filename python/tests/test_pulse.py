@@ -650,13 +650,18 @@ def _walk(entries):
 def test_the_descent_cannot_walk_below_the_lower_bound():
     """Goattracker masks the width to $FFF where the player clamps, so a descent
     measured from the bound rather than from where the ascent stopped would wrap
-    to the top of the range on a truncated step -- a sweep audibly inside out."""
+    to the top of the range on a truncated step -- a sweep audibly inside out.
+
+    The top is the top NIBBLE, not the bound: the player turns on the first
+    width of its lattice whose high nibble equals $E (`_tri_turns`), which
+    can sit anywhere in $E00-$EFF. RETRACTED: `high <= TRI_HI << 8` -- that
+    was the turn-on-the-bound model, a whole nibble short at the bottom."""
     for rate in (0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0x23, 0x45):
         for lo, hi in ((0x00, 0x08), (0xFF, 0x0D), (0xC0, 0x0A)):
             entries, _ = _tri(rate, lo=lo, hi=hi)
             low, high = _walk(entries)
             assert low >= TRI_LO << 8, (rate, lo, hi, entries)
-            assert high <= TRI_HI << 8, (rate, lo, hi, entries)
+            assert high < (TRI_HI + 1) << 8, (rate, lo, hi, entries)
 
 
 def test_the_gate_routes_a_bit_08_record_to_the_other_engine():

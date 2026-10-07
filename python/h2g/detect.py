@@ -148,6 +148,16 @@ class Detection:
     # frame, in the last ticks of a long note. Consulted only where the
     # rise above was not found -- see _find_skydive().
     skydive: Optional["Skydive"] = None
+    # The same block with no ticks-left window (Game_Killer $0B33): the
+    # high byte steps on every other tick of the WHOLE note, up (`INC`) or
+    # down (`DEC`). Consulted only where neither reading above matched --
+    # see _find_note_rise().
+    note_rise: Optional["NoteRise"] = None
+    # Bit $02 read a FOURTH way, Rasputin $C35A: the voice's stored waveform
+    # EORed with a mask on a free-running per-voice counter -- see
+    # _find_wave_eor(). DETECTED AND NOT EMITTED; the measured reason is at
+    # WAVE_EOR_SHAPE. Consulted only where no other bit-$02 reading matched.
+    wave_eor: Optional["WaveEor"] = None
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
     # Semitones *up* for the second arpeggio dialect, whose interval is
     # hardcoded in the routine rather than taken from the record's high
@@ -1928,6 +1938,14 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             log(f"Effect bit $02..........: skydive (notes of length "
                 f">= {sd.min_length}, last {sd.last_ticks} ticks, every "
                 f"other frame on ${sd.counter:04X})")
+        else:
+            det.note_rise = _find_note_rise(sid, det)
+            if det.note_rise is not None:
+                nr = det.note_rise
+                log(f"Effect bit $02..........: high byte "
+                    f"{'up' if nr.step > 0 else 'down'} a step every other "
+                    f"tick of notes of length >= {nr.min_length}, on "
+                    f"${nr.counter:04X}")
     if det.effect_arp and not det.arp_fixed_up:
         det.arp_nibble_period = nibble_arp_period(sid, det)
     if any((det.effect_rise, det.effect_arp, det.effect_drum,
@@ -2057,6 +2075,16 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # `wave_alternate` because the two are separate blocks: every corpus file
     # carrying this one carries that one, but the reading does not depend on
     # it.
+    # Bit $02's EOR dialect (Rasputin), after every other reading of the bit
+    # because it is a fallback: `_find_wave_eor` declines wherever one of them
+    # matched. Logged and not emitted -- see WAVE_EOR_SHAPE for the A/B.
+    det.wave_eor = _find_wave_eor(sid, det)
+    if det.wave_eor is not None:
+        we = det.wave_eor
+        log(f"Effect bit $02..........: EOR #${we.mask:02X} into the voice's "
+            f"waveform every {we.reload + 1} effect calls on a free-running "
+            f"per-voice counter (${we.counter:04X}) -- NOT emitted")
+
     det.note_alternate = _find_note_alternate(sid, det)
     if det.note_alternate >= 0:
         log("Instrument effect byte..: bit $08 alternates the NOTE every "
@@ -2149,7 +2177,9 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         f = det.filter
         log(f"Filter..................: ${f.addr:04X}, stride "
             f"{det.instr_stride}, passband ${f.passband:02X}, "
-            f"cutoff starts at ${f.cutoff:02X}")
+            f"cutoff starts at ${f.cutoff:02X}"
+            + (", sweep stops at bit 7" if f.clamp else "")
+            + (", never reset (free-running)" if f.free_running else ""))
 
     return det
 
@@ -2245,6 +2275,54 @@ def _burst_cutoff_start(data: bytes, cutoff_var: int) -> int:
 # three bits, so the passband maps across unshifted.
 FILTER_MODE_SHAPE = "A9 ?? 8D 18 D4"
 
+# Three spellings of the same routine that the gates above refuse, each read
+# out of the one file that has it and each consulted ONLY where the primary
+# reading found nothing, so no file the primary path reads can move.
+#
+# 1. **The sweep that stops at bit 7.** Thanatos $C331 is FILTER_SHAPE with a
+#    `BMI` between the load and the add:
+#
+#        C338  BD 7B C4  LDA cutoff,X
+#        C33B  30 0A     BMI $C347        ; >= $80: no add, no $D416 write
+#        C33D  18        CLC
+#        C33E  79 AD C4  ADC step,Y
+#        C341  9D 7B C4  STA cutoff,X
+#        C344  8D 16 D4  STA $D416
+#        C347  B9 AC C4  LDA resctl,Y     ; <- the BMI's target
+#        C34A  8D 17 D4  STA $D417
+#
+#    so each note sweeps from its start ($C0D3 `LDA #$20 / STA cutoff,X`, at
+#    every note fetch) until the accumulator first reads negative and then
+#    holds there. The branch must land exactly on the resctl load, which is
+#    what `data[i + 11] == 0x0A` tests: anything else is another routine.
+FILTER_SHAPE_CLAMP = ("AD ?? ?? 29 20 F0 ?? BD ?? ?? 30 0A "
+                      "18 79 ?? ?? 9D ?? ?? 8D 16 D4 B9 ?? ?? 8D 17 D4")
+# 2. **The mode write at the player's entry.** FILTER_MODE_SHAPE takes the
+#    FIRST `LDA #imm / STA $D418` in the file, and Tarzan's first is the exit
+#    of its digi routine ($53C0 `LDA #$00 / STA $D418`, then `LDA $5404 / STA
+#    $D011`, the PLAs and `CLI`) -- passband 0, so the file is refused. Its
+#    IRQ ($4037 `JSR $550C`) enters the player at $550C, `LDA #$1F / STA
+#    $D418`, directly behind the `JMP` table, which is where Thanatos
+#    ($C00F, its PSID play address) and Mr_Meaner ($1012) keep theirs too.
+#    Consulted only when the first match names no passband.
+FILTER_MODE_ENTRY_SHAPE = "4C ?? ?? 4C ?? ?? A9 ?? 8D 18 D4"
+# 3. **The accumulator nothing resets.** Sigma_Seven's `cutoff,X` ($84A1) is
+#    written by the sweep's own `STA` and by nothing else in the file -- no
+#    note-start load, no burst -- so it starts from its file bytes ($08 for
+#    voice 0) and runs on, wrapping, across every note of a filtered record.
+#    That is a reading, not a refusal: see `FilterInfo.free_running`.
+
+
+def _stores_to(data: bytes, addr: int, span: int = 3) -> list:
+    """Offsets of every absolute or indexed store naming addr..addr+span-1."""
+    out = []
+    for j in range(len(data) - 2):
+        if data[j] in (0x8D, 0x9D, 0x99, 0x8E, 0x8C):
+            a = data[j + 1] | data[j + 2] << 8
+            if addr <= a < addr + span:
+                out.append(j)
+    return out
+
 
 @dataclass
 class FilterInfo:
@@ -2253,6 +2331,12 @@ class FilterInfo:
     passband: int  # $D418 & $70
     cutoff: int    # the value every note's sweep starts from
     status: int    # offset of the per-instrument status array (bit $20 = on)
+    # The sweep stops once the accumulator reads >= $80 (FILTER_SHAPE_CLAMP).
+    clamp: bool = False
+    # Nothing but the sweep writes the accumulator: no note resets it, so
+    # `cutoff` is only its power-on file byte and every note CONTINUES the
+    # sweep from wherever the last one left it.
+    free_running: bool = False
 
 
 # The interleaved dialect's filter, which `FILTER_SHAPE` cannot reach because
@@ -2353,13 +2437,18 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
         return None
     data = sid.data
     i = search_file(data, FILTER_SHAPE)
+    d = 0                                  # operand shift of the clamp spelling
+    if i <= -1:
+        i = search_file(data, FILTER_SHAPE_CLAMP)
+        d = 2
     if i <= -1:
         return None
+    clamp = bool(d)
 
     status_var = data[i + 1] | data[i + 2] << 8
-    step = data[i + 12] | data[i + 13] << 8
-    cutoff_var = data[i + 15] | data[i + 16] << 8
-    resctl = data[i + 21] | data[i + 22] << 8
+    step = data[i + 12 + d] | data[i + 13 + d] << 8
+    cutoff_var = data[i + 15 + d] | data[i + 16 + d] << 8
+    resctl = data[i + 21 + d] | data[i + 22 + d] << 8
     # The layout claim, tested rather than assumed: one array, resonance then
     # step. A file where the two operands are not adjacent is reading some
     # other pair of tables and is not ours to interpret.
@@ -2370,6 +2459,10 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
     if j <= -1:
         return None
     passband = data[j + 1] & 0x70
+    if not passband:
+        e = search_file(data, FILTER_MODE_ENTRY_SHAPE)
+        if e > -1:
+            passband = data[e + 7] & 0x70
     if not passband:
         return None  # filter switched off at the mode register: nothing to say
 
@@ -2382,6 +2475,13 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
             break
     if cutoff < 0:
         cutoff = _burst_cutoff_start(data, cutoff_var)
+    free_running = False
+    if cutoff < 0 and _stores_to(data, cutoff_var) == [i + 14 + d]:
+        # The sweep's own `STA cutoff,X` is the only writer: nothing resets
+        # it, so there is no start value to read because there is none.
+        at = sid.to_offset(cutoff_var)
+        if 0 <= at < len(data):
+            cutoff, free_running = data[at], True
     if cutoff < 0:
         return None
 
@@ -2395,7 +2495,8 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
     if not 0 <= offset < len(data) or not 0 <= status < len(data):
         return None
     return FilterInfo(addr=resctl, offset=offset, passband=passband,
-                      cutoff=cutoff, status=status)
+                      cutoff=cutoff, status=status, clamp=clamp,
+                      free_running=free_running)
 
 
 # The pattern-fetch shape that consumes a second operand byte. Warhawk $10EC:
@@ -3712,6 +3813,24 @@ GATE_HOLD_BRANCHES = (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)
 GATE_HOLD_LSR_SHAPE = "BD ?? ?? 29 20 D0 ?? BD ?? ?? 4A DD ?? ?? D0 ??"
 GATE_HOLD_LSR_CMP = 12      # offset of the CMP's operand low byte
 GATE_HOLD_LSR_BNE = 14      # offset of the second BNE
+# A third spelling, consulted only where BOTH spellings above match nothing:
+# the status byte read from zero page (`LDA zp,X`, two bytes), so every offset
+# after it is one less. Spellbound, the only corpus file it arms:
+#
+#     E18D  B5 C7     LDA $C7,X      ; status
+#     E18F  29 20     AND #$20
+#     E191  D0 14     BNE $E1A7      ; bit 5 set    -> no gate-off
+#     E193  BD CA E4  LDA $E4CA,X    ; the counter
+#     E196  D0 0F     BNE $E1A7      ; not zero yet -> no gate-off
+#     E198  B5 CA     LDA $CA,X / AND #$FE / STA $D404,Y ; gate off
+#
+# with `E07E DEC $E4CA,X / BMI $E08C / JMP $E182` the sequencer, and the row
+# clock's bypass `E072 BNE $E089` -> `JMP $E1A7`: past the gate-off, so a
+# zero-`wait` event keeps its gate (Human_Race's case, not Saboteur_II's).
+# Bangkok_Knights carries this spelling too but also the first one, which
+# is what it reads -- and why this one is a fallback.
+GATE_HOLD_ZP_SHAPE = "B5 ?? 29 20 D0 ?? BD ?? ?? D0 ??"
+GATE_HOLD_ZP_COUNTER = 7    # offset of the counter LDA's operand low byte
 
 
 def _rel_target(data: bytes, at: int) -> int:
@@ -3788,26 +3907,35 @@ def find_gate_hold(sid: SidFile) -> bool:
     GATE_HOLD_LSR_SHAPE (Commodore_64_Music_Examples' `LDA c,X / LSR A / CMP
     c,X / BNE`) is read only where GATE_HOLD_SHAPE matches nothing at all, so
     it can arm a file that read no guard and never disturbs one that did.
+    GATE_HOLD_ZP_SHAPE (Spellbound's `LDA zp,X` status) is read only where
+    neither of those matches anything, on the same terms.
     """
     data = sid.data
     if search_file(data, GATE_HOLD_SHAPE) > -1:
         # Both guards must skip to the same place.
         return _gate_hold_verdict(sid, GATE_HOLD_SHAPE, lambda i: (
             _rel_target(data, i + 5) == _rel_target(data, i + 10)))
-    # The LSR/CMP spelling: the same cell twice, and both BNEs to one place.
-    return _gate_hold_verdict(sid, GATE_HOLD_LSR_SHAPE, lambda i: (
-        data[i + GATE_HOLD_COUNTER:i + GATE_HOLD_COUNTER + 2]
-        == data[i + GATE_HOLD_LSR_CMP:i + GATE_HOLD_LSR_CMP + 2]
-        and _rel_target(data, i + 5)
-        == _rel_target(data, i + GATE_HOLD_LSR_BNE)))
+    if search_file(data, GATE_HOLD_LSR_SHAPE) > -1:
+        # The LSR/CMP spelling: the same cell twice, both BNEs to one place.
+        return _gate_hold_verdict(sid, GATE_HOLD_LSR_SHAPE, lambda i: (
+            data[i + GATE_HOLD_COUNTER:i + GATE_HOLD_COUNTER + 2]
+            == data[i + GATE_HOLD_LSR_CMP:i + GATE_HOLD_LSR_CMP + 2]
+            and _rel_target(data, i + 5)
+            == _rel_target(data, i + GATE_HOLD_LSR_BNE)))
+    # The zero-page status spelling: both BNEs to one place, one byte in.
+    return _gate_hold_verdict(sid, GATE_HOLD_ZP_SHAPE, lambda i: (
+        _rel_target(data, i + 4) == _rel_target(data, i + 9)),
+        counter=GATE_HOLD_ZP_COUNTER)
 
 
-def _gate_hold_verdict(sid: SidFile, shape: str, guards) -> bool:
+def _gate_hold_verdict(sid: SidFile, shape: str, guards,
+                       counter: int = GATE_HOLD_COUNTER) -> bool:
     """find_gate_hold's walk over one spelling of the guard pair.
 
     `guards(i)` is the spelling's own same-place check on a match at `i`;
-    the counter cell is read at GATE_HOLD_COUNTER in every spelling, and the
-    DEC/BMI/JMP plus row-clock bypass check below is shared.
+    the counter cell is read at `counter` (GATE_HOLD_COUNTER in the two
+    absolute-status spellings), and the DEC/BMI/JMP plus row-clock bypass
+    check below is shared.
     """
     data = sid.data
     at = 0
@@ -3819,7 +3947,7 @@ def _gate_hold_verdict(sid: SidFile, shape: str, guards) -> bool:
         at = i + 1
         if not guards(i):
             continue
-        lo, hi = data[i + GATE_HOLD_COUNTER], data[i + GATE_HOLD_COUNTER + 1]
+        lo, hi = data[i + counter], data[i + counter + 1]
         dec = GATE_HOLD_DEC.format(lo=f"{lo:02X}", hi=f"{hi:02X}")
         d = search_file(data, dec)
         if d <= -1:
@@ -4689,6 +4817,195 @@ def _find_skydive(sid: SidFile, det: Detection) -> Optional[Skydive]:
         counter=data[b + SKYDIVE_AT_COUNTER] | data[b + SKYDIVE_AT_COUNTER + 1] << 8,
         min_length=data[b + SKYDIVE_AT_MIN],
         last_ticks=data[b + SKYDIVE_AT_LAST])
+
+
+# The skydive block WITHOUT its ticks-left window, Game_Killer $0B33 (and,
+# with `DE` for `FE`, Battle_of_Britain $82CC and Crazy_Comets $532D):
+#
+#     0B33  AD 89 0C  LDA effect
+#           29 02     AND #$02 / BEQ out
+#           BD 5D 0C  LDA dur,X      ; the note byte as fetched ($08D8)
+#           29 1F     AND #$1F
+#           C9 11     CMP #MIN / BCC out      ; notes shorter than MIN: none
+#           AD 8B 0C  LDA counter    ; INC'd at the play entry ($0831),
+#           29 01     AND #$01 / BEQ out      ;   behind the outer gate
+#           BD 80 0C  LDA savehi,X   ; the note's high byte ($0918, the fetch)
+#           F0 09     BEQ out
+#           FE 80 0C  INC savehi,X   ; Game_Killer; DEC in the falling files
+#           AC 53 0C  LDY voiceofs
+#           99 01 D4  STA $D401,Y    ; A holds the value BEFORE the step
+#
+# No `LDA ticks / CMP #LAST / BCS` between the length test and the counter,
+# so the stores run from the note's first effect tick to its last: the high
+# byte reads the note's own, one more (one less), two more ... on alternate
+# ticks, over whatever low byte was written last. Game_Killer's record 1
+# rewrites the whole frequency on the ticks between (its vibrato, $0A1B), so
+# siddump of the original, voice 0 from frame 641, reads
+# `3426 1A13 3426 35B4 347B 347B 367B 35B4 34ED 3626 3426 37ED 35B4 387B`:
+# the record's vibrato (3426/34ED/35B4/367B, steps of $C7) on one tick and
+# the rising byte over its low byte on the next, $34 to $44 by the note's
+# end, reset by the next fetch.
+NOTE_RISE_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? AD ?? ?? 29 01 "
+                   "F0 ?? BD ?? ?? F0 ?? ?? ?? ?? AC ?? ?? 99 01 D4")
+# Offsets into NOTE_RISE_SHAPE (past the effect-byte load).
+NOTE_RISE_AT_MIN = 10
+NOTE_RISE_AT_COUNTER = 14
+NOTE_RISE_AT_SAVE = 21
+NOTE_RISE_AT_STEP = 25          # the opcode: $FE INC, $DE DEC
+NOTE_RISE_STEPS = {0xFE: 1, 0xDE: -1}
+
+
+@dataclass(frozen=True)
+class NoteRise:
+    """The window-less skydive block's operands, read from the block itself."""
+    counter: int        # address of the every-other-tick counter
+    min_length: int     # a note whose `dur & $1F` is below this has none
+    step: int           # +1 where the block INCs savehi, -1 where it DECs
+
+
+def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
+    """The block of NOTE_RISE_SHAPE, or None.
+
+    A fallback: None wherever the rise or the skydive matched, so it cannot
+    disturb a file that reads bit $02 already. Keyed on the resolved +7
+    address like every other effect-byte probe, and structural beyond the
+    shape: the step must be an `INC`/`DEC` of the very cell the `LDA savehi`
+    read, which is what makes the store a stepping byte.
+    """
+    if det.effect_rise or det.skydive is not None:
+        return None
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    data = sid.data
+    at = search_file(data, f"{load} {NOTE_RISE_SHAPE}")
+    if at < 1:
+        return None
+    b = at + lead
+    step = NOTE_RISE_STEPS.get(data[b + NOTE_RISE_AT_STEP])
+    if step is None or data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2] \
+            != data[b + NOTE_RISE_AT_STEP + 1:b + NOTE_RISE_AT_STEP + 3]:
+        return None
+    return NoteRise(
+        counter=data[b + NOTE_RISE_AT_COUNTER]
+        | data[b + NOTE_RISE_AT_COUNTER + 1] << 8,
+        min_length=data[b + NOTE_RISE_AT_MIN], step=step)
+
+
+# Bit $02 read a FOURTH way -- not the rise, the skydive, the alternation or
+# the per-voice two-stage attack. Rasputin $C35A, the only corpus file with
+# the block (a byte-level scan for any `AND #$02 / Bxx` followed within 30
+# bytes by an `EOR #imm` finds no other file):
+#
+#     C35A  AD 47 C5  LDA effect
+#           29 02     AND #$02 / BEQ out
+#           BD 12 C5  LDA ticks,X     ; ticks left; zero in the note's last
+#           F0 18     BEQ out         ;   tick, so the block stops there
+#           DE 33 C5  DEC count,X     ; per voice, and written NOWHERE else:
+#           10 13     BPL out         ;   not at the note, not at init
+#           A9 01     LDA #$01        ; reload -> every 2nd effect call
+#           9D 33 C5  STA count,X
+#           BD 18 C5  LDA wave,X      ; the stored waveform the note wrote
+#           49 18     EOR #$18        ; triangle + TEST bit
+#           9D 18 C5  STA wave,X      ; kept, so it alternates
+#           AC 0B C5  LDY voiceofs
+#           99 04 D4  STA $D404,Y     ; gate as stored: ON
+#
+# It runs after the drum block (`$C31E`, bit $01), so on record 4
+# (`80 01 43 07 06 00 00 07`) it overwrites the drum's noise tick: the
+# original reads `43 5B 5A 5A` where the drum alone reads `43 80 42 42`.
+# Record 10 (`00 04 41 0A 89 00 08 0A`, 416 notes in subtune 0's 180 s)
+# alternates `$41`/`$59`.
+#
+# **The phase is per NOTE, and it is deterministic.** The counter is never
+# reset, and a note of L ticks spends `L * c - 1` effect calls on it (the
+# fetch call runs no effects, the last tick none either), c = `$C53B + 1` = 2
+# calls a tick -- odd, so each bit-$02 event flips the phase. Traced, not
+# reasoned: of the consecutive pairs whose phase the trace settles, 130 of
+# 130 flip on record 10 and 117 of 117 on record 4, none stay (v0.5.513 +
+# the uncommitted c5 merge, -t 180, presets). With c = 2 and the reload 1 the
+# toggle period is ONE TICK, so in our calls it is the row's tempo -- 4, 5 or
+# 6 across Rasputin's `$FE nn` changes.
+#
+# **NOT EMITTED, and the reason is measured.** A static emission (frame-0
+# lead, then `wave ^ mask` / `wave` halves of P calls, looping), A/B'd under
+# presets at -t 180, P in {4, 5, 6} and both phases: `wave` 0.7675 ->
+# 0.7505 / 0.7637 (P=4 A/B), 0.7522 / 0.7563 (P=5), 0.7582 / 0.7576 (P=6) --
+# all six LOWER; noise (5454 orig / 5134 ours), nrun, melody and gate
+# unmoved on every arm. Even the per-note-correct phase -- each note spliced
+# from the P=5 A or B build by its original's phase -- reads 0.7530, below
+# the base. Note-aligned (each paired attack compared from its own frame 0,
+# drift removed) the same splice lifts record 10's frames 0.535 -> 0.655, so
+# the emission is right where it lands; what the lag-aligned column sees is
+# Rasputin's clock drift (median attack offset wandering up to +-74 frames;
+# one segment was measured as a row of 5.33 calls written as 5), under which
+# two alternations at a random offset agree less than an alternation and a
+# constant. So no column can adopt this until the drift is repaired, and a
+# static phase is wrong for half the notes by construction. Record 4's
+# static choice is already what we emit: of its 128 notes 59 toggle on
+# frame 1, 5 on frame 2 and 64 never (one-tick notes on the other phase).
+WAVE_EOR_SHAPE = ("29 02 F0 ?? BD ?? ?? F0 ?? DE ?? ?? 10 ?? A9 ?? 9D ?? ?? "
+                  "BD ?? ?? 49 ?? 9D ?? ?? AC ?? ?? 99 04 D4")
+# Offsets into WAVE_EOR_SHAPE (past the effect-byte load).
+WAVE_EOR_AT_TICKS = 5
+WAVE_EOR_AT_DEC = 10
+WAVE_EOR_AT_RELOAD = 15
+WAVE_EOR_AT_STORE = 17
+WAVE_EOR_AT_LOAD = 20
+WAVE_EOR_AT_MASK = 23
+WAVE_EOR_AT_SAVE = 25
+
+
+@dataclass(frozen=True)
+class WaveEor:
+    """The EOR block's operands, read from the block itself."""
+    counter: int        # the per-voice countdown (base address, indexed by X)
+    reload: int         # stored on underflow: the EOR lands every reload+1 calls
+    mask: int           # EORed into the stored waveform
+    wave: int           # the per-voice stored-waveform cell it reads and keeps
+    ticks: int          # the ticks-left cell; zero stops the block
+
+
+def _find_wave_eor(sid: SidFile, det: Detection) -> Optional[WaveEor]:
+    """The EOR block of WAVE_EOR_SHAPE, or None.
+
+    A fallback: None wherever another reading of bit $02 matched, so it can
+    never disturb a file that reads the bit already. Keyed on the resolved +7
+    address like every other effect-byte probe, and structural beyond the
+    shape: the `STA count,X` must name the cell the `DEC` decrements and the
+    `STA wave,X` the cell the `LDA` read -- which is what makes it a countdown
+    and a kept toggle rather than any two table accesses.
+    """
+    if (det.effect_rise or det.skydive is not None or det.wave_alternate >= 0
+            or det.note_rise is not None
+            or det.wave_alternate_noise or det.voice_two_stage_alt >= 0):
+        return None
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    data = sid.data
+    at = search_file(data, f"{load} {WAVE_EOR_SHAPE}")
+    if at < 1:
+        return None
+    b = at + lead
+
+    def word(k: int) -> int:
+        return data[b + k] | data[b + k + 1] << 8
+
+    if (word(WAVE_EOR_AT_DEC) != word(WAVE_EOR_AT_STORE)
+            or word(WAVE_EOR_AT_LOAD) != word(WAVE_EOR_AT_SAVE)):
+        return None
+    return WaveEor(counter=word(WAVE_EOR_AT_DEC),
+                   reload=data[b + WAVE_EOR_AT_RELOAD],
+                   mask=data[b + WAVE_EOR_AT_MASK],
+                   wave=word(WAVE_EOR_AT_LOAD),
+                   ticks=word(WAVE_EOR_AT_TICKS))
 
 
 # **The nibble arpeggio's half-period is PER RECORD, chosen by the interval.**

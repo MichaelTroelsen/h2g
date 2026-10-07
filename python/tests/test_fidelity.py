@@ -1437,17 +1437,20 @@ def test_the_report_names_an_edge_declined_file_and_not_a_noiseless_one():
 # C:/t/nrun-gate-off-noise/.
 
 
-def test_a_drum_burst_under_a_closed_gate_is_recorded_and_not_scored():
+def test_a_drum_burst_under_a_closed_gate_is_recorded_and_scored_by_the_fallback():
     """Proteus's drum in miniature: `$41` attack, `$80` for one frame, `$40`.
-    Ours plays the burst gated. The column still declines (not scored, by
-    decision) and the gate-off keys say why."""
+    Ours plays the burst gated. The gate-AND pairs nothing, so the audible
+    fallback (`noise_audible_runs`) scores it -- see
+    tests/test_nrun_audible_fallback.py for the fallback's own contract -- and
+    the gate-off keys still record the blindness."""
     adsr = [(0, 0x0FDA)]                      # a real Proteus/Warhawk key
     orig = _run_side([(1, 0x41), (2, 0x80), (3, 0x40)], adsr)
     ours = _run_side([(1, 0x41), (2, 0x81), (3, 0x40)], adsr)
     assert fidelity.noise_runs(orig, 12) == {}          # the gate-AND sees none
     got = fidelity.noise_run_agreement(orig, ours, 12)
-    assert got["noise_run_instruments"] == 0 and got["noise_run_agreement"] is None
-    assert got["noise_run_ours_only"] == 1
+    assert got["noise_run_audible_fallback"] is True
+    assert got["noise_run_instruments"] == 1 and got["noise_run_agreement"] == 1.0
+    assert got["noise_run_ours_only"] == 0
     assert got["noise_run_orig_edge_runs"] == 0         # not the window's cause
     assert got["noise_run_orig_gate_off_runs"] == 1
     assert got["noise_run_orig_gate_off_frames"] == 1
@@ -1523,7 +1526,7 @@ def test_the_report_names_a_gate_off_declined_file_in_its_own_sentence():
     assert "**1** file(s)" in edge and "Cut.sid" in edge
     assert "Both.sid" not in edge and "Burst.sid" not in edge
     d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
-    assert "Blind to noise sounded under a CLOSED gate" in d.of
+    assert "The gate-AND is blind to noise sounded under a CLOSED gate" in d.of
     assert "Kentilla, Proteus and Warhawk" in d.of
     assert "noise_run_*_gate_off_runs" in d.of
 

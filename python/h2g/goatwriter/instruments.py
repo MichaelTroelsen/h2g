@@ -140,6 +140,27 @@ def record_envelope(data: bytes, det: Detection, i: int,
     return ad, sr
 
 
+def gate_off_firstwave(waveform: int) -> int:
+    """The firstwave byte that spends the note-init call on the record's own
+    `waveform` with the gate CLEAR, or `FIRSTWAVE_TESTBIT` where no such byte
+    exists.
+
+    `player.s` mt_newnoteinit writes only `$D404` on the init call, and the
+    original keeps its gate off on that frame; `$09` opens it one frame early
+    on every note (tests/test_firstwave_gate_edge.py). `waveform & $FE` keeps
+    the select bits and clears the gate, so gate, frequency and pulse arrive
+    together on call 1, as in the original.
+
+    Two values cannot carry it, and keep the testbit (gplay.c:355-363): a
+    record with no waveform selected (`& $F0` zero -- $00 would read as "no
+    firstwave" and $08 is a different, test-bit byte), and a result of $FE,
+    which Goattracker reads as a gate COMMAND that leaves the waveform
+    unwritten.
+    """
+    fw = waveform & 0xFE
+    return fw if fw & 0xF0 and fw < 0xFE else FIRSTWAVE_TESTBIT
+
+
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_used: int, pulse_starts: List[int],
                        sustain_exact: bool = False,
@@ -156,7 +177,9 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        max_hard_restart: bool = False,
                        hard_restart_frames: int | None = None,
                        real_firstwave_instruments: tuple = (),
-                       instr_row_calls: dict | None = None) -> int:
+                       instr_row_calls: dict | None = None,
+                       gate_off_firstwave_instruments: tuple = (),
+                       gate_clear_firstwave: bool = False) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -389,12 +412,56 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # guard; both adoptions are hand-recorded. The gate-off firstwave
         # (record waveform & $FE) measured at 77 movers in
         # corpus-firstwave-class-zero-frame is a third choice beside these two.
+        # `gate_off_firstwave_instruments` is that third choice, per GT
+        # instrument by the same numbering. It changes THIS BYTE ONLY: the
+        # wavetable keeps the lead-entry layout (`instrument_written` False,
+        # wavetable.py), because the init call is still spent on the
+        # firstwave exactly as with the testbit -- only what the chip sees on
+        # it changes, the record's waveform with the gate clear instead of
+        # `$09`. The real-firstwave spelling wins where both name an
+        # instrument: it is the one that also moves the layout.
         gt_number = i + lead + 1
         use_real_firstwave = no_test_restart or gt_number in real_firstwave_instruments
+        if use_real_firstwave:
+            firstwave = (data[base + 2] | 0x01) & 0xFF
+        elif gt_number in gate_off_firstwave_instruments:
+            firstwave = gate_off_firstwave(data[base + 2])
+        elif (gate_clear_firstwave and data[base + 2] & 0xF0
+                and not data[base + 2] & 0x01 and data[base + 2] < 0xFE):
+            # **A record whose own waveform has the gate CLEAR takes it as
+            # its firstwave, never `$09`.** The fetch writes that byte on the
+            # note's first frame (Chimera `$C31B`, Commando `$5139`), so the
+            # original's gate is shut there; `$09` is gate ON plus testbit
+            # (gplay.c:355-363), so on a voice whose gate was already off it
+            # is a gate edge the original never makes -- and an attack
+            # siddump counts. Chimera's record 8 (`$10`) closed each six-row
+            # group with one: 31 gate-on edges where the original has 16 in
+            # frames 5618-5888 (cycle gaps 3 and 15 for 18). Under
+            # `effects`, so the VB6-exact default (the Commando fixture)
+            # keeps `$09`.
+            #
+            # **And it is LEGATO (gatetimer `$40`), because the fetch is where
+            # the original closes the gate.** Without the bit Goattracker
+            # gates off `gatetimer & $3F` calls BEFORE the note (gplay.c:930,
+            # player.s `mt_normalnote`), and a gate-clear record is reached
+            # from a tie in the one corpus file that has one in its table
+            # (Chimera record 8, every landing a wait-0 chain row): the
+            # original holds the gate to the fetch frame and shuts it there.
+            # With `$40` the firstwave above does it on the same frame --
+            # voice-1 gate agreement over 5618-5906/6194-6482/8210-8372/
+            # 8498-8642 went 0.891 -> 1.000 (`tail` 88% -> 100%, `gate` 78%
+            # -> 79%). An UNTIED landing (none in the corpus) would lose the
+            # early gate-off that stands for its predecessor's hold-path one,
+            # closing a unit late instead of about a call early. Above -S1
+            # greloc's FIRSTLEGATOINSTR slip (note_passes.legato_slip_decoy)
+            # can gate one legato record off at the fetch like a no-HR note:
+            # the behaviour without this bit, not a new one.
+            firstwave = gate_off_firstwave(data[base + 2])
+            gatetimer |= _gw_constants.GATETIMER_LEGATO
+        else:
+            firstwave = FIRSTWAVE_TESTBIT
         out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, stbl_ptr,
-                      vib_delay, gatetimer,
-                      ((data[base + 2] | 0x01) & 0xFF) if use_real_firstwave
-                      else FIRSTWAVE_TESTBIT])
+                      vib_delay, gatetimer, firstwave])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
         name = f"{i + 2:02X}:{b5:02X}-{b6:02X}-{b7:02X}"

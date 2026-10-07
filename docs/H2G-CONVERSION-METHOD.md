@@ -2741,6 +2741,43 @@ and it was **validated against** the search it replaces on 36 corpus files:
 
 The search buys a tenth of a point and costs the measure its meaning.
 
+Our first attack is read at the frame its **pitch** lands
+(`fidelity.pitched_attack_frame`), which is one frame after the gate rise when
+that rise carries the frequency the voice already held and the note's own
+arrives on the next frame with the gate still open. That is GoatTracker's init
+call: `player.s` mt_newnoteinit writes `$D404` alone and skips mt_waveexec, so
+frequency and pulse width come one call later. Under the default `$09`
+firstwave the init frame is below `$10`, siddump names no attack on it and
+nothing moves; under a gated real waveform (`no_test_restart`,
+`real_firstwave_instruments`) the init call was the attack the estimate
+anchored on, so the lag read one frame short, and an A/B of either option
+compared its two arms at two alignments. Anchored on the pitch, Commando and
+Delta give one lag under all four firstwave spellings
+(`tests/test_startup_lag_pitched_attack.py`), and 5_Title_Tunes' voices 1 and
+2 put every pitch change and gate fall on the original's frame at the new lag
+(5) where the old one (4) put them all one frame late. An attack that writes
+its pitch is not moved whatever its next frame does (Ninja's original voice 1
+goes `$0000 -> $684C` on its attack and to `$4E20` a frame later, an
+arpeggio). The original's attack is never read this way: the mechanism is
+GoatTracker's, and Bangkok_Knights' voice 1 loads its pitch the frame before
+its gate and plays a drum pitch the frame after, which the same test read as
+stale and moved that file's lag 6 → 5 when it was applied to both sides.
+
+The new anchor moved the lag on exactly the 13 files whose presets ship
+`no_test_restart` or `real_firstwave_instruments`, one frame later on each,
+and on no other file (corpus A/B under presets at `-t 180`, v0.5.513 plus the
+uncommitted cycle merge; no converted byte moved). The per-frame columns that
+move are the disagreement the old lag absorbed, not a converter change: where
+our whole gate envelope had followed the init call, `gate` falls (Chicken_Song
+.991 → .331, Hollywood_or_Bust .975 → .329, Sigma_Seven .523 → .264); where our
+waveform program had, `wave` falls (Tarzan .983 → .691, Radio_ACE .897 → .767,
+Pacific_Coast .671 → .532, Ninja .952 → .879); where gate falls and pitch had
+been a frame late, they rise (Auf_Wiedersehen_Monty `gate` .504 → .593 and
+`wave` .787 → .842, Pygmies_Revenge `gate` .403 → .567, Powerplay .421 → .463,
+Wiz .180 → .226). A preset that chose either option at the old lag compared
+its two arms at two alignments, so the choice was made partly on that
+artefact.
+
 It is also bounded. Chimera's raw lag is **438 frames** — 8.8 s, an opening one
 side does not have. Absorbing that into an alignment would hide a real defect
 and discard a third of the window, so a lag past `MAX_STARTUP_LAG` is clamped
@@ -2983,6 +3020,63 @@ spends one. The waveform sequence and the pitches are otherwise the same.
 advances one entry per *call*, so at `-S2` the program would run twice as fast;
 slowing it needs a delay per opcode, roughly doubling a budget that already
 reaches 131 entries on Kings of the Beach. 15 of the 29 files are `-S1`.
+
+**The `$85` hold sits on the accumulator, at `-S1` too** (task
+mega-ins03-arp-last-step-hold). The table above is v0.5.187's; the multiplier
+gate has since gone, a slide's travel rides a portamento on a frame's spare call
+above `-S1`, and the restore after the program writes the stored waveform on the
+note with the slides' summed travel after it. `$85` jumps to the per-frame
+writer, which writes the frequency **accumulator** -- Mega_Apocalypse `$4D90 JMP
+$4E63`, `$4E6C LDA $C0,X / STA $D401,Y` -- so the tail is `note - sum`. At `-S1`
+that closing travel was refused with the per-opcode one, though it sits after
+the program and costs none of its frames; Mega_Apocalypse `$09F9` record 2
+(`slide $0200 + $03C0`) held the note where the original holds `-1472`, and
+`$07E7` record 6 (`$0600 + $0640`) the note where it holds `-3136`. It is now
+emitted at `-S1` (`_wave_program_hold_travels`), one frame late: the restore's
+own call is still the note's. Measured base -> new, -t 180, presets, siddump,
+mean per-frame pitch error over each moved ADSR's notes (attack and last frame
+skipped): Mega `$07E7` 690 -> 455 cents, `$09F9` 230 -> 187; I_Ball `$09F7` 247 ->
+123; Bangkok_Knights `$0AA9` 202 -> 93; Nineteen `$09F8` 292 -> 118; Pandora
+`$0C99` 1752 -> 771; every other ADSR of the nine moved files identical. The
+late frame has a cost the reversal column sees: where the last opcode's pitch
+and the tail lie on the same side of the note, the restore's one note-frame is
+a turn the original does not make -- I_Ball and Bangkok_Knights `$0797` read
+1564 and 1394 reversals against the original's 1305 and 1166, where the
+all-note tail had matched (1308, 1164). Two
+declines, each measured. **A record the player vibrates keeps the note**
+(`_wave_program_record_vibrates`): its vibrato re-centres there, Nemesis
+`$0B09` reading `-37 0 37 0` around the note after `slide $20/$150/$180`, where
+a travel put ours 752 below it. **A song with any real or gate-off firstwave
+gets no `-S1` travel**: Goattracker's note-init call writes the waveform alone,
+so the next note opens at the tail's pitch, and on Auf_Wiedersehen_Monty,
+Pygmies_Revenge and held Arcade_Classics melody fell 0.9876 -> 0.6868, 0.9741 ->
+0.7828, 0.9205 -> 0.5102 -- identical on both trees named one frame in. Above
+`-S1` nothing changed. Mega's reversals did not move (3220 of 4459): the
+`$09F9`/`$07E7` deficit is the two slide frames 2-3, which at `-S1` still write
+the note -- with those two frames taken from the original the two ADSRs read
+915 and 1034 against 621 and 860 (originals 1086 and 1034).
+
+**A vibrating record's slides, at `-S1`, as a portamento chain** (task
+nemesis-counter-gate-age-1-move). Nemesis `$0B09`/`$0C0A`/`$0C5A` moved at
+frame 4 against the original's frame 1, although the vibrato's counter gate
+reads 3. The frame-1 move is the program, not the vibrato: `$E32E-$E341`
+subtracts each slide's operand from the cell `$E3F0` writes to `$D400/$D401`,
+one opcode a frame from age 1, and from the gate on `$E280/$E285` re-store the
+vibrato's absolute pitch into that cell *before* the subtraction, so the slides
+accumulate below the gate and each later one is a one-frame dip below the
+vibrato. Traced: records 3/11 `0 -32 -368 vib-384 vib`, record 12 `0 -3104 -3808
+vib-496 vib-512 vib-768 vib`, IK_plus record 13 (gate 4) `0 +896 +1536 +1152
+vib-896 vib`. Where every opcode is a slide on the record's own `+2` waveform,
+the waveform is already latched, so each slide needs no waveform entry: a
+wavetable `CMD_PORTADOWN`/`UP` changes the frequency and nothing else, one call
+each, at the player's rate exactly (`_gated_slide_chain`). It carries the change
+between the original's offsets and the restore writes the note, where
+Goattracker's vibrato then starts centred. Only at `-S1`, with a counter gate
+read, the record vibrating, and the gate at or before the hold. Ours now reads
+exactly the traced offsets above on those frames; onsets (-t 180) `$0B09` 4 ->
+1 (original 1), `$0C0A` `{3:11, 4:202}` -> `{1:213}` (original `{1:214}`), plus
+`{2:70}` on both sides; the second `$0C5A` record (13, no program) still starts
+at 4. Two files move, Nemesis_the_Warlock and IK_plus.
 
 #### The search cannot select it, and the criterion is why
 
@@ -3460,6 +3554,18 @@ Droid. The instrument keeps its pointer so an unreachable note — command colum
 already carrying a portamento, or instrument not yet named in the pattern —
 falls back to the v0.5.198 approximation instead of going silent; zeroing it
 scores higher on the agreement column alone and silences 60 qualifying notes.
+
+The damp is written only where it cancels something. A short note on a *named*
+instrument with no vibrato record (a zero shift byte, the player's own `BEQ
+past`) has an instrument pointer of 0 already, so the player's `!cmddata` break
+gives it nothing and `$04 00` would only occupy the command column; the pass
+leaves that column free and the log counts the notes ("short on an instrument
+with no vibrato left free"). An *unnamed* instrument still damps, because it may
+carry a pointer the pass cannot see. Measured at v0.5.513 + the merged tree: 25
+files move under the shipped presets, every differing byte a `$04` -> `$00` in a
+command column (31,788 bytes, data byte already 0), and no column of the
+fidelity report moves on any of them -- the change is audibly inert and exists
+to stop the damp taking a column other passes can use.
 
 Two process notes: the fixture could not have caught any of this, because it is
 a GTS2 file and `_vibrato_layout` returns nothing for GTS2 — the whole mechanism
@@ -4648,6 +4754,15 @@ frequency is `note + (ctr − (bound >> 1)) × depth`, and the peak-to-peak is
 reached that value. The census in `_classic_vibrato_entry` covers the 61
 files the split matches: all 61 carry the subtract loop, and 59 carry the add
 loop on the counter cell.
+Resolved afterwards (classic-vibrato-census-unresolved): Tarzan carries the add
+loop on its counter too (zero-page counter and bound, absolute direction);
+Mega_Apocalypse's apparent writers were byte-search false positives, its one
+real writer being the init-time clear at `$580F`; and Mozart's add loop is
+`LDY $0C24` with no `,X`, so voices 1 and 2 add voice 0's counter. The
+counter's period is `2 × bound` in 54 files and `2 × bound + 1` in seven that
+hold the bound for two frames (Mozart, Go_Go_Dash, Lakers_vs_Celtics,
+Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines). Pinned in
+`tests/test_classic_vibrato_census.py`.
 
 #### Reach
 
@@ -6435,6 +6550,43 @@ player's own `freqhi == 0` guard produces.
 > that a listener resolves in seconds what a register trace argues about for
 > versions. This project should have played its output to someone far earlier
 > than it did.
+
+### 7.wwwwwww `prune` is asked twice: before the copy passes and after them
+
+`convert_patterns(used=...)` prunes against the *raw* orderlists, so it cannot
+see what the later passes do to them: `reindex_tracks`' tempo, fraction and tie
+copies and the pulse-phase copies each repoint orderlist positions at a pattern
+appended past the table, and a source whose every position moved is left
+unplayed but still numbered toward `MAX_PATTERNS`. Measured under presets at
+6e467ff plus the cycle-2 merge (historical), 12 of the 52 `prune` files carried
+such patterns -- C64ME 10 of 136, Rasputin 14, 5_Title_Tunes 19, Star_Paws 8.
+With `prune` on, `patterns.drop_unplayed_patterns` therefore runs once more,
+last before `build_sng`, over the finished orderlists, and renumbers in order
+(a restart operand is a position, not a reference; an orderlist naming an index
+past the table refuses the pass).
+
+It returns new lists and `convert` rebinds `tracks` and `new_patterns`; it never
+edits in place. The first attempt did, and failed 11 tests whose subject was
+not the output: the pulse-phase walk had been handed `event_rows` keyed by the
+old numbers, and a test holding the table it gave the walk read it renumbered
+under it. Everything keyed by pattern index that the walk and the passes use
+(`TrackIndex.event_rows`, `free_rows`, `exits_tied`) is dead by the drop; the
+one side table that survives into `build_sng` is `PatternList.note_bit7` /
+`decoded`, and it is rekeyed.
+
+The dropped patterns that were *decoded* ones are kept as `PatternList.ghosts`,
+because `note_bit7_rows` attributes a pass's copy by matching its note column
+against the decoded patterns: without them a copy of a dropped source lands on
+the one pattern left that shares its notes, which turned restarted notes into
+ties on Thanatos, Star_Paws and Knucklebusters. With the ghosts every shipped
+mover resolves, position by position, to the same pattern bytes as before; only
+the numbering and the file length move. Under forced `pulse_phase` two files
+(Auf_Wiedersehen_Monty, Sanxion) also swap the numbers of two legato clones,
+because the clone pass numbers clones in first-use order over every pattern in
+the table and the lower number used to go to a row in an unplayed pattern;
+resolved by instrument content the orderlists, instruments and tables are
+identical. Files with `prune` off keep their unplayed patterns, by the option's
+meaning.
 
 ## 9. The `.sng` output layout
 
@@ -10126,7 +10278,7 @@ reaching toward.
 | All signature chains | `python/h2g/detect.py` |
 | Orderlist decode, 8 dialects | `python/h2g/tracks.py` |
 | Pattern decode, slicing, re-indexing | `python/h2g/patterns.py` |
-| `.sng` serialization, table synthesis | `python/h2g/goatwriter.py` |
+| `.sng` serialization, table synthesis | `python/h2g/goatwriter/` (package; `build.py`'s `build_sng`) |
 | Pipeline | `python/h2g/convert.py` |
 
 Original VB6 (ground truth): `VB6 Sourcecode/h2g.frm`, ~1300 lines, one form.
@@ -11818,6 +11970,47 @@ either side, Nemesis' first at 13162. Lightforce (`$7`), Knucklebusters
 refused. `tests/test_classic_clear_mask.py` pins the mechanism and the three
 added files.
 
+### 7.xxxxxxx Three spellings of the classic filter that `find_filter` refused
+
+A census of filtered frames (original, ours) found four files filtering on
+thousands of frames in the original and on none in ours. Three carry the
+classic routine and failed one gate each; each rescue is consulted only where
+the primary reading found nothing, so no file it already read can move.
+
+* **Thanatos: the sweep stops at bit 7.** `$C338 LDA cutoff,X / BMI $C347`
+  sits between the load and the add, and the branch lands on `LDA resctl,Y`:
+  each note sweeps from `$20` (`$C0D3`, at every note fetch) until the
+  accumulator first reads negative, then holds. `FILTER_SHAPE_CLAMP`. The
+  emitted modulation keeps the player's HOLD VALUE, not its clock: at `-S4` a
+  step of 3 a frame is +1 a call, and 128 calls would hold `$A0`; 96 hold
+  `$80`, eight frames early.
+* **Tarzan: the first `$D418` write is the digi routine's exit.** `$53C0
+  LDA #$00 / STA $D418` precedes `LDA $5404 / STA $D011`, the PLAs and `CLI`;
+  the IRQ (`$4037 JSR $550C`) enters the player at `$550C LDA #$1F / STA
+  $D418`, right behind its `JMP` table. `FILTER_MODE_ENTRY_SHAPE` is read
+  only when the first match names no passband.
+* **Sigma_Seven: nothing resets the accumulator.** `$84A1,X` is written by the
+  sweep's own `STA` and nothing else, so it starts at its file byte (`$08`)
+  and runs on, wrapping, across notes. `FilterInfo.free_running`: its program
+  is `[params][7F step][FF -> the 7F]` with no set-cutoff row, which loops
+  with no gap because `mt_nextfiltstep` takes the jump on the call the
+  modulation runs out. Approximated, not read: GT starts this cutoff at 0,
+  not at `$08`, and keeps sweeping while an unfiltered record plays on that
+  voice, where the player pauses.
+
+The fourth, **Mr_Meaner, is a DIGI held file and is not worked here.** Its
+filter is a different routine: a global sweep at `$14AD` writes `$F2` to
+`$D417` and a self-modified immediate to `$D416` every third frame, the
+immediate stepping `(x + 1) | $14`. Its per-instrument routine now reads as
+free-running, and so do After_8's and Rikky's (both held); none of the three
+enables a record, so no byte moves.
+
+Under presets at `-t 180`, filtered frames original / ours, before -> after:
+Thanatos 8996 / 0 -> 8994, Tarzan 8637 / 0 -> 8632, Sigma_Seven 3296 / 0 ->
+3292; cutoff travel ours/original 1.12, 1.23, 1.02. Those three files move
+bytes and no other (corpus byte-hash, 89 compared). Measured on 6e467ff plus
+the cycle-2 merge. `tests/test_filter_absent_four.py`.
+
 ### 7.eeeeee The bounds engine's pulse phase: a free flag, a per-voice sim, and the original's clock
 
 § 7.ccc's bounds engine reseeds `$D402/$D403` from the record at every note
@@ -12386,11 +12579,33 @@ our calls per tick are `multiplier * (O + 1) / O`; with no outer gate it is
 plain `multiplier`. The GT pulse speed is the original's step divided by that,
 and `_pulse_tri_program` and `_phase_sweep_params` share it, so a note with no
 `CMD_SETPULSEPTR` sweeps at the same rate as one with it. This is the same
-ratio `_gate_calls` already applied to wavetable durations. Two gaps are left
-open, not fixed: the triangle's LEG still turns on the bound where the player
-turns on the first lattice point whose high nibble equals it, and Rasputin's
-gate comes from its track's `$FE nn`, which `outer_gate_skip` does not read, so
-it keeps plain `multiplier`.
+ratio `_gate_calls` already applied to wavetable durations. Two gaps were left
+open at that drain: the triangle's LEG turned on the bound where the player
+turns on the first lattice point whose high nibble equals it (closed since, next
+paragraph), and Rasputin's gate comes from its track's `$FE nn`, which
+`outer_gate_skip` does not read, so it keeps plain `multiplier` (still open).
+
+**The triangle's legs turn on the player's lattice** (`_tri_turns`,
+`_lattice_legs`, `goatwriter/pulse.py`). The routine steps its 12-bit width
+and turns when the high nibble AFTER the step equals the bound it is heading
+for, so the turn lands on the first width of the record's own step lattice
+inside the bound's nibble: going up, the first width at or past `$E00`; going
+down, the first at or below `$8FF`. Game_Killer's record 2 (`$9C0`, step `$E0`)
+cycles 8E0..E20, 1344 a leg; the static program aimed at the bounds and ran
+808..DF6 (1518), a whole nibble too far at the bottom. `_tri_turns` reads the
+three turns (first top, bottom, steady top) off `PulsePhaseSim`, so the walk
+and the table share one arithmetic; the first top differs from the steady one
+only where a record opens inside the top nibble with a step that stays in it
+(Devils_Galop's record 9: `$E00` step `$80` turns at `$E80`, then cycles
+880..E00), and that program lays its first descent before the loop. Each leg
+is the tick count whose arrival is nearest the player's width at the emitted
+speed, measured from where the previous leg actually stopped, so the error is
+at most half a speed and never accumulates; it is zero wherever the speed
+divides the step. Census under presets at 6e467ff: 0 of 111 triangle records
+turned on the player's widths before, 68 exactly and 111 within half a speed
+after. The per-record-bounds engine (`_pulse_program`) turns on the same
+equality but was not measured, and keeps the bound edges; so does the
+phase-entry table (`_phase_block`).
 
 **A tie that lands on a note restarting its instrument becomes a legato clone**
 (`legato_tie_rows`, `legato_tie_clones`, `goatwriter/note_passes.py`). In the
@@ -12419,12 +12634,37 @@ with no such row keeps the old spelling whole. Read from the packed bytes on all
 12 multispeed family files, exactly the decoy sits below `FIRSTLEGATOINSTR`
 (`tests/test_greloc_legato_slip.py`).
 
+**A pattern entered holding two instruments is copied per instrument first**
+(`entry_instrument_split`, `goatwriter/note_passes.py`). The clones are made
+after the orderlists are written, so a tie before its pattern's first named
+instrument, in a pattern two positions enter holding different instruments,
+had no one base and declined ("entered with two instruments"), as did a
+last-row tie whose successor was such a pattern. `build_sng` now copies such a
+pattern, byte for byte, once per entry instrument BEFORE writing the
+orderlists and repoints each position at the copy for the instrument it
+enters holding (`_position_entries`, the `_entry_instruments` walk kept per
+position): every position plays the bytes it did, and each copy is settled.
+A copy takes its source's bit-7 rows (`split_bit7_rows`). A position itself
+entered with two -- a repeat over a pattern that names one, or the restart
+re-entering on another lap's -- stays on the source. Under presets at
+6e467ff plus the cycle-3 merge (2026-10-07) this settles every such decline
+and moves three files, one copy each: Star_Paws 158 -> 192 tie rows on clones
+with 0 kept (was 18: 16 two-instrument rows in pattern `$34`, 2 last-row ties
+into it; 192 counts the copy's 16), Flash_Gordon 22 -> 24, 0 kept (was 1),
+Knucklebusters 16 -> 20, 0 kept (was 2) (`tests/test_entry_instrument_split.py`).
+The free-note variants' own two-instrument declines are not split for here.
+
 **The interleaved dialect's per-voice filter routing is written as `B`
 commands** (`ilv_filter_routing_plan`, `goatwriter/filters.py`; the
 `ilv_filter_routing` option, in `presets.json`'s always block). Two facts of the
 replay decide the spelling (the model is the block comment above
 `CMD_SETFILTERPTR` in `goatwriter/constants.py`): `B $00` also stops the filter
-table, so an empty union is written `$X0` with X nonzero; and the filter step
+table, which is what an empty union is written as, because the player's
+cutoff never moves while nothing is routed (`ILV_ROUTE_NOTHING`; traced at
+-t 180 under presets on 6e467ff plus the cycle-c5 merge, 2026-10-07: the five
+filtering originals move it 0 on such frames, and the earlier `$X0`, which
+left the table sweeping, took Radio_ACE's `cut` to 1.4305 -- 1.1560 with
+`$00`; Go_Go_Dash 3.4628 -> 3.2444); and the filter step
 runs before the channels, so a program opening with its params row overwrites
 a `B` written on its own note row. The plan walks two spellings and keeps the
 one leaving fewer rows wrong: "shared" (one passband block per subtune, run by
@@ -12453,6 +12693,59 @@ the same counter residue, so the same half is the long one on every note:
 Formula_1_Simulator stretches the base note, Las_Vegas_Video_Poker the
 interval. `nibble_gate_runs` is capped so a record's cycle cannot outgrow its
 table room.
+
+**Where the cap leaves the evenly spread halves, the attack's counter step is
+still `h` calls, not a frame** (`call_phase.nibble_gate_step_lead`). Under
+the outer gate every counter step is a passing call, `h = m (O + 1) / O` of
+our calls, the attack's included; the phased shapes put their first run after
+a frame-0 lead of `m`, so every half boundary -- and a ticked record's noise
+tick -- fell `h - m` calls before the original's. Sampled once a frame, that
+one call is enough to move which half the gate's skipped frame lengthens.
+International_Karate and Kentilla (O 10, -S10, `h` 11; the ten-half cycle is
+capped) and Warhawk and Proteus (O 7, -S7, `h` 8; no fixed half at all) each
+played the long half on the other note. With the lead `h`, measured note by
+note against the original (subtune 0, 120 s, presets, 6e467ff plus the
+cycle-6 merge, 2026-10-07): International_Karate's one-step `$5800` notes
+0/51 -> 51/51 frame-exact, Warhawk 35/421 -> 421/421 and Proteus 155/517 ->
+517/517 (gate-agnostic: both drop the gate a frame after the attack), and
+Warhawk's tick now lands on the original's frame 2 rather than frame 1.
+Kentilla 4/86 -> 52/86: **the other 34 are its wavetable budget** -- records
+6, 12, 13 and 14 are laid out in a 5-entry budget in a full table, the phased
+shape takes 9 (6 at best with delay-carried notes), and the unphased loop that
+starts the alternation at the attack stands. Not applied where the gate shape
+already lays the original's frames (F1, LVVP), where `h` is not whole, where
+the record's firstwave writes frame 0 (`--no-test-restart`), or where the gate
+is not the play routine's entry (`entry_gate`, the precondition that anchors
+our lattice to the original's frames: Bump_Set_Spike and Spellbound). The
+`gate` column reads 0.6-0.9 pp lower on the three ticked files (-t 60)
+because our tick keeps the gate above -S1 where the original's `$80` clears
+it (7.ooooooo): a tick of the original's length, on its frame, is a longer
+gated one -- International_Karate's `81` tick is two frames on every note
+where it was one on 36 of 145, against the original's `80 80`.
+
+**The gate residue is split per note** (`nibble_gate_phase_split_plan`,
+`goatwriter/arpeggio.py`), as the fixed arp's residue and bit $10's phase are:
+a record's notes attack on different residues modulo lcm(P, O) wherever a row
+is not a multiple of the gate's cycle, and the record's one block plays its
+majority's skip on all of them. Las_Vegas_Video_Poker (-S4, O 4, 3-frame rows)
+attacks on residues 1 and 3 by row; in subtune 0's first 120 s the original's
+one-step first runs are `base1/arp1` on 82 of 321 notes and its octave's
+`base3/arp3` on 5 of 12, which the majority spelling played on 1 and 0 notes;
+with the split, every one of the 333 notes opens on the original's runs
+(paired note by note against the original's trace, at v0.5.513 plus the
+uncommitted merge). Every minority residue is cloned (no
+`FIXED_ARP_SPLIT_FACTOR`: a residue's notes are the original's own frames).
+The wavetable is the budget: LVVP's was 249 of 255 entries before the split,
+so a clone takes **no entries** where its block is its record's played from a
+later entry -- the gated shapes are one frame cycle entered at different
+points, and a one-step residue-1 block is the residue-3 block from its fifth
+entry -- and otherwise the shortest prefix plus a jump into the record's
+block (`_entered_record_block`, checked call for call by `_same_wave_stream`);
+LVVP's ten clones cost 3 entries between them (the octave's). A clone the
+table still has no room for (LVVP's GT $15 at residue 3; every clone of
+Bump_Set_Spike, Thrust and Warhawk, whose tables are full) is found by a dry
+layout and left on its record before anything is renamed, so a split that
+would only rename notes onto their record's block moves no byte.
 
 ### 7.oooooo The drum sweep's onset, rate and length on an outer-gated multispeed player
 
@@ -12638,16 +12931,285 @@ On Hunter_Patrol voice 1:
 The old match came from vibrato we played where the original ties, and that
 was covering an under-travel elsewhere.
 
+**Above -S1 every frame of the program is `multiplier` calls.** The four
+files packed at -S2 (Last_V8, its C128 version, Master_of_Magic and
+One_Man_and_his_Droid) were declined until the program learned that:
+
+* A fall frame is `multiplier` `F2` steps of `$100 * k / multiplier` each
+  (`skydive_speed`), so store k is a speed row `(k/2, (k&1) * $80)` at -S2:
+  the rate divided where it is encoded. A frame on the note is `multiplier`
+  relative-note-0 steps, and a run of still frames a delay counted in calls.
+  Neither can borrow a delay for its second call, because a delay call runs
+  the row's continuous command (gplay.c:699-702), the vibrato the program
+  holds off.
+* The frame the program counts as 0 is one call short
+  (`skydive_row_offset`). The packed player's first call is the song init
+  and nothing else (player.s:573-620 leaves each `mt_chncounter` at 1), so
+  row 0's tick 0 is call 1, and with every row `frames * multiplier` calls
+  long, every row's first call is the last call of its frame. A per-call
+  trace (siddump at -m1) of Master_of_Magic puts the window's first
+  relative-note-0 step on call 11013. With frame 0 given two calls the
+  whole fall read one call late at -m2: `$67D3 $67D3 $6753` where the
+  original reads `$674C $684C $66DA`.
+
+Measured at v0.5.513 with the cycle-2 merge applied, under presets, -t 180,
+with the original traced at -m1, ours at -m2, lag-aligned. The count is the
+same one as the table above:
+
+| file | voice | our high byte agrees, before -> after |
+|---|---|---|
+| Master_of_Magic | 0 | 0/264 -> 264/264 |
+| One_Man_and_his_Droid | 0 / 1 | 14/308 -> 266/308, 12/264 -> 264/264 |
+
+The 42 frames One_Man_and_his_Droid still misses are the two windows
+(frames 3027 and 6611) on the one row the log calls mixed or occupied. Tie
+counts move the way they did at -S1. Master_of_Magic `tie_same_frame` goes
+2311 -> 2699 and `tie_orig_only` 1558 -> 1170. One_Man_and_his_Droid goes
+4670 -> 5660 and 1098 -> 108. `bend_ratio` falls as it did on Hunter_Patrol
+(1.07 -> 0.86 and 0.98 -> 0.79), and One_Man_and_his_Droid's
+`depth_ratio` goes 0.33 -> 1.17.
+
+Last_V8 and its C128 version are still not emitted, but now on the
+wavetable rather than on the multiplier. A 31-tick note's 30-tick window is a
+124-step program at -S2 (122 in the C128 version, whose phase is 1, not 2).
+It would be 63 and 62 steps even at -S1. Both files have 217 of 255 entries
+in use when the skydive is placed.
+
 Some cases are logged and not emitted:
 
-* Files above -S1: Last_V8, its C128 version, Master_of_Magic and
-  One_Man_and_his_Droid. Every program step would need `multiplier` calls.
-* Windows that open on the note row itself (`dur < LAST`), which is most of
-  Zoids' long notes. These need the program inside the instrument's own
-  wavetable.
+* Programs that do not fit the wavetable: Last_V8 and its C128 version, as
+  above.
+* Windows on a tied note (`3 00` on the note row), below.
+
+**A note shorter than LAST opens its window on the note row itself.** With
+`dur < LAST` the ticks-left counter is below LAST from the fetch on, so
+`dur - LAST + 1` is not a row after the note. The fetch frame runs no effect
+(Zoids `$116A JMP $137C`), so the first store lands on the note's frame 1 or 2,
+whichever has the odd counter. siddump of Zoids voice 1: the note is at 8473
+(F-6, `$5CE4`) and the stores are `$5C0D $5BAA $5AE4 ...`, on 8475, 8477 ...,
+35 of them. These were declined ("5 opens on the note row") until the pointer
+learned to take the note row's own command column:
+
+* A `CMD_SETWAVEPTR` on a note row replaces the wave pointer the note init
+  just loaded (gplay.c:367 then :436; player.s `mt_newnoteinit` then
+  `mt_tick0_8`). So the program carries the instrument's own wave program,
+  read call by call (`instrument_calls`) and merged in (`_merge_instrument`).
+  A fall call may take an instrument call that changes nothing it would lose,
+  meaning no new waveform, no command and no note but the note's own. A
+  note-base call takes the instrument's waveform with relative note 0.
+  Anything else declines the window.
+* The note init's call runs no wavetable (gplay.c:510-514, `goto NEXTCHN`),
+  so the program starts on the row's frame 1 (`skydive_note_row_program`).
+  Zoids' GT 9 program is `41 00` x3, so the program is `41 00` x3, `00 00`,
+  then 34 `F2 k / F1 k` pairs.
+* The column is taken if it is empty, or if it is a portamento or vibrato
+  (`SKYDIVE_NOTE_ROW_STATE_COMMANDS`, whose tick 0 only sets the continuous
+  effect). That second case also needs the program to write on every call of
+  the note, so the effect never runs, and the next event to be a note, whose
+  init resets it. Zoids' are `4 09`.
+* Toneporta is never taken. On a note row it is the tie, and it skips the
+  note init the program replaces. Zoids' two windows on tied notes (frames
+  10371 and 10587, `3 00`) are logged as occupied.
+* These programs go after the row windows' programs, each only if it fits.
+  The row windows stay all or nothing, as before. Zoids' wavetable reaches
+  252 of 255 entries.
+
+Measured with the cycle-3 merge applied, under presets, siddump lag-aligned
+(lag 7). The count is the original's store frames per window on which our
+high byte agrees:
+
+| Zoids window | before -> after |
+|---|---|
+| subtune 0, frame 8475 (-t 240) | 1/35 -> 35/35 |
+| subtune 0, frame 9243 (-t 240) | 1/35 -> 35/35 |
+| subtune 2, frame 411 (-t 60) | 1/35 -> 35/35 |
+| subtune 0, frames 10371 and 10587 (tied) | 1/35 -> 1/35 each |
+
+Across all frames of the two new subtune-0 windows, agreement goes from 7/70
+to 43/70. The frames between stores are where the program holds the note and
+the original vibrates. Subtune 0 at -t 240:
+
+* `tie_same_frame` goes 7327 -> 7431 and `tie_orig_only` 1962 -> 1858.
+* `reversal_ratio` goes 0.920 -> 0.940 and `travel_ratio` 0.886 -> 0.944.
+* `bend_ratio` goes 1.027 -> 0.950.
+* `depth_ratio` goes 0.911 -> 1.229, a median over 4 instruments.
+
+On subtune 2 at -t 60, `tie_agreement` goes 0.729 -> 0.813 and
+`reversal_ratio` 0.836 -> 0.977. Zoids is the only file in the corpus whose
+bytes move.
 
 Formula_1_Simulator and Proteus have no record that sets the bit. See
-`tests/test_skydive.py`.
+`tests/test_skydive.py` and `tests/test_skydive_note_row.py`.
+
+### 7.cccccccc The skydive without its window: Game_Killer's rising high byte
+
+Five corpus files carry the skydive block of 7.ppppppp with the ticks-left
+test taken out (`detect._find_note_rise`, `NOTE_RISE_SHAPE`). Game_Killer
+`$0B33`:
+
+```
+0B33  LDA effect / AND #$02 / BEQ out
+      LDA dur,X   / AND #$1F / CMP #$11 / BCC out   ; notes of 17+ ticks
+      LDA $0C8B   / AND #$01 / BEQ out              ; every other tick
+      LDA savehi,X / BEQ out / INC savehi,X         ; INC, not DEC
+      LDY voice   / STA $D401,Y                     ; the byte BEFORE the INC
+```
+
+No `LDA ticks / CMP #LAST / BCS`, so the stores run over the whole note,
+from its first effect tick to its last, and the fetch resets `savehi` to the
+note's own high byte (`$0918`) for every note it reads, tie landings
+included. The counter `$0C8B` is `INC`'d behind the outer gate (`$0831`),
+so it counts ticks. Operands per file: Game_Killer, Chimera and Human_Race
+`INC` with MIN `$11`; Crazy_Comets `DEC` with `$11`; Battle_of_Britain
+`DEC` with `$0C`.
+
+Game_Killer's record 1 (GT 2, ADSR `$0A9A`, effect `$0A`; `$08` is the
+pulse-lo accumulator in this dialect) carries a vibrato on the global
+counter's triangle that rewrites the whole frequency every tick, so the
+original alternates the vibrato with the rising byte. siddump of voice 0
+from the attack at frame 641, the outer gate's skipped frames (4, 14, 24
+...) taken out: tick 0 `$3426`; ticks 1, 3, 5 ... the vibrato (`$3426`
+`$34ED` `$35B4` `$367B`, steps of `$C7`); ticks 2, 4, 6 ... `$34`, `$35`
+... `$44` over the vibrato's low byte, k = 0..16. This was the `$0A9A`
+row of docs/VIBRATO.md: 1652 reversals in the original against our 479
+(-t 180), 1173 of the file's 1186 missing. Ours played the vibrato alone.
+
+**Where it goes.** Game_Killer's rows are two ticks (reload 1). Store k is
+on the original's tick `phase + 2k` from the fetch, with `phase` read off the
+counter's value on the fetch tick (`frame_counter_base` 0,
+`fixed_arp_first_fetch` 1, so phase 2), so each row holds exactly one store.
+That row takes a `CMD_SETWAVEPTR`, which keeps the row's vibrato command
+running (gplay.c tick 0 leaves `command` alone for `$8`). It points at a
+two-entry program: `F1` of `$100 * k` on the row's first call, then a jump
+into a tail that every program shares. The tail puts the voice back on its
+note on the row's second tick and again on its last call, so the next store
+is measured from the note. The step is a jump made in one call, not a
+rate, so it is not divided by the multiplier.
+
+**A per-instrument program does not fit.** The first version put the whole
+note's stores in record 1's own wavetable program, looping with the note's
+18 rows so the `CMD_TONEPORTA 00` tie landings stayed in step. It needed
+about 70 entries for the stores and two dozen 16-call delays for the
+360-call tail. Game_Killer's wavetable has 232 of 255 entries in use, so it
+was declined every time. The per-row programs cost 2 entries per store value
+plus a 3-entry tail. The 23 entries left hold 10 of the 16 values (1, 3, 4,
+6, 8, 9, 11, 13, 14, 16), and each store takes the nearest
+(`store_values`, `nearest_value`).
+
+**The tick a store lands on is the harness's, not the row's.** Battle_of
+_Britain (-S2, `DEC`) at the same placement read every store one frame
+early. Traced per call, our attack frame ends on call 2 of the note row, so
+the original's tick n is our call `2n + 2`, one tick later than the row's.
+`store_lag` derives this from `skydive_row_offset`. Our attack frame is the
+first frame that holds the note's first audible call: call 1 behind the
+test-bit lead, call 0 where the record writes its real waveform. The lag is
+that frame's last call divided by the calls in a tick. That makes it one
+tick at -S1 and -S2 behind the lead, which is the skydive's `lag` at -S1,
+and none at Game_Killer's -S9 with 10-call ticks, where the same trace ends
+the attack frame on call 3. A store that lands on a row's second tick gets a
+3-entry program: the note on the first tick's last call, the step, then a
+tail that puts the voice back on the row's last call.
+
+**What this approximates.** The original's store is the note's high byte
+plus k over the vibrato's low byte, so its low byte wanders by up to the
+vibrato's depth. Ours sits on the note's low byte. Between stores our
+vibrato restarts from the note on every row, where the original's runs on
+its global triangle.
+
+Measured on 6e467ff plus the uncommitted c6 merge, under presets, -t 180,
+lag-aligned. "High byte" counts the original's frames, inside notes of the
+record, that sit two or more steps off the note's high byte, and on which
+ours reads the same byte:
+
+| file | column | before | after | original |
+|---|---|---:|---:|---:|
+| Game_Killer | reversals | 920 | 1863 | 2091 |
+| Game_Killer | `$0A9` notes' reversals, voice 0 / 1 | 403 / 76 | 1166 / 256 | 1388 / 264 |
+| Game_Killer | high byte, voice 0 / 1 | 211 / 66 | 591 / 164 | of 1264 / 272 |
+| Game_Killer | `tie_ratio`, `tie_agreement` | 0.645, 0.450 | 0.917, 0.637 | |
+| Game_Killer | `bend_ratio`, `travel_ratio` | 1.808, 0.705 | 1.016, 0.937 | |
+| Battle_of_Britain | reversals | 2118 | 2622 | 2786 |
+| Battle_of_Britain | `$0FF` notes' reversals, voice 0 / 1 | 159 / 92 | 435 / 320 | 586 / 280 |
+| Battle_of_Britain | high byte, voice 0 / 1 | 0 / 0 | 165 / 136 | of 473 / 188 |
+| Battle_of_Britain | `tie_ratio`, `tie_agreement` | 0.660, 0.614 | 0.869, 0.819 | |
+| Battle_of_Britain | `bend_ratio`, `travel_ratio` | 1.771, 0.563 | 1.479, 1.187 | |
+
+`melody`, `wave` and the other voices' groups did not move on either file.
+Game_Killer's `depth_ratio` went 0.785 -> 1.172. With the store on the row's
+first tick (lag 0), Battle_of_Britain's high byte agrees on 0 of 114 and 0
+of 82 frames over 120 s. With the lag it agrees on 112 and 82.
+
+The corpus byte-hash under presets (`fidelity._preset_opts`) compared 95
+files: 89 converted, 6 refused, and 2 moved, Battle_of_Britain and
+Game_Killer. The same two moved, and only those, with `tie_restart` forced
+on. The other three files are logged and not emitted. Crazy_Comets and
+Chimera have rows of three ticks, which hold a store on alternating halves.
+Human_Race's patterns go past the packed limit.
+
+`tests/test_note_rise.py` re-reads the sweep off the original's trace and
+re-measures both files' high-byte agreement through gt2reloc.
+
+### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, detected and not emitted
+
+Rasputin's player reads bit `$02` a fourth way. It is not the rise, the
+skydive, the alternation or the per-voice two-stage attack. The block is at
+`$C35A`, after the drum block:
+
+```
+LDA effect / AND #$02 / BEQ out
+LDA ticks,X / BEQ out          ; ticks left: none in the note's last tick
+DEC count,X / BPL out          ; per voice
+LDA #$01 / STA count,X         ; every 2nd effect call
+LDA wave,X / EOR #$18 / STA wave,X
+LDY voiceofs / STA $D404,Y     ; the stored waveform, gate ON
+```
+
+`detect._find_wave_eor` reads it (`WAVE_EOR_SHAPE`, `det.wave_eor`) as a
+fallback, and only where no other reading of the bit matched. The converter
+logs it as `NOT emitted`. Rasputin is the only corpus file that has it. A
+byte scan for any `AND #$02 / Bxx` followed within 30 bytes by an `EOR #imm`
+finds no other file, and `tests/test_wave_eor.py` re-derives the population.
+
+Two in-use records set the bit:
+
+* Record 10 (`00 04 41 0A 89 00 08 0A`, 416 notes in subtune 0's 180 s)
+  alternates `$41`/`$59`.
+* Record 4 (`80 01 43 07 06 00 00 07`) also sets the drum bit. The toggle
+  overwrites the drum's noise tick, so the original reads `43 5B 5A 5A` where
+  the drum alone reads `43 80 42 42`. This is the `$5B` at +1 that
+  `rasputin-drum-noise-blip-one-frame-early` found on 59 of 128 attacks.
+
+The phase is per note, and it is deterministic. Nothing else writes the
+counter: not the note fetch, not a rest, not init. Its image bytes are zero.
+A note of L ticks spends `L*c - 1` effect calls on it, and with c = 2 calls a
+tick that is odd, so each bit-`$02` event flips the phase. Traced: of the
+consecutive pairs whose phase the trace settles, 130 of 130 flip on record 10
+and 117 of 117 on record 4. With the reload at 1 the toggle period is one
+tick, which in our calls is the row's tempo: 4, 5 or 6 across Rasputin's
+`$FE nn` changes.
+
+It is not emitted because every emission measured lower. The static shape was
+the frame-0 lead, then `wave ^ $18` / `wave` halves of P calls, looping.
+Measured at v0.5.513 plus the uncommitted cycle-5 merge, presets, -t 180:
+
+| Arm | `wave` |
+|---|---|
+| base | 0.7675 |
+| P=4, toggle after the lead / after P calls | 0.7505 / 0.7637 |
+| P=5 | 0.7522 / 0.7563 |
+| P=6 | 0.7582 / 0.7576 |
+| per-note-correct phase (P=5 builds spliced note by note) | 0.7530 |
+
+Noise (5454 orig / 5134 ours), `nrun`, melody and gate do not move on any arm.
+Note-aligned, with each paired attack compared from its own frame 0, the
+splice lifts record 10's frames from 0.535 to 0.655. So the emission is right
+where it lands, and the column is reading Rasputin's clock drift: two
+alternations at a random offset agree less often than an alternation and a
+constant. Nothing can adopt this until the drift is repaired. After that it
+wants a per-note phase split (`arpeggio._note_phase_split` is the machinery)
+with the period taken from each note's tempo. Record 4's static choice is
+already what we emit: 59 of its 128 notes toggle on frame 1, 5 on frame 2 and
+64 never.
 
 ### 7.qqqqqqq The triangle walk in lockstep: a record two voices sweep is stepped by both
 
@@ -12820,7 +13382,9 @@ wavetable pointer is that second stage and whose pulse pointer is 0. With pulse
 pointer 0 the running pulse program carries on (gplay.c `if (iptr->ptr[PTBL])`,
 player.s `mt_inspulseptr`). It shares `legato_tie_clones`' walk, re-latch and
 declines (`_respell_on_clones`), except that the row keeps its command. A row whose
-instrument has no second stage is declined as "no two-stage attack to skip".
+instrument has no second stage was declined as "no two-stage attack to skip" until
+the pulse-only variant below; that reason now remains only where the player's
+counter guards cannot be read.
 
 `build.py` appends the variants after the legato clones, whose numbers come first and
 whose `CMD_TONEPORTA` rows the variants never take. It does so only when the legato,
@@ -12832,10 +13396,81 @@ whose renamed columns hold no record of their own there.
   attack would finish that attack in the original.
 - The variant's envelope is its record's, where the original keeps the previous
   note's. On every Monty row it takes, that is the same record.
-- Flagged notes on records with no two-stage attack still reset PW and ADSR. On the
-  legato-family players these are declined, and opened as `free-note-pulse-only-variant`.
-- The "entered with two instruments" and "instrument unsettled" declines are opened
-  as `free-note-two-instrument-entry-declines`.
+
+**A pattern entered with two instruments is split for the free rows too.**
+`entry_instrument_split` (the legato tie's per-entry copy) is handed the free rows
+as well, but only those that could play a record with an attack to skip
+(`free_note_split_rows`, from `free_note_record_has_attack`, the record half of
+`free_note_wave_start`'s test): a row whose every possible instrument has none
+could at most take the pulse-only variant below, which the split is not extended
+to. Measured at 6e467ff + the cycle-4 merge, under presets:
+Knucklebusters 7 -> 31 free rows on 2 -> 4 variants (patterns `$44`/`$45`, the two
+slices of original pattern `$33`, six copies), Flash_Gordon 1 -> 2 (pattern `$64`),
+Delta's 11 kept and renamed, its bytes unchanged. Checked against the original by
+siddump-rt `-w` on the player's track position, pattern offset and instrument
+variables (Knucklebusters `$0943`/`$0946`/`$0955`, Delta `$C2EC`/`$C2EF`/`$C2FE`):
+Knucklebusters enters `$33` holding indices `$0A`, `$11`, `$12`, `$16`, exactly the
+GT 11, 18, 19, 23 the copies settle on, and on the first visit its flagged notes
+reset no pulse and play no `$43` attack frame but one (B-5 eleven frames after a
+plain note, the "counter run out" case below), as the variants now do; Delta enters
+its patterns holding only records without an attack. The four Flash_Gordon and two
+Shockway_Rider "instrument unsettled" rows are in patterns no orderlist reaches.
+(`tests/test_free_note_entry_split.py`.)
+
+**Records with no attack: the pulse-only variant** (task `free-note-pulse-only-variant`,
+figures historical at 6e467ff plus the cycle-5 merge, under presets). The skipped block
+is the same whatever the record holds, so a flagged note on a record with no attack
+still skips the PW write and accumulator reseed, the envelope write and the sweep
+direction clear. That was traced, not assumed: each original against a copy with the
+`BMI` NOPped (`C:/t/free-note-pulse-only-variant/trace_orig.py`, 400 s, every
+subtune) diverges in PW on no-attack records in all eleven files that declined such
+rows (Lightforce, Delta, Saboteur_II, Pandora, Knucklebusters, Flash_Gordon, Sanxion,
+Shockway_Rider, Trans-Atlantic_Balloon_Challenge, W_A_R, Nineteen). On no-attack
+records the envelope also differed at 4 onsets, all in Trans-Atlantic_Balloon_Challenge,
+whose 2 such rows follow another instrument. Those onsets were not mapped to rows one by
+one.
+- **One definition of "an attack"**: `free_note_record_has_attack`, which both the
+  split above and this variant read. It is the attack our full start plays and a
+  flagged note skips: the two-stage block, or the bit-$80 drum's fixed-pitch prologue
+  ($80 and $40). The player's counter also drives $40 alone (Lightforce record 6) and
+  $04 with attack waveform 0, but our wavetable writes no attack for either, so they
+  count as none. No corpus row the pass sees plays one of those records
+  (`C:/t/free-note-pulse-only-variant/attack_rows.py`).
+- **The counter guards are read off the player** (`free_note_attack_bits`). Every read
+  of the frame counter the block reloads must sit behind `AND #$04 / BEQ` or
+  `BIT / BVC` on the record's effect byte (Lightforce $F414 and $F4A1). A read behind
+  any other bit, or behind none, turns the variant off for the file. All 34 files
+  `free_note_skips_two_stage` accepts resolve to $44 or $04.
+- Such a record's variant keeps its own wavetable start and drops only the pulse
+  pointer (`pulse_only`). If the pointer is already 0, the full start already is the
+  free note, and the row declines as "full start already keeps the pulse". No corpus
+  row reaches that branch.
+- **Only after the record itself.** The original sweeps the running width with the
+  new record's rate and bounds, which it reads through the record each frame
+  (Lightforce $F329-$F387). Pointer 0 carries on the previous instrument's program.
+  These agree only when both are the same record, so a pulse-only row after another
+  instrument declines as "follows another instrument" (6 rows in the corpus), and
+  one after an unknown one as "follows an unsettled instrument".
+- A record with an attack that `free_note_wave_start` cannot enter past keeps the
+  full start, declined as "attack the wavetable cannot skip" (Flash_Gordon
+  instruments 7 and 8, 4 rows).
+- Measured: 9 files move (Delta, Flash_Gordon, Knucklebusters, Lightforce, Pandora,
+  Saboteur_II, Sanxion, Shockway_Rider, W_A_R). At `-t 180`:
+  - `pphase`: Saboteur_II 0.69 -> 1.00, Pandora 0.53 -> 0.87, Shockway_Rider
+    0.62 -> 0.88, Delta subtune 0 0.33 -> 0.44, W_A_R subtune 4 0.83 -> 1.00.
+  - Also moved: Saboteur_II `slides` 7139 -> 7131 (original 6632). Delta subtune 0
+    `pul` 15334 -> 15419 (original 13855) and `pspan` 0.68 -> 0.69. Flash_Gordon
+    subtune 2 `pspan` 1.85 -> 1.88: our span is 504 -> 512 against the original's
+    272, so it was already nearly twice too wide.
+
+  No other column moved.
+- Lightforce's first moved frame is past the 180 s window. At 233.8 s (voice 1,
+  instrument 7) the original sweeps 370 -> 380 -> 390 through the flagged note. The old
+  conversion reset to 1C8; the variant carries on 380 -> 390.
+- Delta's 11 and Knucklebusters' 2 "entered with two instruments" rows can play
+  only pulse-only records: every instrument their patterns are entered with is one
+  (`C:/t/free-note-pulse-only-variant/two_entry.py`). Taking them would need the
+  entry split extended to those records.
 
 ### 7.sssssss A plain program withholds three calls from the effects: `_free_gate_calls`
 
@@ -12885,6 +13520,44 @@ Measured:
   Ricochet, Star_Paws, Thundercats). Every changed byte is a `$00 -> $80` right side or a
   `vibdelay` byte. Commando is unchanged.
 - `tests/test_free_gate_calls.py` pins it.
+
+**The swell's start phase is free-running per note, and it is recorded as a column
+limit, not emitted.** From task `mega-0b08-free-running-vibrato-phase`, measured on the
+v0.5.513 tree plus the uncommitted cycle-4 merge, presets, siddump `-t 420`, subtune 0,
+with `-w` watching `$B0-$B2` (position), `$B6-$B8` (direction), `$B3-$B5` (bound) and
+`$BC-$BE` (age). `$0B08`'s swell triangle (`$4C4A-$4C62`) is the classic counter
+`_classic_vibrato_entry`'s docstring describes. Its only other writer is the init-time
+clear at `$580F` (`tests/test_classic_vibrato_census.py` pins this). The note fetch zeroes `$ED`, `$D0` and `$BC` (`$4BD5-$4BDB`) and not
+the triangle. So each note takes the oscillator wherever the last one left it:
+
+- The state at the attack frame is position 0, ascending, on 12 of 96 notes.
+- One frame later the notes spread over all eight phases of the bound-4 triangle:
+  `0u 11, 1u 12, 1d 16, 2u 13, 2d 8, 3u 11, 3d 8, 4u 17`.
+- The phase can be read off the player. The first frame's offset is
+  `(pos - bound/2) * step`, and that state predicts the direction of the first move on
+  96 of 96 notes. A per-note reset would predict 47.
+- The phase is a function of the voice's history, not of the note. The 30 notes whose
+  first-frame step reads 334 (one pitch) start in six different phases. A passage
+  replayed 1536 frames later repeats all 24 of its phases. Nine other note pairs at that
+  lag, which are different notes (their steps differ), agree on 1.
+- First stored offset: original down 39, 0 21, up 36; ours up 96. First move: original
+  up 49, down 47; ours up 96.
+
+Goattracker cannot carry it. Every pitch write zeroes `mt_chnvibtime` (`player.s`
+`mt_wavenote`, "Reset vibrato phase"; `gplay.c:723`). The first effect call after it
+always adds: `vibtime` 0 is never greater than `cmp`, so it becomes 2, which is even,
+and that means `mt_freqadd`, whatever the speed entry. So the 39 notes whose first
+stored offset is negative cannot be matched on that frame by any speed-table entry.
+The other notes would need a program per note: speed 0 to advance `vibtime` without
+moving the pitch, then a small `cmp` to turn early. They would also need a wave pointer
+per note in patterns that are global. Mega_Apocalypse's wavetable already holds 233 of
+`MAX_TABLELEN` 255 entries. With phases spread evenly, no single start phase is closer
+on average than another (the Las_Vegas_Video_Poker measurement in
+`_classic_vibrato_entry`'s docstring).
+
+No column scores the phase. `depth` is a peak-to-peak, `vib` counts reversals and
+`bend` sums travel, so all three are blind to where a note's swing starts. The gap does
+not show in `FIDELITY.md`, and this paragraph is where it is recorded.
 
 ### 7.ttttttt The triangle's entry ramps follow the sweep out of its band
 
@@ -12980,3 +13653,320 @@ frame agrees, in either layout. Monty_on_the_Run v0's two notes go from 4/24 to
 
 A per-voice phase (w, d) cannot say "hold". This is the limit the reached count
 hides, and it is left open.
+
+### 7.vvvvvvv A tie in the classic players without the legato marker re-runs the instrument start
+
+`legato_tie_clones` (7.nnnnnn) respells the note_flag players' unflagged
+ties. The classic players WITHOUT the marker have no way to skip their
+instrument start at all, and `tie_restart` (off by default -- Commando is one
+of them; on in `presets.FIXED`) gives them the same spelling. Commando, read
+at 6e467ff:
+
+    50BD  A9 FF     LDA #$FF / STA $5501   ; the gate mask, every fetch
+    50C2  B1 5F     LDA ($5F),Y            ; the status byte
+    5131  10 21     BPL $5154              ; $5528: the voice is the music's
+    5133  BD 93 55  LDA wave,X / AND $5501 / STA $D404,Y
+    513C  BD 91 55  LDA pulse,X / STA $D402,Y ... $D403, $D405, $D406
+
+Status bit 5 is tested at the note's END only (`$517F AND #$20 / BNE` past
+the gate-off), so a tied note keeps its gate and still re-writes waveform
+with the gate, pulse, AD and SR, reloads the length counter the drum effect
+keys on ($54F2) and clears the portamento ($5520). `CMD_TONEPORTA 00` skips
+all of it (gplay.c:353-398). Every path from the status fetch to the block
+was walked in the 35 classic non-flag corpus files that carry it
+(`C:/t/motr-family-tie-reruns-note-start/flowcheck.py`): no branch leaves it
+or lands inside it, and the one that skips it, in 15 files, is `LDA flag /
+BPL` on the cell the voice loop sets to $FF while the music owns the voice.
+`classic_tie_restart_family` reads that: the block, its AND naming the cell
+the fetch reloads with $FF, no `AND #$20` on the way in. Mega_Apocalypse and
+Phantoms_of_the_Asteroid carry no such block and are not read.
+
+**The block has two dialects, and they differ in what the pulse write
+means.** Where `STA $D402,Y` is followed by `LDA` ("record": Commando,
+Human_Race, Chimera, Monty_on_the_Run) the sweep stores its value back into
+the record (Commando $5240 `STA $5591,Y`), so the fetch writes the LIVE
+value and a tie into the instrument the voice holds moves no pulse. Where it
+is followed by `PHA` ("voice": International_Karate, Samantha_Fox, Warhawk,
+Thrust) the pulled bytes reseed per-voice accumulators after the block (IK
+$AF73 `STA $B305,X`, $B2E3/$B2E0 cleared): a tie restarts the sweep.
+
+**Only a heard restart is respelled** (`build._restart_heard`). On a tie into
+the record the voice already holds, with a block that writes one waveform at
+the pattern's note (`_block_is_steady`), every write the start makes is the
+value already there -- in the "record" dialect the pulse too, in the "voice"
+dialect wherever the record's program does not sweep (`_pulse_sweeps`). A
+clone costs what any Goattracker note costs there: player.s runs no pulse
+step on the init call (`jmp mt_loadregswaveonly`), so a held sweep stalls a
+frame per tie. Respelling every tie measured that cost and nothing else on
+the silent ones (6e467ff, -t 180, `ab1/`): Ninja `pulse_span` .980 -> .946
+(voice 1 holds $3A8 two frames at 5174 where the old spelling sweeps on),
+Commando's 41 ties moved only `our_oscillation`, by 4e-6. A tie into another record, onto a block
+the restart replays (a drum, a two-stage attack, a pitch effect) or onto a
+sweep the "voice" start reseeds, is heard. In the "record" dialect a heard
+tie into the held record keeps the running pulse program (the clone's pulse
+pointer is 0, gplay.c `if (iptr->ptr[PTBL])`); one that changes record starts
+the new record's, as a fresh note does.
+
+**A restarted block must not leave the arpeggio counter's phase**
+(`build._phase_locked_ties`). The counter is global in the original (Commando
+`$5365 LDA $5525 / AND #$01`) and a clone restarts its record's block, which
+carries the residue of a fresh attack (`fixed_arp_phases`, or a phase
+clone's own). A tie keeps the old spelling unless every place it is played
+lands on that residue (`arpeggio.arp_row_residues`) or on one whose block
+`_arp_phase_distinct` says is identical; a record no residue changes is free.
+Kept outright: the row-locked tie-chain shape (`fixed_arp_tie_rows`, built
+for a tie that does NOT restart it -- Chimera's 541), and blocks carrying bit
+$10's phase or the nibble gate's, which no residue walk here models.
+
+**The clone's firstwave is 0** where the record's is the test bit and its
+block's first entry writes the waveform. The init call writes no pitch, so
+the record's own waveform there would open a gate an effect had closed on the
+OLD note's frequency, a frame before the new one -- Chimera voice 1 sounded
+`D0A6` at 8647 ahead of `1A15`, `pitch_jaccard` .970 -> .941 -- where the
+original writes both on its fetch frame. With 0 the gate and the pitch land
+together on the block's first entry (`pitch_jaccard` unchanged).
+
+The late envelope pass for the kept ties (`only=declined`) reads a legato
+clone as its instrument (`_tied_instrument_envelopes(alias=...)`): a kept tie
+after a stretch latched on a clone of the same instrument wrote that
+instrument's SR/AD as a change (Bump_Set_Spike pattern $1F row 36). The alias
+is byte-inert on the note_flag family.
+
+Measured HISTORICALLY (6e467ff + this change, 2026-10-06, under presets,
+`fidelity.measure` -t 180, `C:/t/motr-family-tie-reruns-note-start/ab4/`):
+23 files move; nothing outside the family does. Kentilla voice-3 attacks
+355 -> 379 (original 379), melody .952 -> .982, wave .889 -> .946, gate .527
+-> .600; Thrust voice-3 attacks 346 -> 386 (original 411), melody .978 ->
+1.000 -- its drum record re-attacks with its noise frame, as the original
+does, where the old spelling sat on the gate-off; Chimera melody .9946 ->
+.9955; `pulse_span` Samantha_Fox .850 -> .958, Warhawk .450 -> .690,
+Bump_Set_Spike .646 -> .692. Small moves the other way, all ratios: Thrust
+gate .769 -> .763 (its drum model's noise frames carry the gate the
+original's do not), Bump_Set_Spike bend 1.025 -> 1.061 and Samantha_Fox
+depth .799 -> .762 (the instrument vibrato now runs on the tie's row, as the
+original's does, where `CMD_TONEPORTA` froze it for the row).
+
+### 7.yyyyyyy The packed song's call phase under an outer gate: instrument 63's startup row
+
+`--skip-gate` makes a gated player's row its exact average -- Game_Killer's
+2 frames x 10/9 is 20 calls at `-S9` -- and that is an EVEN grid where the
+original's is not: its outer gate (`$0C8C`, byte 4, reload 9) returns at once
+on frames 4, 14, 24, ... An even grid of 10/9 frames lands every tick in the
+original's frame at exactly one call phase in nine, and which phase the packed
+song started on was an accident of gt2reloc's startup: on Game_Killer a wrong
+one, every voice attacking a frame early on 2 notes in 3 (391/985, 385/1129,
+450/1350 exact at 180 s).
+
+The phase is a constant shift of under one frame, so a listener cannot hear
+it; siddump can, because it runs a frame's `-S` calls back to back and samples
+after the last (tools/siddump-rt/README.md), and every per-frame column reads
+through that grouping. **The lever is GoatTracker's documented startup tempo**
+(readme.txt:1083-1086): instrument 63 with AD >= 2 and no wavetable pointer
+sets the packed player's DEFAULTTEMPO to AD - 1 (greloc.c:1140-1143, default
+`6 * multiplier - 1`). The first play call after init only resets the song
+(player.s `mt_initsongnum`), the second is an empty tick 0 (the counter starts
+at 1), and the counter then reloads from DEFAULTTEMPO, so row 0's tick 0 is
+call `1 + AD`; row 0's own CMD_SETTEMPO sets every row after it. The editor
+ignores the record for these songs (gplay.c starts its tick at `6 *
+multiplier - 1` and the row-0 command replaces the tempo before its first
+reload). This is not the superseded `--tempo` route, which put the ROW tempo
+there and went silent: here the startup row stays within one frame of its
+default, and `instrument_drop.add_startup_tempo` declines where a gatetimer
+would not be reached by its counter.
+
+**The model, read off both players** (`goatwriter.call_phase`): our row `j`
+shows on call `1 + AD + 1 + row_calls * j` -- the onset is the call AFTER tick
+0, because the init call writes only the test-bit firstwave `$09` and siddump
+takes no key-on below `$10` (siddump.c:434-437), measured at `-m1` on three
+files; the original's row `j` starts on passing call `first + frames * j`
+(`fixed_arp_first_fetch`, `SongSpeeds.frames_for`), and the gate cell's
+`DEC`/`BPL` on its byte (`nibble_gate_byte`) says which frame that call is.
+The AD whose frames differ from the original's by one constant on every row is
+the answer; for Game_Killer 49 against the default 54, and the default misses
+on 4 rows in 9. No trace is consulted to choose it. The record is added last,
+on the finished bytes, after `drop_unnamed_instruments` (which would drop it:
+no pattern names it), with empty records padding 1..62; the packed `.sid`
+carries none of them, only the define.
+
+**Only for a gate that is the play routine's first instruction and returns**
+(`call_phase.entry_gate`: `OUTER_GATE_RTS` or the PAL spelling at the play
+entry, or the `JMP` spelling landing on an `RTS` -- Kentilla), and only where
+that is the gate the rest of the writer reads (Bump_Set_Spike's play address
+enters BELOW an NTSC gate at `$B00B`, whose reload 5 is what
+`_find_outer_gate` reads; its conversion drifts for that reason, a separate
+defect). There every call, the new-song one included, passes the gate, so the
+file's byte is the phase of call 0. The `JMP` gate inside the routine
+(Chain_Reaction `$0859`) is another clock: it jumps over the speed counter's
+`DEC` and lets the frame run, and the new-song call bypasses it. With this
+model's AD it moves Chain_Reaction's late third of notes to early and takes
+Kings_of_the_Beach_intro from 95/154 exact to 31/154 (60 s,
+`C:/t/skip-gate-song-call-phase/exp/sweep`), so it is declined until its
+clock is read. Declined too where a firstwave writes a waveform
+(`--no-test-restart`, `real_firstwave_instruments`: those onsets are tick 0
+itself) and where an orderlist `$FE nn` moves the tempo mid-song.
+
+Measured HISTORICALLY (6e467ff + the cycle-2 merge, staged, 2026-10-07, under
+presets, `fidelity.main` -t 180 and an onset census at `-m{multiplier}`,
+`C:/t/skip-gate-song-call-phase/`). Six files move, exactly the six the model
+reaches, and every +-1 onset offset on them goes:
+
+| File | AD | onsets exact before -> after, per voice |
+|---|---|---|
+| Game_Killer | 49 | 391/985, 385/1129, 450/1350 -> all |
+| International_Karate | 56 | 108/271, 243/609, 163/404 -> all |
+| Kentilla | 57 | v0 72/178, v1 111/271 -> all; v2 1/355 both (sequence) |
+| Proteus | 40 | v1 631/885, v2 704/984 -> all; v0 53 -> 75/405 (sequence) |
+| Thrust | 16 | v0 176/536, v1 290/877 -> all; v2 5 -> 13/351 (sequence) |
+| Warhawk | 41 | v1 688/805, v2 774/904 -> all; v0 81 -> 93/378 (sequence) |
+
+Columns that moved up: Game_Killer `gate` .7064 -> .7741, `wave` .9517 ->
+.9581, `tie_agreement` .2771 -> .4501; International_Karate `wave` .9379 ->
+.9753, `gate` .8449 -> .8772, melody/sequence/pitch_jaccard to 1.0; Kentilla
+`wave` .8886 -> .9072, `tie_agreement` .2915 -> .6402; Thrust `gate` .7693 ->
+.8342, `wave` .9325 -> .9558; Proteus `gate` .627 -> .659. **And down**:
+Warhawk `tie_agreement` .7578 -> .6085 and `wave` .9807 -> .9673, Proteus
+`wave` .9775 -> .965, Game_Killer `sound_run_agreement` .8182 -> .4545. The
+Warhawk case is read: its in-note pitch steps sit at calls `8k - 1` after the
+onset call (`-m1`), i.e. on the tick-0 grid one call AHEAD of the onset's, and
+with `m = O` one phase serves one grid -- the ties after a skipped frame went
+from exact to a frame early (v1 372 of 1782). The onset and the in-note
+programs want one grid; that is a follow-up, not a reason to leave the onsets
+a frame off.
+
+### 7.zzzzzzz A wave step past note 95 read gt2reloc's orderlist addresses
+
+A wavetable right side `$00`-`$7F` is relative: both players look up
+`(note + right) & $7F` (`player.s:1055-1058`, `gplay.c:717-721`), and
+Goattracker's table stops at 95. The editor's arrays run to 127 with zeros
+there; the packed player reads what `gt2reloc` laid after `mt_freqtblhi` --
+the low byte out of the high table, the high byte out of `mt_songtbllo`, the
+orderlists' address bytes (`greloc.c:1182-1194`), which move with the size of
+every table before them. `gt2reloc` cannot widen the table: its range is
+capped at 95 (`greloc.c:315`, `:887`) and these files already reach it. So a
+drum whose octave step (`+12`, the player's `ADC #$0C`) lands past 95 changed
+pitch when the PULSE table changed size. Measured at 6e467ff plus the cycle-6
+merge, presets, 180 s, frames whose frequency differs between the presets
+pack and the forced-`pulse_phase` pack: Master_of_Magic sub 1 voice 1 450,
+Phantoms_of_the_Asteroid sub 1 voices 1/2 2618/336, Human_Race sub 3 voice 1
+2803.
+
+Fifteen corpus files reach an index of 96-104 somewhere; in three, every note
+that reaches the step overflows: Master_of_Magic record 16 (G-7, 91, at
+transpose +0 -> 103), Phantoms record 5 (C-7 84 and D#7 87 -> 96, 99),
+Human_Race record 11 (E-7 88 -> 100). The original reads past ITS table at
+the same index, so `past_table_wave` rewrites those steps as the absolute note
+nearest the original cell's load-time value, the reading `past_table_notes`
+makes for a note byte: index 96 is `$0700` in all three (`00 07`, the head
+of the per-voice offset table, G#2 -- what siddump shows the original playing on all
+262 of Phantoms' C-7 octave frames), Human_Race's 100 is `$0000` (C#0, the
+lowest absolute note; its original sounds voice 0's note-length countdown there,
+`$0B00` down to `$0000`), Master_of_Magic's 103 is `$0F4F` (A#3; its
+original sounds work bytes, `$8F87`/`$8707`/`$0787`/`$0703`). The last two are
+stand-ins for running state a wavetable cannot follow. Phantoms' six D#7
+notes take the C-7 pin: one step serves both. Afterwards the three layout
+counts are 0, and only those three files move under presets or forced
+`pulse_phase`. A step any note reaches INSIDE the table keeps its relative
+byte (the other twelve files: a variant record would be needed to split it).
+Commando is held (`past_table_wave.HELD`): its fixture would move one byte.
+`tests/test_past_table_wave.py`.
+
+### 7.bbbbbbbb A record whose waveform has the gate clear closes the gate on its own fetch
+
+A tie is the player NOT closing the gate at a note's end -- status bit 5, or
+under `gate_hold` a `wait` of 0, whose counter never reaches the hold-path
+gate-off. It says nothing about the gate the next fetch writes, and the classic
+fetch (the block `classic_tie_restart_family` reads: `LDA wave,X / AND mask /
+STA $D404,Y` behind a per-fetch `LDA #$FF / STA mask`, no `AND #$20` on the
+way) writes the record's waveform on every event. Chimera's record 8 is `$10`
+(ADSR `$BF05`): the sixth row of each group of its wait-0 arpeggio chains
+shuts the gate, and the record-7 note after it (`$11`, `$BF00`) attacks. In
+siddump of subtune 0, voice 1 regates every 18 frames over 5618-5888 (16
+attacks), 6194-6464 (16), 8210-8354 (9) and 8498-8642 (9). The conversion
+spelt patterns 13/15/3F and 3D/3E (x16) as 40-row tie chains, and voice 1
+made none of those 50 attacks: 155 gate-on edges in 180 s against the
+original's 205.
+
+Three readings, each needed for the regate to land:
+
+* `patterns.record_gate_clear` / `_build_raw_pattern(gate_clear_records=)`:
+  an event on such a record is not a tie target, and it clears
+  `pending_tie`, so the next note attacks. An event that has not yet seen its
+  pattern name a record, or a bit-7 free note, keeps the old reading.
+* `wavetable._wavetable_entries`: a drum record whose typical note
+  (`median_played_durations`) is ONE row never runs the drum. The detected
+  block opens on the note's remaining duration (`$C4DA LDA $C631,X / BEQ`,
+  Commando `$5306`), which a wait-0 note holds at 0. Records 4 (`$0060`) and
+  7 sounded `09 41 81 81 41` / `09 11 81 81 10` -- noise, and for record 7 a
+  gate-off on the attack's fourth frame. The original holds `41`/`11` on all
+  six `$0060` attacks and every `$BF00` one.
+* `instruments._write_instruments(gate_clear_firstwave=)`, under `effects`:
+  such a record's firstwave is its own waveform (`$10`), not `$09`'s gate edge,
+  and it is legato (`$40`). Without the bit Goattracker gates off two calls
+  before the note; the original gates off on the fetch frame.
+
+Measured at 6e467ff plus the cycle-6 merge, presets, Chimera at `-t 180`:
+voice 1 makes 205 gate-on edges (the original's 205), the four ranges match
+the original's 18-frame cadence at one constant lag, and gate agreement over
+them goes 0.163 -> 1.000. Columns: melody 99 -> 100%, seq 98 -> 100%, pitch
+97 -> 100%, retrig 0.96 -> 1.00, gate 68 -> 79%, onset 78 -> 100%, tail 88 ->
+100%. `vib` goes 0.84 -> 0.81 and `tie` 0.79 -> 0.78, and both are overshoot
+removed, not loss. `$BF00` reversals were 957 against the original's 778,
+counted while our gate was shut; they are now 802. The 49 tie frames that left
+the ranges are the original's attacks (576 ties + 49 attacks, against our 539
++ 49). Subtune 1's trace is byte-identical. The corpus byte-hash moves Chimera
+alone. `tests/test_gate_clear_record.py`. Two figures elsewhere move with it.
+The triangle lockstep's Chimera v1 row in § 7.qqqqqqq ("v1 96/135", one of
+its "pairing slips") reads 135/135 by name, and 135 of 135 reach the packed
+output (134 of 134 before). Under `tie_restart`, 477 tie rows stay
+row-locked, down from 541.
+
+Record 8 keeps its drum shape: `80` noise on the gate-off row's third call,
+where the original holds `$10`. Every one of its notes is the last event of a
+pattern, which `median_played_durations` reads as unknown. Gate-off noise-run
+starts went 174 -> 226 over all voices (original 182), 48 of them voice 1
+inside the ranges. That is probably where `wave`'s -0.3 pp comes from; this
+was not checked.
+
+### 7.dddddddd Spellbound's gate hold: the status byte read from zero page
+
+`find_gate_hold` (the zero-`wait` tie, `_build_raw_pattern(gate_hold=)`) knew
+two spellings of the guard pair in front of the note-end gate-off. Both read
+the status byte with `LDA abs,X`. Spellbound reads it from zero page:
+
+    E18D  B5 C7     LDA $C7,X      ; status
+    E18F  29 20     AND #$20 / BNE $E1A7
+    E193  BD CA E4  LDA $E4CA,X / BNE $E1A7   ; the counter
+    E198  B5 CA     LDA $CA,X / AND #$FE / STA $D404,Y      ; gate off
+
+The sequencer is `E07E DEC $E4CA,X / BMI / JMP $E182`. The row clock's bypass,
+`E072 BNE $E089 -> JMP $E1A7`, lands past the gate-off, as Human_Race's does.
+So a zero-`wait` event keeps its gate, yet the file read False.
+`GATE_HOLD_ZP_SHAPE` is the third spelling, consulted only where neither of
+the other two matches anything. It arms Spellbound alone: Bangkok_Knights
+carries it too, but also the primary shape, which decides.
+
+What it fixes, from siddump of subtune 0, voice 1, 180 s (measured 2026-10-07
+on 6e467ff plus the cycle-6 merge; historical). Thirteen times the original:
+
+- plays a 4-5 frame `$0FFF` drum hit (pattern `$14` `81 0D 3B`, wait 1);
+- shuts the gate for 2-3 frames;
+- re-gates at +4/+5 on a chain of six wait-0 events (`00 42` .. `00 5F`, the
+  sweep `3138 -> 41B8 -> 6270 -> 8370 -> C4E0 -> FD2E`) and holds it 14-15
+  frames;
+- then lands legato on the `$0F0A` record.
+
+Converted, each of the six was an attacked one-row note, and its 10-call
+gatetimer (the whole row) shut its gate on its first call. The sweep played
+gate-off on release 0, and the `$0F0A` note attacked. Now the first sweep
+note attacks and the other five are ties.
+
+The landing names another record, so it needs `tie_restart` (§ 7.vvvvvvv;
+Spellbound is a "voice" player) to replay that record's start. With it, 11 of
+the 13 sites have the original's shape: drum, gap, re-gate, held sweep, and a
+legato landing with no attack. The other two differ by a `$09` firstwave frame
+inside the gap. Frame LENGTHS still differ by one here and there (a drum of 3
+frames against 2, a sweep held 15-16 against 14-15): the 2/3-frame tick
+alternation lands on different ticks, and this change does not touch it.
+Without `tie_restart` the landing is a `CMD_TONEPORTA 00`, which keeps the
+`$0FFF` record's wave program (triangle, arp -5) instead of the `$0F0A` one
+(ring-mod, arp -2). `tests/test_gate_hold_zp.py`.

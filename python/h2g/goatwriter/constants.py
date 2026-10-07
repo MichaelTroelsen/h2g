@@ -341,6 +341,10 @@ WAVE_SILENT_TESTBIT = 0x18
 # so the fastest expressible row is 2 calls -- i.e. one frame per row requires
 # speed multiplier 2. That is exactly the "2x" needed to make a converted tune
 # play at the right speed.
+# Instrument 63 is used again, for the STARTUP row alone: the packed song's
+# call phase under an outer gate (`call_phase`, `instrument_drop.
+# add_startup_tempo`), never the row tempo -- and declined on a file whose
+# instruments already reach 63.
 GT_TEMPO_INSTRUMENT = 63          # MAX_INSTR-1 -- the old route, see below
 GT_DEFAULT_TEMPO_CALLS = 6        # Goattracker's startup default
 
@@ -701,10 +705,48 @@ LEGATO_TIE_FLAG_STORE_SHAPE = "C8 B1 ?? 8D ?? ?? 29 7F"
 GATETIMER_LEGATO = 0x40          # gplay.c:930, greloc.c:347
 
 
-# The state a channel enters its first pattern in: no row before it, command 0
-# (gplay.c:187-190 zeroes `command`/`newcommand` on song init; player.s
-# `mt_resetloop` zeroes `mt_chnnewfx` with the rest of the channel block).
-SONG_START_ROW = ()
+# --- The same restart in the classic players WITHOUT the legato marker --------
+#
+# The players with no note-byte flag (`det.note_flag` False) have no way to
+# skip the instrument start at all. Commando, read at 6e467ff:
+#
+#     50BD  A9 FF     LDA #$FF / STA $5501    ; the gate mask, every fetch
+#     50C2  B1 5F     LDA ($5F),Y             ; the status byte
+#     ...                                     ; bit 6 (BVS) -> DEC $5501: rest
+#     5128  BD 93 55  LDA wave,X / STA $5505  ; the record's waveform
+#     5131  10 21     BPL $5154               ; $5528: voice owned by music
+#     5133  BD 93 55  LDA wave,X / AND $5501 / STA $D404,Y
+#     513C  BD 91 55  LDA pulse,X / STA $D402,Y ... $D403, $D405, $D406
+#
+# and status bit 5 is tested at the note's END only (`$517F LDA status,X /
+# AND #$20 / BNE` past the gate-off at $5190). So a tied note keeps its gate
+# open and still re-writes the waveform with the gate set, the pulse, AD and
+# SR, reloads the length counter $54F2 the drum effect keys on and clears
+# the portamento $5520. Every path from the status fetch to the block was
+# walked in the 35 classic non-flag corpus files that carry it
+# (C:/t/motr-family-tie-reruns-note-start/flowcheck.py, 6e467ff): no branch
+# leaves it or jumps into it, and the one that skips it -- in 15 files -- is
+# `LDA flag / BPL` on the cell the voice loop sets to $FF while the music
+# owns the voice (Commando $539C STY / $53A7 STA). Mega_Apocalypse and
+# Phantoms_of_the_Asteroid carry no such block and are not read here.
+#
+# Two dialects of the block, and they differ in what the pulse write MEANS:
+#
+# * `STA $D402,Y` then `LDA` (Commando, Human_Race, Chimera, Monty_on_the
+#   _Run ...): the sweep writes its value back INTO THE RECORD (Commando
+#   $5240 `STA $5591,Y`, $52AA), so the fetch writes the live value and a
+#   tie into the same instrument continues the sweep -- the restart moves
+#   no pulse.
+# * `STA $D402,Y` then `PHA` (International_Karate, Samantha_Fox, Warhawk,
+#   Thrust ...): the pulled bytes reseed per-voice accumulators after the
+#   block (IK $AF73 `PLA / STA $B305,X`, $B2E3/$B2E0 cleared), so a tie
+#   restarts the sweep from the record's start as a fresh note does.
+CLASSIC_TIE_START_SHAPES = (
+    "BD ?? ?? 2D ?? ?? 99 04 D4 BD ?? ?? 99 02 D4",   # AND mask (absolute)
+    "BD ?? ?? 25 ?? 99 04 D4 BD ?? ?? 99 02 D4",      # AND mask (zero page)
+)
+# The mask reload sits at most this far before the block (IK: $85 bytes).
+CLASSIC_TIE_START_WINDOW = 0xC0
 
 
 # --- Expanding vibrato: the apply loop that adds the note's age ---------------
@@ -1184,9 +1226,9 @@ ILV_FILTER_ROUTING = 0x07
 # Two facts of the replay routines decide the spelling, both read, not guessed:
 #
 # * `B $00` ALSO STOPS THE FILTER TABLE (gplay.c:471 `if (!filterctrl)
-#   filterptr = 0`; player.s `mt_tick0_b` falls into `mt_tick0_a_step`). An
-#   empty union is therefore written `$X0` with X nonzero -- `$10` where the
-#   resonance is 0, which nothing routed can hear.
+#   filterptr = 0`; player.s `mt_tick0_b` falls into `mt_tick0_a_step`) --
+#   and at an empty union that is what the player does, so an empty union
+#   is written `B $00` (ILV_ROUTE_NOTHING). See there for the measurement.
 # * THE FILTER STEP RUNS BEFORE THE CHANNELS (player.s `mt_play` reaches
 #   `mt_filtstep` before the channel loop; gplay.c:253 before :340). A note's
 #   instrument loads the pointer on its tick 0 and the program's first step
@@ -1233,10 +1275,43 @@ ILV_FILTER_ROUTING = 0x07
 # from its restart, with commands placed only on an occurrence's FIRST play.
 CMD_SETFILTERPTR = 0x0A     # gcommon.h:14
 CMD_SETFILTERCTRL = 0x0B    # gcommon.h:15
-# The $D417 value written for "nothing routed" where the resonance nibble is
-# 0: `B $00` would stop the table (above), and with no voice routed the
-# resonance is inaudible.
+# The params-row value a passband-restore copy opens with ("restore" mode)
+# when nothing is routed and the resonance nibble is 0. A table row, not a
+# `B`, so it stops nothing; with no voice routed the resonance is inaudible.
 ILV_EMPTY_UNION = 0x10
+# **THE `B` WRITTEN WHERE THE UNION EMPTIES IS `$00`, BECAUSE IT STOPS THE
+# PROGRAM, AND THE ORIGINAL'S CUTOFF NEVER MOVES WHILE NOTHING IS ROUTED.**
+# Traced at -t 180 under presets (6e467ff plus the cycle-c5 merge,
+# 2026-10-07), cutoff travel on frames with no voice routed or no passband:
+#
+#     file               original   ours with `B $X0`   ours with `B $00`
+#     Radio_ACE              0         564,224                   0
+#     Go_Go_Dash             0       1,325,056             250,880
+#     Pacific_Coast          0         643,072                   0
+#     Lion_Heart             0          12,288                   0
+#     Sun_Never_Shines       0          10,240              10,240 (no B $00)
+#
+# and `cut` Radio_ACE 1.4305 -> 1.1560, Go_Go_Dash 3.4628 -> 3.2444, Lion_Heart
+# and Sun_Never_Shines unchanged (1.7355, 1.0235); `filt`, `melody` and
+# `sequence` identical on all five. Go_Go_Dash's remainder is 23 frames,
+# all at $D417 $00: eleven one-frame jumps and three four-frame runs, cause
+# not traced here.
+#
+# The old `$X0` (resonance kept, `$10` at resonance 0) left the table
+# running, so a program's FILT_MODULATE kept sweeping a cutoff nobody hears
+# -- Radio_ACE's `cut` 1.379 -> 1.431 when `ilv_filter_routing` replaced the
+# clear block whose FILT_STOP had halted it. `B $00` halts it the same way:
+# filterptr = 0 (gplay.c:471, player.s `mt_tick0_b` -> `mt_tick0_a_step`)
+# with the cutoff left where it stood, and the next filtered note's
+# instrument reloads the pointer AND zeroes the modulation timer (gplay.c:
+# 388-389; player.s `mt_insfiltptr` path, `sta mt_filttime+1`), so a program
+# cut mid-modulation restarts clean. The resonance it drops is inaudible
+# with nothing routed, and every later `B` and params row writes its own.
+# Placed only where the walk's union is empty, which no program start can
+# share a row with (every program's record routes). A REPLAYED occurrence's
+# `B $00` landing where the union is not empty would also stop a live
+# program; the walk counts that (`IlvRouting.stopped_live`).
+ILV_ROUTE_NOTHING = 0x00
 
 
 # --- Appending one song's subtunes to another --------------------------------

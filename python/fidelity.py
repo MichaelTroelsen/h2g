@@ -900,6 +900,56 @@ def _bend_travel(v: Voice) -> int:
     return v.bend
 
 
+# A frequency step bigger than this fraction of the pitch is a NOTE change, not
+# a bend: 1/8 is a little over two semitones (2**(2/12) = 1.122), past any
+# vibrato's per-frame step in the corpus and under the smallest melodic leap
+# that matters here.
+TRAVEL_NOTE_STEP = 8
+
+
+def within_note_travel(v: Voice) -> int:
+    """How far this voice's frequency moves within notes, from the register.
+
+    `bend` beside it reads siddump's `(+ xxxx)` lines, and siddump prints a
+    pitch move in that form only while the new frequency stays near the note it
+    already named. A swing that crosses a note boundary is printed as a *tie*
+    instead, which `bend` drops by construction -- so on a vibrato whose swing
+    is lopsided about its note, `bend` measures where siddump happened to put
+    its labels. Mega_Apocalypse $00B9 (the expanding-vibrato loops, at
+    8586101): `bend` read 1.13x per ADSR and 1.57x for the file while the
+    register's own travel was 1.02x (545,426 against 535,024). Historical;
+    re-measure before quoting.
+
+    So this sums the register: |delta| of `freq_events` between consecutive
+    writes, minus what is not a bend --
+
+    * a step landing on, or leaving, a frame within one of a gate rise (the
+      onset jump; the same hole `pitch_motion` skips), and
+    * a step over `1/TRAVEL_NOTE_STEP` of the pitch, which is a note change
+      (a wavetable note, a tie, an arpeggio leap); a step from or to
+      frequency zero is the whole pitch, so the same rule takes silence.
+
+    The second rule is a threshold, and the one this module otherwise avoids;
+    it is here because a bare frequency write carries no marker saying whether
+    it was a note or a bend (see `_bend_travel`'s Zoolook case). A step that
+    size is never a vibrato's -- a swing of three semitones peak to peak is
+    taken in many frames -- but a slide faster than that would be dropped.
+    The sparse write list is walked directly: between writes the register
+    holds, so the frame-by-frame sum is the same number.
+    """
+    skip: set[int] = set()
+    for a in v.attack_frames:
+        skip |= {a - 1, a, a + 1}
+    total = 0
+    for (_, prev), (f, cur) in zip(v.freq_events, v.freq_events[1:]):
+        d = abs(cur - prev)
+        if (not d or f in skip or f - 1 in skip
+                or d * TRAVEL_NOTE_STEP > max(prev, cur)):
+            continue
+        total += d
+    return total
+
+
 def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     """Per-voice and whole-file note-sequence metrics.
 
@@ -943,6 +993,8 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     ua = sum(v["our_attacks"] for v in per_voice)
     ob = sum(_bend_travel(v) for v in orig)
     ub = sum(_bend_travel(v) for v in ours)
+    otv = sum(within_note_travel(v) for v in orig)
+    utv = sum(within_note_travel(v) for v in ours)
     ot = sum(v.ties for v in orig)
     ut = sum(v.ties for v in ours)
     op = set().union(*(set(v["orig_pitches"]) for v in per_voice)) if per_voice else set()
@@ -974,6 +1026,12 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "orig_bend": ob,
         "our_bend": ub,
         "bend_ratio": (ub / ob) if ob else None,
+        # ... and the same travel read off the frequency register itself,
+        # which does not depend on siddump's choice between its bend and tie
+        # forms -- see within_note_travel. Not a report column (yet).
+        "orig_travel": otv,
+        "our_travel": utv,
+        "travel_ratio": (utv / otv) if otv else None,
         # ... and the third form siddump prints: a note change with NO
         # re-gate -- the tie. Neither `slides` nor `bend` can see one:
         # the parser `continue`s on a tie before the bend branch, so a
@@ -1209,15 +1267,65 @@ def startup_lag(orig: list[Voice], ours: list[Voice]) -> tuple[int, int]:
     77.1%, so the search buys a tenth of a point and costs the measure its
     meaning.
 
+    OUR first attack is read by `pitched_attack_frame`: the frame the note's
+    PITCH lands on, which is one later than the gate rise when the rise
+    carries the previous frequency. That is GoatTracker's init call for a
+    firstwave with the gate bit set -- see that function. The original's is
+    taken as it stands: the mechanism is GoatTracker's, and a Hubbard player
+    may load its pitch before the gate. Bangkok_Knights' voice 1 holds C#4's
+    $126E from the frame before its attack and plays its drum's $486E the
+    frame after, which the same test read as stale and moved its lag 6 -> 5
+    when applied to both sides (corpus A/B at -t 180 under presets, on
+    v0.5.513 plus the uncommitted cycle-1..4 merge).
+
     Returns the applied lag clamped to +/-MAX_STARTUP_LAG and the raw one, so a
     row can say the two differ rather than quietly correcting by 438 frames.
     """
     fo = [min(v.attack_frames) for v in orig if v.attack_frames]
-    fu = [min(v.attack_frames) for v in ours if v.attack_frames]
+    fu = [pitched_attack_frame(v) for v in ours if v.attack_frames]
     if not fo or not fu:
         return 0, 0
     raw = min(fu) - min(fo)
     return max(-MAX_STARTUP_LAG, min(MAX_STARTUP_LAG, raw)), raw
+
+
+def pitched_attack_frame(v: Voice) -> int:
+    """The frame voice `v`'s first note sounds its own pitch: its first attack
+    frame, or the frame after it when that attack carries a stale frequency.
+
+    GoatTracker's init call for a new note (`player.s` mt_newnoteinit, line
+    813) writes `$D404` alone -- the firstwave -- and jumps past mt_waveexec,
+    so the frequency and pulse width are first written on the NEXT call. With
+    the default `$09` firstwave that frame is below `$10` and siddump does not
+    print an attack on it, so the attack lands where the pitch does. With a
+    gated real waveform as the firstwave (`real_firstwave_instruments`,
+    `no_test_restart`) the init call IS the attack siddump prints, one frame
+    before the original's attack, which carries its pitch: Monty's first
+    attacks are orig 14/2/2 and ours 19/7/7, every one of ours at the
+    frequency the voice held the frame before and the note's own one frame
+    later, so the first-gate estimate read 5 where the pitch and the gate
+    falls align at 6.
+
+    Stale means a defined signal: the attack's frequency equals the frequency
+    held on the frame before it, and the frequency changes on the next frame
+    while the gate is still on with a waveform selected. An attack that wrote
+    its pitch differs from the frame before and is not moved, whatever the
+    next frame does (the shape of Ninja's original voice 1, $0000 -> $684C on
+    the attack and $4E20 a frame later, an arpeggio: a rule keyed on the next
+    frame alone would move it). A re-strike of the held pitch whose frequency
+    then stays put is not moved either. An attack on frame 0 has no frame
+    before it and is taken as it stands. `startup_lag` applies this to our
+    side only. Estimated, never fitted: one frame, from the trace, never a
+    search.
+    """
+    f = min(v.attack_frames)
+    if f < 1:
+        return f
+    fr = register_timeline(v.freq_events, f + 2)
+    wf = register_timeline(v.wf_events, f + 2)
+    stale = fr[f] == fr[f - 1] and fr[f + 1] != fr[f]
+    still_on = bool(wf[f + 1] & 0x01) and wf[f + 1] >= 0x10
+    return f + 1 if stale and still_on else f
 
 
 # The SID's release time per nibble, in milliseconds from full level to zero
@@ -1648,27 +1756,50 @@ def tie_audibility(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
     * `tie_ratio_audible`: `(our_ties - our_ties_silent) / (orig_ties -
       orig_ties_silent)`, the ratio over ties a listener can hear. `None`
       when the original has no audible tie.
+    * `tie_audible_voices`: the same four figures per voice (`orig_ties`,
+      `orig_ties_silent`, `our_ties`, `our_ties_silent`, plus that voice's
+      `tie_ratio_audible`), so a single-voice defect (Hunter_Patrol voices
+      1 and 2) is not read only through the file total.
 
     A voice with no waveform events cannot show its gate, so none of its ties
     is called silent (`audible_frames` returns `None`). Omitted under
     `--equal-calls` and `--vice`, which do not walk the traces against
     `nframes`.
     """
-    def side(voices: list[Voice]) -> tuple[int, int]:
-        total = silent = 0
-        for v in voices:
-            aud = audible_frames(v, nframes)
-            total += v.ties
-            if aud is not None:
-                silent += sum(1 for f in v.tie_frames
-                              if 0 <= f < nframes and not aud[f])
-        return total, silent
-    ot, os_ = side(orig)
-    ut, us = side(ours)
+    def one(v: Voice) -> tuple[int, int]:
+        aud = audible_frames(v, nframes)
+        silent = 0
+        if aud is not None:
+            silent = sum(1 for f in v.tie_frames
+                         if 0 <= f < nframes and not aud[f])
+        return v.ties, silent
+
+    def ratio(ot: int, os_: int, ut: int, us: int):
+        return ((ut - us) / (ot - os_)) if ot - os_ else None
+
+    per_voice = []
+    ot = os_ = ut = us = 0
+    for a, b in zip(orig, ours):
+        vo, vos = one(a)
+        vu, vus = one(b)
+        per_voice.append({
+            "orig_ties": vo, "orig_ties_silent": vos,
+            "our_ties": vu, "our_ties_silent": vus,
+            "tie_ratio_audible": ratio(vo, vos, vu, vus)})
+        ot += vo; os_ += vos; ut += vu; us += vus
+    # A voice present on one side only still counts in the file totals.
+    for extra, is_orig in ((orig[len(ours):], True), (ours[len(orig):], False)):
+        for v in extra:
+            t, sl = one(v)
+            if is_orig:
+                ot += t; os_ += sl
+            else:
+                ut += t; us += sl
     return {
         "orig_ties_silent": os_,
         "our_ties_silent": us,
-        "tie_ratio_audible": ((ut - us) / (ot - os_)) if ot - os_ else None,
+        "tie_ratio_audible": ratio(ot, os_, ut, us),
+        "tie_audible_voices": per_voice,
     }
 
 
@@ -3095,7 +3226,8 @@ def noise_gate_off_runs(voices: list[Voice], nframes: int) -> dict:
     it was ever sounding.
 
     Returns `{"runs": n, "frames": f}`, both 0 for a side with no such noise.
-    Recorded, not scored: see `noise_run_agreement`.
+    Recorded per side; SCORED only through `noise_audible_runs`, the fallback
+    `noise_run_agreement` consults where the gate-AND pairs nothing.
     """
     runs = frames = 0
     for v in voices:
@@ -3117,6 +3249,51 @@ def noise_gate_off_runs(voices: list[Voice], nframes: int) -> dict:
                 runs += 1
                 frames += min(f, audible_until + 1) - start
     return {"runs": runs, "frames": frames}
+
+
+def noise_audible_runs(voices: list[Voice], nframes: int) -> dict:
+    """Maximal runs of AUDIBLE noise whatever the gate class, keyed as
+    `noise_runs` keys them: the ADSR latched at the run's midpoint, a run
+    touching frame 0 or the last frame dropped.
+
+    A frame is audible noise when $D404 selects NOISE and the gate is open OR
+    the frame still sits inside the release that the last gate drop latched
+    (`noise_gate_off_runs`' `_release_frames` rule). Returns `{adsr:
+    Counter({run_length: count})}`, `noise_runs`' shape.
+
+    **A fallback, never the primary reading.** Folded into `noise_runs` it
+    would redefine the column corpus-wide: each note's release tail joins both
+    sides' runs, and the corpus A/B at 3b1c66d moved 35 files (24 up, 3 down,
+    among them Kings_of_the_Beach_intro, Sanxion and Star_Paws falling) against
+    the 3 whose evidence it was built for. `noise_run_agreement` therefore
+    consults it ONLY where the gate-AND pairs no instrument -- the CLAUDE.md
+    rescue rule (a rescue may save a file that reads nothing and must never
+    disturb one that reads correctly).
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        until = -1                            # last frame the release sounds
+        aud = []
+        for f in range(nframes):
+            w = wf[f]
+            if f and not w & WF_GATE and wf[f - 1] & WF_GATE:
+                until = f + _release_frames(adsr[f] & 0x0F) - 1
+            aud.append(bool(w & WF_NOISE and (w & WF_GATE or f <= until)))
+        f = 0
+        while f < nframes:
+            if not aud[f]:
+                f += 1
+                continue
+            start = f
+            while f < nframes and aud[f]:
+                f += 1
+            if start == 0 or f >= nframes:
+                continue                      # cut by the window
+            out.setdefault(adsr[(start + f - 1) // 2],
+                           Counter())[f - start] += 1
+    return out
 
 
 def release_tails(voices: list[Voice], nframes: int) -> dict:
@@ -4218,12 +4395,24 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     Warhawk sound ALL their original noise that way -- a drum burst written
     `$80` one frame after the `$41` attack -- and ours sounds it gated, so
     `noise_run_orig_gate_off_runs` > 0 beside 0 instruments and 0 edge runs
-    is "the column cannot see this original's noise". It is a documented
-    blindness, NOT scored, by decision at v0.5.493: pairing the original's
-    gate-off runs against ours' gated ones by ADSR does pair and agree on
-    those three files (4/4, 12/12, 11/11 keys, modal lengths equal), but
-    admitting a gate-off class into this column changes its population on
-    every file that mixes the two, which is a corpus A/B, not a key.
+    is "the primary reading cannot see this original's noise".
+
+    **That third cause is now rescued, by a fallback and only there.** Where
+    the gate-AND pairs NO key, the column is re-read from `noise_audible_runs`
+    (noise AND (gate open OR inside the release the last gate drop latched),
+    both sides, same midpoint key and edge rule) and kept if THAT pairs one;
+    the row says so with `noise_run_audible_fallback` True, and
+    `noise_run_instruments` / `_matched` / `_orig_only` / `_ours_only` then all
+    describe the fallback's keys. Pairing the original's audible runs against
+    ours' gated ones pairs and agrees on those three files (4/4, 12/12, 11/11
+    keys, modal lengths equal). The fallback is NOT the primary reading
+    because the same predicate applied to every file moved 35 of 89
+    (24 up, 3 down: Kings_of_the_Beach_intro, Sanxion, Star_Paws) -- each
+    note's release tail joins both sides' runs, a blast radius far beyond
+    the three files that evidence it (A/B at 3b1c66d, refused as a primary
+    change, `nrun-score-gate-off-noise`). A rescue may save a file that reads
+    nothing and must never disturb one that reads correctly, so a file the
+    gate-AND already pairs is read exactly as before.
 
     **Blind to a loss the MODAL comparison cannot move.** This asks only
     whether the single most common run length agrees, the same reduction
@@ -4302,6 +4491,14 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     """
     a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
     shared = paired_keys(a, b)
+    # The fallback (`noise_audible_runs`): only where the gate-AND paired no
+    # key at all, and kept only if it pairs one.
+    audible = False
+    if not shared:
+        a2, b2 = noise_audible_runs(orig, nframes), noise_audible_runs(ours, nframes)
+        shared2 = paired_keys(a2, b2)
+        if shared2:
+            a, b, shared, audible = a2, b2, shared2, True
     matched = sum(1 for ka, kb in shared
                   if a[ka].most_common(1)[0][0] == b[kb].most_common(1)[0][0])
     # What the window cut, per side, so a row reading `-` here can say WHY:
@@ -4315,6 +4512,7 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
         "noise_run_instruments": len(shared),
         "noise_run_matched": matched,
         "noise_run_agreement": (matched / len(shared)) if shared else None,
+        "noise_run_audible_fallback": audible,
         "noise_run_orig_only": len(set(a) - set(b)),
         "noise_run_ours_only": len(set(b) - set(a)),
         "noise_run_orig_edge_runs": ea["runs"],
@@ -5927,15 +6125,21 @@ DIMENSIONS = (
               "voice 2 latch after ~305 s is gate-off (`$80`), which the edge "
               "rule never sees at any width -- v0.5.494, HEAD 1dde44a "
               "(`C:/t/confuzion-style-permanent-no/census180.txt`). "
-              "**Blind to noise sounded under a CLOSED gate**, and declines "
-              "(`-`) a file whose original sounds its noise only that way: "
-              "Kentilla, Proteus and Warhawk write each drum burst `$80` one "
-              "frame after the `$41` attack (430 / 1647 / 1468 original "
-              "noise frames, none gated) while ours plays it `$81`, so 0 "
-              "instruments pair with 0 edge runs -- the row records the "
+              "**The gate-AND is blind to noise sounded under a CLOSED "
+              "gate**: Kentilla, Proteus and Warhawk write each drum burst "
+              "`$80` one frame after the `$41` attack (430 / 1647 / 1468 "
+              "original noise frames, none gated) while ours plays it `$81`, "
+              "so 0 instruments pair with 0 edge runs -- the row records the "
               "audible gate-off runs and frames per side "
-              "(`noise_run_*_gate_off_runs` / `_frames`) so that `-` says "
-              "why too; not scored -- v0.5.493, HEAD 57c086e, -t 180. "
+              "(`noise_run_*_gate_off_runs` / `_frames`) -- v0.5.493, HEAD "
+              "57c086e, -t 180. **Rescued by a fallback, only where the "
+              "gate-AND pairs no key:** the column is then re-read from "
+              "AUDIBLE noise runs (gate open or inside the release the last "
+              "gate drop latched) and the row carries "
+              "`noise_run_audible_fallback` True; a file the gate-AND already "
+              "pairs is read exactly as before (the same predicate applied "
+              "to every file moved 35 of 89 and was refused as the primary "
+              "reading). "
               "**Separately: gate-AND'd, two consecutive noise notes do "
               "NOT concatenate into one run** -- the gate drops between "
               "untied notes even when both select noise, so a run's length "
@@ -6104,7 +6308,10 @@ DIMENSIONS = (
               "siddump saw the same value on that side (within one frame, one "
               "high byte for that low byte, which may itself be $FF: a slide "
               "past $FF80 is read as the value it is); a pair with a damaged "
-              "member siddump did not see is refused, and a trill "
+              "member siddump did not see is refused (read as blind) "
+              "UNLESS its low byte refutes an octave -- no high byte makes "
+              "it one -- when it is counted as no octave rather than blind "
+              "(a low-byte match proves nothing and stays blind); and a trill "
               "across more than two values or a non-octave interval is not "
               "counted. **WINDOW**: Monty_on_the_Run's and Devils_Galop's "
               "octave arps first play at frame ~1818 and Warhawk's at ~2080, "
@@ -6250,7 +6457,8 @@ def sidm2_audio(orig: Path, ours: Path, seconds: int,
 # three per-song shaping values, the two named differently in the JSON, and the
 # packing factor, which belongs to gt2reloc rather than to the conversion.
 _PER_SONG_OPTS = ("max_rows", "pack", "prune", "dedup",
-                  "real_firstwave_instruments", "hard_restart_frames")
+                  "real_firstwave_instruments", "hard_restart_frames",
+                  "gate_off_firstwave_instruments")
 _RENAMED_OPTS = {"fmt": "format"}
 _NOT_CONVERT_OPTS = ("gt2reloc", "multiplier")
 
@@ -6598,6 +6806,10 @@ def _preset_opts(doc: dict, name: str) -> dict:
         # never a bool the generic `always`/per-song loop below could carry.
         "real_firstwave_instruments": tuple(
             entry.get("real_firstwave_instruments") or ()),
+        # The same shape and numbering: which GT instruments get the
+        # record's waveform with the gate CLEARED as their firstwave.
+        "gate_off_firstwave_instruments": tuple(
+            entry.get("gate_off_firstwave_instruments") or ()),
         # Per song, and read with `entry.get(...) or None` rather than the
         # generic loop below: an explicit 0 here means "no override", the
         # same as unset, which is a per-option idiom the generic loop does
@@ -7056,7 +7268,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # meaningless here. Dropping them is what keeps the mode honest: the
         # row reports what it measured and `dimensions_present` reports the
         # rest as absent rather than as agreement.
-        for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides"):
+        for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides",
+                  "orig_travel", "our_travel", "travel_ratio"):
             row.pop(k, None)
     best_dump = b
     if pinned:
@@ -7904,6 +8117,21 @@ def report(rows: list[dict], args) -> str:
                         f"{r.get('noise_run_ours_gate_off_runs', 0)} gate-off "
                         f"run(s))"
                         for r in sorted(gate_off_declined,
+                                        key=lambda r: r["file"].lower())))
+            # A file the fallback RESCUED: its figure is not the gate-AND
+            # reading every other row carries, so say which rows they are.
+            rescued = [r for r in waved if r.get("noise_run_audible_fallback")]
+            if rescued:
+                out.append(
+                    f"  - `nrun` read **{len(rescued)}** file(s) from AUDIBLE "
+                    "noise runs (gate open or inside the release the last "
+                    "gate drop latched) because the gate-AND paired no "
+                    "instrument -- the column's fallback, not its primary "
+                    "reading: "
+                    + "; ".join(
+                        f"{r['file']} ({r['noise_run_matched']}/"
+                        f"{r['noise_run_instruments']} instrument(s) agree)"
+                        for r in sorted(rescued,
                                         key=lambda r: r["file"].lower())))
         gated = [r for r in measured if r.get("gate") is not None]
         if gated:
@@ -9550,6 +9778,62 @@ TP_MIN_PAIRS = 4       # a window with fewer paired attacks reads nothing
 TP_MIN_SHARE = 0.5     # ... and neither does one where fewer of the original's
                        # attacks found a partner: chance, not music
 TP_MIN_WINDOWS = 3     # a line needs three points and a baseline
+
+# **I_BALL REGRID-ON (tp +5.33 against drift's +3.08, window offsets "wandering"
+# 88,76,74,73,73,84,96,104,110,97,97,109,120,119,119) IS A DEFECT IN THIS
+# FUNCTION'S PAIRING, NOT A KNEE AND NOT SCATTER A GATE COULD NAME.**
+# Measured at the 6e467ff tree + the uncommitted cycle-4 merge, -t 180,
+# presets, regrid on, the same two traces `_measure` scores (historical
+# figures; re-take them before leaning on them):
+#
+#   * The lock is on an ALIAS. In the first window the vote over +/-100 is
+#     d=89 -> 116 attacks, d=77 -> 113, d=95 -> 108, and the true d=4 -> 105
+#     of 146. I_Ball's original is self-similar at every multiple of its
+#     6-frame row (attack-time autocorrelation over frames 0..3000: lag 6 ->
+#     517 hits, 121 -> 504, 12 -> 504, 109 -> 489, 24 -> 474), so a +/-100
+#     search holds a dozen near-equal peaks and the largest is not the real
+#     one. From there `TP_TRACK_RADIUS` (15) can only slide the lock a few
+#     frames: it never revisits d~0 even where the true offset scores 155 of
+#     155 attacks and the locked one 135 (frames 500-1000: d=3 -> 155, tp's
+#     d=76 -> 135). tp's window offsets therefore read the true offset PLUS a
+#     musical period, and every wobble in them is the tracker hopping between
+#     aliases (-12, +12, +8, -13, +12 ...), not the music wandering.
+#   * Difflib's own per-window median offsets for the same windows are
+#     4,3,2,1,0,0,-1, 4,13,21,26,26,24,24,24,24,23,22: flat, then a STEP of
+#     about +25 frames across frames 3000-5000, then flat. drift's +3.08 is
+#     the whole-window fit to that step (27.6 frames over 8971).
+#   * With the first window's search held to +/-30 (or +/-15) of zero --
+#     NOT shipped, tried on the saved traces only -- tp reads +3.458 against
+#     drift's +3.082 (|diff| 0.38, the size of the other files' gaps), with
+#     offsets 4,3,2,1,0,0,-1,13,26,24,24,24,24,23,22 -- difflib's, window for
+#     window.
+#   * It is not confined to I_Ball. Of the 20 arms in
+#     `ab-9-independent-drift-measure`'s table, three open on a first-window
+#     offset above 30 where the other 17 open at 2-6: I_Ball ON (88), Wiz ON
+#     (100, the edge of the search) and IK_plus OFF (87). Narrowing the first
+#     window moves them -- Wiz ON -0.365 -> -0.246 (drift -0.239), IK_plus
+#     OFF -8.906 -> -8.914 (drift -8.850) -- and only I_Ball's RATE was wrong:
+#     there the locked alias did not stay a constant distance from the
+#     truth (tp 88,76,74,73,73,84,96 against true 4,3,2,1,0,0,-1), whereas
+#     in the other two it did, so a wrong LAG came with a nearly right rate.
+#     (Why the alias moved is not established here.)
+#
+# WHY NO SCATTER GATE CATCHES IT. `mad > DRIFT_MAX_SCATTER * span` (0.01) on
+# tp's own windows reads I_Ball ON at 7.0 frames / 8500 = 0.0008, twelve
+# times under the line (the other 19 arms: 0.00002-0.00032, so a threshold
+# that separates I_Ball would be set by this one file). `drift`'s own scatter
+# gate passes it too (mad 4.6 of span 8971), and `drift`'s KNEE gate
+# (`DRIFT_KNEE_PER_1000`) reads 0.09: both halves of the matched onsets fit
+# at -0.73 and -0.82 per 1000, because the step sits BETWEEN them. A step is
+# a fourth shape: neither a rate (mad), nor two rates (knee). The signal that
+# DOES separate the three aliased arms from the 17 is the first window's
+# offset, which is a startup lag and was 2-6 frames everywhere it was true.
+#
+# What would be needed before this feeds an acceptance term (not done here):
+# seed the first window near zero rather than +/-100 (or refuse, never guess,
+# a first-window offset above some bound), and add a test where a periodic
+# original is aliased by its own period. `time_paired_drift` is still not
+# wired into `_measure`, `DRIFT_ROW_KEYS` or `fidelity_better`.
 
 
 def time_paired_drift(orig, ours, nframes: int | None = None,

@@ -14,19 +14,21 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
-                         HEADER_LEN)
+                         HEADER_LEN, startup_phase)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations,
-                       pattern_references,
+                       pattern_references, drop_unplayed_patterns,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
                        inherit_free_rows, inherit_event_rows)
 from .instrument_drop import (
+    add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from)
+from .past_table_wave import pin_past_table_wave_notes
 from .sidfile import SidFile, load_sid
 from .stored_wave import stored_wave_copies
 from .tracks import (apply_initial_instruments, convert_tracks,
@@ -225,7 +227,10 @@ def convert(sid_path: str, log: Logger = print,
             real_firstwave_instruments: tuple = (),
             pulse_phase: bool = False,
             drop_unnamed_instruments: bool = False,
-            ilv_filter_routing: bool = False) -> bytes:
+            ilv_filter_routing: bool = False,
+            gate_off_firstwave_instruments: tuple = (),
+            tie_restart: bool = False,
+            regrid_full_debt: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -341,6 +346,18 @@ def convert(sid_path: str, log: Logger = print,
     by default and byte-inert everywhere it names nothing. See
     goatwriter._write_instruments.
 
+    gate_off_firstwave_instruments names GT instrument numbers the same way
+    whose firstwave is the record's own waveform with the gate CLEARED
+    (`waveform & $FE`; goatwriter.instruments.gate_off_firstwave) instead of
+    the testbit `$09`. The init call writes only `$D404`, and `$09`'s gate
+    bit opens every note one frame before the original does
+    (tests/test_firstwave_gate_edge.py). Only that byte changes: the
+    wavetable keeps the testbit's lead-entry layout. Where both lists name an
+    instrument, or `no_test_restart` is set, the real-waveform byte wins.
+    Empty by default, so byte-inert where it names nothing; a per-song,
+    hand-recorded choice, because forced on every instrument it trades
+    columns per song (run record gate-off-firstwave-option).
+
     wave_alternate emits effect bit $02's DERIVED alternate waveform
     (det.wave_alternate_noise: `AND #$07 / ORA #$80`, noise at the voice's
     own control bits) in the two players that derive it rather than table it
@@ -368,6 +385,30 @@ def convert(sid_path: str, log: Logger = print,
     instrument clear. Needs `filters`; reaches only files with
     `det.ilv_filter` and a program with a passband. Off by default: it moves
     the bytes of the files it reaches. See goatwriter.ilv_filter_routing_plan.
+
+    tie_restart spells a tie in the classic players WITHOUT the legato
+    marker (`goatwriter.classic_tie_restart_family`: Commando, Monty on the
+    Run, International Karate and 32 more) as a plain note on a legato clone
+    of its instrument, the spelling `legato_tie_clones` already gives the
+    marker players' unflagged ties: those players re-run the whole
+    instrument start -- waveform with the gate, pulse, AD, SR, the effect
+    counters -- on every fetched note, tied or not, where `CMD_TONEPORTA 00`
+    skips all of it. Only a restart that is HEARD is respelled (another
+    record, a block or sweep the restart replays; `build._restart_heard`):
+    one that writes what the voice already holds keeps the old spelling,
+    and so does one whose restarted block would leave the arpeggio
+    counter's phase. Needs `tie`. Off by default: Commando is one of
+    these players, and the fixture encodes the old spelling (its own ties
+    all restart silently, so presets move none of its bytes either).
+
+    regrid_full_debt makes `regrid`'s budget pay the whole debt: it counts
+    every PLAY of a voice-0 pattern, packed `$D0+n` repeats included, and
+    charges only the compensating rows the writer can actually place, so a
+    row declined by a full command column carries its debt forward instead
+    of vanishing (patterns `_regrid_order`, `_regrid_spots`). Needs `regrid`.
+    Off by default because both corrections move the bytes of ten of the -S1
+    files that ship `regrid` (measured at 6e467ff), whose adoptions were
+    measured under the old budget; per song, hand-adopted like `regrid`.
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -665,7 +706,7 @@ def convert(sid_path: str, log: Logger = print,
                                        skip_gate, multiplier)
             if any(deficits):
                 regrid_tempos(new_patterns, tracks, values, deficits,
-                              multiplier, log)
+                              multiplier, log, full_debt=regrid_full_debt)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
@@ -948,6 +989,18 @@ def convert(sid_path: str, log: Logger = print,
                 # must leave the output exactly as it was.
                 tracks[:] = snapshot
 
+    # The `prune` option's own promise, kept past the passes that break it:
+    # `convert_patterns` pruned against the RAW orderlists, and every pass
+    # since that repoints a position at a copy (tempo, fraction and tie
+    # copies, pulse phase) can leave its source unplayed. Last before the
+    # writer, after the last pass that rewrites an orderlist; it REBINDS
+    # rather than edits (see `drop_unplayed_patterns`).
+    if prune:
+        tracks, new_patterns, dropped = drop_unplayed_patterns(
+            tracks, new_patterns)
+        if dropped:
+            log(f"Pruned {len(dropped)} more pattern(s) the later passes' "
+                "copies left unplayed")
     sng = build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
                      pulse=pulse, multiplier=multiplier,
@@ -980,14 +1033,43 @@ def convert(sid_path: str, log: Logger = print,
                      row_calls=short_row_calls,
                      compact_instruments=compact_instruments,
                      real_firstwave_instruments=real_firstwave_instruments,
+                     gate_off_firstwave_instruments=gate_off_firstwave_instruments,
                      arps=ilv_arps,
                      pulse_plan=pulse_plan,
-                     ilv_filter_routing=ilv_filter_routing)
+                     ilv_filter_routing=ilv_filter_routing,
+                     tie_restart=tie_restart)
+    # A relative wave step past Goattracker's 96 notes reads gt2reloc's
+    # orderlist addresses in the packed file, so its pitch moved with the
+    # layout. Pinned to what the original reads there. Not an option: it is
+    # what the player does. Before the appended players, whose steps belong
+    # to another table (past_table_wave).
+    sng = pin_past_table_wave_notes(sng, sid, det, log)
     sng = _append_players(sng, sid, det, multiplier, opts, log)
     if drop_unnamed_instruments:
         # Last, on the finished bytes: every pass that writes or renumbers
         # an instrument column (the clone passes included) has run.
         sng = drop_unnamed_instruments_from(sng, log)
+    # The packed song's call phase (goatwriter.call_phase): part of what
+    # `skip_gate` means, because it is the phase of the grid that option
+    # corrects the rows to. After the drop above, which would remove the
+    # record -- no pattern names it. Only where every note's onset is the
+    # call after its tick 0 (`call_phase.ONSET_CALL`): a firstwave that
+    # writes a waveform (`no_test_restart`, `real_firstwave_instruments`)
+    # puts some onsets on tick 0 itself, and no one phase serves both. Not
+    # where an orderlist `$FE nn` changes the tempo mid-song: the grid moves.
+    startup = (startup_phase(sid, det, multiplier, group_tempos)
+               if (skip_gate and group_tempos and not step_tempos
+                   and not no_test_restart and not real_firstwave_instruments)
+               else None)
+    if startup is not None:
+        before = len(sng)
+        sng = add_startup_tempo(sng, startup.tempo, log)
+        if len(sng) != before:
+            log(f"Startup call phase......: instrument 63 AD ${startup.tempo:02X} "
+                f"-- a {startup.tempo}-call startup row where gt2reloc's "
+                f"default is {startup.default}; onsets off the original's "
+                f"frame on {startup.default_mismatched} of {startup.rows} "
+                f"rows -> {startup.mismatched}")
     return sng
 
 
@@ -1011,7 +1093,7 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
 
     Each view converts with this call's options at this file's pack factor,
     except the two that name things in the FIRST player: the per-instrument
-    firstwave list numbers player 0's instruments, and the unnamed-instrument
+    firstwave lists number player 0's instruments, and the unnamed-instrument
     drop runs once, on the finished file, after this.
 
     **The pulse table is the cap that binds.** 5_Title_Tunes' subtune 0
@@ -1046,6 +1128,7 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
             "nothing appended")
         return sng
     base_opts = dict(opts, real_firstwave_instruments=(),
+                     gate_off_firstwave_instruments=(),
                      drop_unnamed_instruments=False, engine=0)
     levels = [("the file's options", base_opts)]
     for flag, what in (("pulse_phase", "without pulse_phase"),

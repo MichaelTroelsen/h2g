@@ -107,10 +107,11 @@ def _ledger_end(name):
     cap = {}
     real = C.regrid_tempos
 
-    def spy(patterns, tracks, bases, deficits, multiplier=1, log=None):
+    def spy(patterns, tracks, bases, deficits, multiplier=1, log=None,
+            **kw):
         cap.update(p=patterns, t=tracks, b=bases[0], d=deficits[0],
                    m=multiplier)
-        return real(patterns, tracks, bases, deficits, multiplier, log)
+        return real(patterns, tracks, bases, deficits, multiplier, log, **kw)
 
     C.regrid_tempos = spy
     try:

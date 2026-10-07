@@ -35,12 +35,21 @@ operand, which is a different change with a different blast radius.
 Instrument numbers above the record count (a dangling reference, which the
 writer already logs) are shifted down by the number dropped, so they stay
 dangling rather than silently landing on a real record.
+
+`add_startup_tempo`, the other finished-bytes pass here, runs after the drop
+and does the opposite on purpose: it adds instrument 63, which no pattern
+names, for gt2reloc's startup row (`goatwriter.call_phase`).
 """
 from typing import Callable, List, Optional, Tuple
 
-from .goatwriter import HEADER_LEN
+from .goatwriter import GT_TEMPO_INSTRUMENT, HEADER_LEN
 
 _RECORD_LEN = 25
+# A record's gatetimer byte, and the bits of it the packed player compares
+# against its counter (greloc.c:787 writes `gatetimer & 0x3f`).
+_GATETIMER_AT = 7
+_GATETIMER_MASK = 0x3F
+_STARTUP_TEMPO_NAME = "Startup tempo"
 
 
 def _layout(blob: bytes) -> Tuple[int, int, int, List[Tuple[int, int]]]:
@@ -111,4 +120,57 @@ def drop_unnamed_instruments(blob: bytes,
         gone = [k for k in range(1, count + 1) if k not in remap]
         log(f"Dropped {dropped} instrument(s) no pattern names: "
             + ", ".join(f"${k:02X}" for k in gone))
+    return bytes(out)
+
+
+def add_startup_tempo(blob: bytes, tempo: int,
+                      log: Optional[Callable[[str], None]] = None) -> bytes:
+    """`blob` carrying instrument 63 with attack/decay `tempo` and nothing else.
+
+    gt2reloc reads that record as the packed song's startup row,
+    DEFAULTTEMPO `tempo - 1` (greloc.c:1140-1141: `ad >= 2` and no wavetable
+    pointer), and `goatwriter.call_phase` says why a song wants one. Records
+    below 63 are padded with empty ones, because a `.sng` stores instruments
+    1..N contiguously; no pattern names them, so the packed file carries none
+    of them (greloc.c:291), and neither does it carry 63 itself -- only the
+    one define.
+
+    **Last, on the finished bytes, after `drop_unnamed_instruments`**, which
+    would drop every one of these records: none is named by a pattern, which
+    is the point of them.
+
+    Returned unchanged (and logged) where the record cannot be added without
+    changing what the song plays: the file already uses instrument 63; a
+    pattern names an instrument above the written count, which the padding
+    would turn from a dangling reference into an empty record; or some
+    record's gatetimer is not reached by the startup row's counter (it counts
+    `tempo - 1` down to 0, and row 0's note is fetched only where it equals
+    the gatetimer of the instrument the voice starts on -- player.s
+    `mt_gatetimer`; the superseded `--tempo` route went silent exactly so).
+    """
+    instr_at, tables_at, _patt_at, patterns = _layout(blob)
+    count = blob[instr_at]
+    named = {blob[start + r * 4 + 1]
+             for start, rows in patterns for r in range(rows)}
+    recs = instr_at + 1
+    gatetimers = [blob[recs + k * _RECORD_LEN + _GATETIMER_AT] & _GATETIMER_MASK
+                  for k in range(count)]
+    why = (f"the song already has {count} instruments" if count >= GT_TEMPO_INSTRUMENT
+           else f"a pattern names instrument ${max(named):02X} above the "
+                f"{count} written" if named and max(named) > count
+           else f"a gatetimer of {max(gatetimers)} is not reached in a "
+                f"{tempo}-call startup row" if gatetimers and max(gatetimers) > tempo - 1
+           else None)
+    if why is not None:
+        if log:
+            log(f"Startup call phase......: declined, {why}")
+        return bytes(blob)
+    record = bytes([tempo & 0xFF]) + bytes(8)
+    record += _STARTUP_TEMPO_NAME.encode("latin-1").ljust(_RECORD_LEN - 9, b"\x00")
+    out = bytearray(blob[:instr_at])
+    out.append(GT_TEMPO_INSTRUMENT)
+    out += blob[recs:tables_at]
+    out += bytes(_RECORD_LEN) * (GT_TEMPO_INSTRUMENT - 1 - count)
+    out += record
+    out += blob[tables_at:]
     return bytes(out)

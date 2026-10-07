@@ -250,6 +250,23 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     what would make Hunter_Patrol's minority right. A group whose numbering
     a split has shifted casts no vote.
 
+    **A tied note casts no vote.** A row carrying `CMD_TONEPORTA 00` skips
+    the new-note init that loads the waveptr (player.s:832-835 `cmp
+    #TONEPORTA / beq mt_nonewnoteinit` ahead of `lda mt_inswaveptr-1,y`;
+    gplay.c:354 `newcommand != CMD_TONEPORTA`), so the wavetable runs on
+    from the note before and the tie's residue is never a block's attack --
+    the rule `pitch_seq_phases` and `_note_phase_split` already kept.
+    Through v0.5.513 ties voted here: Chimera's tie-row records GT 5 and
+    GT 8 took residue 0 from their tie rows (198 and 60 of them) where
+    every untied attack of GT 5 (6) and the plurality of GT 8's (16 of 52)
+    is residue 2, and Game_Killer's GT 8 took 5 (101 votes) over 1 (97)
+    where its untied notes tie 97:97 and the lower wins. Neither block reads
+    the difference -- the tie-row shape is identical at residues 0-6 and
+    Game_Killer's GT 8 at all eight -- so the corpus moved no byte under
+    presets (C:/t/tie-votes-in-fixed-arp-phases). A slide (`CMD_TONEPORTA`
+    with a speed) skips the same init in both players, but the converter
+    emits none on a note the walk reads, so only the tie is tested.
+
     **The walk is in the player's own clock: calls that pass the outer
     gate.** Where the player has one (`SongSpeeds.skip`, Game_Killer's
     reload 9) a row is not a whole number of FRAMES, and through v0.5.490
@@ -283,7 +300,9 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         frames = speeds.frames_for(ti // 3)   # in passing calls; see above
         if frames is None:
             continue
-        for row, current, _pat, _r in _walk_note_rows(track, patterns):
+        for row, current, pat, r in _walk_note_rows(track, patterns):
+            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
+                continue                 # a tie restarts no wavetable
             residue = (base + first + row * frames) % period
             votes.setdefault(current, [0] * period)[residue] += 1
     # The majority residue; a tie goes to the lower one, which for the parity
@@ -1521,6 +1540,51 @@ def fixed_arp_note_residues(sid: SidFile, det: Detection,
     return period, out
 
 
+def arp_row_residues(sid: SidFile, det: Detection, tracks: List[List[int]],
+                     patterns: List[List[int]]) -> Optional[dict]:
+    """{(pattern, row): every residue that note row is played on} -- the
+    counter `build_sng`'s `arp_phases` reads, in its own walk: the fixed
+    arp's (`fixed_arp_phases`) where `det.arp_fixed_up`, else the nibble
+    dialect's (`nibble_arp_phases`). One lap of each orderlist, repeats
+    expanded; a pattern played at several places collects each one's
+    residue. None where neither counter is read."""
+    if det.arp_fixed_up:
+        base = fixed_arp_counter_base(sid, det)
+        mask = _gw_primitives.fixed_arp_mask(sid, det)
+        period = fixed_arp_period(mask[0]) if mask is not None else None
+    elif det.arp_nibble_period is not None:
+        per = det.arp_nibble_period
+        test = nibble_arp_counter_test(sid, per)
+        base = test[0] if test is not None else None
+        period = fixed_arp_period(max(per.on_interval, per.otherwise))
+    else:
+        return None
+    first = fixed_arp_first_fetch(sid, det)
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if base is None or first is None or period is None or speeds is None:
+        return None
+    if len(tracks) // 3 > max(sid.subtunes, 1):
+        return None
+    out: dict = {}
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        if frames is None:
+            continue
+        row = 0
+        for _pos, p in _orderlist_occurrences(track):
+            if p >= len(patterns):
+                continue
+            pat = patterns[p]
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:
+                    break
+                if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                    out.setdefault((p, r // 4), set()).add(
+                        (base + first + row * frames) % period)
+                row += 1
+    return out
+
+
 def _share(held: dict, lap: dict, rows: int) -> None:
     """Fold one voice's held rows into `held` as shares of its lap."""
     for key, n in lap.items():
@@ -1580,7 +1644,9 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
                       residues: dict, phases: dict, records: set,
                       first_clone: int, distinct=None,
                       label: str = "phase split",
-                      log=None) -> Optional[ArpPhaseSplit]:
+                      log=None,
+                      factor: Optional[int] = FIXED_ARP_SPLIT_FACTOR
+                      ) -> Optional[ArpPhaseSplit]:
     """The per-note split shared by `fixed_arp_phase_split_plan` and
     `pitch_seq_phase_split_plan`: `residues` is {(track, orderlist position,
     play): {row: residue}}, `phases` {GT number: the record's own residue}
@@ -1588,7 +1654,8 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
     whose notes may vote. A residue is anything hashable and ordered -- the
     fixed arp's counter residue, or bit $10's phase tuple -- and the clones'
     third slot carries it to `_wavetable_layout` unchanged. The rules are
-    `fixed_arp_phase_split_plan`'s, documented there."""
+    `fixed_arp_phase_split_plan`'s, documented there; `factor` None clones
+    every minority residue (`nibble_gate_phase_split_plan`)."""
     def plays():
         """(ti, pos, play, pattern) in play order, per track."""
         for ti, track in enumerate(tracks):
@@ -1638,7 +1705,7 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
             continue
         top = max(n.values())
         for r, c in n.items():
-            if r == major or c * FIXED_ARP_SPLIT_FACTOR < top:
+            if r == major or (factor is not None and c * factor < top):
                 continue
             if distinct is not None and not distinct(rec, r):
                 continue
@@ -2249,6 +2316,131 @@ def _refined_majority(counts: List[int], period: int) -> int:
     return max(range(best, mod, period), key=lambda r: (counts[r], -r))
 
 
+@dataclass(frozen=True, order=True)
+class GatePhase:
+    """A gated nibble record's attack residue, as a phase clone carries it.
+
+    `residue` is the counter modulo lcm(P, O) (`nibble_gate_phases`' walk),
+    `period` P: `_wavetable_layout` lays the clone out with `arp_phase`
+    `residue % period` and `arp_gate_phase` `residue`. Its own type, not an
+    int, because a bare int clone residue is the fixed arp's and lays out
+    with no gate phase (`_phase_locked_ties` asks exactly that question),
+    and not a tuple, which is bit $10's phase."""
+    residue: int
+    period: int
+
+
+def nibble_gate_note_residues(sid: SidFile, det: Detection,
+                              tracks: List[List[int]],
+                              patterns: List[List[int]],
+                              gate: Optional[int]) -> Optional[dict]:
+    """{(track, orderlist position, play): {row: GatePhase}} -- the walk
+    `nibble_gate_phases` votes from, keyed by where each note sits so
+    `nibble_gate_phase_split_plan` can rename it (`fixed_arp_note_residues`'
+    shape). Gated exactly as `nibble_gate_phases` is; a group whose reload is
+    not `gate` gets no residues, so its notes neither vote nor move. None
+    wherever that function is empty for want of a reading."""
+    per = det.arp_nibble_period
+    if per is None or not gate or not nibble_arp_counter_gated(sid, per):
+        return None
+    if nibble_gate_byte(sid) is None:
+        return None
+    test = nibble_arp_counter_test(sid, per)
+    first = fixed_arp_first_fetch(sid, det)
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if test is None or first is None or speeds is None:
+        return None
+    if len(tracks) // 3 > max(sid.subtunes, 1):
+        return None
+    period = fixed_arp_period(max(per.on_interval, per.otherwise))
+    mod = period * gate // math.gcd(period, gate)
+    out: dict = {}
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        if frames is None or outer_gate_skip(sid, ti // 3) != gate:
+            continue
+        row, seen = 0, Counter()
+        for pos, p in _orderlist_occurrences(track):
+            if p >= len(patterns):
+                continue
+            pat = patterns[p]
+            play = seen[pos]
+            seen[pos] += 1
+            res = out.setdefault((ti, pos, play), {})
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:
+                    break
+                if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                    res[r // 4] = GatePhase(
+                        (test[0] + first + row * frames) % mod, period)
+                row += 1
+    return out
+
+
+def nibble_gate_phase_split_plan(sid: SidFile, det: Detection,
+                                 tracks: List[List[int]],
+                                 patterns: List[List[int]], effects: bool,
+                                 lead: int, instr_used: int,
+                                 first_clone: int, gate: Optional[int],
+                                 distinct=None,
+                                 log=None) -> Optional[ArpPhaseSplit]:
+    """Clone each gated nibble-arpeggio record whose notes attack on more
+    than one gate residue, one clone per minority residue, and rename each
+    such note to its residue's clone -- `fixed_arp_phase_split_plan` for the
+    nibble counter behind the outer gate.
+
+    `nibble_gate_phases` gives each RECORD one residue modulo lcm(P, O), the
+    majority of its notes', and `nibble_gate_runs` puts the gate's skipped
+    frame from it -- so the record's every note stretches the half its
+    majority stretches. Where a row is not a multiple of the gate's cycle
+    the notes do not agree: Las_Vegas_Video_Poker (-S4, O 4, 3-frame rows)
+    attacks on residues 1 and 3 by row mod 4, and the original's one-step
+    first runs are `base1/arp1` on 82 of 321 notes in subtune 0's first
+    120 s and its octave's `base3/arp3` on 5 of 12, where the majority
+    spelling gave 1 and 0 (C:/t/lvvp-gate-phase-per-note-split/ab_runs.py).
+    Every minority residue gets a clone (`FIXED_ARP_SPLIT_FACTOR` is not
+    applied: a residue's notes are the original's own frames, not a guess
+    outvoted), most-heard first, within `TEMPO_DUTY_MAX_CLONE` and the
+    wavetable's room; a residue whose block is the record's (`distinct`)
+    gets none. A repeated orderlist entry whose plays want different
+    residues is unrolled first (`_expand_repeats`), as bit $10's split does.
+    Gated as the record's gate phase is: `effects`, the nibble dialect,
+    `effect_arp`, the +7 byte's bit 2 with a nonzero interval nibble.
+    """
+    if not (effects and not det.arp_fixed_up and det.effect_arp
+            and det.arp_nibble_period is not None and gate):
+        return None
+    majority = nibble_gate_phases(sid, det, tracks, patterns, gate)
+    if not majority:
+        return None
+    residues = nibble_gate_note_residues(sid, det, tracks, patterns, gate)
+    if residues is None:
+        return None
+    per = det.arp_nibble_period
+    period = fixed_arp_period(max(per.on_interval, per.otherwise))
+    phases = {g: GatePhase(r, period) for g, r in majority.items()}
+    data = sid.data
+    records = set()
+    for i in range(max(instr_used - lead, 0)):
+        at = det.instr_start + i * det.instr_stride + 7
+        if at < len(data) and data[at] & 4 and data[at] >> 4:
+            records.add(i + lead + 1)
+    if not records:
+        return None
+    unroll = _phase_divergent_repeats(tracks, patterns, residues, records)
+    if unroll:
+        wide = [(_expand_repeats(t, unroll.get(ti, set())) or t)
+                if ti in unroll else t for ti, t in enumerate(tracks)]
+        if wide != tracks:
+            wide_res = nibble_gate_note_residues(sid, det, wide, patterns,
+                                                 gate)
+            if wide_res is not None:
+                tracks, residues = wide, wide_res
+    return _note_phase_split(tracks, patterns, residues, phases, records,
+                             first_clone, distinct, "gate phase split", log,
+                             factor=None)
+
+
 def _nibble_gate_shape(sid: SidFile, det: Detection, nibble: int,
                        multiplier: int, gate_skip: Optional[int],
                        gate_phase: Optional[int]) -> Optional[tuple]:
@@ -2473,7 +2665,26 @@ def gateoff_nibble_arp_budget_pair(half_calls) -> tuple:
     pair (4, 3) {1: 198, 2: 30, 3: 14} (C:/t/nibble-gateoff-tail/runs.py).
     Kentilla 20 and Thrust 25 (each a one-subtune file) give that reader
     no qualifying note in the first 180 s on either side; Kentilla 20's
-    (17, 16) against 22 is still UNMEASURED against the original. Thrust
+    (17, 16) against 22 is MEASURED SHORT, not equal: its first note
+    ($0F0D) attacks at frame 22337, so at -t 1800 (6e467ff + the staged
+    merge, presets, `fidelity.run_siddump`), over the 26 notes the original
+    holds two-valued for 8+ frames, each paired with the note our song
+    attacks 3 frames later (all 514 paired attacks lag by exactly 3; ours
+    cannot be found by ADSR state, which it writes only on an instrument
+    change), runs of one frequency read once a frame are original
+    {2: 548, 3: 120} (mean 2.180 frames = 21.8 calls at -S10; the player's
+    22) against this pair {1: 295, 2: 565} (mean 1.657 frames = 16.6 calls;
+    the pair's 16.5) -- a quarter short, 5.2 calls a half, so half a call
+    is exceeded and no loop of five entries closes it: `gateoff_nibble_arp_entries`
+    declines (18, 16) and (17, 17) at five, so the cycle tops out at this
+    pair's 33 calls, and the player's (22, 22) takes seven (measured). The two spare entries
+    would come out of Kentilla 4, which is itself clipped (95 entries
+    wanted, 81 given: the table is full at 255), so closing the gap trades
+    one starved record for another and is nibble-per-call-shape-above-s1's
+    open decision, not made here. The per-call loop it replaces reads
+    {26: 1, 53: 4} at one sample a frame: ten calls a frame is an even
+    number of toggles, so a frame-rate reader aliases it to a constant and
+    cannot see that defect (C:/t/kentilla-r20-gateoff-pair-measure/m4.py). Thrust
     25 (instrument 26, ADSR $0F0B) first plays at frame ~16430, so it was
     measured at -t 400 (v0.5.510, presets, voice 2, ADSR $0F0B frames
     16430-18993): runs of one frequency read once a frame, original

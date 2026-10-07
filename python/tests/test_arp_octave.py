@@ -1270,14 +1270,19 @@ def test_only_chimeras_tied_records_take_the_row_shape():
         pytest.skip("presets.json not present")
     sng, tracks, patterns = _converted("Chimera")
     sid, det = _det(CORPUS / "Chimera.sid")
-    assert fixed_arp_tie_rows(sid, det, tracks, patterns) == {5: 3, 8: 3,
-                                                              9: 3}
-    for number in (5, 8, 9):
+    # GT 9 (record 8, waveform `$10`) left the set when its rows stopped
+    # reading as ties: its own fetch closes the gate, so each is a fresh
+    # note (patterns.record_gate_clear; tests/test_gate_clear_record.py).
+    assert fixed_arp_tie_rows(sid, det, tracks, patterns) == {5: 3, 8: 3}
+    for number in (5, 8):
         wt = _wavetable_of(sng, number)
         assert wt[-2] == (0x02, 0x0C) and wt[-1][0] == 0xFF, (number, wt)
-    assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x81, 0x0C), (0x81, 0x80),
-                                     (0x41, 0x80), (0x00, 0x0C), (0x02, 0x0C),
-                                     (0xFF, 0x1D)]
+    # No noise tick: GT 5's notes are one row (`wait` 0), and the drum
+    # block's duration guard (`$C4DA LDA $C631,X / BEQ`) skips it on every
+    # frame of such a note -- siddump of subtune 0 opens all six `$0060`
+    # attacks `41 41 41 41 41 41` (wavetable._wavetable_entries).
+    assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x41, 0x0C), (0x02, 0x0C),
+                                     (0xFF, 0x1A)]
     assert _wavetable_of(sng, 12)[-2] != (0x02, 0x0C)
     for name in ("Zoids", "One_Man_and_his_Droid", "Master_of_Magic",
                  "Phantoms_of_the_Asteroid", "Battle_of_Britain",

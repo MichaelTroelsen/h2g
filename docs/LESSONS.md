@@ -1582,10 +1582,12 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **69 zero / 20 drifting of 89 rows** (95
-    traced, 89 measured, all 89 with a fit; re-graded at v0.5.495, whose
-    refresh gave the last two rows a fit -- it read 68 / 19 / 87 from
-    v0.5.489 and 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86 at 60 s.** One file crossed. `drift_per_1000` is an INTEGRATED offset and so the most
+  * **The drift split at 180 s is **72 zero / 17 drifting of 89 rows** (95
+    traced, 89 measured, all 89 with a fit; re-graded at v0.5.513 against
+    that refresh's `build/fidelity.json` -- it read 69 / 20 from v0.5.495,
+    whose refresh gave the last two rows a fit, 68 / 19 / 87 from v0.5.489
+    and 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86 at 60 s (v0.5.495,
+    when one file crossed).** `drift_per_1000` is an INTEGRATED offset and so the most
     window-sensitive number the report carries, which is exactly why the two
     windows disagree here and not on `melody`.
   * **Skate or Die intro at 180 s is 3151 attacks against the original's

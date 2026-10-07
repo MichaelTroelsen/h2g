@@ -16,6 +16,19 @@ def _default_output(sid_path: str) -> str:
     return base + ".sng"
 
 
+def _instrument_numbers(text: str) -> tuple:
+    """`--gate-off-firstwave`'s value: comma-separated GT instrument numbers."""
+    try:
+        nums = tuple(int(t) for t in text.split(",") if t.strip())
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r}: expected instrument numbers such as 2,4")
+    if not nums or any(not 1 <= n <= 0x3F for n in nums):
+        raise argparse.ArgumentTypeError(
+            f"{text!r}: instrument numbers are 1..63")
+    return nums
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="h2g",
@@ -96,6 +109,14 @@ def main(argv=None) -> int:
              "Corpus: reaches 18 files, drift improves on 14 and five reach "
              "exactly 0.00 -- but melody collapses on two, so it is per song "
              "and never a default. Off by default: it changes the output bytes")
+    parser.add_argument(
+        "--regrid-full-debt", action="store_true",
+        help="with --regrid, budget the whole debt: count every play of a "
+             "pattern behind a packed orderlist repeat, and charge only the "
+             "compensating rows that can actually be placed, so a row a full "
+             "command column declines carries its debt forward. Star Paws "
+             "(-S2) under-delivered 23 of 147 calls a pass without it. Per "
+             "song: it moves ten -S1 files that ship --regrid. Off by default")
     parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
@@ -194,6 +215,16 @@ def main(argv=None) -> int:
              "3, which needs --max-hard-restart as well because the default "
              "bound is half the row. Unset leaves every conversion "
              "byte-identical.")
+    parser.add_argument(
+        "--gate-off-firstwave", type=_instrument_numbers, default=None,
+        metavar="N[,N...]",
+        help="GT instrument numbers (1-based, as a pattern row names them "
+             "before --drop-unnamed-instruments renumbers) whose firstwave is "
+             "the record's own waveform with the gate CLEARED, instead of the "
+             "testbit $09 whose gate bit opens every note one frame before "
+             "the original. Only that byte changes. Per song, also read from "
+             "a --presets entry's gate_off_firstwave_instruments; unset "
+             "leaves every conversion byte-identical.")
     parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
@@ -392,6 +423,17 @@ def main(argv=None) -> int:
              "events; median retrigger ratio 1.008 -> 0.999 and mean melody "
              "82.3%% -> 84.1%%, with Delta_Mix-E-Load_loader going 6%% -> 100%%"),
     parser.add_argument(
+        "--tie-restart", action="store_true",
+        help="with --tie, spell a tie in the classic players that have no "
+             "legato marker (Commando, Monty on the Run, International "
+             "Karate ...) as a plain note on a legato clone of its instrument: "
+             "those players re-run the whole instrument start -- waveform with "
+             "the gate, pulse, AD, SR -- on every fetched note, tied or not, "
+             "where CMD_TONEPORTA 00 skips all of it -- where that restart is "
+             "heard; a silent one, or one that would put an arpeggio out of "
+             "phase, keeps the old spelling. Off by default: the byte-exact "
+             "Commando fixture is one of these players"),
+    parser.add_argument(
         "--cut-release", action="store_true",
         help="drop the release nibble on players that kill the envelope when a "
              "note ends (33 corpus files). Those players gate off and write 0 "
@@ -515,6 +557,8 @@ def main(argv=None) -> int:
     # firstwave byte (convert()'s docstring). Read from the preset entry
     # below, exactly as fidelity._preset_opts reads it.
     real_firstwave_instruments: tuple = ()
+    gate_off_firstwave_instruments: tuple = tuple(
+        args.gate_off_firstwave or ())
 
     if args.presets:
         import json
@@ -545,6 +589,11 @@ def main(argv=None) -> int:
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file)) or {}
         real_firstwave_instruments = tuple(
             entry.get("real_firstwave_instruments") or ())
+        # An explicit --gate-off-firstwave beats the stored list, as every
+        # other option given on the command line does.
+        if not _given("--gate-off-firstwave"):
+            gate_off_firstwave_instruments = tuple(
+                entry.get("gate_off_firstwave_instruments") or ())
         # legal_restart/silent_park/force_park ride the same loop: Confuzion
         # carries force_park per song, which an always-only read dropped.
         for flag, key in (("--legal-restart", "legal_restart"),
@@ -562,6 +611,7 @@ def main(argv=None) -> int:
                           ("--wave-alternate", "wave_alternate"),
                           ("--skip-gate", "skip_gate"),
                           ("--regrid", "regrid"),
+                          ("--regrid-full-debt", "regrid_full_debt"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -580,6 +630,7 @@ def main(argv=None) -> int:
                           ("--vibrato-command", "vibrato_command"),
                           ("--cut-release", "cut_release"),
                           ("--tie", "tie"),
+                          ("--tie-restart", "tie_restart"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--filter", "filters"),
@@ -645,8 +696,11 @@ def main(argv=None) -> int:
                       silent_park=args.silent_park,
                       force_park=args.force_park,
                       regrid=args.regrid,
+                      regrid_full_debt=args.regrid_full_debt,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
+                      gate_off_firstwave_instruments=(
+                          gate_off_firstwave_instruments),
                       pulse_phase=args.pulse_phase,
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
@@ -675,6 +729,7 @@ def main(argv=None) -> int:
                       vibrato_command=args.vibrato_command,
                       cut_release=args.cut_release,
                       tie=args.tie,
+                      tie_restart=args.tie_restart,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       filters=args.filters,

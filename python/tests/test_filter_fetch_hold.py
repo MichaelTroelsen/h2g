@@ -45,7 +45,7 @@ classic-filter file in the corpus, so a later emitter task starts from it.
 import pytest
 
 from corpus import CORPUS, needs_corpus  # noqa: E402
-from h2g.detect import FILTER_SHAPE, detect
+from h2g.detect import FILTER_SHAPE, FILTER_SHAPE_CLAMP, detect
 from h2g.search import search_file
 from h2g.sidfile import load_sid
 
@@ -68,11 +68,14 @@ def fetch_frame_reading(sid, data: bytes):
     reset at note start). None when the filter block is not found.
     """
     i = search_file(data, FILTER_SHAPE)
+    d = 0
+    if i <= -1:                       # Thanatos' `BMI` spelling, 2 bytes longer
+        i, d = search_file(data, FILTER_SHAPE_CLAMP), 2
     if i <= -1:
         return None
     start = sid.to_address(i)
-    end = start + _FILTER_LEN
-    cut_lo, cut_hi = data[i + 15], data[i + 16]
+    end = start + _FILTER_LEN + d
+    cut_lo, cut_hi = data[i + 15 + d], data[i + 16 + d]
     tails, j = [], 0
     while True:
         k = search_file(data[j:], FETCH_TAIL)
@@ -107,7 +110,10 @@ def _classic_filter_files():
             det = detect(sid, lambda m: None)
         except Exception:                     # a file detect refuses is not ours
             continue
-        if det.filter is not None:
+        # A free-running accumulator (Sigma_Seven; the held After_8, Rikky
+        # and Mr_Meaner) is reset by nothing, so there is no note-start value
+        # for a fetch frame to hold back: the question does not apply.
+        if det.filter is not None and not det.filter.free_running:
             out[p.stem] = (sid, fetch_frame_reading(sid, sid.data))
     return out
 

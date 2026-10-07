@@ -68,8 +68,24 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       Census over the 61 corpus files `VIBRATO_SHAPES` matches
       (C:/t/lvvp-vibrato-phase/census.py): all 61 carry the subtract loop;
       59 carry the add loop as `LDY ctr,X / DEY / BMI / CLC` on the counter
-      the update steps. Mozart and Tarzan spell the update differently and
-      were not resolved.
+      the update steps. The other two were resolved by
+      classic-vibrato-census-unresolved (disassembly census and an emulator
+      that agrees with siddump on every frame compared; pinned in
+      tests/test_classic_vibrato_census.py): **Tarzan** is the same
+      mechanism with mixed addressing (ctr `$49,X` and bound `$4C,X` zero
+      page, dir `$5500,X` absolute), which the byte search did not know.
+      **Mozart is not the same on voices 1 and 2**: its update steps
+      `$0C24,X`, but its add loop is `LDY $0C24` (`AC`, absolute, no `,X`),
+      so every voice adds VOICE 0's counter. Voice 2 (bound 5) and voice 1
+      (bound 2) follow voice 0's counter 0..3 at period 7 ticks, so their
+      swing is -2..+1 and -1..+2 depths where their own bounds ask for
+      -2..+3 and -1..+1. The emitter models each voice with its own bound;
+      that mismatch is open (opened as `mozart-vibrato-voice-zero-counter`).
+      The counter's period is `2 * bound` in 54 of the 61 files and
+      `2 * bound + 1` in seven (Mozart and the `$1003` family: Go_Go_Dash,
+      Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE,
+      Sun_Never_Shines), whose update holds the bound for two frames;
+      `half = bound * multiplier` below takes the first for all of them.
 
     * **Phase and centre, which Goattracker cannot carry.** Two properties
       of that loop have no speed-table encoding. Both are measured, not
@@ -90,7 +106,21 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
         centre, moving up. The census found 55 of 61 counters with no
         writer outside the update. Shockway_Rider, W_A_R and Spellbound
         add only an init-time clear, Star_Paws' longer update is its own
-        DEC, and Mega_Apocalypse's zero-page hits were not resolved.
+        DEC, and Mega_Apocalypse's zero-page hits were byte-search false
+        positives: its one real writer is the init-time clear at `$580F`
+        (`LDX #$44 / LDA #$00 / STA $B0,X / DEX / BPL`, entered by `JMP
+        $580F` at `$4AA0`). Re-read over decoded, reachable code for all
+        61 files: 57 have no store to the counter or direction cell outside
+        the update, and the other four (Mega_Apocalypse, Shockway_Rider,
+        Spellbound, W_A_R) store zero in an init-time clear. Run in an
+        emulator for 3000 frames of subtune 0 (all 61 files, C:/t/classic-
+        vibrato-census-unresolved/dyn_census.py), no store to those cells
+        outside the update ever executed after init. Six files store during
+        init: those four, plus Samantha_Fox_Strip_Poker (`STA $00,X` over
+        `$A0..$EF` at `$7D65`) and I_Ball (its relocation copy, `STA ($FD),Y`
+        at `$C220`), which a scan keyed on the cell's base address cannot
+        see. The add loop ran in 53 of the 61 files in that window (8 never
+        reached a vibrato record on subtune 0, so they are static-only).
 
       Measured at -t 120 s, subtune 0, on Las_Vegas_Video_Poker's bound-3
       records (vibrato byte $1A). The original is traced at -m1, ours under

@@ -71,7 +71,7 @@ Module layout mirrors the VB6 pipeline 1:1:
 | `detect.py` | player-engine signature chains → a `Detection` dataclass |
 | `tracks.py` | `convert_tracks`; `apply_initial_instruments` |
 | `patterns.py` | `convert_patterns`, `reindex_tracks`, pattern slicing, tempo application |
-| `goatwriter.py` | `build_sng` — assembles the final `.sng` byte buffer |
+| `goatwriter/` | the `.sng` writer, a package since v0.5.504: `build.py` (`build_sng`, assembles the byte buffer) calls `instruments`, `wavetable`, `wave_program`, `attack`, `pulse`, `vibrato`, `arpeggio`, `filters`, `drums`, `note_passes`, `notes`, `skydive`, `rest_reseed`, `hard_restart`, `tempo`, `appending`; shared leaves in `primitives.py` and `constants.py`. `__init__.py` re-exports every name, so `goatwriter.X` still resolves (`tests/test_goatwriter_package.py`) |
 | `convert.py` | orchestrates the above into `convert(sid_path) -> bytes` |
 | `cli.py` / `__main__.py` | argparse entry point |
 
@@ -207,6 +207,10 @@ for a human listening check into gitignored `build/listen/`.
   must respect it. A file one pattern over is not unpackable, so nothing
   announces it — it silently runs the default tick instead of its own
   `CMD_SETTEMPO`.
+- **Instrument 63 is gt2reloc's startup row** (`goatwriter.call_phase`): its
+  AD sets the packed song's call phase under an entry outer gate, added LAST
+  on the finished bytes (`instrument_drop.add_startup_tempo`, after the drop,
+  which would remove it). A pass that adds instruments runs before it.
 - **Row 0's command column belongs to the subtune's clock.** `apply_tempos`
   skips a pattern whose command column is occupied, so a row-0 command costs
   that subtune its `CMD_SETTEMPO`. A new row-0 command must declare itself in
@@ -227,7 +231,8 @@ for a human listening check into gitignored `build/listen/`.
 - **The multiplier belongs to our side only.** Trace the original at `-m1` and
   the conversion at `-m{multiplier}`.
 - **A new `convert()` option is inert until it is in three places**: the
-  signature, `presets.py`'s `FIXED`, and `_preset_opts`. `_preset_opts` derives
+  signature, `presets.py`'s `FIXED`, and `fidelity.py`'s `_preset_opts` (`build_sng`
+  in `goatwriter/build.py` sees it only if `convert.py` passes it on). `_preset_opts` derives
   its keys from `inspect.signature(convert)` and `tests/test_preset_passthrough.py`
   fails if one escapes; `presets.EXCLUDED_FROM_ALWAYS` names deliberate
   omissions. Do not hand-edit that list back into existence.

@@ -303,7 +303,12 @@ maximise agreement would be a free parameter that can only raise the score. It
 was validated against exactly that search over 36 corpus files — it lands on
 the fitted optimum for 20 of them and gives a mean `wave` of 77.0% against the
 fit's 77.1%, so the search buys a tenth of a point and costs the column its
-meaning. A lag past `MAX_STARTUP_LAG` is not a latency (Chimera measures 438
+meaning. Our first attack is taken where its pitch lands
+(`fidelity.pitched_attack_frame`; the original's as it stands): a gated real-waveform firstwave
+(`no_test_restart`, `real_firstwave_instruments`) opens the gate on GT's init
+call at the previous frequency, one frame before the note's pitch, and
+anchoring on that rise read the lag one frame short (see
+H2G-CONVERSION-METHOD.md, *Estimated, not fitted*). A lag past `MAX_STARTUP_LAG` is not a latency (Chimera measures 438
 frames, an opening one side does not have) and is clamped and reported rather
 than applied. `noise`, `pul`, `pspan`, `filt` and `cut` are one-sided counts or
 travels over each side's own window, so they are shift-invariant and are taken

@@ -10,7 +10,8 @@ from ..sidfile import (SidFile)
 from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERPTR, CMD_TONEPORTA,
                         FILT_MODULATE, FILT_SET_CUTOFF, FILT_SET_PARAMS,
                         FILT_STOP, GT_MAX_FILT, ILV_EMPTY_UNION,
-                        ILV_FILTER_ROUTING, PACKED_PATTERN_LIMIT)
+                        ILV_FILTER_ROUTING, ILV_ROUTE_NOTHING,
+                        PACKED_PATTERN_LIMIT)
 from .pulse import (packed_pattern_size, pattern_rows)
 def _filter_step_per_call(step: int, multiplier: int) -> int:
     """The player's per-FRAME cutoff step as a per-CALL one, signed.
@@ -278,6 +279,7 @@ class IlvRouting:
     restore_unplaceable: int = 0  # majority notes wanting one, no free cell
     late_restores: int = 0  # of `restores`, placed on a row after the note
     passband_late: int = 0  # rows ending on the wrong passband
+    stopped_live: int = 0   # replayed `B $00` on a row with a voice routed
 
 
 def _ilv_routed_records(sid: SidFile, det: Detection, instr_used: int) -> set:
@@ -387,6 +389,7 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
             noted = []
             started = None          # the program the table runs from here
             executed = None
+            stops = False           # a replayed `B $00` ran this row
             # "restore": what loads the filter pointer last this row, in
             # channel order -- a note's instrument, or a replayed `A`, which
             # tick 0 runs AFTER the note init (player.s "Execute tick 0 FX
@@ -417,6 +420,7 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     # value; the init's `A` runs a params row writing $00.
                     if mine[0] == CMD_SETFILTERCTRL:
                         executed = mine[1]
+                        stops = stops or mine[1] == ILV_ROUTE_NOTHING
                     elif mode == "restore":
                         ptr = ("A", mine[1], v)
                     else:
@@ -441,6 +445,9 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     params_hit = True
             mask = sum(1 << v for v in range(3) if bits[v])
             want = (res | mask) if mask else None
+            if stops and want is not None:
+                # A replay's `B $00` also stopped whatever program runs.
+                stats["stopped_live"] += 1
             target = None
             if mode == "restore":
                 if (ptr is not None and ptr[0] == "prog"
@@ -492,7 +499,9 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
             if wrong and params_hit:
                 stats["lagged"] += 1
             elif wrong:
-                value = want if want is not None else (res or ILV_EMPTY_UNION)
+                # An empty union stops the program too: the original's
+                # cutoff never moves while nothing is routed.
+                value = want if want is not None else ILV_ROUTE_NOTHING
                 order = noted + [v for v in range(3) if v not in noted]
                 for v in order:
                     cell = next((c for c in cells if c[0] == v), None)
@@ -728,7 +737,8 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                                                  "late_rows", "restores",
                                                  "restore_unplaceable",
                                                  "late_restores",
-                                                 "passband_late")})
+                                                 "passband_late",
+                                                 "stopped_live")})
     if log:
         log(f"ILV filter routing......: {mode}, {result.changes} change(s), "
             f"{result.placed} CMD_SETFILTERCTRL + {result.inits} "
@@ -740,6 +750,8 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                f"{result.restore_unplaceable} unplaceable at the note, "
                f"{result.passband_late} row(s) on the wrong passband"
                if mode == "restore" else "")
+            + (f", {result.stopped_live} live program(s) stopped by a "
+               f"replayed B $00" if result.stopped_live else "")
             + (f", {dropped} DROPPED" if dropped else ""))
     return result
 
@@ -820,6 +832,69 @@ def _classic_clearing_instruments(sid: SidFile, det: Detection,
     return {i for i in unrouted if any(i in per_voice[v] for v in range(3))}
 
 
+def _clamp_frames(start: int, step: int) -> int:
+    """Frames the player accumulates before `cutoff,X` first reads >= $80.
+
+    FILTER_SHAPE_CLAMP's `BMI` tests the value LOADED, before the add, so the
+    frame that carries it to $80 or over still adds and writes; the next one
+    skips both. 0 when the note starts negative (the block never writes
+    $D416 at all), and capped at 256 -- a step of 0 never gets there."""
+    c, n = start & 0xFF, 0
+    while not c & 0x80 and n < 256:
+        c = (c + step) & 0xFF
+        n += 1
+    return n
+
+
+def _clamped_block(passband: int, resctl: int, start: int, step: int,
+                   per_call: int) -> List[tuple]:
+    """Set params, set cutoff, modulate to the player's hold value, stop.
+
+    **THE ENDPOINT IS KEPT, NOT THE CLOCK.** The player travels
+    `frames * step` and then holds; a per-call step is `step / multiplier`
+    rounded (`_filter_step_per_call`), so running it `frames * multiplier`
+    calls lands somewhere the player never goes and HOLDS there for the rest
+    of the note. Thanatos' record 3 at `-S4` steps 3 a frame from $20 to $80
+    in 32 frames: 128 calls of +1 would hold $A0, 96 calls hold $80 and get
+    there 8 frames early. The duration is the travel over the per-call step,
+    split into $7F-call modulation rows."""
+    block = [(FILT_SET_PARAMS | passband, resctl), (FILT_SET_CUTOFF, start)]
+    frames = _clamp_frames(start, step)
+    if not frames:
+        # Already negative at note start: the player writes the start value to
+        # its accumulator and never to $D416, so no cutoff can be said.
+        return [block[0], (FILT_STOP, 0x00)]
+    if per_call:
+        signed = step - 256 if step >= 0x80 else step
+        p = per_call - 256 if per_call >= 0x80 else per_call
+        calls = max(1, round(frames * signed / p))
+        while calls:
+            n = min(calls, FILT_MODULATE)
+            block.append((n, per_call))
+            calls -= n
+    block.append((FILT_STOP, 0x00))
+    return block
+
+
+def _free_running_block(passband: int, resctl: int, per_call: int,
+                        at: int) -> List[tuple]:
+    """Set params, then modulate forever; no set-cutoff row at all.
+
+    For an accumulator nothing resets (`FilterInfo.free_running`): every note
+    of a filtered record continues the sweep from where the last left it, so
+    a SET_CUTOFF row would reset it on every note, which the player never
+    does. player.s `mt_nextfiltstep` takes a $FF row's jump on the same call
+    the modulation row runs out, so `[7F step][FF back]` adds `step` on every
+    call with no gap, wrapping at 8 bits as the player's `ADC` does. `at` is
+    the 1-based table step this block starts on."""
+    block = [(FILT_SET_PARAMS | passband, resctl)]
+    if per_call:
+        block += [(FILT_MODULATE, per_call), (FILT_STOP, at + 1)]
+    else:
+        block.append((FILT_STOP, 0x00))
+    return block
+
+
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
                     lead: int = 1, multiplier: int = 1,
                     clearing_instruments: set | None = None):
@@ -861,12 +936,19 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
             # Goattracker clear can say the same thing; elsewhere it stays
             # unsaid rather than stamping out another voice's circuit.
             continue
-        block = [(FILT_SET_PARAMS | filt.passband, resctl),
-                 (FILT_SET_CUTOFF, filt.cutoff)]
         per_call = _filter_step_per_call(step, multiplier)
-        if per_call:
-            block.append((FILT_MODULATE, per_call))
-        block.append((FILT_STOP, 0x00))
+        if filt.free_running:
+            block = _free_running_block(filt.passband, resctl, per_call,
+                                        len(entries) + 1)
+        elif filt.clamp:
+            block = _clamped_block(filt.passband, resctl, filt.cutoff, step,
+                                   per_call)
+        else:
+            block = [(FILT_SET_PARAMS | filt.passband, resctl),
+                     (FILT_SET_CUTOFF, filt.cutoff)]
+            if per_call:
+                block.append((FILT_MODULATE, per_call))
+            block.append((FILT_STOP, 0x00))
         if len(entries) + len(block) > GT_MAX_FILT:
             break
         pointers[i] = len(entries) + 1  # table steps are 1-based

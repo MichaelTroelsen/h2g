@@ -53,12 +53,22 @@ def _head_baseline(path: pathlib.Path) -> str | None:
     """Return the file's content at HEAD, or None if it has no HEAD blob
     (a new file that git has never committed) or git itself is unavailable.
     """
+    # The repo that owns THIS file, not CLAUDE_PROJECT_DIR: inside a git
+    # worktree the project dir is the main checkout, whose HEAD has no such
+    # path (and may be another commit), so `git show` failed and the hook
+    # fell back to the absolute odd check.
     try:
-        rel = path.resolve().relative_to(ROOT.resolve()).as_posix()
-    except ValueError:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(path.resolve().parent), capture_output=True, timeout=30)
+        if top.returncode != 0:
+            return None
+        root = pathlib.Path(top.stdout.decode("utf-8").strip())
+        rel = path.resolve().relative_to(root.resolve()).as_posix()
+    except Exception:                                          # noqa: BLE001
         return None
     try:
-        r = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=str(ROOT),
+        r = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=str(root),
                            capture_output=True, timeout=30)
     except Exception:                                          # noqa: BLE001
         return None

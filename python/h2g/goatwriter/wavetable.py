@@ -21,7 +21,9 @@ from .arpeggio import (fixed_arp_duty_entries, gateoff_nibble_arp_budget_pair,
                        nibble_arp_counter_test, nibble_arp_entries,
                        nibble_arp_first_half, nibble_arp_half_calls,
                        nibble_arp_half_cycle, nibble_arp_up,
-                       _nibble_gate_shape, unticked_arp_octave_entry)
+                       _nibble_gate_shape, unticked_arp_octave_entry,
+                       GatePhase)
+from .call_phase import nibble_gate_step_lead
 from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _note_alternate_note, _two_stage_entries,
                      _two_stage_frames, _two_stage_pitch_seq_entries,
@@ -59,7 +61,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        arp_tie_row: Optional[int] = None,
                        wave_alternate: bool = False,
                        log=None,
-                       arp_gate_phase: Optional[int] = None) -> tuple:
+                       arp_gate_phase: Optional[int] = None,
+                       hold_travel: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -101,6 +104,22 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     tick = False
     if effects:
         if not det.effect_drum:
+            drum = False
+        elif drum and note_rows is not None \
+                and note_rows.get(i + 1 + lead) == 1:
+            # **A record whose typical note is ONE row never runs the drum at
+            # all -- not its sweep, not its noise tick, not its gate-off.**
+            # The detected block (detect._find_effect_routines, Warhawk
+            # $1366) opens on two guard loads, the second being the note's
+            # remaining duration: Chimera `$C4DA LDA $C631,X / BEQ $C50A`,
+            # Commando `$5306 LDA $54F2,X / BEQ $5336`. A one-row note is a
+            # `wait` of 0 (`_build_raw_pattern`), so that counter is 0 on every
+            # frame of it and the block writes nothing. Chimera's records 7/8
+            # (`$BF00`/`$BF05`, effect `$05`) are played only in one-row
+            # arpeggio chains: siddump of subtune 0 holds `$11` on every frame
+            # of their notes (5618-5632 ...), where the drum shape sounded
+            # `81` noise and closed the gate on the attack's fourth frame. The
+            # median, as for the sweep's depth (`median_played_durations`).
             drum = False
         elif drum and (data[base + 4] >> 4):
             # A record whose envelope sustains is not percussive, and the drum
@@ -159,7 +178,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     if wave_program and speed_table is not None:
         prog = _wave_program_entries(sid, det, i, speed_table, fmt,
                                      multiplier, budget,
-                                     written=no_test_restart)
+                                     written=no_test_restart,
+                                     hold_travel=hold_travel)
         if prog is not None:
             return prog
 
@@ -713,6 +733,13 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                          gate_skip, arp_gate_phase)
                       if effects and not arp_fixed and arp_phase is not None
                       else None)
+        # Where they are not, the frame-0 lead is the attack's whole counter
+        # step, `h = m (O + 1) / O` calls, not one frame: the next step -- the
+        # first the block plays -- starts there (`nibble_gate_step_lead`).
+        step_lead = (nibble_gate_step_lead(sid, det, multiplier, gate_skip,
+                                           no_test_restart)
+                     if gate_shape is None and effects and not arp_fixed
+                     else 0)
         if (tick and effects and not arp_fixed and multiplier > 1
                 and arp_phase is not None and test is not None):
             mask = per.half(arp_note)
@@ -723,8 +750,12 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                        / mask))
             if gate_shape is not None:
                 first_up, first_calls, half = gate_shape
+            lead0, lead0_r = ((frame0, frame0_r) if not step_lead
+                              else _first_frame_lead(
+                                  wave, multiplier + step_lead, force=True,
+                                  written=no_test_restart))
             shaped = _gw_arpeggio.ticked_nibble_arp_entries(
-                frame0, frame0_r,
+                lead0, lead0_r,
                 sum(1 if b > WAVE_MAX_DELAY else b + 1 for b in tl),
                 noise, tail, _arp_relative(arp_fixed, arp_note, arp_up), half,
                 first_up, first_calls,
@@ -763,8 +794,10 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 if gate_shape is not None:
                     first_up, first_calls, halves = gate_shape
                 frame0, frame0_r = _first_frame_lead(
-                    wave, multiplier, force=True, written=no_test_restart)
-                lead_calls = 0 if no_test_restart else max(1, multiplier)
+                    wave, multiplier + step_lead, force=True,
+                    written=no_test_restart)
+                lead_calls = (0 if no_test_restart
+                              else max(1, multiplier) + step_lead)
                 if not (isinstance(halves, int) and not first_up
                         and lead_calls + first_calls == halves):
                     shaped = nibble_arp_entries(
@@ -987,6 +1020,40 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
     period ahead of the drum. Holding the gate past 520 lines instead would
     move the tick a frame late. Probes: C:/t/rasputin-drum-noise-blip-one-
     frame-early/b4 (dump.py, dump2.py, attack.py, attack2.py).
+
+    **The targeted hard restart does not lower it either** (A/B at v0.5.513
+    plus the uncommitted cycle-3 merge, not shipped). The form tried: the
+    hard restart back on for the drum records only (bit $01 in a drum
+    player, above -S1), i.e. their gatetimer without bit $80. It reaches 29
+    files. Goattracker writes `adparam` $0F00 on the fetch call, and its
+    note init then writes the record's SR 1-2 lines BEFORE the gate rises.
+    That raises the release period again while the gate is still off, so
+    the counter is past the attack's 9 cycles when the gate rises. VICE,
+    60 s, rise to first ENV3 increase, median:
+    Formula_1_Simulator (window 620 lines) 513 -> 520,
+    Warhawk (622) 515 -> 519, Proteus (621) 513 -> 519.
+    The wrap survives a window longer than itself. Where the window is
+    shorter, the rise inherits the rest of it: Rasputin's 309-line window
+    gives 504 -> 209. The original's delay is 1 line.
+    ENV3 energy over 4 frames, gated tick: Rasputin 77.40 -> 77.67 dB
+    (original 78.31). It falls on the long windows: Formula_1 76.68 ->
+    76.05, Warhawk 77.25 -> 76.47, Proteus 77.59 -> 76.47, Bump_Set_Spike
+    77.76 -> 77.08. Under fidelity, -t 180, presets, --sound, 30 files:
+
+    * Hard restart alone: `adsr` falls by 0.1pp or more on 11 files
+      (Lightforce -4.5pp, Food_Feud -4.3, Deep_Strike -1.7, Bump_Set_Spike
+      -0.9, Rasputin -0.6; mean -0.56pp, `adsr_exact` -0.96pp).
+      `release_tail_agreement` falls on 17 files and rises on Rasputin
+      (mean -9.1pp). `aud` mean is -0.25pp. No other column moves.
+    * Hard restart with the gate-off tick: it wins back most of the `loud`
+      the tick alone costs (Rasputin 95.5 -> 96.4, against 96.3 at HEAD;
+      Formula_1 94.1 -> 96.1, HEAD 96.4). It carries the tick's `gate`
+      (mean +1.6pp) and `nrun` (mean +11.7pp) gains. But it also carries
+      the same `adsr` and `release_tail` losses, and Kentilla's `melody`
+      95.2 -> 78.4, which is the tick's cost.
+
+    Pinned by `tests/test_drum_hard_restart_window.py`. Probes:
+    C:/t/drum-note-envelope-reset-above-s1/p.
 
     `written` (`--no-test-restart`, or a `real_firstwave_instruments`
     record) keeps the gate. There the tick follows the firstwave call
@@ -1500,6 +1567,82 @@ def _loop_of(left: List[int], right: List[int], start: int) -> Optional[tuple]:
     return t, j
 
 
+def _wave_follow(table: List[tuple], pos: int) -> Optional[int]:
+    """`pos` (1-based) past any jumps: the entry the player executes there,
+    0 for a stop (`FF/00`), None for a position outside the table or a ring
+    of jumps."""
+    for _ in range(len(table) + 1):
+        if not 1 <= pos <= len(table):
+            return None
+        left, right = table[pos - 1]
+        if left != WAVE_JUMP:
+            return pos
+        if right == 0:
+            return 0
+        pos = right
+    return None
+
+
+def _same_wave_stream(ta: List[tuple], a: int, tb: List[tuple],
+                      b: int) -> bool:
+    """Whether position `a` of table `ta` and `b` of `tb` (1-based) execute
+    the same entries call for call, forever: both walks are followed through
+    their jumps (which cost no call) until the pair of positions repeats or
+    both stop together. Exact, not sampled -- the walk is finite because the
+    tables are."""
+    seen = set()
+    while True:
+        a, b = _wave_follow(ta, a), _wave_follow(tb, b)
+        if a is None or b is None:
+            return False
+        if a == 0 or b == 0:
+            return a == b
+        if (a, b) in seen:
+            return True
+        seen.add((a, b))
+        if ta[a - 1] != tb[b - 1]:
+            return False
+        a, b = a + 1, b + 1
+
+
+def _entered_record_block(block: tuple, entries: List[tuple],
+                          record_start: int):
+    """A gate phase clone's block as an entry into its record's.
+
+    The gated nibble shapes (`nibble_gate_runs`) are one frame cycle entered
+    at different points, and a residue's block is often the record's own
+    played from a later entry: Las_Vegas_Video_Poker's one-step records play
+    `base1 arp2 | base1 arp1 base1 arp2` at residue 3 and `base1 arp1 base1
+    arp2 ...` at residue 1, which is the same block from its fifth entry.
+    Returns that entry's position (an int: the clone needs no entries of its
+    own), else the shortest prefix of the clone's block followed by a jump
+    to the record entry its remainder equals (a tuple, as `block`), else
+    None. `block` is laid out at position 1 on a table of its own (its jumps
+    land inside it); every candidate is checked by `_same_wave_stream`
+    against the record's entries in `entries`, so what the clone sounds is
+    exactly what its own block would have. The prefix holds no jump, and no
+    other entry names a position, so it plays the same wherever it lands."""
+    left, right = block
+    own = list(zip(left, right))
+    targets = []
+    k = record_start
+    while 1 <= k <= min(len(entries), _gw_constants.GT_MAX_TABLELEN):
+        if entries[k - 1][0] == WAVE_JUMP:
+            break
+        targets.append(k)
+        k += 1
+    for p in range(len(left)):
+        if p and left[p - 1] == WAVE_JUMP:
+            break
+        for x in targets:
+            if _same_wave_stream(own, 1 + p, entries, x):
+                if p == 0:
+                    return x
+                return (list(left[:p]) + [WAVE_JUMP],
+                        list(right[:p]) + [x])
+    return None
+
+
 def _shared_loop_block(block: tuple, start: int, entries: List[tuple],
                        record_start: int) -> tuple:
     """A phase clone's block with its loop replaced by a jump into its
@@ -1570,7 +1713,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       attack_hold_starts: Optional[list] = None,
                       wave_alternate: bool = False,
                       log=None,
-                      instr_row_calls: Optional[dict] = None) -> tuple:
+                      instr_row_calls: Optional[dict] = None,
+                      hold_travel: bool = False) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1617,7 +1761,12 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                        phase=None) -> tuple:
         # `phase` is a phase clone's residue: an int is the fixed arp's
         # (`arp_phase`), a tuple bit $10's phase cells (`pitch_phase`,
-        # `pitch_seq_phase_split_plan`).
+        # `pitch_seq_phase_split_plan`), a `GatePhase` the gated nibble
+        # record's residue modulo lcm(P, O) (`nibble_gate_phase_split_plan`):
+        # its counter residue and its gate phase both.
+        gate = phase if isinstance(phase, GatePhase) else None
+        if gate is not None:
+            phase = gate.residue % gate.period
         pitch = phase if isinstance(phase, tuple) else None
         if pitch is not None:
             phase = None
@@ -1669,9 +1818,11 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                   wave_alternate=wave_alternate,
                                   log=log,
                                   arp_gate_phase=(
-                                      None if arp_gate_phases is None
+                                      gate.residue if gate is not None
+                                      else None if arp_gate_phases is None
                                       or phase is not None
-                                      else arp_gate_phases.get(gt_number)))
+                                      else arp_gate_phases.get(gt_number)),
+                                  hold_travel=hold_travel)
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is
@@ -1731,7 +1882,26 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         i = record - lead - 1
         start = len(entries) + 1
         block = None
-        if 0 <= i < n and len(entries) < _gw_constants.GT_MAX_TABLELEN:
+        entered = None
+        if isinstance(residue, GatePhase) and 0 <= i < n:
+            # Laid out at position 1 and the whole table's room, exactly as
+            # `phase_probe` asks its question, then entered into the
+            # record's block where it can be (`_entered_record_block`): the
+            # shape must not change with how full the table already is.
+            # Where it cannot be, the clone gets a block of its own below.
+            room = _gw_constants.GT_MAX_TABLELEN
+            alone = record_entries(i, 1, room, phase=residue)
+            if (alone is not None
+                    and alone != record_entries(i, 1, room)):
+                entered = _entered_record_block(alone, entries,
+                                                starts[i + lead])
+        if isinstance(entered, int):
+            if phase_clone_starts is not None:
+                phase_clone_starts.append(entered)
+            continue
+        if entered is not None:
+            block = entered
+        elif 0 <= i < n and len(entries) < _gw_constants.GT_MAX_TABLELEN:
             room = _gw_constants.GT_MAX_TABLELEN - len(entries)
             block = record_entries(i, start, room, phase=residue)
             if block == record_entries(i, start, room):
@@ -1745,6 +1915,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 phase_clone_starts.append(0)
             if log:
                 kind = ("pitch phase split" if isinstance(residue, tuple)
+                        else "gate phase split"
+                        if isinstance(residue, GatePhase)
                         else "arp phase split")
                 log(f"{kind}: clone of {record:02X} at residue "
                     f"{residue} has no block of its own")

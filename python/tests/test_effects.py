@@ -146,9 +146,14 @@ def test_the_rise_is_not_emitted_where_the_player_has_no_such_routine():
 
 
 def test_an_arpeggio_wins_over_a_rise_on_the_same_instrument():
-    # Both bits set: the player runs the rise and then the arpeggio overwrites
-    # the frequency, so the arpeggio is what is heard. One wavetable stream
-    # cannot carry both -- a note-setting entry ends the portamento.
+    # Both bits set: the ORIGINAL player runs both blocks every frame, rise
+    # first, and the arpeggio reads the note index the rise has just
+    # incremented, so the pair climbs together (Spellbound $11: the (0,-5)
+    # pair rises a semitone every ~4.7 frames, +60 at its highest). The
+    # emitter cannot reproduce that: one wavetable stream cannot carry both,
+    # since a note-setting entry sets the frequency from the pattern note and
+    # ends the portamento. This pins the emitter's limit (the arpeggio shape,
+    # no rise), not the original's behaviour; see wavetable.py's EMITTER LIMIT.
     left, _ = _entries(RISE | ARP | 0x30, effects=True, rise=True, arp=True)
     assert left[2] != WAVECMD_PORTAUP
 

@@ -119,6 +119,15 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          # 6526 -> 1168 (1172), Sun_Never_Shines 8992 -> 8992 (8997) with its
          # routed mask now $5/$1 where it was $7 throughout; Lakers unmoved.
          "ilv_filter_routing": True,
+         # motr-family-tie-reruns-note-start: a tie in the classic players
+         # with no legato marker restarts the instrument, as the original's
+         # fetch does (goatwriter.classic_tie_restart_family), where the
+         # restart is heard. Forced -t 180 A/B over the 23 files it moves
+         # under the shipped presets (6e467ff + the change): Kentilla voice 3
+         # attacks 355 -> 379 (original 379), melody .952 -> .982, wave .889
+         # -> .946; Thrust voice 3 346 -> 386 (411), melody .978 -> 1.000;
+         # pulse_span Samantha_Fox .850 -> .958, Warhawk .450 -> .690.
+         "tie_restart": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
 # HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
@@ -164,6 +173,17 @@ LIVE_ON = {
     # shipped presets, 95 compared, 89 converted, 5 moved -- Go_Go_Dash,
     # Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines.
     "ilv_filter_routing": 5,
+    # Measured at 0.5.513 (6e467ff + motr-family-tie-reruns-note-start,
+    # 2026-10-06): forced on over the shipped presets, 95 compared, 89
+    # converted, 23 moved -- the classic restart family's files with a
+    # heard tie (C:/t/motr-family-tie-reruns-note-start/hashes.py).
+    # 25 with `entry_instrument_split` (6e467ff + the cycle-3 merge,
+    # 2026-10-07; tests/test_tie_restart.py's MOVERS, re-measured by
+    # test_the_option_moves_exactly_the_familys_heard_files): Action_Biker
+    # and Thing_on_a_Spring join, their two-entry patterns copied.
+    # 26 with `detect.GATE_HOLD_ZP_SHAPE` (2026-10-07, same test):
+    # Spellbound joins once its player reads as a gate-hold one.
+    "tie_restart": 26,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:
@@ -327,6 +347,16 @@ EXCLUDED_FROM_ALWAYS = {
     # `FIDELITY_TOGGLES`, and walking it wants the corpus `--fidelity` A/B
     # against the shipped presets this paragraph asks for.
     "regrid",
+    # `regrid`'s budget made whole (convert's `regrid_full_debt`): every play
+    # behind a packed `$D0+n` repeat is counted, and only rows the writer
+    # places are charged. Per song for `regrid`'s own reason, and one more:
+    # it moves the bytes of ten -S1 files that SHIP `regrid` (measured at
+    # 6e467ff: Arcade_Classics, Auf_Wiedersehen_Monty, Bangkok_Knights,
+    # IK_plus, I_Ball, Nemesis_the_Warlock, Nineteen, One_on_One, Pandora,
+    # Trans-Atlantic_Balloon_Challenge), each adopted on a measurement taken
+    # under the old budget, so it cannot be a default until each is
+    # re-measured. Inert without `regrid`.
+    "regrid_full_debt",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own
@@ -345,6 +375,16 @@ EXCLUDED_FROM_ALWAYS = {
     # ONLY copy of the decision is the file -- adding it here is not
     # bookkeeping, it is the whole record.
     "real_firstwave_instruments",
+    # The same shape, numbering and reason: a TUPLE of GT instrument numbers
+    # whose firstwave is the record's waveform with the gate cleared
+    # (`waveform & $FE`) instead of the testbit. Forced on every instrument
+    # it moves 77 of 89 files and trades columns per song: MEASURED at
+    # 6e467ff (-t 180, presets) wave up on 74 / down 0, hold up 66 / down 3,
+    # gate up 54 / DOWN 20, melody and sequence unmoved on all 77 (run
+    # record gate-off-firstwave-option names them; historical, re-measure).
+    # So there is no value for `always`, and the boolean walk cannot search
+    # a tuple. Carried per song like the list above it.
+    "gate_off_firstwave_instruments",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
     # carries one -- Powerplay Hockey's nine game cues against the tune its

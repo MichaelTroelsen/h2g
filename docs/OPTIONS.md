@@ -483,6 +483,9 @@ the record a note starts. Without this option every filter program's params row
 routes all three voices (`goatwriter.ILV_FILTER_ROUTING`). With it, the union
 of the voices' routed bits is written as `CMD_SETFILTERCTRL` (B) commands at
 every row where that union changes (`goatwriter.ilv_filter_routing_plan`).
+An empty union is `B $00`, which also stops the filter program, because the
+original's cutoff never moves while nothing is routed (`ILV_ROUTE_NOTHING`;
+Radio_ACE `cut` 1.4305 -> 1.1560 at -t 180 under presets, 2026-10-07).
 It needs `--filter` and reaches only files with `det.ilv_filter` and a program
 with a passband. Off by default because it moves those files' bytes; it is set
 in `presets.json`'s always block. Measured forced at v0.5.496 plus the third
@@ -570,6 +573,19 @@ per song. On by default via `presets.json`'s `always` block: v0.5.119 shipped
 it opt-in and v0.5.120 turned it on, once the regression that had held it back
 turned out to be a harness bug. See §§ 7.rrrr and 7.tttt, and `--pace` below
 for how the row length is measured against the original.
+
+**It also sets the packed song's call phase** where the gate is the play
+routine's first instruction and returns (`goatwriter.call_phase`). The
+corrected row is an even grid and the original's is not, so the two agree
+frame for frame at one phase only; the converter reads it off both players and
+writes it as instrument 63's attack/decay, which gt2reloc takes as the startup
+row (greloc.c:1140-1141) -- empty records pad 1..62, and the packed `.sid`
+carries none of them. Six corpus files get one (Game_Killer, International
+Karate, Kentilla, Proteus, Thrust, Warhawk); on all six every onset that was a
+frame off lands on the original's frame. A constant shift under one frame: no
+listener hears it, every per-frame column sees it. Warhawk's ties and wave
+read lower for it -- its in-note steps sit one call ahead of its onsets (see
+the METHOD section on the call phase).
 
 ## `--fold-transpose` (transposes past Goattracker's ceiling)
 
@@ -1079,6 +1095,33 @@ Biker's retrigger 1.333 → 0.990. The worst regression is Kentilla, `melody`
 difflib ratio over a fixed window, so removing attacks can shift its alignment
 (see *A score is not a clock* in CLAUDE.md).
 
+## `--tie-restart` (the tie whose landing restarts the instrument)
+
+**On by default via `presets.json`** (`presets.FIXED`), off on the bare
+command line: Commando is one of the players it reads, and the fixture
+encodes the old spelling. Needs `--tie`.
+
+`CMD_TONEPORTA 00` skips Goattracker's whole note init. That is right only
+where the original skips its instrument start on the landing too, and the
+classic players without the legato marker never do: Commando's fetch reloads
+its gate mask and runs `$5133-$5151` -- waveform with the gate, pulse, AD,
+SR -- on every event that is not a rest, and reads the tie bit only at the
+note's end (`$517F`). `goatwriter.classic_tie_restart_family` reads that block
+off the code (35 corpus files). A tie whose restart is HEARD -- into another
+record, onto a block the restart replays (a drum, a two-stage attack), or
+onto a sweep the "voice" dialect reseeds -- becomes a plain note on a legato
+clone (gatetimer `$40`), as `legato_tie_clones` spells the note_flag players'
+unflagged ties; a tie whose restart writes what the voice already holds keeps
+`CMD_TONEPORTA 00`, and so does one a restarted arpeggio block would put out
+of the global counter's phase. Method: H2G-CONVERSION-METHOD.md, *A tie in
+the classic players without the legato marker re-runs the instrument start*.
+
+Measured at 6e467ff + the change, -t 180, under presets (historical): 23
+files move. Kentilla voice-3 attacks 355 -> 379 (original 379), melody 95% ->
+98%; Thrust voice-3 346 -> 386 (original 411), melody 98% -> 100%;
+`pulse_span` Samantha_Fox .850 -> .958, Warhawk .450 -> .690. Commando moves
+no byte: its 41 ties all restart silently.
+
 ## `--cut-release` (the release nibble that never sounds)
 
 **On by default via `presets.json`.** A no-op in the 62 corpus files whose
@@ -1459,6 +1502,14 @@ per-frame register writer without advancing the program index, and the index
 is zeroed only by the note-fetch path (ACE II `$E36C`–`$E370` against `$E0F7
 STA $EBC7,X`). A repeating figure under one of these instruments is the
 pattern re-striking the note, not the program running twice.
+
+**The hold's pitch is the accumulator** -- the note less the slides' summed
+operands -- and the restore after the program carries that sum as one
+portamento. Above `-S1` it always did. At `-S1` it does too, one frame after the
+restore (it follows the program, so it costs none of its frames), except on a
+record the player vibrates (its vibrato re-centres on the note) and in a song
+where any instrument opens on a real or gate-off firstwave (the next note's
+init call would open at the tail's pitch). See H2G-CONVERSION-METHOD.md §7.fff.
 
 **One opcode is one frame, and one frame is `multiplier` play calls**, so every
 opcode takes a hold entry after it and the program runs at the player's rate at
@@ -2402,6 +2453,44 @@ Ricochet reads drift -7.81 -> 0.00. Delta and Dragons_Lair_Part_II move bytes
 and no column at all, because their compensation lands in subtunes other than
 the one measured. Adopting the flag for any of these files is a separate
 `presets.json` decision.
+
+**`--regrid-full-debt` (`regrid_full_debt`) pays the debt the budget loses.**
+Measured at 6e467ff with `regrid` forced, Star_Paws' subtune 0 owes 147.28
+calls a pass and `--regrid` delivered 124. Two leaks account for the 23.3
+calls, every one of them: 16.4 + 9 - 4, plus 1.9 left in the accumulator at
+the end of the pass. (1) The budget walk
+reads a packed orderlist repeat `$D0+n, P` as ONE play of P. Nine `$D2`/`$D3`
+runs hold 34 of voice 0's 96 plays, so it counted 4155 of 4676 rows (16.4
+calls never charged). It also debited pattern 15's bought rows for one play
+where three fire (4 calls over). (2) A bought row the writer cannot place is
+debited anyway: pattern 29 bought 6 with one free pair, and patterns 58, 61, 62
+and 64 have a command column full of `3 00` tie cells (9 calls). With the flag,
+the walk expands repeats (`patterns._regrid_order`) and the budget charges only
+the rows the writer's own placement (`patterns._regrid_spots`, on a copy)
+actually writes. An unplaceable row's debt now carries forward to the next
+exclusive pattern. Star_Paws `-t 180`, regrid -> regrid + full debt (sha
+66fbd7dea3fb -> 9b6c41746706):
+
+- delivered per pass: 124 -> 147 of 147.28 calls; rows written 68 -> 89
+- `drift`: -1.57 -> -0.21 per 1000; `drift_total` -14.1 -> -1.9 frames;
+  `drift_mad` 2.26 -> 0.75
+- attacks 2805 -> 2803 (original 2803); `melody` 99.92 -> 99.96;
+  `wave` 68.8 -> 71.2; `adsr` 83.3 -> 88.9;
+  `tie_orig_only_firstwave` 847 -> 440; `gate` 33.4 -> 33.1
+- index-paired attack offset (voices 2 and 3): minimum -17 -> -10 frames,
+  end of window -11 -> -1
+
+The -10 that remains is structural. Voice 0 plays patterns 57-64 31 times in
+a row (plays 47-77), and none of them has a clean command pair: every row
+carries a `3 00` tie cell, or the one free pair inherits row 0's. The debt
+those plays raise is paid by pattern 65 straight after (22 rows). It is **off by default** because
+both corrections also move ten `-S1` files that ship `regrid` (Arcade_Classics,
+Auf_Wiedersehen_Monty, Bangkok_Knights, IK_plus, I_Ball, Nemesis_the_Warlock,
+Nineteen, One_on_One_Jordan_vs_Bird, Pandora,
+Trans-Atlantic_Balloon_Challenge). Each of those adoptions was measured under
+the old budget, so each must be re-measured before it changes. With the flag
+off, the corpus byte-hash moves 0 of 89 under presets and 0 of 89 with `regrid`
+forced. `tests/test_regrid_full_debt.py` pins both budgets.
 
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
