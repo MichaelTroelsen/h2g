@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.515 — 2026-10-07
+
+- tie_restart held out of presets.json's always block until its 8 pinned tests are re-reviewed; 4 tests re-pinned to the regenerated presets
+
 ## 0.5.514 — 2026-10-07
 
 - runqueue drain, six cycles at 6e467ff -- 49 tasks, 39 worktree patches merged (two backed out and re-dispatched, one held for a decision); 60 converted files move under presets, each cycle exactly the union the agents reported

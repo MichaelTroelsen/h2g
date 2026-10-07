@@ -1097,9 +1097,12 @@ difflib ratio over a fixed window, so removing attacks can shift its alignment
 
 ## `--tie-restart` (the tie whose landing restarts the instrument)
 
-**On by default via `presets.json`** (`presets.FIXED`), off on the bare
-command line: Commando is one of the players it reads, and the fixture
-encodes the old spelling. Needs `--tie`.
+**Off by default, and held out of `presets.json`'s `always` block**
+(`presets.EXCLUDED_FROM_ALWAYS`, since v0.5.514). Adopting it corpus-wide
+failed 8 tests pinned under the shipped presets, and they have not yet been
+re-reviewed against the original players. Off on the bare command line too:
+Commando is one of the players it reads, and the fixture encodes the old
+spelling. Needs `--tie`.
 
 `CMD_TONEPORTA 00` skips Goattracker's whole note init. That is right only
 where the original skips its instrument start on the landing too, and the

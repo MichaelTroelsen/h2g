@@ -344,7 +344,9 @@ def test_the_phase_locked_ties_keep_the_old_spelling():
 # --- the option -------------------------------------------------------------
 
 MOVERS = {
-    "5_Title_Tunes.sid", "Action_Biker.sid", "Bump_Set_Spike.sid", "Chimera.sid", "Confuzion.sid",
+    # Action_Biker left at v0.5.514: presets.py raised its max_rows 94 -> 128,
+    # and its two-entry pattern no longer needs the entry split.
+    "5_Title_Tunes.sid", "Bump_Set_Spike.sid", "Chimera.sid", "Confuzion.sid",
     "Crazy_Comets.sid", "Devils_Galop.sid",
     "Geoff_Capes_Strongman_Challenge.sid", "Gerry_the_Germ.sid",
     "Gremlins.sid", "Human_Race.sid", "Hunter_Patrol.sid",
@@ -385,11 +387,15 @@ def test_the_option_moves_exactly_the_familys_heard_files():
     assert moved == MOVERS, (sorted(moved - MOVERS), sorted(MOVERS - moved))
 
 
-def test_the_option_is_in_the_always_block_and_the_cli(capsys):
+def test_the_option_is_held_out_of_always_and_in_the_cli(capsys):
     import presets
     from h2g import cli
-    assert presets.FIXED["tie_restart"] is True
-    assert presets.LIVE_ON["tie_restart"] == len(MOVERS)
+    # Held out of `always` at v0.5.514 (see presets.EXCLUDED_FROM_ALWAYS):
+    # per song or not at all until its pinned tests are re-reviewed.
+    assert "tie_restart" not in presets.FIXED
+    assert "tie_restart" in presets.EXCLUDED_FROM_ALWAYS
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    assert "tie_restart" not in doc["always"]
     with pytest.raises(SystemExit):
         cli.main(["--help"])
     assert "--tie-restart" in capsys.readouterr().out

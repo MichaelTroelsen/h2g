@@ -299,8 +299,11 @@ def test_flash_gordon_keeps_the_full_start_on_an_attack_it_cannot_skip():
     rows free-note-two's entry split settles stay on their two-stage
     variant."""
     _, lines = _convert("Flash_Gordon.sid")
+    # The "4 instrument unsettled" rows this line also counted before
+    # v0.5.514 sat in patterns no orderlist reaches; the presets regeneration
+    # turned `prune` on for Flash_Gordon, and drop_unplayed_patterns removes
+    # those patterns with them.
     assert lines == ["Free note (bit 7).......: 5 flagged note row(s) on 4 "
                      "variant(s) with no attack stage and no pulse reset (3 "
-                     "pulse-only: the record has no attack), 8 kept the full "
-                     "start (4 attack the wavetable cannot skip; 4 instrument "
-                     "unsettled)"]
+                     "pulse-only: the record has no attack), 4 kept the full "
+                     "start (4 attack the wavetable cannot skip)"]

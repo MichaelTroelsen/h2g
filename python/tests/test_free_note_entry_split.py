@@ -178,7 +178,10 @@ def test_flash_gordon_settles_pattern_64(monkeypatch):
         line
     assert "entered with two instruments" not in line, line
     _rows, (_t, _p, copies) = seen["split"]
-    assert sorted(set(copies.values())) == [0x64, 0x8F]
+    # $64/$8F before v0.5.514's presets regeneration turned `prune` on for
+    # Flash_Gordon: drop_unplayed_patterns removes 3 and 4 unplayed patterns
+    # numbered below them, and the same two sources are now $61/$8B.
+    assert sorted(set(copies.values())) == [0x61, 0x8B]
 
 
 @needs_corpus

@@ -150,11 +150,12 @@ def test_devils_galops_out_of_band_phases_reach_the_packed_attack():
     60/61 -> 61/61). Monty_on_the_Run's v0 goes 387 -> 401 of 405: its 2
     wrong go to 0, and its record 10 now chains and unions with 1 and 11,
     which frees the rows record 16 needed, so 12 of its 16 un-commanded
-    notes get their command (v1 goes 1 -> 0 of 61 the other way). Same
-    rule as `test_triangle_lockstep._reach`. The module docstring says what
+    notes get their command (v1 went 1 -> 0 of 61 the other way, and
+    reaches 61 of 61 since v0.5.514's presets regeneration raised Monty's
+    max_rows 94 -> 128). Same rule as `test_triangle_lockstep._reach`. The module docstring says what
     this count does not say about the frames after the attack."""
     from test_triangle_lockstep import _reach
     assert _reach("Devils_Galop.sid") == {(0, 0): (551, 551), (0, 1): (61, 61),
                                           (0, 2): (33, 33)}
     got = _reach("Monty_on_the_Run.sid")
-    assert (got[(0, 0)], got[(0, 1)]) == ((401, 405), (0, 61)), got
+    assert (got[(0, 0)], got[(0, 1)]) == ((401, 405), (61, 61)), got
