@@ -122,7 +122,11 @@ def test_confuzion_gate_rise_is_early_by_the_firstwave_gate_bit_alone(
     offs = _firstwave_offsets(sng)
     parsed = [i.firstwave for i in songview.parse_sng(sng).instruments]
     assert [sng[o] for o in offs] == parsed, "record walk is off"
-    shipped = set(parsed)
+    # A firstwave of 0 writes no waveform at all (gplay.c:355 `if
+    # (iptr->firstwave)`): the tie_restart legato clones carry it, and they
+    # have no gate bit to contribute, so they are neither counted nor flipped.
+    offs = [o for o in offs if sng[o]]
+    shipped = {sng[o] for o in offs}
     # One gate bit for the whole file, so one predicted rise offset per arm.
     assert len({fw & 1 for fw in shipped}) == 1, shipped
 
