@@ -387,15 +387,17 @@ def test_the_option_moves_exactly_the_familys_heard_files():
     assert moved == MOVERS, (sorted(moved - MOVERS), sorted(MOVERS - moved))
 
 
-def test_the_option_is_held_out_of_always_and_in_the_cli(capsys):
+def test_the_option_is_in_the_always_block_and_the_cli(capsys):
     import presets
     from h2g import cli
-    # Held out of `always` at v0.5.514 (see presets.EXCLUDED_FROM_ALWAYS):
-    # per song or not at all until its pinned tests are re-reviewed.
-    assert "tie_restart" not in presets.FIXED
-    assert "tie_restart" in presets.EXCLUDED_FROM_ALWAYS
+    # Held out of `always` at v0.5.515, adopted again at v0.5.516 once the 8
+    # tests it broke were reviewed against the original player
+    # (tie-restart-adoption-review).
+    assert presets.FIXED["tie_restart"] is True
+    assert presets.LIVE_ON["tie_restart"] == len(MOVERS)
+    assert "tie_restart" not in presets.EXCLUDED_FROM_ALWAYS
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
-    assert "tie_restart" not in doc["always"]
+    assert doc["always"]["tie_restart"] is True
     with pytest.raises(SystemExit):
         cli.main(["--help"])
     assert "--tie-restart" in capsys.readouterr().out

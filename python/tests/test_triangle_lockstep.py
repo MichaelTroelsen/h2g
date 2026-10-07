@@ -449,7 +449,12 @@ def test_thing_on_a_springs_frame_1153_fetch_is_the_decoders():
 _REACH = {
     # name: {(group, voice): (reached, paired)} -- see `_reach`
     "Chimera.sid": {(0, 0): (132, 132), (0, 1): (135, 135)},
-    "Thing_on_a_Spring.sid": {(0, 0): (225, 225), (0, 1): (25, 25),
+    # (0, 0) was 225/225 before tie_restart's adoption (v0.5.516): one A-4
+    # row (finished note 565, attack frame 5713) now carries no
+    # CMD_SETPULSEPTR, yet its packed width $C10 is the planned $C00 plus
+    # one table step by this count's own rule -- reached in sound, not in
+    # the command the count requires.
+    "Thing_on_a_Spring.sid": {(0, 0): (224, 225), (0, 1): (25, 25),
                               (0, 2): (871, 871)},
     # The cost: subtune 0 voice 1 is new, subtunes 2-4 lose what the
     # walk before shipped (120/120, 138/138 and 80/386 reached there).

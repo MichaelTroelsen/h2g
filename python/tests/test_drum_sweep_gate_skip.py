@@ -165,7 +165,10 @@ def test_corpus_record_falls_0300_from_frame_3(name, ad, sr):
     sys.path.insert(0, str(PYTHON_ROOT))
     import songview
     s = songview.parse_sng(_converted(name))
-    ins = [i for i in s.instruments if (i.ad, i.sr) == (ad, sr)]
+    # A legato clone of the record carries the same envelope and wave
+    # pointer: tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption).
+    ins = [i for i in s.instruments
+           if (i.ad, i.sr) == (ad, sr) and not i.gatetimer & 0x40]
     assert len(ins) == 1, [(i.number, i.adsr) for i in s.instruments]
     wt = s.tables["WTBL"]
     k = ins[0].wave_ptr - 1

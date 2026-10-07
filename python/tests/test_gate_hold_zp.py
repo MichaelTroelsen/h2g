@@ -172,9 +172,11 @@ def _sites(song):
 
 @needs_corpus
 def test_the_sweep_re_gates_once_and_then_ties():
-    """Under presets: the first sweep note attacks (the drum was wait 1 and
-    its gate closed), the five after it are ties -- `CMD_TONEPORTA 00`."""
-    song = _song()
+    """Under presets with tie_restart OFF: the first sweep note attacks (the
+    drum was wait 1 and its gate closed), the five after it are ties --
+    `CMD_TONEPORTA 00`. The shipped presets turn tie_restart on since
+    v0.5.516; the next test pins that spelling."""
+    song = _song(tie_restart=False)
     sites = _sites(song)
     assert sites, "no drum + sweep run found in Spellbound's patterns"
     for pi, drum, sweep in sites:

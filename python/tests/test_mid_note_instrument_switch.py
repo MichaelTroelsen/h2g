@@ -167,6 +167,15 @@ def test_samantha_fox_voice_one_carries_instrument_sevens_envelope_on_the_tied_c
     det = detect(sid, _quiet)
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = F._preset_opts(doc, SAMANTHA_FOX.name)
+    # Under the shipped tie_restart (v0.5.516) the tied C-5 is a legato clone
+    # that loads instrument 7's own envelope; this test pins the declined
+    # spelling, so it converts with tie_restart off and checks the clone
+    # separately below.
+    shipped = songview.parse_sng(convert(str(SAMANTHA_FOX), log=lambda m: None,
+                                         **opts))
+    assert any(i.gatetimer & 0x40 and (i.ad, i.sr) == (0x0F, 0x90)
+               for i in shipped.instruments), "no clone carries 7's envelope"
+    opts["tie_restart"] = False
     log: list = []
     song = songview.parse_sng(convert(str(SAMANTHA_FOX), log=log.append, **opts))
 

@@ -1014,7 +1014,9 @@ def test_rasputin_splits_its_opening_by_tempo():
     from bisect import bisect_right
     sng, _, _ = _converted("Rasputin")
     s = songview.parse_sng(sng)
-    assert len(s.instruments) == 16
+    # 16 before tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption);
+    # they are numbered after the duty clones, so 15 and 16 keep their place.
+    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 16
     clones = {7: 15, 14: 16}
     moved = {7: 0, 14: 0}
     for g in range(s.subtunes):

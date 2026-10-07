@@ -64,6 +64,12 @@ def test_naming_the_two_noise_records_rewrites_only_their_firstwave():
         "GT 2 and 4 are no longer Confuzion's two noise records -- the "
         "measurement's arm names the wrong instruments")
     for b, n in zip(base.instruments, named.instruments):
+        if b.gatetimer & 0x40:
+            # tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption):
+            # a clone's firstwave is goatwriter's clone_firstwave, not the
+            # record's, and naming records leaves it alone.
+            assert n.firstwave == b.firstwave, (n.number, hex(n.firstwave))
+            continue
         assert b.firstwave == G.FIRSTWAVE_TESTBIT
         if n.number in (2, 4):
             assert n.firstwave == 0x81, (n.number, hex(n.firstwave))

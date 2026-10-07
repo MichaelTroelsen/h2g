@@ -155,7 +155,12 @@ def test_devils_galops_out_of_band_phases_reach_the_packed_attack():
     max_rows 94 -> 128). Same rule as `test_triangle_lockstep._reach`. The module docstring says what
     this count does not say about the frames after the attack."""
     from test_triangle_lockstep import _reach
+    # Voice 2 was 33/33 before tie_restart's adoption (v0.5.516): its first
+    # note's row now carries no CMD_SETPULSEPTR, but the packed width at the
+    # attack is $A41, the planned $A40 by this count's own rule -- the clone
+    # keeps the running sweep, so the width is right and only the command
+    # the count requires is gone.
     assert _reach("Devils_Galop.sid") == {(0, 0): (551, 551), (0, 1): (61, 61),
-                                          (0, 2): (33, 33)}
+                                          (0, 2): (32, 33)}
     got = _reach("Monty_on_the_Run.sid")
     assert (got[(0, 0)], got[(0, 1)]) == ((401, 405), (61, 61)), got

@@ -30,8 +30,11 @@ def _convert(**extra) -> bytes:
 
 def _real_records(blob: bytes) -> set:
     at = D._layout(blob)[0]
+    # Skips tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption):
+    # they are copies, not records the drop renumbers.
+    rec = lambda k: blob[at + 1 + (k - 1) * D._RECORD_LEN:]
     return {k for k in range(1, blob[at] + 1)
-            if blob[at + 1 + (k - 1) * D._RECORD_LEN + 8] != FIRSTWAVE_TESTBIT}
+            if rec(k)[8] != FIRSTWAVE_TESTBIT and not rec(k)[7] & 0x40}
 
 
 @needs_corpus

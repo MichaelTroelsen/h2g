@@ -119,6 +119,20 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          # 6526 -> 1168 (1172), Sun_Never_Shines 8992 -> 8992 (8997) with its
          # routed mask now $5/$1 where it was $7 throughout; Lakers unmoved.
          "ilv_filter_routing": True,
+         # motr-family-tie-reruns-note-start: a tie in the classic players
+         # with no legato marker restarts the instrument, as the original's
+         # fetch does (goatwriter.classic_tie_restart_family), where the
+         # restart is heard. Forced -t 180 A/B (6e467ff + the change):
+         # Kentilla voice 3 attacks 355 -> 379 (original 379), melody .952
+         # -> .982; Thrust voice 3 346 -> 386 (411); pulse_span Samantha_Fox
+         # .850 -> .958, Warhawk .450 -> .690. Held out of `always` at
+         # v0.5.515 after its first adoption failed 8 pinned tests; adopted
+         # again once tie-restart-adoption-review traced each one: 5 trip on
+         # the appended legato clones (copies of their base record), 1 pins
+         # the declined spelling, and on Devils_Galop and Thing_on_a_Spring
+         # one note each loses its CMD_SETPULSEPTR while the packed width at
+         # the attack is still the planned one.
+         "tie_restart": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
 # HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
@@ -164,6 +178,12 @@ LIVE_ON = {
     # shipped presets, 95 compared, 89 converted, 5 moved -- Go_Go_Dash,
     # Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines.
     "ilv_filter_routing": 5,
+    # Forced on over the shipped presets, compared against off: the files of
+    # tests/test_tie_restart.py's MOVERS (re-measured there by
+    # test_the_option_moves_exactly_the_familys_heard_files). 23 at 6e467ff,
+    # 26 after entry_instrument_split and the zero-page gate hold, 25 at
+    # v0.5.515 once Action_Biker's max_rows rose 94 -> 128.
+    "tie_restart": 25,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:
@@ -337,20 +357,6 @@ EXCLUDED_FROM_ALWAYS = {
     # under the old budget, so it cannot be a default until each is
     # re-measured. Inert without `regrid`.
     "regrid_full_debt",
-    # convert's `tie_restart` (motr-family-tie-reruns-note-start): a tie in
-    # the classic players with no legato marker restarts the instrument, as
-    # the original's fetch does (goatwriter.classic_tie_restart_family),
-    # where the restart is heard. Forced -t 180 A/B over the files it moves
-    # (6e467ff + the change): Kentilla voice 3 attacks 355 -> 379 (original
-    # 379), melody .952 -> .982; Thrust voice 3 346 -> 386 (411); pulse_span
-    # Samantha_Fox .850 -> .958, Warhawk .450 -> .690. Forced on it moves 26
-    # files (tests/test_tie_restart.py's MOVERS). HELD OUT of `always` at
-    # v0.5.514 (user, 2026-10-07): adopted corpus-wide by the presets
-    # regeneration it failed 8 tests pinned under the shipped presets
-    # (Samantha_Fox, Rasputin, Warhawk, Spellbound, Confuzion, Devils_Galop,
-    # firstwave numbering), unreviewed. Re-enable only after each of them is
-    # confirmed against the original player and re-pinned or fixed.
-    "tie_restart",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own
