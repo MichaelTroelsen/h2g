@@ -1028,7 +1028,7 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "bend_ratio": (ub / ob) if ob else None,
         # ... and the same travel read off the frequency register itself,
         # which does not depend on siddump's choice between its bend and tie
-        # forms -- see within_note_travel. Not a report column (yet).
+        # forms -- see within_note_travel. Reported as `travel`.
         "orig_travel": otv,
         "our_travel": utv,
         "travel_ratio": (utv / otv) if otv else None,
@@ -5918,6 +5918,14 @@ DIMENSIONS = (
     # -- `cut` exists beside `filt` for exactly this reason.
     Dimension("bend_ratio", "bend", _PITCH_REGS, "ratio",
               "how far the pitch travels within notes, over the original's"),
+    # The same travel read off the frequency register instead of siddump's
+    # printed bends: a tie adds to it, a stepped sweep counts as fully as a
+    # glided one. `bend` beside it is what siddump chose to print.
+    Dimension("travel_ratio", "travel", _PITCH_REGS, "ratio",
+              "how far the frequency register moves within notes (bends AND "
+              "ties, read off the register), over the original's; it ignores "
+              "onsets, note jumps and silent frames (within_note_travel), and "
+              "unlike `bend` does not depend on siddump's bend/tie split"),
     # The third of siddump's three within-note forms. `slides` counts the
     # bare-delta frames and `bend` sums them; a TIE -- a parenthesised
     # note, a pitch change with no re-gate -- is neither, and the parser
@@ -8102,8 +8110,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | len | cov | osplit | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | len | cov | osplit | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8128,6 +8136,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
+            f"{'-' if r.get('travel_ratio') is None else f'{r["travel_ratio"]:.2f}x'} | "
             f"{'-' if r.get('tie_ratio') is None else f'{r["tie_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('tie_agreement'))} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
@@ -8716,6 +8725,10 @@ def report(rows: list[dict], args) -> str:
         "twice as long with the right waveform still scores 100% here. A "
         "gated-off voice keeps its last waveform latched, so silence between "
         "notes inherits the previous note's class on both sides.",
+        "- **travel** is `bend` read off the frequency register: it sums "
+        "every within-note frequency move, ties included, so it does not care "
+        "whether siddump printed a bend or a note. Where `bend` and `travel` "
+        "disagree, the difference is siddump's split, not the music.",
         "- **bend** cannot compare a *stepped* sweep against a *glided* one. "
         "A player that raises a note by re-reading its frequency table lands "
         "on exact semitones, and siddump names every such frame rather than "

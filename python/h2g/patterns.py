@@ -3664,7 +3664,8 @@ def _regrid_spots(pattern: List[int], n: int, rows: int):
 def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                   bases: List[int], deficits: List[float],
                   multiplier: int = 1, log=None,
-                  full_debt: bool = False, per_play: bool = False) -> int:
+                  full_debt: bool = False, per_play: bool = False,
+                  prepay: int = 0) -> int:
     """Spend the fractional part of a row the tempo cannot express.
 
     A Goattracker row is a whole number of play calls, so a player whose row
@@ -3985,7 +3986,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # one the -S1 adopters were measured under. See `_regrid_order`,
         # `_regrid_spots` and convert's `regrid_full_debt`.
         order = (_regrid_order(tracks[3 * k], len(patterns),
-                               full_debt or per_play)
+                               full_debt or per_play or prepay > 0)
                  if 3 * k < len(tracks) else [])
         if not order:
             continue
@@ -3993,11 +3994,13 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # plays would deliver the same row twice inside one subtune.
         exclusive = {p for p in set(order)
                      if reach.get(p) == {k} and where.get(p) == {(k, 0)}}
-        if per_play:
+        if per_play or prepay > 0:
             # Debited at the play that delivers it, over every play; see
             # `_regrid_per_play`. The walk below is left byte for byte.
+            # `prepay` implies this walk, as `per_play` implies the full one.
             for pat, n in _regrid_per_play(patterns, order, exclusive,
-                                           d * multiplier).items():
+                                           d * multiplier,
+                                           prepay=prepay).items():
                 plan[pat] = (base, n)
             continue
         # Error diffusion along the orderlist: every played row adds its own
@@ -4091,10 +4094,15 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
 # pattern and re-spends the room, and the Star_Paws case needs 12 of them.
 _REPAIR_ITERATIONS = 64
 
+# `_regrid_per_play`'s prepay search: troughs it may lift, and the most window
+# starts and lift sizes it tries per trough (each try is one greedy pass).
+_PREPAY_TROUGHS = 4
+_PREPAY_GRID = 24
+
 
 def _regrid_per_play(patterns: List[List[int]], order: List[int],
                      exclusive: set, owed_per_row: float,
-                     repair: bool = True) -> dict:
+                     repair: bool = True, prepay: float = 0.0) -> dict:
     """`regrid_per_play`'s schedule, `{pattern: n}` for one subtune's voice 0.
 
     **A ROW IS DEBITED AT THE PLAY THAT DELIVERS IT.** The budget walk in
@@ -4136,6 +4144,15 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
     It runs only where the pass ends a call or more short, so a file the pass
     already pays within a call is byte for byte what it was. `repair=False`
     is the bare pass, kept so a test can show the difference.
+
+    **`prepay` LIFTS THE CEILING ABOVE ZERO** (convert's `regrid_prepay`, in
+    calls; 0 is everything above, byte for byte). At or below zero the ledger
+    is one-sided: never late, so early on average, and a run of plays with no
+    free command pair (Star_Paws' patterns 57-64) dives it with nothing to
+    pay until the pattern after. With `prepay` the ceiling is `prepay` at
+    every boundary but the last, so one pass still never delivers more than
+    it owes, and the deepest trough is prepaid over a window; see the comment
+    at the search.
     """
     owed = 0.0
     start: List[float] = []
@@ -4144,6 +4161,13 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
         owed += owed_per_row * (len(patterns[pat]) // 4)
         start.append(-owed)
         plays_at.setdefault(pat, []).append(i)
+    # The ledger's ceiling: 0 at every play boundary, or `prepay` calls at every
+    # boundary but the last. The last stays at 0 so the pass as a whole never
+    # delivers more than it owes -- a looped song would otherwise integrate the
+    # surplus. `prepay=0` is the original rule, byte for byte.
+    ceil: List[float] = [float(prepay)] * len(order)
+    if ceil:
+        ceil[-1] = 0.0
 
     def fired(idx: List[int]):
         """(play s, plays of the pattern up to and including s), for every s
@@ -4162,28 +4186,81 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
             spots_of[key] = len(_regrid_spots(patterns[pat], n, rows)[0])
         return spots_of[key]
 
-    ledger = list(start)
-    want: dict = {}
-    placed: dict = {}
-    for pat in order:
-        rows = len(patterns[pat]) // 4
-        # `rows` counts the GT_END_PATTERN row; see `regrid_tempos`.
-        if pat not in exclusive or rows < 4:
-            continue
-        idx = plays_at[pat]
-        room = min(-ledger[s] / k for s, k in fired(idx))
-        afford = int(room + 1e-9)            # a negative room truncates to 0
-        if afford < 1:
-            continue
-        prev, got = want.get(pat, 0), placed.get(pat, 0)
-        top = min(prev + afford, max(1, (rows - 3) // 2))
-        for n in range(top, prev, -1):
-            w = placed_rows(pat, n, rows)
-            if got < w <= got + afford:
-                want[pat], placed[pat] = n, w
-                for s, k in fired(idx):
-                    ledger[s] += (w - got) * k
+    def greedy(ceil: List[float]):
+        """The forward pass under `ceil`: `(ledger, want, placed)`."""
+        ledger = list(start)
+        want: dict = {}
+        placed: dict = {}
+        for pat in order:
+            rows = len(patterns[pat]) // 4
+            # `rows` counts the GT_END_PATTERN row; see `regrid_tempos`.
+            if pat not in exclusive or rows < 4:
+                continue
+            idx = plays_at[pat]
+            room = min((ceil[s] - ledger[s]) / k for s, k in fired(idx))
+            afford = int(room + 1e-9)        # a negative room truncates to 0
+            if afford < 1:
+                continue
+            prev, got = want.get(pat, 0), placed.get(pat, 0)
+            top = min(prev + afford, max(1, (rows - 3) // 2))
+            for n in range(top, prev, -1):
+                w = placed_rows(pat, n, rows)
+                if got < w <= got + afford:
+                    want[pat], placed[pat] = n, w
+                    for s, k in fired(idx):
+                        ledger[s] += (w - got) * k
+                    break
+        return ledger, want, placed
+
+    ledger, want, placed = greedy(ceil)
+    if prepay > 0:
+        # **PREPAY THE TROUGH.** A run of plays no compensating row can be
+        # written into (a command column full of tie cells, or a pattern a
+        # voice 1/2 also plays) raises debt that nothing in the run can pay, so
+        # the ledger dives and the pattern after it pays it all at once --
+        # Star_Paws' patterns 57-64, 31 plays, dive 20 calls (10 frames) and
+        # pattern 65 pays 22 rows straight after. The flat ceiling above cannot
+        # help: a row bought in a pattern raises the ledger at EVERY later play,
+        # so the ceiling has to be lifted over the whole stretch from that
+        # pattern to the recovery, and a lift over the whole pass shifts the
+        # song instead (columns fall; see docs/OPTIONS.md). So: find the
+        # deepest trough, lift the ceiling by `x` over plays `a` .. recovery,
+        # and keep the (a, x) that leaves the smallest excursion in either
+        # direction, ties to the LATER window and the smaller lift. Repeated
+        # while it improves; bounded below.
+        span = [float(len(patterns[p]) // 4) for p in order]
+
+        def worst(led: List[float]) -> float:
+            # Rows spent away from `prepay`, in call-rows: a lift pays only if
+            # the trough it removes outweighs the plateau it adds.
+            return round(sum(w * abs(v - prepay)
+                             for w, v in zip(span, led)), 6)
+
+        firsts = sorted({plays_at[p][0] for p in plays_at
+                         if p in exclusive and len(patterns[p]) // 4 >= 4})
+        for _ in range(_PREPAY_TROUGHS):
+            t = min(range(len(ledger)), key=ledger.__getitem__)
+            if -ledger[t] <= prepay:
                 break
+            e = next((i for i in range(t + 1, len(ledger))
+                      if ledger[i] >= -prepay), len(ledger) - 1)
+            starts = [f for f in firsts if f <= t]
+            step_a = max(1, -(-len(starts) // _PREPAY_GRID))
+            step_x = max(1, -(-int(-ledger[t]) // _PREPAY_GRID))
+            cur = worst(ledger)
+            best = None
+            for a in sorted(set(starts[::step_a] + starts[-1:])):
+                for x in range(step_x, int(-ledger[t]) + 1, step_x):
+                    c = list(ceil)
+                    for i in range(a, min(e + 1, len(c) - 1)):
+                        c[i] += x
+                    res = greedy(c)
+                    key = (worst(res[0]), -a, x)
+                    if key[0] < cur and (best is None or key < best[0]):
+                        best = (key, c, res)
+            if best is None:
+                break
+            _, ceil, (ledger, want, placed) = best
     if not repair or ledger[-1] > -1.0:
         return want
 
@@ -4217,7 +4294,7 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
             ledger[s] += dw * k
 
     def raise_max(p: int) -> bool:
-        room = min(-ledger[s] / k for s, k in ks[p].items()) + 1e-9
+        room = min((ceil[s] - ledger[s]) / k for s, k in ks[p].items()) + 1e-9
         best = max((w for w in levels[p] if cur[p] < w <= cur[p] + room),
                    default=cur[p])
         if best == cur[p]:

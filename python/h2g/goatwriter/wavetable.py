@@ -928,6 +928,16 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # ~240 for the measured 60-semitone climb, against a song-wide table of
     # 255. A climb belongs on the pattern side (a legato note per semitone),
     # which this function cannot write.
+    #
+    # **The pattern side writes it now** (`rise_stair.py`, the last pattern
+    # pass in `build_sng`): a note per semitone on `CMD_TONEPORTA` naming a
+    # zero speed, which moves `mt_chnnote` and nothing else, so THIS
+    # arpeggio program's next note entry plays the climbed note. This
+    # branch still emits no rise for such a record; the program is the
+    # arpeggio's either way. Measured on 82d60ac plus that change
+    # (historical; subtune 0, 180 s, the arms above): all 5 notes climb +60
+    # in 60 steps, every step within one frame of the original's, and the
+    # per-frame climb level agrees on 1274 of 1406 frames (22 before).
     elif effects and det.effect_rise and (arp_style & 2) == 2:
         index = _rise_speed_index(fmt, speed_table, multiplier)
         if index:

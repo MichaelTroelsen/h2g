@@ -27,7 +27,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        inherit_free_rows, inherit_event_rows)
 from .instrument_drop import (
     add_startup_tempo,
-    drop_unnamed_instruments as drop_unnamed_instruments_from)
+    drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
 from .past_table_wave import pin_past_table_wave_notes
 from .sidfile import SidFile, load_sid
 from .stored_wave import stored_wave_copies
@@ -231,7 +231,8 @@ def convert(sid_path: str, log: Logger = print,
             gate_off_firstwave_instruments: tuple = (),
             tie_restart: bool = False,
             regrid_full_debt: bool = False,
-            regrid_per_play: bool = False) -> bytes:
+            regrid_per_play: bool = False,
+            regrid_prepay: int = 0) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -419,6 +420,18 @@ def convert(sid_path: str, log: Logger = print,
     `regrid`. Off by default, per song: it moves the bytes of every file
     that ships `regrid`, and it is greedy -- Star_Paws is paid 135 of 147.28
     calls a pass against 147 under `regrid_full_debt` (measured at 39b5de2).
+
+    regrid_prepay lets that ledger run AHEAD of the debt, by up to this many
+    play calls (0 = never, the rule above byte for byte). A compensating row
+    can only be written where a pattern has a clean command pair, and a run of
+    plays with none (Star_Paws' patterns 57-64, 31 plays) cannot pay the debt
+    it raises, so the conversion runs early until the pattern after it pays it.
+    Paying part of that debt in advance, in the patterns before the run, turns
+    one early excursion into a smaller early one plus a late one. The pass as
+    a whole still never delivers more than it owes, so a looping song does not
+    integrate the surplus. Implies `regrid_per_play`'s walk. Needs `regrid`.
+    Off by default, per song, with a size that is measured against that
+    song's own ledger (patterns `_regrid_per_play`).
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -723,7 +736,8 @@ def convert(sid_path: str, log: Logger = print,
             if any(deficits):
                 regrid_tempos(new_patterns, tracks, values, deficits,
                               multiplier, log, full_debt=regrid_full_debt,
-                              per_play=regrid_per_play)
+                              per_play=regrid_per_play,
+                              prepay=regrid_prepay)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
@@ -1074,7 +1088,9 @@ def convert(sid_path: str, log: Logger = print,
     # writes a waveform (`no_test_restart`, `real_firstwave_instruments`)
     # puts some onsets on tick 0 itself, and no one phase serves both. Not
     # where an orderlist `$FE nn` changes the tempo mid-song: the grid moves.
-    startup = (startup_phase(sid, det, multiplier, group_tempos)
+    startup = (startup_phase(
+                   sid, det, multiplier, group_tempos,
+                   lambda subtune, horizon: onset_rows(sng, subtune, horizon))
                if (skip_gate and group_tempos and not step_tempos
                    and not no_test_restart and not real_firstwave_instruments)
                else None)

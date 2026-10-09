@@ -23,6 +23,7 @@ from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         TEMPO_DUTY_MAX_CLONE, WAVE_JUMP, WAVE_MAX_DELAY,
                         WAVE_NOTE_BASE)
 from .primitives import (_fixed_arp_block, _gate_calls, _wave_hold_byte)
+from .note_passes import (clone_number_ceiling)
 from .tempo import (outer_gate_skip)
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -1418,7 +1419,11 @@ def tempo_duty_split_plan(sid: SidFile, det: Detection,
         number += 1
         clone_of[(rec, s)] = number
         clones.append((rec, number, s))
-    if number > TEMPO_DUTY_MAX_CLONE:
+    # Past the highest number gt2 can take, or onto a dangling reference
+    # some pattern already names (`clone_number_ceiling`): a clone numbered
+    # there would satisfy the reference and play on every row naming it.
+    if number > min(TEMPO_DUTY_MAX_CLONE,
+                    clone_number_ceiling(patterns, instr_used)):
         return None
 
     def resolve(key):
@@ -1712,7 +1717,10 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
             wanted.append((held.get((rec, r), 0), rec, r))
     if not wanted:
         return None
-    room = TEMPO_DUTY_MAX_CLONE - first_clone + 1
+    # Below the lowest dangling reference too (`clone_number_ceiling`).
+    room = (min(TEMPO_DUTY_MAX_CLONE,
+                clone_number_ceiling(patterns, first_clone - 1))
+            - first_clone + 1)
     wanted.sort(key=lambda w: (-w[0], w[1], w[2]))
     if room < len(wanted):
         if log:

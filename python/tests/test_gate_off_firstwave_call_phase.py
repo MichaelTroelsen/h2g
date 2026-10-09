@@ -47,7 +47,17 @@ firstwave byte.
 
 Measured in C:/t/gate-off-firstwave-gate-loss/ (probe.py, attrib.py,
 frames.py, edges2.py, phase.py, delta.py). This test is the same
-measurement on Food_Feud (loss) and Thrust (gain), shortened to 60 s.
+measurement on Go_Go_Dash (loss) and Thrust (gain), shortened to 60 s.
+
+**The lever was pulled for the JMP-form gate
+(`call_phase.jmp_gate`).** Twelve of the sixteen files above now start on the
+phase that puts their onsets on the original's frames, and Food_Feud (window
+{0, 1, 2} above, 1158 changed frames at 60 s) moved to the gain class: window
+{-1, 0, 1}, the original's gate off on all 256 frames the option changes, as
+Thrust. So did Chain_Reaction (window {-1, 0, 1}, 223 frames). Go_Go_Dash,
+whose rows are not exact and so gets no startup row, keeps the loss class
+(window {1, 3}, 437 frames), and stands for it here
+(C:/t/jmp-form-outer-gate-clock/p/gofw.py).
 """
 import json
 import pathlib
@@ -144,7 +154,8 @@ def test_the_option_changes_only_frames_whose_last_call_is_a_note_init(
 @needs_siddump
 @needs_gt2reloc
 @pytest.mark.parametrize("name, orig_gate_on, window", [
-    ("Food_Feud.sid", True, {0, 1, 2}),
+    ("Go_Go_Dash.sid", True, {1, 3}),
+    ("Food_Feud.sid", False, {-1, 0, 1}),
     ("Thrust.sid", False, {-1, 0, 1}),
 ])
 def test_the_sign_is_where_the_visible_init_lies_against_the_original_onset(

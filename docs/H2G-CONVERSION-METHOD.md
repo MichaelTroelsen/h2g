@@ -3078,6 +3078,36 @@ exactly the traced offsets above on those frames; onsets (-t 180) `$0B09` 4 ->
 `{2:70}` on both sides; the second `$0C5A` record (13, no program) still starts
 at 4. Two files move, Nemesis_the_Warlock and IK_plus.
 
+**The `$85` restore keeps the gate** (task
+wave-program-restore-releases-gate-early). `_wave_program_entries` wrote the
+restore as the stored waveform with bit 0 cleared, quoting the *note-end*
+routine's `AND #$FE`; the hold is not the note's end. `$85` jumps to the
+per-frame writer, `LDA stored / AND mask / STA $D404,Y`, and the mask is `$FF`
+until the note's own gate-off (Nemesis `$E3F0`: `AND $E503,X`, set by `$E1C1`).
+Traced at `-t 180`, Nemesis `0B09`/`0C0A` read `/41` and `0C5A` v0 `/11` for
+every frame shown; ours went `/40` from frame 4 and `/10` from frame 6 and
+entered the release early. Goattracker's key-off clears the gate on
+`cptr->gate`, so the bit left set in the table still falls with the pattern's
+note end. The restore is now the stored cell verbatim (v0.5.518 figures,
+`fidelity.py -t 180` under presets, Nemesis: `gate` 0.288 -> 0.531, `aud`
+0.916 -> 0.936, `loud_ratio` 0.794 -> 1.016).
+
+**Which opcodes write the stored cell is the player's, and 9 of 29 differ**
+(`detect.wave_program_set_stores_wave`). In Nemesis, IK+ and 18 more the
+`>= $80` opcode writes the chip alone (`STA $D404,X / INY`) and the hold goes
+back to the last `< $80` opcode's waveform. In After_8, Kings_of_the_Beach,
+Mr_Meaner, Off_the_Cuff, One_on_One, Powerplay's tune engine, Pygmies_Revenge,
+Rikky and Rock_Tells_the_Tale it is `STA $D404,X / PHA ... PLA / STA stored,X`
+(Pygmies `$1387-$13A0`), so the hold sounds the LAST opcode's waveform whichever
+kind it was. Pygmies' `$0782` records end `set $80`: the original reads `$80`
+from the program's last frame to the next note, ungated. Clearing the gate had
+matched that by accident; keeping it without reading the family re-gated the
+tail as `$41` and Pygmies' `retrigger_ratio` went 1.0465 -> 1.1403 (137 extra
+gate rises on voice 1, measured on the first draft of this change). With the
+family read the restore is `$80` and the column does not move. Eight files move
+under presets: Nemesis_the_Warlock, IK_plus, Kings_of_the_Beach_intro,
+Off_the_Cuff, Pygmies_Revenge, Ricochet, Skate_or_Die_intro, Star_Paws.
+
 #### The search cannot select it, and the criterion is why
 
 `presets.py --fidelity` chose it for **no file**, including the one whose snare
@@ -13943,14 +13973,67 @@ enters BELOW an NTSC gate at `$B00B`, whose reload 5 is what
 `_find_outer_gate` reads; its conversion drifts for that reason, a separate
 defect). There every call, the new-song one included, passes the gate, so the
 file's byte is the phase of call 0. The `JMP` gate inside the routine
-(Chain_Reaction `$0859`) is another clock: it jumps over the speed counter's
-`DEC` and lets the frame run, and the new-song call bypasses it. With this
-model's AD it moves Chain_Reaction's late third of notes to early and takes
-Kings_of_the_Beach_intro from 95/154 exact to 31/154 (60 s,
-`C:/t/skip-gate-song-call-phase/exp/sweep`), so it is declined until its
-clock is read. Declined too where a firstwave writes a waveform
+(Chain_Reaction `$0859`) is another clock, read in its own right below
+(`call_phase.jmp_gate`, `jmp_gate_ticks`); fed this model's frames it moved
+Chain_Reaction's late third of notes to early and took Kings_of_the_Beach_intro
+from 95/154 exact to 31/154 (60 s, `C:/t/skip-gate-song-call-phase/exp/sweep`).
+Declined too where a firstwave writes a waveform
 (`--no-test-restart`, `real_firstwave_instruments`: those onsets are tick 0
 itself) and where an orderlist `$FE nn` moves the tempo mid-song.
+
+**The JMP-form gate's clock** (read off Chain_Reaction `$0859-$0883`; HISTORICAL,
+measured 2026-10-09 on 82d60ac plus this change, under presets, at 20 s for the
+fetch frames and 60 s through the packed file for the onsets,
+`C:/t/jmp-form-outer-gate-clock`). The play routine opens `BIT flag / BMI / BVC
+gate`; the new-song call (flag `$40`, set by the init) takes the reset path past
+the gate, so **frame 0 steps neither counter**. Every later call runs
+
+    DEC cell / BPL +8 / LDA #O / STA cell / JMP past   ; underflow: cell = O
+    DEC ctr / BPL +6 / LDA reload / STA ctr            ; every other call
+    LDA cell / BEQ nofetch / LDA ctr / CMP reload / BNE nofetch
+
+so the speed counter steps on O of every O + 1 calls and a row is fetched where
+it has just reloaded -- **except that the fetch is held when the call leaves the
+cell at 0, and runs on the next call**, the underflow one, whose counter is
+untouched and still reads its reload. A fetch never doubles and never vanishes;
+it is one call late on the zero call. Chain_Reaction (O 3, reload 1, both bytes
+0): fetches on frames 2, 5, 7, 10, 13, 15, ...; every one of its 173 attacks
+at 20 s, and every attack of 20 other multispeed files, sits on a frame
+`jmp_gate_ticks` names (counting frame 0 as a gate pass, as the entry model
+does, none of 173 / 201 / 180 does). `jmp_gate` reads the shape and declines
+Delta_Mix, which carries the test but whose init `JSR`s the routine, so its
+first PLAY call passes the gate. `startup_phase` scores the leads against these
+frames instead of `gate_frames`, **over the rows that carry a note**
+(`instrument_drop.onset_rows` on the finished bytes; the entry family keeps
+scoring every row): a row with nothing to attack has nothing to put on a frame,
+and Delta, Thanatos and W_A_R_Preview are exact on every note at gt2reloc's
+default startup row while 20 of 40, 40 of 80 and 36 of 144 rows are off it --
+scored over all rows Thanatos' `gate` fell 1 -> .7495. Twelve files get a
+startup row (instrument 63 AD): ACE_II 17, Chain_Reaction 17, Deep_Strike 16,
+Food_Feud 17, Kings_of_the_Beach_intro 28, Mr_Meaner 28, Off_the_Cuff 29,
+Rock_Tells_the_Tale 35, Saboteur_II 16, Thundercats 17, W_A_R 23 (22 is as
+exact on its note rows; 23 is nearer the default and measured no worse),
+Zoolook 17. Onsets exact before -> after (60 s, per voice): Chain_Reaction and
+Zoolook (identical figures) 156/232, 176/265, 110/165 -> all;
+Kings_of_the_Beach_intro 95/154, 70/112, 188/312 -> all; ACE_II 72/106, 276/412,
+84/125 -> all; Deep_Strike 76/230, 61/182, 70/215 -> all; Food_Feud 118/174,
+215/324, 182/273 -> all; Saboteur_II 141/425, 73/213, 97/282 -> all; Thundercats
+v0/v1 114/171, 201/304 -> all; W_A_R 73/75, 26/28, 222/224 -> all. Columns at
+180 s, before -> after: `onset_timing` to 1 on ten of the twelve (Off_the_Cuff
+.7942 -> .9977, Thundercats .6653 -> .9996); `wave` up on all twelve (Deep_Strike
+.7775 -> .9724, Chain_Reaction .9089 -> .9701, ACE_II .9237 -> .9612); `gate`
+Deep_Strike .5631 -> .6647, Saboteur_II .6361 -> .7735, Kings_intro .9183 ->
+.9729, Mr_Meaner .8862 -> .9327; `tie_agreement` up on nine. **And down**:
+`adsr` by .0001-.015 on eight (Chain_Reaction, Zoolook, Food_Feud 1 -> .985 /
+.987 / .995: the AD write is the tick call itself and the onset the call after,
+so a lead that puts the onset on the original's frame puts the write on the
+frame before it on one row in m -- the same one-grid tension as Warhawk's);
+Rock_Tells_the_Tale `melody` .8818 -> .84 and `sequence` .8962 -> .8579 (its
+onsets are hundreds of frames off for another reason, a sequence defect, and
+the phase does not help it); Off_the_Cuff `sound_run_agreement` .4286 -> .2857
+and `tie_agreement` .1559 -> .1506; Zoolook `tie_agreement` .8251 -> .8215.
+Mr_Meaner, Off_the_Cuff and Rock_Tells_the_Tale carry the same offsets and are
+not fixed by a phase; Thundercats v2 likewise.
 
 Measured HISTORICALLY (6e467ff + the cycle-2 merge, staged, 2026-10-07, under
 presets, `fidelity.main` -t 180 and an onset census at `-m{multiplier}`,
@@ -14117,3 +14200,104 @@ alternation lands on different ticks, and this change does not touch it.
 Without `tie_restart` the landing is a `CMD_TONEPORTA 00`, which keeps the
 `$0FFF` record's wave program (triangle, arp -5) instead of the `$0F0A` one
 (ring-mod, arp -2). `tests/test_gate_hold_zp.py`.
+
+### 7.NEW Bit `$02` under the arpeggio: the climb as a pattern-side stair
+
+A record setting the rise AND the nibble arpeggio runs both blocks every
+working frame, rise first (Warhawk `$13A2` then `$13CD`, Spellbound `$E2FF`
+then `$E326`), and the arpeggio reads the note index the rise has just
+raised. So the pair climbs: Spellbound `$11` (effect `$56`) plays
+`+0 +0 -5 +0 -4 +1 -4 +1 -3 +2 ...`, +60 by the end of its 281 frames. The
+wavetable cannot carry that (the EMITTER LIMIT note beside the rise branch
+in `goatwriter/wavetable.py`). Until this change, every such record played
+its arpeggio at +0 throughout.
+
+**The spelling.** The climb is a note per semitone on the pattern side, on
+`CMD_TONEPORTA` naming a speed-table row of `$0000`.
+
+- A toneportamento note skips the note init and the fetch's gate-off
+  (player.s `mt_newnoteinit` `cmp #TONEPORTA`, `mt_normalnote` `beq
+  mt_rest`; gplay.c:354, :928) but still stores the note (`sta
+  mt_chnnote,x`, gplay.c:350). The instrument's arpeggio program runs on,
+  and its next note entry is relative to the new note (`mt_wavefreq`,
+  gplay.c:719-720).
+- Speed `$00` would be the tie. The tie also pulls the frequency to the
+  note on every call the program does not set one (`mt_effect_3_found`,
+  gplay.c:810 `!cptr->cmddata`), and those are the arpeggio's hold calls,
+  so the low half would sound the base note.
+- A zero speed moves the frequency by nothing (`mt_effect_3_up`/`_down`,
+  gplay.c:827/837). Only the program's own entries are heard.
+- GTS5 only. A GTS2 file stores no speed table, and its loader reads the
+  column as the speed itself, where 0 is the tie (gsong.c:315-317,
+  gtable.c:862).
+
+**The schedule.** The counter steps once per working frame, so on working
+frame `w` after a note's fetch it reads `base + first + a * frames + w`.
+That is `fixed_arp_phases`' clock, with the counter read off the rise
+block's own load (`rise_block`; Spellbound's is zero-page `$C1`, with the
+reset at `$E024`). A step lands where that value is a multiple of four,
+except on a frame where the voice fetches a later event of the same note:
+the fetch tick runs no effect (Spellbound `$E086 JMP $E367`). Spellbound's
+128-row note re-fetches a gate-off every 32 rows, each time on a step frame,
+so it climbs 60 where 63 steps' worth of frames pass. A step `o` working
+frames into a row goes on that row or the next, whichever is nearer, and on
+the earlier one at a tie. The step note is absolute (the note plus the
+steps so far), so a step that finds no free row costs only the rows until
+the next step.
+
+**The model, against the originals.** `probes/model.py` predicts every
+note's step frames and compares them with a siddump of the original.
+Measured at 82d60ac plus this change (historical; scratch
+C:/t/rise-arp-pattern-stair):
+
+| File and subtune | Notes matched exactly |
+|---|---|
+| Spellbound sub 0 | 5 of 5 |
+| Warhawk sub 7 | 120 of 120 |
+| Bump_Set_Spike sub 0 | 26 of 26 |
+| Thrust | 21 of 22 |
+
+- Bump_Set_Spike sub 0 matched only when traced with the outer-gate reload
+  the trace shows, 9. The converter reads 5; that is the open
+  `bump-set-spike-ntsc-gate` defect, not this one.
+- Thrust's 22nd note agrees on its first 51 steps. Past them the original's
+  note index has run off its frequency table.
+- Bump_Set_Spike sub 1 was not validated frame by frame, because its gate
+  phase was not read.
+
+**Where a pattern is shared.** A step goes in only where every play of an
+orderlist position agrees on it, over one lap plus the restart's lap.
+Where positions disagree, or one plays the pattern outside the note, the
+other wants each get a copy, up to `MAX_PATT`, and their positions are
+repointed in place. Spellbound `$3D` is also played after `$3F`, outside
+any rising note, and takes one copy.
+
+**What moved.** Measured at 82d60ac plus this change (historical).
+
+- Corpus byte-hash under presets: 95 files, 89 converted, 6 refused (the
+  same in both arms), 89 compared, 4 moved. The movers are Bump_Set_Spike,
+  Spellbound, Thrust and Warhawk.
+- Commando's bytes are unchanged.
+- Kentilla does not move. Its `$11` is never played, and its `$04` (effect
+  `$07`) has a zero nibble, so its program has no note entry to move.
+  That record takes the drum's shape, whose sweep the original's
+  arpeggio overwrites every frame; that is a separate defect.
+
+The climb A/B (`probes/ab_climb.py`) pairs each rise+arp note in order and
+compares the climb level frame by frame:
+
+| File and subtune | Before | After | Steps |
+|---|---|---|---|
+| Spellbound sub 0 | 22 of 1406 | 1274 of 1406 | 60 of 60 on 5 notes |
+| Warhawk sub 7 | 411 of 8967 | 8724 of 8967 | 2 of 2 on 120 notes |
+| Bump_Set_Spike sub 0 | 200 of 1167 | 882 of 1167 | every step on 46 notes |
+| Thrust | 82 of 1227 | 776 of 1227 | see below |
+
+- Spellbound: every step is within one frame of the original's.
+- Bump_Set_Spike: its step offsets spread with the file's +80/1000 drift.
+- Thrust: its long `$17` notes stop at +35 of 48 and 52. At that point
+  Goattracker's top pattern note is reached, while the original's note
+  index runs past its own table.
+
+`melody` and `pitch` do not move on any of the four files. Both are read
+at attacks, and the climb moves no attack. `tests/test_rise_arp_pattern_stair.py`.

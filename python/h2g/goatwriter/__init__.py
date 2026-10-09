@@ -231,11 +231,19 @@ from .note_rise import (_note_rows, NOTE_RISE_MAX_DURATION,
                         note_rise_entries, note_rise_plan, program_cost,
                         program_entries, store_lag, store_values,
                         tail_entries)  # noqa: F401
+from .rise_stair import (_played_rows, RISE_BLOCK_INCREMENTS,
+                         RISE_STAIR_SPEED, RISE_STEP_MASK, RiseBlock,
+                         rise_arp_records, rise_block, rise_counter_base,
+                         rise_stair_plan, stair_steps, step_rows,
+                         zero_speed_index)  # noqa: F401
 from .call_phase import (best_startup, default_startup_calls, entry_gate,
-                         gate_frames, nibble_gate_step_lead,
+                         gate_frames, INIT_WINDOW, jmp_gate, jmp_gate_ticks,
+                         _JMP_GATE_ENTRY_WINDOW, _JMP_GATE_FETCH,
+                         _JMP_GATE_FETCH_WINDOW, _LDX_LENGTHS,
+                         nibble_gate_step_lead, _new_song_test,
                          ONSET_CALL, onset_mismatches, play_entry,
-                         PLAY_ENTRY_JMPS, startup_phase, STARTUP_RESET_CALLS,
-                         StartupPhase)  # noqa: F401
+                         PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
+                         STARTUP_RESET_CALLS, StartupPhase)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _restart_heard,
                     _resolve_arp_pointers)  # noqa: F401

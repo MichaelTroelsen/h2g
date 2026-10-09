@@ -363,6 +363,13 @@ EXCLUDED_FROM_ALWAYS = {
     # does (135 against 147 of 147.28 calls a pass, measured at 39b5de2).
     # Inert without `regrid`.
     "regrid_per_play",
+    # An INTEGER (play calls), not a toggle: how far `regrid_per_play`'s ledger
+    # may run ahead of the debt before a run of plays no compensating row can
+    # be written into. Sized per song against its own ledger, so there is no
+    # value for `always`, and the boolean --fidelity walk cannot search it.
+    # Implies `regrid_per_play`'s walk. Inert without `regrid`, and 0 changes
+    # no byte anywhere.
+    "regrid_prepay",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own

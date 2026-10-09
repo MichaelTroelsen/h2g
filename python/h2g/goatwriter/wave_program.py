@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import (List, Optional)
 
-from ..detect import (decode_wave_program, Detection)
+from ..detect import (decode_wave_program, Detection,
+                      wave_program_set_stores_wave)
 from ..sidfile import (SidFile)
-from .constants import (FORMAT_GTS5, WAVE_GATE_BIT, WAVE_NOTE_BASE,
+from .constants import (FORMAT_GTS5, WAVE_NOTE_BASE,
                         WAVE_NOTE_KEEP, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .primitives import (_first_frame_lead, _sfx_note_byte, _speed_index,
                          _wave_byte, _wave_hold_byte)
@@ -279,9 +280,10 @@ def _gated_slide_chain(sid: SidFile, det: Detection, i: int, prog: list,
             return None
         left.append(cmd)
         right.append(index)
-    # The same restore byte the general path writes (`persist`, gate
-    # cleared), on the note rather than the accumulator.
-    left.append(_wave_byte(wave & ~WAVE_GATE_BIT & 0xFF))
+    # The same restore byte the general path writes (`persist`, gate kept;
+    # the player's `$85` keeps the gate), on the note rather than the
+    # accumulator.
+    left.append(_wave_byte(wave))
     right.append(WAVE_NOTE_BASE)
     left.append(0xFF)
     right.append(0x00)
@@ -411,6 +413,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # cell, so a program of nothing but `>= $80` opcodes restores what it
     # always did.
     persist = data[rec + 2]
+    # **Which opcode kinds write that cell is the player's** -- see
+    # `wave_program_set_stores_wave`. Pygmies' `set $80` tail is the stored
+    # `$80` and the hold sounds it, ungated, until the next note.
+    set_stores = wave_program_set_stores_wave(sid, det)
     # What one opcode costs: its own entry, plus the hold that makes it last a
     # whole frame above -S1. The guard below has to count both, or a program
     # that fills the table overruns the budget by one entry and takes it from
@@ -451,6 +457,8 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             right.append(_sfx_note_byte(arg))
             _hold_wave_program_entry(left, right, wave, multiplier)
             carried = False     # an absolute pitch, not the accumulator
+            if set_stores:
+                persist = wave  # this player's `set` writes the stored cell
             continue
         # **One entry, even when the operand is non-zero** (v0.5.203). A
         # portamento needs a command entry of its own, and a wavetable spends a
@@ -588,7 +596,19 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # after the last slide changes nothing about it. Nothing follows the stop,
     # so the pitch this leaves stands for the rest of the note, which is what
     # the interpreter's `$85` does.
-    left.append(_wave_byte(persist & ~WAVE_GATE_BIT & 0xFF))
+    # **The restore keeps the gate** (wave-program-restore-releases-gate-early).
+    # The v0.5.203 comment above quotes the NOTE-END routine's `AND #$FE`, but
+    # the restore is not the note's end: `$85` jumps to the per-frame writer,
+    # which writes `stored AND mask` (Nemesis `$E3F0`: `LDA $E4FA,X / AND
+    # $E503,X`) and the mask stays `$FF` until the note's own gate-off
+    # (`$E1C1`). Clearing bit 0 here let the voice enter its release at the
+    # hold -- Nemesis `0B09`/`0C0A` read `/41` for the whole note in the
+    # original and ours went `/40` from frame 4, `0C5A` `/11` against `/10`
+    # from frame 6. Goattracker's key-off clears the gate on `cptr->gate`,
+    # so the bit set in the table still falls with the pattern's note end.
+    # Where the stored waveform has no gate bit (a program ending `slide
+    # $00`, or `set $80` under `set_stores`) the restore has none either.
+    left.append(_wave_byte(persist))
     right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
     # **At `-S1` too, where `closing` says so** (`hold_travel`,
     # `_wave_program_hold_travels`): there the restore writes the note on

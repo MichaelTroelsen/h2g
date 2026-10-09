@@ -154,6 +154,8 @@ def test_an_arpeggio_wins_over_a_rise_on_the_same_instrument():
     # since a note-setting entry sets the frequency from the pattern note and
     # ends the portamento. This pins the emitter's limit (the arpeggio shape,
     # no rise), not the original's behaviour; see wavetable.py's EMITTER LIMIT.
+    # The climb itself is carried on the pattern side (rise_stair.py,
+    # tests/test_rise_arp_pattern_stair.py).
     left, _ = _entries(RISE | ARP | 0x30, effects=True, rise=True, arp=True)
     assert left[2] != WAVECMD_PORTAUP
 

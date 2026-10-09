@@ -7,7 +7,7 @@ construction. Mega_Apocalypse `$00B9` (the expanding-vibrato loops): bend read
 1.13x per ADSR and 1.57x for the file, the register's own travel 1.02x
 (545,426 against 535,024; 1.14x for the file). `fidelity.within_note_travel`
 sums the register instead; `compare()` carries `orig_travel`, `our_travel` and
-`travel_ratio` into every measured row. There is no report column yet.
+`travel_ratio` into every measured row, and the report shows it as `travel` (since v0.5.519).
 """
 import json
 import pathlib
@@ -156,3 +156,20 @@ def test_a_measured_row_carries_travel(tmp_path):
     # Commando's vibrato stays inside its notes, so the register's travel is at
     # least what siddump printed as bends (less the skipped onset frames).
     assert row["orig_travel"] >= 0.5 * row["orig_bend"]
+
+
+def test_the_report_prints_travel_beside_bend_and_dashes_without_an_original():
+    from test_fidelity import _Args, _row
+    rows = [_row("A.sid", "measured", 1.0), _row("B.sid", "measured", 1.0)]
+    rows[0].update(bend_ratio=1.57, travel_ratio=1.14)
+    rows[1].update(travel_ratio=None)
+    text = fidelity.report(rows, _Args())
+    header = next(l for l in text.splitlines() if l.startswith("| File |"))
+    cols = [c.strip() for c in header.strip().strip("|").split("|")]
+    at = cols.index("travel")
+    assert cols[at - 1] == "bend"
+    cells = {l.split("|")[1].strip(): [c.strip() for c in l.strip().strip("|").split("|")]
+             for l in text.splitlines() if l.startswith(("| A.sid |", "| B.sid |"))}
+    assert cells["A.sid"][at] == "1.14x" and cells["A.sid"][at - 1] == "1.57x"
+    assert cells["B.sid"][at] == "-"
+    assert "- **travel** is `bend` read off the frequency register" in text

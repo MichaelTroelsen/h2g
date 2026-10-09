@@ -285,7 +285,10 @@ def test_saboteur_ii_takes_all_nineteen():
     assert lines == ["Free note (bit 7).......: 19 flagged note row(s) on 1 "
                      "variant(s) with no attack stage and no pulse reset (1 "
                      "pulse-only: the record has no attack)"]
-    var = new.instruments[-1]
+    # Not the startup-tempo record (instrument 63) the JMP-form gate's call
+    # phase now appends after the clones, nor the empty ones padding up to it.
+    var = [i for i in new.instruments if i.name != "Startup tempo"
+           and (i.ad, i.sr, i.wave_ptr, i.pulse_ptr, i.name) != (0, 0, 0, 0, "")][-1]
     base = old.instruments[4 - 1]
     assert (var.wave_ptr, var.pulse_ptr) == (base.wave_ptr, 0)
     assert base.pulse_ptr != 0

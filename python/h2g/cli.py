@@ -125,6 +125,13 @@ def main(argv=None) -> int:
              "boundary. Greedy: Star Paws is paid 135 of 147 calls a pass "
              "against 147 under --regrid-full-debt. Per song. Off by default")
     parser.add_argument(
+        "--regrid-prepay", type=int, default=0, metavar="CALLS",
+        help="with --regrid, let the per-play ledger run up to CALLS play "
+             "calls ahead of the debt (implies --regrid-per-play's walk), so "
+             "debt a run of plays with no free command pair cannot pay is "
+             "partly paid in the patterns before it. The pass as a whole "
+             "never over-delivers. 0 = never ahead. Per song")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -653,6 +660,13 @@ def main(argv=None) -> int:
                 setattr(args, key, bool(entry[key]))
             elif always.get(key):
                 setattr(args, key, True)
+        # An INTEGER (play calls), so it cannot ride the bool loop above: the
+        # song entry beats `always`, and an explicit flag beats both.
+        if not _given("--regrid-prepay"):
+            raw = (entry["regrid_prepay"] if "regrid_prepay" in entry
+                   else always.get("regrid_prepay"))
+            if raw is not None:
+                args.regrid_prepay = int(raw)
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
             # always beats the stored preset.
@@ -706,6 +720,7 @@ def main(argv=None) -> int:
                       regrid=args.regrid,
                       regrid_full_debt=args.regrid_full_debt,
                       regrid_per_play=args.regrid_per_play,
+                      regrid_prepay=args.regrid_prepay,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

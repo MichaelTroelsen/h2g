@@ -42,7 +42,10 @@ names, for gt2reloc's startup row (`goatwriter.call_phase`).
 """
 from typing import Callable, List, Optional, Tuple
 
-from .goatwriter import GT_TEMPO_INSTRUMENT, HEADER_LEN
+from .goatwriter import (GT_FIRST_NOTE, GT_LAST_NOTE, GT_TEMPO_INSTRUMENT,
+                         HEADER_LEN)
+from .patterns import (GT_END_PATTERN, GT_ORDER_RESTART, GT_REPEAT,
+                       GT_TRANSPOSE_DOWN)
 
 _RECORD_LEN = 25
 # A record's gatetimer byte, and the bits of it the packed player compares
@@ -121,6 +124,66 @@ def drop_unnamed_instruments(blob: bytes,
         log(f"Dropped {dropped} instrument(s) no pattern names: "
             + ", ".join(f"${k:02X}" for k in gone))
     return bytes(out)
+
+
+def onset_rows(blob: bytes, subtune: int, horizon: int
+               ) -> Optional[frozenset]:
+    """The rows, counted from the song's start, on which some voice of
+    `subtune` carries a note, over the first `horizon` rows -- or None where
+    the orderlists do not read.
+
+    The rows are the song's clock (every voice's row `j` starts together), so
+    this is the set of rows that have something to put on a frame:
+    `call_phase.startup_phase` scores a JMP-form gate over exactly these. A
+    pattern ends at its `GT_END_PATTERN` row, which takes no time; an
+    orderlist's `RST` is followed, its repeat bytes expanded, its transposes
+    ignored (a transposed note is still a note).
+    """
+    try:
+        _, _, _, patterns = _layout(blob)
+    except ValueError:
+        return None
+    pos = HEADER_LEN
+    subtunes = blob[pos]
+    pos += 1
+    tracks = []
+    for _ in range(subtunes * 3):
+        n = blob[pos]
+        tracks.append(blob[pos + 1:pos + n + 2])
+        pos += n + 2
+    if not 0 <= subtune < subtunes:
+        return None
+    rows = set()
+    for voice in range(3):
+        order = tracks[subtune * 3 + voice]
+        row, at, repeat, steps = 0, 0, 1, 0
+        while row < horizon and at < len(order) and steps < 4 * horizon + 64:
+            steps += 1
+            b = order[at]
+            if b == GT_ORDER_RESTART:
+                if at + 1 >= len(order) or order[at + 1] >= len(order):
+                    break
+                at = order[at + 1]
+            elif b >= GT_TRANSPOSE_DOWN:
+                at += 1
+            elif b >= GT_REPEAT:
+                repeat = b - GT_REPEAT + 1
+                at += 1
+            else:
+                if b >= len(patterns):
+                    return None
+                start, count = patterns[b]
+                for _ in range(repeat):
+                    for r in range(count):
+                        note = blob[start + r * 4]
+                        if note == GT_END_PATTERN:
+                            break
+                        if GT_FIRST_NOTE <= note <= GT_LAST_NOTE and row < horizon:
+                            rows.add(row)
+                        row += 1
+                repeat = 1
+                at += 1
+    return frozenset(rows)
 
 
 def add_startup_tempo(blob: bytes, tempo: int,

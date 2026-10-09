@@ -13,12 +13,14 @@ head (`AND #$02 / BEQ / LDA counter / AND #$03 / BNE`) followed by three
 The increment opcode is the whole discriminator, which is why the test below
 pins the corpus set exactly.
 
-Detecting it moves no emitted byte: Spellbound's only bit-$02 record ($11,
+Detecting it moves no WAVETABLE byte: Spellbound's only bit-$02 record ($11,
 effect $56) also arpeggiates, and the rise is an `elif` on the arpeggio in
 `goatwriter/wavetable.py`, where the limit and its measurement are written.
 Measured at be0aeb1 + the v0.5.510 merge (historical): the original's (0,-5)
 pair climbs to +60 semitones over each 281-frame note; ours alternates
-(0,-5) at +0 throughout.
+(0,-5) at +0 throughout. The climb is now carried on the pattern side
+(`goatwriter/rise_stair.py`, tests/test_rise_arp_pattern_stair.py), which
+reads `effect_rise` -- so detecting the rise moves exactly the stair.
 """
 import json
 import pathlib
@@ -122,14 +124,16 @@ def test_spellbounds_rise_arp_record_keeps_the_arp_and_loses_the_rise():
 
 
 @needs_corpus
-def test_detecting_spellbounds_rise_moves_no_emitted_byte(monkeypatch):
-    """The emitter limit, pinned: record $11 sets the arpeggio too, and a
-    rise+arp record takes the arpeggio shape and loses the rise. A change
-    that emits the stair must update this test and the comment beside the
-    rise branch in goatwriter/wavetable.py, with a measurement."""
+def test_detecting_spellbounds_rise_moves_only_the_stair(monkeypatch):
+    """The wavetable's limit, pinned: record $11 sets the arpeggio too, and
+    a rise+arp record takes the arpeggio shape and no rise. The climb is the
+    pattern side's (`rise_stair_plan`), so detecting the rise moves bytes
+    -- and with that one pass switched off, none. (Until the stair, this
+    test asserted that detection moved no byte at all.)"""
     if not PRESETS.is_file():
         pytest.skip("presets.json not generated")
     from fidelity import _preset_opts
+    from h2g.goatwriter import rise_stair
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = _preset_opts(doc, "Spellbound.sid")
     path = str(CORPUS / "Spellbound.sid")
@@ -144,4 +148,10 @@ def test_detecting_spellbounds_rise_moves_no_emitted_byte(monkeypatch):
 
     monkeypatch.setattr(detect_mod, "_find_effect_routines", no_rise)
     without = convert(path, log=lambda *a, **k: None, **opts)
-    assert with_rise == without
+    assert with_rise != without
+
+    monkeypatch.undo()
+    monkeypatch.setattr(rise_stair, "rise_stair_plan",
+                        lambda *a, **k: None)
+    no_stair = convert(path, log=lambda *a, **k: None, **opts)
+    assert no_stair == without

@@ -771,9 +771,11 @@ def test_the_tie_dimension_is_registered_and_declares_its_three_blindnesses():
     assert "complements `bend`" in of
     # and the count-ratio-not-share decision, so nobody re-derives the share
     assert "count RATIO and not a share" in of
-    # The column sits beside `bend`, the half it complements.
+    # The column sits beside `bend`, the half it complements -- after
+    # `travel`, which is `bend` read off the register (since v0.5.519).
     cols = [x.column for x in fidelity.DIMENSIONS]
-    assert cols.index("tie") == cols.index("bend") + 1
+    assert cols.index("travel") == cols.index("bend") + 1
+    assert cols.index("tie") == cols.index("travel") + 1
 
 
 def test_the_tie_column_is_printed_beside_bend_and_dashes_without_an_original():
@@ -781,7 +783,7 @@ def test_the_tie_column_is_printed_beside_bend_and_dashes_without_an_original():
     rows[0].update(orig_ties=6312, our_ties=2233, tie_ratio=2233 / 6312)
     rows[1].update(orig_ties=0, our_ties=7, tie_ratio=None)
     text = fidelity.report(rows, _Args())
-    assert "| slides | bend | tie | tiefr | vib |" in text
+    assert "| slides | bend | travel | tie | tiefr | vib |" in text
     a = next(l for l in text.splitlines() if l.startswith("| A.sid |"))
     b = next(l for l in text.splitlines() if l.startswith("| B.sid |"))
     cells_a = [c.strip() for c in a.strip().strip("|").split("|")]
@@ -1744,7 +1746,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  pulse_span=1.0,
                  orig_pulse_phases=0, our_pulse_phases=0,
                  pulse_phase=1.0,
-                 passband_agree=melody,
+                 passband_agree=melody, travel_ratio=1.0,
                  orig_ends_at=10.0, ours_ends_at=10.0,
                  length_delta=0.0, length_bounded=False,
                  # `cov`, from the same length probe as `length_delta`. A full

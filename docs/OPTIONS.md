@@ -370,7 +370,12 @@ chromatic rise, 21 the pulse-width variant.
   frames while it is held. Written as a looping note-relative portamento in the
   wavetable, which needs `--format gts5`; a GTS2 file stores no speed table.
   Continuous glide rather than four-frame steps: the rate is exact, the
-  stepping is not.
+  stepping is not. A record that **also arpeggiates** (Spellbound `$11`,
+  Warhawk `$17`, Thrust `$0A/$0D/$17/$1B`, Bump_Set_Spike `$03`) keeps the
+  arpeggio's program and climbs on the pattern side instead: a note per
+  semitone, on the counter's own schedule, on `CMD_TONEPORTA` naming a
+  speed-table row of `$0000` — the note moves and nothing else does
+  (`goatwriter/rise_stair.py`; GTS5 only).
 - **Bit `$04` with a zero interval nibble is silent** in the player, because
   the nibble is written into the operand of an `SBC`. The original substitutes
   a `+12` relative note, inventing an octave-up arpeggio — for **315 of the
@@ -2551,6 +2556,82 @@ on 12 of 15 against S and down on two (Powerplay, Trans-Atlantic). The flag is
 **off by default** and adopted per song like `regrid`. With it off, the corpus
 byte-hash moves 0 of 89 under presets. Forced on, it moves exactly the 15 files
 that ship `regrid`. `tests/test_regrid_per_play.py` pins it.
+
+**`--regrid-prepay CALLS` (`regrid_prepay`) lets that ledger run ahead.**
+`--regrid-per-play` keeps the ledger at or below zero, which is one-sided, and
+the one side costs two things (Star_Paws, `regrid` forced, `-t 180`, measured
+at 82d60ac).
+
+1. *The song sits early.* A ledger that is never late is early on average, and
+   the frame-aligned columns read it as a constant offset: the median
+   `onset_timing_offset` is -1 under `--regrid-full-debt` and under
+   `--regrid-per-play`, and `otime` reads 11.6 and 19.1 against 19.5 with no
+   `regrid` at all.
+2. *The trough.* The residual -10 frames that `--regrid-full-debt` left are
+   structural, and `--regrid-per-play` makes them -12. Voice 0 plays patterns
+   57-64 for 31 plays in a row (plays 47-77), and not one has a free command
+   pair: every row carries a `3 00` tie cell or the one free pair inherits row
+   0's (and pattern 60 is also played by voice 1, so it is not exclusive). The
+   stretch raises 16.6 calls of debt that nothing in it can pay, and pattern 65
+   pays 22 rows at once right after. (Patterns 46-48 at plays 79-83 are shared
+   and buy nothing either: a second, shallower dive.) Ledger, calls delivered minus owed: -23.8 at the
+   bottom under per-play, -19.8 under full debt.
+
+The option sets the ledger's ceiling to `CALLS` instead of 0, at every play
+boundary but the last, so one pass never delivers more than it owes (a looped
+song would integrate the surplus). And when the deepest trough is more than
+`CALLS` below zero it **prepays it**: the ceiling is lifted by `x` over plays
+`a` through the trough's recovery, over a bounded grid of `a` (the first play
+of an exclusive pattern before the trough) and `x`, and the pair that leaves
+the fewest rows away from `CALLS` wins (ties to the later window, then the
+smaller lift). This repeats for up to four troughs. A row bought in a pattern
+raises the ledger at every play after it, so a lift over the trough alone buys
+nothing: the exclusive patterns in front of the stretch that can place rows
+(26, first played at play 35, and 29 at play 46 with one free pair) are 12
+plays or fewer before it, and the lift has to cover the way from them. Star_Paws, `regrid` forced, `-t 180`:
+
+| | full debt | per-play | prepay 1 | prepay 2 |
+|---|---|---|---|---|
+| ledger min / max (calls) | -19.8 / +1.3 | -23.8 / 0 | -14.8 / +7.3 | -14.8 / +7.3 |
+| index-paired attack offset, frames | -10 / 0 | -12 / +1 | -7 / +3 | -7 / +3 |
+| `drift` per 1000 | -0.21 | -0.31 | 0.00 | 0.00 |
+| `drift_total` frames | -1.9 | -2.8 | 0.0 | 0.0 |
+| `melody` | 99.96 | 99.96 | 99.96 | 99.96 |
+| `wave` | 71.2 | 71.6 | 78.6 | 78.2 |
+| `adsr` | 88.9 | 88.8 | 93.8 | 93.8 |
+| `gate` | 33.1 | 37.9 | 47.5 | 47.6 |
+| `otime` | 11.6 | 19.1 | 41.6 | 39.9 |
+| `hold` | 90.9 | 90.9 | 72.7 | 72.7 |
+
+The residual is **halved, not removed**, and the table says why: no pattern
+before the stretch has room for more, so the trough bottoms at -14.8 whatever
+`CALLS` is. `hold` falls from 10 of 11 instruments to 8 (two instruments' modal
+hold lands a frame off at the new phase); nothing else in the table moves the
+wrong way. **This is not a general win and is never a default.** Forced on the
+21 files `--regrid` reaches (`regrid_prepay: 1` against `--regrid-per-play`,
+`-t 180`), `otime` is up on seven (Arcade_Classics, BMX_Kidz, Bangkok_Knights,
+Ricochet, Sigma_Seven, Star_Paws, Wiz), down on twelve (Rikky 70.9 -> 12.9 and
+Auf_Wiedersehen_Monty 41.9 -> 6.8 among them) and level on two; `wave` is up on
+seven and down on twelve; `melody` moves at most 0.2pp; and `drift` moves the
+wrong way on Sanxion (0.00 -> 0.79), Sigma_Seven (0.00 -> 0.42) and Wiz
+(-0.53 -> 1.21). A ceiling above zero moves
+the whole song later by the same amount, and whether the harness's estimated
+`startup_lag` agrees is a property of the file. So it is hand-adopted per song
+like `regrid`, and **no song adopts it yet**: Star_Paws is the candidate
+(`regrid`, `regrid_prepay: 1`, ~0.3 s of search), and adopting it is a
+`presets.json` decision.
+
+An earlier form of this option, a single ceiling over the whole pass, was
+tried first. A small one centres the song better than the windowed form does
+(Star_Paws, ceiling 2: `wave` 80.0, `gate` 49.0, `otime` 48.6, `drift` -0.28)
+and leaves the trough where it was (about -11 frames). A large one is refuted
+as a way to reach the trough: ceilings 8, 10 and 12 took it to -17, -15 and -13
+calls and put the whole song 4 to 7 frames late, and `gate` fell to 28.8, 24.5
+and 22.0 against 37.9 per-play (`wave` 71.3, 70.0, 68.9 against 71.6). The
+windowed form is what the table measures. Off by default; the corpus byte-hash moves 0 of 89 under presets, 0 of
+89 with `regrid` forced and 0 of 89 with `regrid` and `--regrid-per-play`
+forced (the refactor is byte for byte at `CALLS` 0), and exactly the 21 reached
+files when prepay is forced. `tests/test_regrid_prepay.py` pins it.
 
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores

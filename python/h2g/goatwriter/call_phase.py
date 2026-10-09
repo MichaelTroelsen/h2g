@@ -63,21 +63,56 @@ of the first call. The `JMP` spelling inside the routine
 counter's DEC and lets the rest of the frame run, and the new-song call never
 reaches it; measured with this model's lead it moves the third of
 Chain_Reaction's notes that were a frame late to a frame early, and takes
-Kings_of_the_Beach_intro from 95/154 exact to 31/154. That family is left
-alone until its own clock is read.
+Kings_of_the_Beach_intro from 95/154 exact to 31/154. That family is the
+`jmp_gate` clock below, read off the player and modelled by `jmp_gate_ticks`.
+
+**The JMP form's clock** (Chain_Reaction `$0859`; ACE_II, Flash_Gordon, Delta,
+Lightforce ... `jmp_gate`). The play routine opens `BIT flag / BMI / BVC
+gate`, and the new-song call (flag `$40`) takes the reset path past the gate,
+so frame 0 never touches either counter. Every later call runs
+
+    DEC cell / BPL +8 / LDA #O / STA cell / JMP past   ; underflow: cell = O
+    DEC ctr / BPL +6 / LDA reload / STA ctr            ; every other call
+    LDA cell / BEQ nofetch / LDA ctr / CMP reload / BNE nofetch
+
+so the speed counter steps on O of every O + 1 calls, a row is fetched where it
+has just reloaded -- and **the fetch is suppressed on the call that leaves the
+cell at 0, to be run on the next call**, the underflow one, whose counter
+`DEC` is jumped over and still reads `reload`. A tick therefore never doubles
+and never vanishes; it is one call late when it lands on the zero call. Read
+against siddump of the originals at 20 s, one row a call, every attack of
+Chain_Reaction (173), ACE_II (201), Deep_Strike, Delta, Flash_Gordon,
+Food_Feud, Go_Go_Dash, Kings_of_the_Beach_intro (180), Lightforce, Lion_Heart,
+Mr_Meaner, Off_the_Cuff, Rock_Tells_the_Tale, Saboteur_II, Shockway_Rider,
+Star_Paws, Thanatos, Thundercats, W_A_R, W_A_R_Preview and Zoolook sits on a
+frame `jmp_gate_ticks` names; counting frame 0 as a gate pass, as the entry
+model does, puts none of them there (0/173, 0/201, 0/180).
+
+`jmp_gate` reads the shape (and that the init sets the flag and does not spend
+the new-song call itself: Delta_Mix carries the test but its init `JSR`s the
+routine, and its first play call passes the gate); `startup_phase` then
+scores the leads against `jmp_gate_ticks` instead of `gate_frames`. Measured
+through the packed file at 60 s (C:/t/jmp-form-outer-gate-clock/ab): onsets
+exact before -> after, Chain_Reaction 156/232, 176/265, 110/165 -> all;
+Kings_of_the_Beach_intro 95/154, 70/112, 188/312 -> all (the entry model's lead
+took it to 31/154); ACE_II, Deep_Strike, Food_Feud, Saboteur_II, Zoolook and
+Thundercats v0/v1 likewise. The JMP family is scored over the rows that carry a
+note (`startup_phase`), which leaves Delta, Thanatos and W_A_R_Preview on the
+default row: they were already exact where they sound.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import AbstractSet, Callable, List, Optional, Sequence, Tuple
 
 from ..detect import Detection, PlayerView
 from ..sidfile import SidFile
 from . import arpeggio as _gw_arpeggio
 from . import tempo as _gw_tempo
 from .constants import (GT_DEFAULT_TEMPO_CALLS, GT_MIN_TEMPO, OUTER_GATE,
-                        OUTER_GATE_PAL, OUTER_GATE_RTS)
+                        OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE)
 
 # How many `JMP`s to follow from the PSID play address to the routine's first
 # instruction (Kentilla's play address is the gate itself; a jump table in
@@ -159,6 +194,125 @@ def entry_gate(sid: SidFile) -> bool:
     return pal is not None and pal.group(1) == pal.group(3)
 
 
+# What the JMP form does after it jumps past the speed counter's DEC:
+# `LDA cell / BEQ nofetch / LDA ctr / CMP reload / BNE nofetch`. The fetch is
+# suppressed where the cell reads 0 (Chain_Reaction $0871-$0883).
+_JMP_GATE_FETCH = re.compile(
+    rb"\xad(..)\xf0.\xad(..)\xcd(..)\xd0", re.DOTALL)
+# How far past the jump's landing the fetch test is looked for: Chain_Reaction
+# puts `LDA $0CF6,X / STA $0CF9 / TAY` (7 bytes) between them.
+_JMP_GATE_FETCH_WINDOW = 16
+# How far before the gate the new-song test `BIT flag / BMI / BVC` is looked
+# for; the BVC lands on the `LDX` right above the gate.
+_JMP_GATE_ENTRY_WINDOW = 128
+# How far into the init routine a `JSR` of the play routine is looked for
+# (at most; it stops at the first `RTS` or `JMP` byte).
+INIT_WINDOW = 96
+_LDX_LENGTHS = {0xAE: 3, 0xA6: 2, 0xA2: 2}      # LDX abs / zp / #imm
+
+
+def jmp_gate(sid: SidFile) -> bool:
+    """Whether the outer gate is the JMP form INSIDE the play routine, past a
+    new-song test, with the fetch suppressed on the call that leaves the cell
+    at 0 (Chain_Reaction `$0859`) -- the clock `jmp_gate_ticks` runs.
+
+    All of: the first `OUTER_GATE` match (the one `nibble_gate_byte` and
+    `_find_outer_gate` read) names one cell twice; the speed counter's own
+    `DEC / BPL +6 / LDA reload / STA` follows it directly and the `JMP` lands
+    just past that block; the landing is followed by `LDA cell / BEQ / LDA ctr
+    / CMP reload / BNE` on the same three cells; and the gate sits behind a
+    `BIT flag / BMI / BVC` whose `BVC` lands on the `LDX` above it, and the
+    song's init stores `$40` to that flag (`LDA #$40 / STA flag`) -- V set, the
+    test the new-song call fails, so frame 0 passes neither counter -- and the
+    init does not itself `JSR` the routine, which would spend that call before
+    the first play call. Delta_Mix's does (`CCEE JSR $C012`): its first play
+    call passes the gate (siddump of the original: every attack on the other
+    grid). Not `entry_gate`'s: a gate that IS the play entry has no such
+    test.
+    """
+    data = sid.data
+    gate = OUTER_GATE.search(data)
+    if gate is None or gate.group(1) != gate.group(3):
+        return False
+    block = SPEED_GATE.match(data, gate.end())
+    if block is None or block.group(1) != block.group(3):
+        return False
+    landing = sid.to_offset(gate.group(4)[0] | gate.group(4)[1] << 8)
+    if landing != block.end():
+        return False
+    fetch = _JMP_GATE_FETCH.search(
+        data, landing, landing + _JMP_GATE_FETCH_WINDOW + 10)
+    if (fetch is None or fetch.start() > landing + _JMP_GATE_FETCH_WINDOW
+            or fetch.group(1) != gate.group(1)
+            or fetch.group(2) != block.group(1)
+            or fetch.group(3) != block.group(2)):
+        return False
+    found = _new_song_test(data, gate.start())
+    if found is None:
+        return False
+    flag, bit_at = found
+    if (b"\xa9\x40\x8d" + flag) not in data:
+        return False
+    # The routine starts at its `LDA #vol / STA $D418` prefix when it has one.
+    start = bit_at - 5 if data[bit_at - 3:bit_at] == b"\x8d\x18\xd4" else bit_at
+    jsr = b"\x20" + bytes([sid.to_address(start) & 0xFF,
+                           sid.to_address(start) >> 8])
+    init = sid.to_offset(sid.init_addr)
+    if not 0 <= init < len(data):
+        return False
+    # The init's straight-line start: to its first `RTS` / `JMP` byte (Kings
+    # of the Beach's init ends in a `JMP`, and the raster handler that calls
+    # the routine sits right behind it).
+    end = next((k for k in range(init, min(init + INIT_WINDOW, len(data)))
+                if data[k] in (0x60, 0x4C)), init + INIT_WINDOW)
+    return jsr not in data[init:end]
+
+
+def _new_song_test(data: bytes, gate_at: int) -> Optional[Tuple[bytes, int]]:
+    """The flag address bytes and the file offset of the `BIT flag / BMI / BVC`
+    whose `BVC` branches (on V clear) to the `LDX` that ends exactly at
+    `gate_at`, or None."""
+    for ldx_len in (3, 2):
+        landing = gate_at - ldx_len
+        if landing < 5 or _LDX_LENGTHS.get(data[landing]) != ldx_len:
+            continue
+        for at in range(max(5, landing - _JMP_GATE_ENTRY_WINDOW), landing):
+            rel = data[at + 1] - 256 if data[at + 1] > 127 else data[at + 1]
+            if (data[at] == 0x50 and at + 2 + rel == landing
+                    and data[at - 5] == 0x2C and data[at - 2] == 0x30):
+                return bytes(data[at - 4:at - 2]), at - 5
+    return None
+
+
+def jmp_gate_ticks(cell: int, reload: int, counter: int, counter_reload: int,
+                   count: int) -> List[int]:
+    """The frame of each of the first `count` fetches under the JMP form.
+
+    Frame 0 is the new-song call, which passes neither counter. Each later
+    call steps the cell (`DEC` / `BPL`, reload on underflow) and, unless it
+    underflowed, the speed counter (reload on underflow); a fetch is due when
+    the counter reads its reload, and runs unless the cell reads 0 -- then it
+    is due again, unchanged, on the next call. Chain_Reaction, reload 3, speed
+    counter reload 1, both bytes 0: fetches on frames 2, 5, 7, 10, 13, 15.
+    """
+    out: List[int] = []
+    cell &= 0xFF
+    counter &= 0xFF
+    frame = 0
+    while len(out) < count:
+        frame += 1
+        cell = (cell - 1) & 0xFF
+        if cell & 0x80:
+            cell = reload & 0xFF
+        else:
+            counter = (counter - 1) & 0xFF
+            if counter & 0x80:
+                counter = counter_reload & 0xFF
+        if cell != 0 and counter == counter_reload & 0xFF:
+            out.append(frame)
+    return out
+
+
 def gate_frames(gate_byte: int, reload: int, count: int) -> List[int]:
     """The frame each of the first `count` passing calls falls on.
 
@@ -180,19 +334,28 @@ def gate_frames(gate_byte: int, reload: int, count: int) -> List[int]:
 
 def onset_mismatches(lead: int, row_calls: int, multiplier: int, first: int,
                      frames: int, gate_byte: int, reload: int,
-                     rows: int) -> int:
+                     rows: int, counter_reload: Optional[int] = None,
+                     only: Optional[AbstractSet[int]] = None) -> int:
     """Rows of `rows` whose frame offset from the original's is not the modal one.
+    With `only`, just those rows are scored (and the mode taken over them).
 
     Ours: row `j`'s onset is call `STARTUP_RESET_CALLS + lead + ONSET_CALL +
     row_calls * j`, on frame `call // multiplier`. The original's: passing call
-    `first + frames * j` on the frame `gate_frames` gives it. Zero means every
-    row lands in the original's frame, one constant lag apart.
+    `first + frames * j` on the frame `gate_frames` gives it -- or, with
+    `counter_reload` (the JMP form, `jmp_gate`), the `j`th fetch
+    `jmp_gate_ticks` names, `first` being the speed counter's byte. Zero means
+    every row lands in the original's frame, one constant lag apart.
     """
-    real = gate_frames(gate_byte, reload, first + frames * rows + 1)
+    if counter_reload is None:
+        real = gate_frames(gate_byte, reload, first + frames * rows + 1)
+        real = [real[first + frames * j] for j in range(rows)]
+    else:
+        real = jmp_gate_ticks(gate_byte, reload, first, counter_reload, rows)
+    scored = range(rows) if only is None else sorted(j for j in only if j < rows)
     diffs = Counter(
         (STARTUP_RESET_CALLS + lead + ONSET_CALL + row_calls * j) // multiplier
-        - real[first + frames * j] for j in range(rows))
-    return rows - max(diffs.values())
+        - real[j] for j in scored)
+    return len(scored) - max(diffs.values(), default=0)
 
 
 def default_startup_calls(multiplier: int) -> int:
@@ -205,19 +368,33 @@ def default_startup_calls(multiplier: int) -> int:
 
 
 def startup_phase(sid: SidFile, det: Detection, multiplier: int,
-                  tempos: Sequence[int]) -> Optional[StartupPhase]:
+                  tempos: Sequence[int],
+                  onset_rows: Optional[Callable[[int, int], Optional[AbstractSet[int]]]]
+                  = None) -> Optional[StartupPhase]:
     """The startup row that puts the start subtune's onsets on the original's
     frames, or None where the default already does or nothing here is read.
 
     `tempos` is the CMD_SETTEMPO calls per subtune group (`convert`'s
     `group_tempos`). Declined unless: the file is packed above `-S1` (at one
-    call a frame there is no phase); the gate is `entry_gate`'s; the gate byte,
+    call a frame there is no phase); the gate is `entry_gate`'s or `jmp_gate`'s
+    (the latter scored against `jmp_gate_ticks`); the gate byte,
     the first fetch and the start subtune's speed are all read; and the start
     subtune's row is EXACTLY the corrected one, `row_calls * O == frames * (O +
     1) * multiplier` -- a row the tempo rounded drifts against the grid and has
     no phase to be on. The candidate leads are the default and the
     `multiplier - 1` below it, which covers every phase and moves the song by
     under one frame; the fewest mismatched rows wins, the default on a tie.
+
+    **A JMP-form gate is scored over the rows that carry a note.** A row with
+    nothing to attack has nothing to put on a frame, and a phase chosen to
+    please them can cost a song that was already exact where it sounds:
+    Thanatos, W_A_R_Preview and Delta attack every note in the original's
+    frame at the default startup row, yet 40 of 80, 36 of 144 and 20 of 40
+    rows are off it, and Thanatos' gate column went 1 -> .7495 under the
+    phase chosen over all of them. `onset_rows(subtune, horizon)` names the
+    rows (`instrument_drop.onset_rows` on the finished bytes); None, or an
+    empty answer, scores every row. The entry family keeps scoring every
+    row -- its six startup rows were measured that way.
     """
     if multiplier < 2 or isinstance(sid, PlayerView) or len(det.players) > 1:
         return None
@@ -226,7 +403,8 @@ def startup_phase(sid: SidFile, det: Detection, multiplier: int,
         return None
     s0 = _gw_tempo.pack_subtune(speeds, sid.start_song)
     reload = _gw_tempo.outer_gate_skip(sid, s0)
-    if not reload or not entry_gate(sid):
+    jmp = jmp_gate(sid)
+    if not reload or not (jmp or entry_gate(sid)):
         return None
     gate_byte = _gw_arpeggio.nibble_gate_byte(sid)
     first = _gw_arpeggio.fixed_arp_first_fetch(sid, det)
@@ -238,11 +416,23 @@ def startup_phase(sid: SidFile, det: Detection, multiplier: int,
     row_calls = tempos[s0]
     if row_calls * reload != frames * (reload + 1) * multiplier:
         return None
-    return best_startup(row_calls, multiplier, first, frames, gate_byte, reload)
+    only = None
+    if jmp and onset_rows is not None:
+        only = onset_rows(s0, startup_horizon(multiplier, reload)) or None
+    return best_startup(row_calls, multiplier, first, frames, gate_byte, reload,
+                        jmp=jmp, only=only)
+
+
+def startup_horizon(multiplier: int, reload: int) -> int:
+    """Rows `best_startup` scores: `4 * multiplier * (reload + 1)`, which covers
+    both grids' common period."""
+    return 4 * multiplier * (reload + 1)
 
 
 def best_startup(row_calls: int, multiplier: int, first: int, frames: int,
-                 gate_byte: int, reload: int) -> Optional[StartupPhase]:
+                 gate_byte: int, reload: int, jmp: bool = False,
+                 only: Optional[AbstractSet[int]] = None
+                 ) -> Optional[StartupPhase]:
     """`startup_phase`'s choice, from the values it read.
 
     Every lead from the default down `multiplier - 1` calls is scored over
@@ -252,12 +442,14 @@ def best_startup(row_calls: int, multiplier: int, first: int, frames: int,
     above 1, several leads are exact and the smallest move is taken. None
     where the default is already as good as any.
     """
-    rows = 4 * multiplier * (reload + 1)
+    rows = startup_horizon(multiplier, reload)
     default = default_startup_calls(multiplier)
     leads = [a for a in range(default, default - multiplier, -1)
              if a - 1 >= GT_MIN_TEMPO]
+    counter_reload = frames - 1 if jmp else None
     score = {a: onset_mismatches(a, row_calls, multiplier, first, frames,
-                                 gate_byte, reload, rows) for a in leads}
+                                 gate_byte, reload, rows, counter_reload, only)
+             for a in leads}
     best = min(leads, key=lambda a: (score[a], default - a))
     if score[best] >= score[default]:
         return None

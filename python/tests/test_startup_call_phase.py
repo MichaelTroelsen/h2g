@@ -34,7 +34,9 @@ and melody/sequence/pitch_jaccard to 1.0, Kentilla `tie_agreement` .2915 ->
 The JMP-form gate inside the play routine (Chain_Reaction `$0859`) is a
 different clock -- it skips only the speed counter's `DEC` and the new-song
 call bypasses it -- and the same model makes Kings_of_the_Beach_intro worse
-(95/154 exact -> 31/154 at 60 s), so `entry_gate` declines it.
+(95/154 exact -> 31/154 at 60 s), so `entry_gate` declines it. Its own clock is
+`call_phase.jmp_gate_ticks`, tested in tests/test_jmp_gate_clock.py; this file
+keeps the entry family.
 """
 import collections
 import json
@@ -193,7 +195,8 @@ def test_the_corpus_movers_and_their_startup_rows():
             continue
         m = tempo.file_multiplier(sid, speeds, True)
         phase = call_phase.startup_phase(sid, det, m, _tempos(sid, det, m))
-        if phase is not None:
+        # The JMP-form family's movers are test_jmp_gate_clock's.
+        if phase is not None and call_phase.entry_gate(sid):
             assert phase.mismatched == 0, (path.name, phase)
             got[path.name] = phase.tempo
     assert got == MOVERS

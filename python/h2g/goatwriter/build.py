@@ -37,6 +37,7 @@ from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
+from . import rise_stair as _gw_rise_stair
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
     """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
@@ -878,6 +879,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # the instrument each tie finally plays.
     patterns = apply_tempo_duty_edits(patterns, duty_split, log)
     patterns = apply_tempo_duty_edits(patterns, phase_split, log)
+    # (base, number) for every record appended below that plays its base's
+    # own wavetable program -- the decoy, the legato clones, the free-note
+    # variants -- for the rise stair at the end (`rise_stair_plan`).
+    stair_aliases: List[tuple] = []
     if legato_rows:
         # Each GT number's source record, for the clone's real firstwave.
         record_of = {g: g - lead - 1 for g in range(lead + 1, instr_used + 1)}
@@ -999,6 +1004,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             pad[7] |= GATETIMER_LEGATO
             out += pad
             written_instr += 1
+            stair_aliases.append((held, written_instr))
             if log:
                 log(f"Legato tie..............: decoy legato record "
                     f"{written_instr} (instrument {held}'s, latched on "
@@ -1013,6 +1019,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 clone[3] = 0
             out += clone
             written_instr += 1
+        stair_aliases.extend(legato_clones)
         out[instr_at] = written_instr
         if declined:
             # The old spelling, whole: the envelope a declined tie's new
@@ -1074,6 +1081,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             clone[3] = 0
             out += clone
             written_instr += 1
+        stair_aliases.extend(free_variants)
         out[instr_at] = written_instr
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
@@ -1104,6 +1112,31 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 f"DANGLING; {where} ***")
 
     _write_filtertable(out, filter_entries)
+    # Bit $02's rise under the arpeggio as a pattern-side stair: a note per
+    # semitone on a zero-speed toneportamento (`rise_stair_plan`). LAST of
+    # every pattern pass, so nothing that walks note rows -- the phase
+    # walks, the tie respells, the decoy search -- reads a step as a note,
+    # and before the speed table, which gains its zero-speed row here.
+    # Gated on `effects` like every read of +7.
+    if effects and det.effect_rise and det.effect_arp:
+        stair_records = {g: g - lead - 1 for g in range(lead + 1, instr_used + 1)}
+        for plan in (duty_split.clones if duty_split is not None else [],
+                     phase_split.clones if phase_split is not None else []):
+            for record, number, _x in plan:
+                if record in stair_records:
+                    stair_records[number] = stair_records[record]
+        for base, number in stair_aliases:
+            if base in stair_records:
+                stair_records[number] = stair_records[base]
+        stair = _gw_rise_stair.rise_stair_plan(sid, det, tracks, patterns,
+                                               stair_records, fmt, table,
+                                               log=log)
+        if stair is not None:
+            # Its copies repoint orderlist positions: same length, same
+            # place, as `rest_reseed`'s do.
+            patterns, tracks = stair
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
     if fmt == FORMAT_GTS5:
         # Fourth table (STBL), stored only in GTS3+. A GTS2 file has none: its
         # loader builds one while reading, both from each instrument's vibrato

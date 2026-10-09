@@ -64,7 +64,7 @@ def _offsets(left, right, speed):
 @pytest.mark.parametrize("i", [3, 11])
 def test_nemesis_records_3_and_11_carry_their_slides(i):
     left, right, speed = _entries("Nemesis_the_Warlock", i)
-    assert left == [0x41, PORTADOWN, PORTADOWN, PORTADOWN, 0x40, JUMP], \
+    assert left == [0x41, PORTADOWN, PORTADOWN, PORTADOWN, 0x41, JUMP], \
         [hex(x) for x in left]
     # lead, ages 1-3, restore: the original's `0 -32 -368 vib-384 vib`
     assert _offsets(left, right, speed) == [0, -32, -368, -384, 0]
@@ -74,7 +74,7 @@ def test_nemesis_records_3_and_11_carry_their_slides(i):
 def test_nemesis_record_12_resets_to_the_vibrato_from_the_gate():
     left, right, speed = _entries("Nemesis_the_Warlock", 12)
     assert left == [0x11, PORTADOWN, PORTADOWN, PORTAUP, PORTADOWN,
-                    PORTADOWN, 0x10, JUMP], [hex(x) for x in left]
+                    PORTADOWN, 0x11, JUMP], [hex(x) for x in left]
     # Below the gate (ages 1-2) the slides accumulate; from age 3 each is
     # its own operand below the note -- not -4304, -4816, -5584.
     assert _offsets(left, right, speed) == [0, -3104, -3808, -496, -512,
@@ -85,7 +85,7 @@ def test_nemesis_record_12_resets_to_the_vibrato_from_the_gate():
 def test_ik_record_13_gate_4_rises_then_dips():
     left, right, speed = _entries("IK_plus", 13)
     assert _offsets(left, right, speed) == [0, 896, 1536, 1152, -896, 0]
-    assert left[-2:] == [0x10, JUMP]
+    assert left[-2:] == [0x11, JUMP]
 
 
 @needs_corpus

@@ -1711,13 +1711,17 @@ def past_table_drum_plan(sid: SidFile, det: Detection,
     variants: List[tuple] = []
     number: dict = {}
     room = _gw_constants.GT_MAX_TABLELEN - len(wave_entries)
+    # A variant numbered onto a dangling reference would satisfy it
+    # (`clone_number_ceiling`).
+    top = min(TEMPO_DUTY_MAX_CLONE,
+              clone_number_ceiling(patterns, first_number - 1))
     declined: List[int] = []
     for record in sorted({patterns[n][k + 1] for n, k in rows}):
         vnum = first_number + len(variants)
         block = (_past_table_drum_block(wave_entries, wave_starts[record - 1])
                  if record - 1 < len(wave_starts) else None)
         if (block is None or len(block) > room
-                or vnum > TEMPO_DUTY_MAX_CLONE):
+                or vnum > top):
             declined.append(record)
             continue
         room -= len(block)

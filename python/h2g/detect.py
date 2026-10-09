@@ -5790,6 +5790,45 @@ def find_wave_program(sid: SidFile,
     return at, gate
 
 
+def wave_program_set_stores_wave(sid: SidFile,
+                                 det: Optional[Detection] = None) -> bool:
+    """Whether an absolute (`>= $80`) opcode also writes the STORED waveform.
+
+    **The two opcode kinds share a cell in some players and not in others**
+    (task wave-program-restore-releases-gate-early). The `$85` hold writes
+    the stored cell `AND`ed with a gate mask that stays `$FF` until the
+    note's own gate-off, so what the hold sounds is the stored cell, and
+    which opcodes write it is the player's. Read off the `>= $80` path
+    that follows the hold test (`WAVE_PROGRAM_FETCH`, `C9 85 D0 03 4C`):
+
+        Pygmies_Revenge $1387   AE 41 16  LDX ctrl
+                                9D 04 D4  STA $D404,X   ; the chip
+                                48        PHA           ; <- keeps the byte
+                                ...
+                                68        PLA
+                                9D 54 16  STA $1654,X   ; the stored cell
+
+        Nemesis_the_Warlock $E316   AE D7 E4 / 9D 04 D4 / C8 ...  ; no PHA
+
+    Pygmies, Kings of the Beach, Off the Cuff, Mr Meaner, Rikky, Rock Tells
+    the Tale, After 8, One on One (first engine) and Powerplay's tune engine
+    keep it (9 of the 29 files, v0.5.518); there the hold sounds the LAST
+    opcode's waveform whichever kind it was -- Pygmies' `$0782` records end
+    `set $80` and the original reads `$80` from the program's last frame to
+    the next note. The other players' `set` writes the chip alone and the
+    hold goes back to the last `< $80` opcode's.
+
+    The block is read at the fetch site `_wave_program_fetch_site` names for
+    this detection, so a file with two engines reads its own.
+    """
+    off = _wave_program_fetch_site(sid, det)
+    if off < 0:
+        return False
+    blk = sid.data[off + 4:off + 4 + 44]
+    return re.match(rb"\xc9\x85\xd0\x03\x4c..(.{0,10}?)\x9d..\x48"
+                    rb".{0,24}?\x68\x9d", blk, re.S) is not None
+
+
 def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
     """The program at file offset `at` as (opcode, waveform, operand) steps.
 

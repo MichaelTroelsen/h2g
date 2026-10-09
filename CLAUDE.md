@@ -71,7 +71,7 @@ Module layout mirrors the VB6 pipeline 1:1:
 | `detect.py` | player-engine signature chains → a `Detection` dataclass |
 | `tracks.py` | `convert_tracks`; `apply_initial_instruments` |
 | `patterns.py` | `convert_patterns`, `reindex_tracks`, pattern slicing, tempo application |
-| `goatwriter/` | the `.sng` writer, a package since v0.5.504: `build.py` (`build_sng`, assembles the byte buffer) calls `instruments`, `wavetable`, `wave_program`, `attack`, `pulse`, `vibrato`, `arpeggio`, `filters`, `drums`, `note_passes`, `notes`, `skydive`, `rest_reseed`, `hard_restart`, `tempo`, `appending`; shared leaves in `primitives.py` and `constants.py`. `__init__.py` re-exports every name, so `goatwriter.X` still resolves (`tests/test_goatwriter_package.py`) |
+| `goatwriter/` | the `.sng` writer, a package since v0.5.504: `build.py` (`build_sng`, assembles the byte buffer) calls `instruments`, `wavetable`, `wave_program`, `attack`, `pulse`, `vibrato`, `arpeggio`, `filters`, `drums`, `note_passes`, `notes`, `skydive`, `rest_reseed`, `rise_stair`, `hard_restart`, `tempo`, `appending`; shared leaves in `primitives.py` and `constants.py`. `__init__.py` re-exports every name, so `goatwriter.X` still resolves (`tests/test_goatwriter_package.py`) |
 | `convert.py` | orchestrates the above into `convert(sid_path) -> bytes` |
 | `cli.py` / `__main__.py` | argparse entry point |
 
