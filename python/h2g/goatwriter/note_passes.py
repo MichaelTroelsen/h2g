@@ -22,12 +22,82 @@ from .constants import (CLASSIC_TIE_START_SHAPES, CLASSIC_TIE_START_WINDOW,
                         SPEED_NOTE_RELATIVE, TEMPO_DUTY_MAX_CLONE,
                         VIBRATO_CMP_BIAS, WAVE_GATE_BIT, WAVE_SILENT_BASE,
                         WAVE_TEST_BIT, WAVECMD_BASE, GT_MAX_TABLELEN)
+from .attack import (fixed_attack_only)
 from .primitives import (_counter_gate_call, _fixed_pitch_yield_field,
                          _note_freq, _speed_index, _wave_byte)
 from .pulse import (packed_pattern_size, pattern_rows)
 from . import constants as _gw_constants
+import contextlib
+import contextvars
+
+# The instrument number each voice's FIRST lap starts holding, set around one
+# `build_sng` by `entry_instruments_start`; None is Goattracker's own start
+# (instrument 1, gplay.c:223). A context variable and not a parameter because
+# `_entry_instruments` is read by a dozen passes in three modules that must
+# all agree on it (one pass settling a row on the player's `$1B` while the
+# next settles it on 1 would respell the same row two ways), and a pass left
+# on the default is the bug, not the exception.
+_ENTRY_START: contextvars.ContextVar = contextvars.ContextVar(
+    "entry_start", default=None)
+
+
+def init_entry_start(det: Detection, instr_base: int) -> Optional[Tuple[int, ...]]:
+    """The Goattracker instrument number each voice enters its first
+    orderlist position holding in the ORIGINAL, or None where that is not
+    known (`Detection.init_instrument`: the index the player's init writes
+    into all three slots, plus `instr_base` to put it in the numbering the
+    patterns' instrument column uses).
+
+    None too where the player parks silence until the first instrument
+    (`pre_instrument_silence`: nothing a row before it plays is heard, and
+    `silence_pre_instrument_notes` has already keyed those notes off), where
+    the index names no record the writer keeps, and where the number is past
+    the 50 `apply_initial_instruments` caps at."""
+    k = det.init_instrument
+    if k is None or det.pre_instrument_silence:
+        return None
+    number = k + instr_base
+    if number > min(det.instr_used + instr_base - 1, 50):
+        return None
+    return (number, number, number)
+
+
+@contextlib.contextmanager
+def entry_instruments_start(start: Optional[Tuple[int, ...]]):
+    """Make `_entry_instruments` and `_position_entries` start every voice's
+    first lap holding `start[voice]` instead of instrument 1, for the
+    duration of the block."""
+    token = _ENTRY_START.set(start)
+    try:
+        yield
+    finally:
+        _ENTRY_START.reset(token)
+
+
+def _track_start(start: Optional[Tuple[int, ...]], ti: int) -> int:
+    """The instrument track `ti` (voice `ti % 3`) enters its first position
+    holding: `start`'s, else Goattracker's instrument 1.
+
+    Every subtune takes it, which is a statement about the player, not about
+    each subtune: a siddump of frame 0 (`tests/test_init_instrument.py`,
+    36 players that write an init index, 166 subtunes) finds the index in all
+    three slots of 108 of them and on voice 0 alone in 32 (a jingle that uses
+    one voice, or a first event that had already named another), but the
+    slots still hold the file image in 26: subtune 0 of
+    One_on_One_Jordan_vs_Bird and Powerplay_Hockey (whose `A = 0` branches
+    round the music init) and 24 later subtunes of IK_plus, I_Ball,
+    One_on_One, Sanxion, Tarzan and Thundercats, which never run the loop. A
+    voice there holds whatever the last tune left, which the file cannot say;
+    the start is wrong for it exactly where a row precedes the pattern's
+    first named instrument."""
+    if start is None:
+        start = _ENTRY_START.get()
+    return start[ti % 3] if start and ti % 3 < len(start) else 1
+
+
 def _entry_instruments(tracks: List[List[int]],
-                       patterns: List[List[int]]) -> dict:
+                       patterns: List[List[int]],
+                       start: Optional[Tuple[int, ...]] = None) -> dict:
     """Pattern number -> the set of instruments a channel HOLDS when it enters
     that pattern, walked in play order over every orderlist.
 
@@ -37,6 +107,18 @@ def _entry_instruments(tracks: List[List[int]],
     at each pattern's first row instead of counting notes. A pattern reached
     from two places with two different instruments gets both, and the caller
     treats that as unknown.
+
+    **The first lap starts on the ORIGINAL's instrument, where it is read.**
+    The player's init writes an instrument index into every voice
+    (`Detection.init_instrument`) and a voice sounds it until a pattern names
+    another: Knucklebusters starts on `$1B`, where Goattracker's channel
+    starts on instrument 1 (the Clear-Voice or first record, whichever the
+    numbering makes it). Every pass below respells a row to the instrument the
+    ORIGINAL plays there -- an explicit column, re-latched afterwards -- so
+    the walk has to say what the original holds, not what a file that copies
+    nothing would. `start` (default: `entry_instruments_start`'s, else 1)
+    is the number per voice. The lap that follows carries the first lap's
+    last instrument, as before.
 
     The restart is followed for one more lap (`_lapped_tracks`): the loop
     (gplay.c:966-968, songptr = the operand) leaves `instr` alone, so a
@@ -48,8 +130,8 @@ def _entry_instruments(tracks: List[List[int]],
     value, and the caller wrote against an instrument the loop does not hold.
     """
     entry: dict = {}
-    for track in _lapped_tracks(tracks):
-        current, repeat, operand = 1, 1, False
+    for ti, track in enumerate(_lapped_tracks(tracks)):
+        current, repeat, operand = _track_start(start, ti), 1, False
         for b in track:
             if operand:
                 operand = False
@@ -451,7 +533,7 @@ def _position_entries(tracks: List[List[int]],
     for ti, track in enumerate(_lapped_tracks(tracks)):
         raw = tracks[ti]
         end = raw.index(0xFF) if 0xFF in raw else len(raw)
-        current, repeat, operand = 1, 1, False
+        current, repeat, operand = _track_start(None, ti), 1, False
         for pos, b in enumerate(track):
             if operand:
                 operand = False
@@ -1026,13 +1108,21 @@ def free_note_record_has_attack(sid: SidFile, det: Detection,
 
     The ONE definition both free-note respells read. A record the player's
     counter also drives but our wavetable writes nothing for counts as none:
-    $40 alone (Lightforce record 6, Knucklebusters 13 -- the fixed attack
-    pitch, which `_two_stage_entries` emits only inside the two-stage block)
-    and $04 with attack waveform 0 (`_two_stage_entries` returns None).
-    Their full start already plays no attack, so a pulse-only variant drops
-    nothing a flagged note keeps. No corpus row the free-note pass sees
-    plays one (C:/t/free-note-pulse-only-variant/attack_rows.py, presets, at
-    6e467ff plus the cycle-5 merge)."""
+    $04 with attack waveform 0 (`_two_stage_entries` returns None). Its full
+    start already plays no attack, so a pulse-only variant drops nothing a
+    flagged note keeps. No corpus row the free-note pass sees plays one
+    (C:/t/free-note-pulse-only-variant/attack_rows.py, presets, at 6e467ff
+    plus the cycle-5 merge).
+
+    **A record that is exactly $40 now counts as having an attack**
+    (`fixed_attack_only`): until the wavetable emitted its fixed pitch
+    (Lightforce record 6, Knucklebusters 13) its full start played none, and
+    this said so. It plays one now, so a flagged note on it must not take the
+    full start with only the pulse dropped; `free_note_wave_start` returns 0
+    for it (it has no `$04` second stage to enter past) and the row declines
+    "attack the wavetable cannot skip". No corpus row the free-note pass sees
+    plays one, so no byte moves on that account
+    (tests/test_fixed_attack_only.py)."""
     data = sid.data
     base = det.instr_start + record * det.instr_stride
     at = det.two_stage_wave + record * det.instr_stride
@@ -1042,6 +1132,8 @@ def free_note_record_has_attack(sid: SidFile, det: Detection,
         return False
     fx = data[base + 7]
     if fx & 0x04 and data[at]:
+        return True
+    if fixed_attack_only(sid, det, record) is not None:
         return True
     return bool(det.sfx_pitch >= 0 and det.effect_bit40
                 and fx & 0xC0 == 0xC0)

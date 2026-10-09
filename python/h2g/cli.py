@@ -494,6 +494,12 @@ def main(argv=None) -> int:
              "(detect._find_sfx_drum). Needs --format gts5. Off by default "
              "until measured; presets.py --fidelity selects it per song")
     parser.add_argument(
+        "--sfx-drum-bandpass", action="store_true",
+        help="carry the one frame of bandpass the sfx drum sets (detect."
+             "find_sfx_drum_bandpass) in the filter program of each drum "
+             "record that also filters, as a loop on the drum's period. Needs "
+             "--sfx-drum, --filter and --format gts5. Off by default")
+    parser.add_argument(
         "--two-stage", action="store_true",
         help="write the attack waveform this player's effect bit $04 selects. "
              "In 44 corpus files bit $04 is not an arpeggio but a second "
@@ -641,6 +647,7 @@ def main(argv=None) -> int:
                           ("--two-stage", "two_stage"),
                           ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
+                          ("--sfx-drum-bandpass", "sfx_drum_bandpass"),
                           ("--wave-program", "wave_program"),
                           ("--vibrato-command", "vibrato_command"),
                           ("--cut-release", "cut_release"),
@@ -749,6 +756,7 @@ def main(argv=None) -> int:
                       two_stage=args.two_stage,
                       voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,
+                      sfx_drum_bandpass=args.sfx_drum_bandpass,
                       wave_program=args.wave_program,
                       vibrato_command=args.vibrato_command,
                       cut_release=args.cut_release,

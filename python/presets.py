@@ -517,6 +517,20 @@ EXCLUDED_FROM_ALWAYS = {
     # Trans-Atlantic keeps melody at 94.7%, gains a point of wave and moves its
     # noise from an inaudible $0685 to $3744 against the original's $302B.
     "sfx_drum",
+    # The drum's one frame of bandpass, carried in the filter program of each
+    # drum record that also filters (`goatwriter.sfx_bandpass_plan`). Per song
+    # and NOT searched, and measured to lose on the column that can see it:
+    # forced on over the five files it moves (I_Ball, Nineteen, Pandora,
+    # Thundercats, Trans-Atlantic; -t 180 under presets, v0.5.516 + this
+    # change) `passband_agree` falls on all five (0.818 -> 0.734, 0.830 ->
+    # 0.712, 0.877 -> 0.754, 0.867 -> 0.858, 0.848 -> 0.806). The blip sits on
+    # OUR noise frame to the frame (BP and noise-onset offset histograms are
+    # identical on every file) and one frame after the original's note-relative
+    # phase never occurs (Trans-Atlantic and Pandora's BP-minus-attack
+    # histograms are equal bin for bin), so the loss is the drum's note-onset
+    # alignment, which a lag-aligned union charges twice. An option waiting on a
+    # note-relative column, not on a better emitter. Historical figures.
+    "sfx_drum_bandpass",
     # The byte-code wave program: 29 files carry the interpreter, and it is what
     # carries Trans-Atlantic's snare -- all 43 notes now sound noise in their
     # first frames, at $31xx against the original's $30xx. Per song because it

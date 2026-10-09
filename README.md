@@ -111,6 +111,7 @@ Each option's behaviour, and the measurement behind it, is in
 - [`--pulse` (the duty cycle that never moved)](docs/OPTIONS.md#--pulse-the-duty-cycle-that-never-moved)
 - [`--wave-program` (the player's byte-code wave program)](docs/OPTIONS.md#--wave-program-the-players-byte-code-wave-program)
 - [`--sfx-drum` (the drum that was filed as a game sound effect)](docs/OPTIONS.md#--sfx-drum-the-drum-that-was-filed-as-a-game-sound-effect)
+- [`--sfx-drum-bandpass` (the drum's one frame of bandpass)](docs/OPTIONS.md#--sfx-drum-bandpass-the-drums-one-frame-of-bandpass)
 - [`--two-stage` (the attack waveform, and the drums that were missing)](docs/OPTIONS.md#--two-stage-the-attack-waveform-and-the-drums-that-were-missing)
 - [`--voice-two-stage` (the same attack, with per-voice parameters)](docs/OPTIONS.md#--voice-two-stage-the-same-attack-with-per-voice-parameters)
 - [`--rest-keyoff` (the rest that silences)](docs/OPTIONS.md#--rest-keyoff-the-rest-that-silences)

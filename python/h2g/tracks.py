@@ -1303,6 +1303,11 @@ def _initial_for(det: Detection, voice: int, instr_base: int) -> Optional[int]:
     carries no compact/lead field -- which is why it is threaded through
     rather than re-derived here.
     """
+    # The player's own init, where it writes one, over the file image: the
+    # image is a snapshot (Knucklebusters `$1B $13 $0B` against an init that
+    # writes `$1B` to all three voices).
+    if det.init_instrument is not None:
+        return det.init_instrument + instr_base
     if voice >= len(det.initial_instruments):
         return None
     return det.initial_instruments[voice] + instr_base

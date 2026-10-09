@@ -432,10 +432,13 @@ def mixed_split(on: bool):
 
 
 def retarget_mixed_steps(song, sid, det,
-                         log: Optional[Callable[[str], None]] = None) -> bool:
+                         log: Optional[Callable[[str], None]] = None,
+                         stats: Optional[dict] = None) -> bool:
     """Split the steps `pin_past_table_wave_notes` cannot pin in place (see
     the module docstring) by pointing each note row that overflows one at a
     pinned copy of its wave program. Edits `song`; True where it changed.
+    `stats`, where given, receives `wave_short`: the wavetable rows the first
+    pass lacked for the copies it could not place.
 
     Two ways to point, by what the row's command column holds:
 
@@ -490,6 +493,7 @@ def retarget_mixed_steps(song, sid, det,
     wave_room = GT_MAX_TABLELEN - len(wave)
     instr_room = _MAX_SONG_INSTRUMENTS - len(song.instruments)
     noroom = over = 0
+    wave_short, first_pass = 0, True
     while True:
         usage = Counter(p[1] for p in plans.values())
         starts: Dict[tuple, int] = {}
@@ -499,6 +503,8 @@ def retarget_mixed_steps(song, sid, det,
             body = _variant_rows(wave, cache[key[0]], dict(key[1]),
                                  len(wave) + used)
             if used + len(body) > wave_room:
+                if first_pass:
+                    wave_short += len(body)
                 continue
             starts[key] = len(wave) + used + 1 + _offset_in(cache[key[0]], key[0])
             bodies[key] = body
@@ -531,8 +537,11 @@ def retarget_mixed_steps(song, sid, det,
         for rc in [rc for rc in plans if rc[0] in too_big]:
             del plans[rc]
             over += 1
+        first_pass = False
         if not dropped and not too_big:
             break
+    if stats is not None:
+        stats["wave_short"] = wave_short
     if not plans:
         _drop_unused_clones(song, made, ())
         if log:
@@ -568,14 +577,30 @@ def retarget_mixed_steps(song, sid, det,
     return True
 
 
+def wave_rows_short(blob: bytes, sid, det) -> int:
+    """How many wavetable rows `retarget_mixed_steps` lacks on `blob`: the
+    rows of the pinned copies it could not place for want of room (0 where
+    it placed them all or has nothing to place). A dry run -- `blob` is not
+    touched."""
+    stats: dict = {}
+    _pinned_song(blob, sid, det, None, stats)
+    return stats.get("wave_short", 0)
+
+
 def pin_past_table_wave_notes(blob: bytes, sid, det,
                               log: Optional[Callable[[str], None]] = None
                               ) -> bytes:
     """`blob` with every relative wave step that only ever reads past
     Goattracker's table rewritten as the absolute note the original reads
     there (see the module docstring)."""
+    song, changed = _pinned_song(blob, sid, det, log, None)
+    return _write_song(song) if changed else bytes(blob)
+
+
+def _pinned_song(blob: bytes, sid, det, log, stats):
+    """(the parsed song with the pass applied, whether anything changed)."""
     if det.freq_table is None or sid.name in HELD:
-        return bytes(blob)
+        return None, False
     song = _parse_song(blob)
     wave = song.tables[0]
     shift = det.note_base
@@ -609,7 +634,5 @@ def pin_past_table_wave_notes(blob: bytes, sid, det,
             f"cell ({', '.join(pinned)})"
             + (f"; {overridden} note(s) whose own cell reads another pitch"
                if overridden else ""))
-    split = retarget_mixed_steps(song, sid, det, log)
-    if not pinned and not split:
-        return bytes(blob)
-    return _write_song(song)
+    split = retarget_mixed_steps(song, sid, det, log, stats)
+    return song, bool(pinned or split)

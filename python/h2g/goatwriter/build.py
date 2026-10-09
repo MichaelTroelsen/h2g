@@ -10,7 +10,8 @@ from .constants import (CMD_SETPULSEPTR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         FIRSTWAVE_TESTBIT, FORMAT_GTS5, GT_WAVE_FIRST_CMD,
                         GT_WAVE_JUMP, GT_WAVE_LAST_CMD, GT_WAVE_LAST_DELAY,
                         GT_WAVE_NO_NOTE, WAVE_SILENT_BASE,
-                        FORMATS, GATETIMER_LEGATO, GT_MAX_INSTRUMENTS)
+                        FORMATS, GATETIMER_LEGATO, GT_MAX_FILT,
+                        GT_MAX_INSTRUMENTS)
 from .instruments import (_build_header, _instruments_used, record_envelope,
                           _table_length_byte, _write_instruments)
 from .arpeggio import (apply_tempo_duty_edits, fixed_arp_phase_split_plan,
@@ -21,7 +22,7 @@ from .filters import (_classic_clearing_instruments, _filter_entries,
                       _highest_instrument_referenced,
                       _ilv_clearing_instruments, _ilv_filter_entries,
                       free_running_start, ilv_filter_routing_plan,
-                      _write_filtertable)
+                      sfx_bandpass_plan, _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _expanding_vibrato_counter, _expanding_vibrato_pass,
                           legato_tie_clones, legato_tie_rows, note_bit7_rows,
@@ -406,7 +407,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               wave_alternate: bool = False,
               ilv_filter_routing: bool = False,
               gate_off_firstwave_instruments: tuple = (),
-              tie_restart: bool = False) -> bytes:
+              tie_restart: bool = False,
+              wave_reserve: int = 0,
+              sfx_drum_bandpass: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -669,11 +672,12 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # but both are written after them, with the other tables. A swept
     # instrument's pulse program is longer than a static one's, so that start
     # position is not a stride either.
+    classic_clearing: set = set()
     if filters:
+        classic_clearing = _classic_clearing_instruments(
+            sid, det, tracks, patterns, 1 if compact_instruments else 2)
         filter_entries, filter_ptrs = _filter_entries(
-            sid, det, instr_used, lead, multiplier,
-            _classic_clearing_instruments(
-                sid, det, tracks, patterns, 1 if compact_instruments else 2))
+            sid, det, instr_used, lead, multiplier, classic_clearing)
         if not filter_entries and ilv_routing is not None:
             # The routing rides in the patterns; the table carries only the
             # sweeps (and, "shared", the one passband block).
@@ -864,6 +868,28 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         hold_travel=not (no_test_restart or real_firstwave_instruments
                          or gate_off_firstwave_instruments),
         eor_phases=eor_phases)
+    # The sfx drum's one-frame bandpass, written into the filter programs of the
+    # drum records. After the wavetable layout, because where the noise lands
+    # is read off the laid-out block (`sfx_drum_hit_lattice`); the table is
+    # rebuilt rather than patched so the replaced blocks leave no dead rows.
+    # Only over the classic reader's own table: the interleaved dialect's is
+    # not a per-record sweep to put a loop around.
+    if (sfx_drum_bandpass and sfx_drum and filters and filter_entries
+            and filter_ptrs and ilv_routing is None
+            and fmt == FORMAT_GTS5):
+        blips = sfx_bandpass_plan(sid, det, filter_ptrs, wave_entries,
+                                  wave_starts, lead, multiplier)
+        if blips:
+            rebuilt, rebuilt_ptrs = _filter_entries(
+                sid, det, instr_used, lead, multiplier, classic_clearing,
+                sfx_blips=blips)
+            if set(rebuilt_ptrs) == set(filter_ptrs):
+                if log:
+                    log(f"Sfx drum bandpass.......: {len(blips)} drum "
+                        f"record(s) carry the one-frame bandpass; filter "
+                        f"table {len(filter_entries)} -> {len(rebuilt)} "
+                        f"of {GT_MAX_FILT} rows")
+                filter_entries, filter_ptrs = rebuilt, rebuilt_ptrs
     # A counter-gated record whose plain program holds the frequency over
     # its gate's call gives the re-pitching steps back to the effects
     # (`_free_gate_calls`), before anything copies a record's block and
@@ -935,14 +961,15 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             patterns = sky.patterns
             wave_entries = wave_entries + sky.entries
     # The same block without its window (`note_rise_plan`): a store on every
-    # other tick of the whole note, one per two-tick row, each row pointed at
-    # a two-step program appended past every block whose start is known. Its
-    # rows are taken before the passes that fill free command columns.
+    # other tick of the whole note, one or two a row of two or three ticks,
+    # each row pointed at a short program appended past every block whose
+    # start is known. Its rows are taken before the passes that fill free
+    # command columns.
     if effects and det.note_rise is not None:
         rise = _gw_note_rise.note_rise_plan(
             sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
             gate_skip, row_calls, table, len(wave_entries), no_test_restart,
-            tuple(real_firstwave_instruments), log=log)
+            tuple(real_firstwave_instruments), log=log, reserve=wave_reserve)
         if rise is not None:
             patterns = rise.patterns
             wave_entries = wave_entries + rise.entries

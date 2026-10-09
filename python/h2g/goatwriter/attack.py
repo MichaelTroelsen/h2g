@@ -1,7 +1,7 @@
 """Fixed attack pitch, first-frame entries, two-stage and alternate-wave entries (split out of goatwriter.py, text moved unchanged)."""
 from __future__ import annotations
 
-from typing import (List, Optional)
+from typing import (List, Optional, Tuple)
 
 from ..detect import (Detection, EFFECT_BIT40_MASK)
 from ..sidfile import (SidFile)
@@ -81,6 +81,54 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     if off >= len(sid.data):
         return None
     return _freq_table_note(sid, sid.data[off])
+
+
+def fixed_attack_only(sid: SidFile, det: Detection,
+                      i: int) -> Optional[Tuple[int, int]]:
+    """(absolute note, frames) for a record whose effect byte is exactly $40,
+    or None: the fixed attack pitch with no `$04` waveform stage beside it.
+
+    The `$40` handler (`_find_fixed_pitch_index`) tests the same per-voice
+    counter `$04`'s attack waveform does, and `detect._find_two_stage`
+    resolves where it is reloaded from: the frame-count array, at the note's
+    first call (Lightforce `$F20A LDA $F6CB,X ... PLA / STA $F5FC,X`). In all
+    43 corpus files that test the bit the handler's `LDA counter,X` names the
+    cell the two-stage block's does (re-derived by
+    `tests/test_fixed_attack_only.py`), so a record without `$04` still runs
+    the count: frame 0 plays the pattern's note (the init path jumps past the
+    handler, `$F24E JMP $F4CA`), then the fixed pitch stands for `frames`
+    frames. **Not halved**: `_two_stage_frames`' halving is two handlers
+    decrementing one counter, and here only `$40` does.
+
+    Measured on the original (siddump-rt -m1, record 6's one onset in 400 s,
+    frame 897 voice 3; C:/t/fixed-attack-pitch-40-only-records/tr40.py):
+    `04E2` (the played note), then `09C4` for 4 frames -- Lightforce's frame
+    byte is 4 and `freqtable[$26]` is `$09C4` -- then the vibrato from the
+    played note (`04D1 04E2 04F3 ...`).
+
+    Exactly `$40`, not "has `$40` and not `$04`": the other bits each have an
+    emitter of their own that reaches the record first (`$80` the drum, the
+    low nibble the drum and arpeggio shapes), and no corpus record played by
+    a `$40`-carrying second bit is measured. The corpus holds five records
+    with `$40` and no `$04`; three are exactly `$40` -- Lightforce 6 (16
+    onsets in 180 s), Knucklebusters 13 (subtune 0, from 418 s; its played
+    note equals the fixed pitch there) and Sun_Never_Shines 17, a phantom
+    past that table which `_wavetable_entries` keeps out by naming -- and the
+    other two carry a second bit (Delta_Mix-E-Load 23 `$60`,
+    Trans-Atlantic 15 `$41`), neither seen in 200 s of any subtune.
+    """
+    if (not det.effect_two_stage or det.two_stage_frames < 0
+            or det.instr_start < 0):
+        return None
+    rec7 = det.instr_start + i * det.instr_stride + 7
+    fr = det.two_stage_frames + i * det.instr_stride
+    if max(rec7, fr) >= len(sid.data) or sid.data[rec7] != EFFECT_BIT40_MASK:
+        return None
+    frames = sid.data[fr]
+    note = _fixed_attack_note(sid, det, i)
+    if frames <= 0 or note is None:
+        return None
+    return note, frames
 
 
 def _note_alternate_note(sid: SidFile, det: Detection,

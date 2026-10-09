@@ -5,14 +5,16 @@ from collections import (Counter)
 from dataclasses import (dataclass)
 from typing import (List, Optional)
 
-from ..detect import (Detection, FILTER_ENABLE_BIT)
+from ..detect import (Detection, FILTER_ENABLE_BIT,
+                      find_sfx_drum_bandpass)
 from ..sidfile import (SidFile)
 from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERCUTOFF,
                         CMD_SETFILTERPTR, CMD_TONEPORTA, _SONG_MAX_PATTERNS,
                         FILT_MODULATE, FILT_SET_CUTOFF, FILT_SET_PARAMS,
                         FILT_STOP, GT_MAX_FILT, ILV_EMPTY_UNION,
                         ILV_FILTER_ROUTING, ILV_ROUTE_NOTHING,
-                        PACKED_PATTERN_LIMIT)
+                        PACKED_PATTERN_LIMIT, WAVE_JUMP, WAVE_MAX_DELAY,
+                        WAVE_NOISE_GATEOFF, WAVE_NOTE_KEEP)
 from ..detect import FILTER_SHAPE
 from ..search import search_file
 from .constants import GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_REST
@@ -901,6 +903,160 @@ def _free_running_block(passband: int, resctl: int, per_call: int,
     return block
 
 
+def sfx_drum_hit_lattice(entries: List[tuple], start: int, multiplier: int,
+                         period: int) -> Optional[tuple]:
+    """(call of the first hit, calls between hits) of the drum loop at `start`.
+
+    Read off the LAID-OUT wavetable rather than derived from the options that
+    wrote it, because the hit's first call is not one formula: the plain loop
+    opens with a whole frame of the record's own note (`multiplier` calls) and
+    the second-note prologue opens on the noise itself, and what the filter
+    program has to line up with is where the noise actually lands. Calls are
+    counted from the record's first wavetable row, which is also the first
+    call its filter program runs (the instrument loads both pointers on the
+    note's tick 0, and neither table steps until the next call; gplay.c:388-389
+    and :519-522).
+
+    None unless three bursts of noise are seen at an even spacing of exactly
+    `period * multiplier` calls: a record whose hits do not sit on that lattice
+    (a prologue longer than one period, a table cut short by its budget) is
+    one the filter program must not guess about.
+    """
+    wanted = period * multiplier
+    if wanted <= 0 or not 1 <= start <= len(entries):
+        return None
+    idx, call, hit_before, starts = start, 0, False, []
+    for _ in range(8 * (len(entries) + 8) + 64):
+        if not 1 <= idx <= len(entries):
+            return None
+        left, right = entries[idx - 1]
+        if left == WAVE_JUMP:
+            if not right:
+                break
+            idx = right
+            continue
+        delay = 1 <= left <= WAVE_MAX_DELAY
+        hit = left == (WAVE_NOISE_GATEOFF | 0x01) and right > WAVE_NOTE_KEEP
+        if hit and not hit_before:
+            starts.append(call)
+        if not delay:           # a delay holds the waveform it follows
+            hit_before = hit
+        call += left + 1 if delay else 1
+        idx += 1
+        if len(starts) >= 3:
+            break
+    if len(starts) < 3 or starts[0] < 1:
+        return None
+    if starts[1] - starts[0] != wanted or starts[2] - starts[1] != wanted:
+        return None
+    return starts[0], wanted
+
+
+def _run_length_rows(steps: List[int]) -> List[tuple]:
+    """Modulation rows for per-call steps: one row per run, at most $7F calls."""
+    rows: List[tuple] = []
+    for step in steps:
+        step &= 0xFF
+        if rows and rows[-1][1] == step and rows[-1][0] < FILT_MODULATE:
+            rows[-1] = (rows[-1][0] + 1, step)
+        else:
+            rows.append((1, step))
+    return rows
+
+
+def _sfx_bandpass_block(passband: int, blip: int, resctl: int, cutoff: int,
+                        step: int, multiplier: int, period: int,
+                        first_hit: int, at: int) -> List[tuple]:
+    """A drum record's filter program with the drum's one-frame blip in it.
+
+    **THE BLIP LIVES IN THE RECORD'S OWN PROGRAM, NOT BEHIND A WAVETABLE
+    `CMD_SETFILTERPTR`.** Goattracker has one filter pointer for the whole
+    tune, so a pointer jump from the drum would abandon whatever sweep the
+    program was running (and a sweep on another voice with it) and could not
+    come back to it: nothing records where the accumulator stood. A program
+    that carries the blip itself loses nothing. It is a loop, because the
+    player's drum is -- one hit every `period` frames from the note's start,
+    on a counter zeroed there -- and because the original's sweep does not stop
+    after the table's longest modulation step: `[set][blip][restore][sweep]
+    [jump]`, the jump taking no call (gplay.c:256-260).
+
+    The blip is `FILT_SET_PARAMS | blip` for `multiplier` calls (one frame),
+    then the record's own passband back. A params row with no cutoff row
+    beside it leaves the cutoff alone (gplay.c:265-275), so the sweep's value
+    runs through the blip; **the drum's own `$D416` write (the `$60` in
+    Nineteen) is NOT carried.** Restoring the cutoff after it takes an
+    ABSOLUTE `FILT_SET_CUTOFF` whose value differs at every hit of a note, and
+    a looped restore can only be one constant. See
+    `tests/test_sfx_drum_bandpass.py` for the row count of the unrolled
+    alternative against the table's `GT_MAX_FILT`.
+
+    The two calls the params rows take do not modulate, so the sweep would fall
+    two steps short every period. The period's whole travel (`period * step`,
+    mod 256) is therefore spread over the `period * multiplier - 2` calls that
+    do, the remainder going on the LAST calls so each period ends exactly where
+    the player's would; the run before the first hit keeps the table's usual
+    per-call step.
+    """
+    m = max(1, multiplier)
+    calls = period * m
+    n_bp = m - 1                    # rest of the hit frame, still bandpass
+    n_tail = calls - m - 1          # the rest of the period, restored
+    signed = step - 256 if step >= 0x80 else step
+    total = period * signed
+    n_mod = n_bp + n_tail
+    q, r = divmod(total, n_mod)
+    each = [q] * (n_mod - r) + [q + 1] * r
+    per_call = _filter_step_per_call(step, m)
+    block: List[tuple] = [(FILT_SET_PARAMS | passband, resctl),
+                          (FILT_SET_CUTOFF, cutoff)]
+    block += _run_length_rows([per_call] * (first_hit - 1))
+    loop_at = at + len(block)
+    block.append((FILT_SET_PARAMS | blip, resctl))
+    block += _run_length_rows(each[:n_bp])
+    block.append((FILT_SET_PARAMS | passband, resctl))
+    block += _run_length_rows(each[n_bp:])
+    block.append((FILT_STOP, loop_at))
+    return block
+
+
+def sfx_bandpass_plan(sid: SidFile, det: Detection, filter_ptrs: dict,
+                      wave_entries: List[tuple], wave_starts: List[int],
+                      lead: int, multiplier: int) -> dict:
+    """{record index: (blip passband, first hit call)} for the drum records.
+
+    A record qualifies when all of: the file's drum block sets a passband for
+    its frame (`find_sfx_drum_bandpass`) that differs from the filter's own;
+    the filter is the plain set-cutoff-then-sweep block (not the clamped or
+    free-running one, whose programs are not a single sweep to put a loop
+    around); the record carries effect bit `$80`; it has a filter program of
+    its own (`filter_ptrs`, which already excludes records routing no voice);
+    and the wavetable laid out for it really is a regular drum loop
+    (`sfx_drum_hit_lattice`). Everything else keeps the program it had.
+    """
+    filt = det.filter
+    if (filt is None or filt.free_running or filt.clamp or not filter_ptrs
+            or det.sfx_pitch < 0 or det.sfx_period <= 0
+            or det.instr_stride <= 0):
+        return {}
+    blip, _cutoff = find_sfx_drum_bandpass(sid)
+    if blip < 0 or blip == filt.passband:
+        return {}
+    data = sid.data
+    plan: dict = {}
+    for i in sorted(filter_ptrs):
+        eff_at = det.instr_start + i * det.instr_stride + 7
+        if eff_at >= len(data) or not data[eff_at] & 0x80:
+            continue
+        if i + lead >= len(wave_starts):
+            continue
+        lattice = sfx_drum_hit_lattice(wave_entries, wave_starts[i + lead],
+                                       multiplier, det.sfx_period)
+        if lattice is None:
+            continue
+        plan[i] = (blip, lattice[0])
+    return plan
+
+
 def free_running_start(tracks: List[List[int]], patterns: List[List[int]],
                        start: int, log=None):
     """Seed Goattracker's cutoff with the free-running accumulator's file byte.
@@ -1206,8 +1362,13 @@ def free_running_fetch_holds(tracks: List[List[int]],
 
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
                     lead: int = 1, multiplier: int = 1,
-                    clearing_instruments: set | None = None):
+                    clearing_instruments: set | None = None,
+                    sfx_blips: dict | None = None):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
+
+    `sfx_blips` (`sfx_bandpass_plan`) names the drum records whose program
+    carries the drum's one-frame bandpass; the others are written as ever.
+
 
     The player adds a per-instrument step to a per-voice cutoff accumulator
     every frame and writes the result to $D416; Goattracker's filter table
@@ -1246,7 +1407,17 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
             # unsaid rather than stamping out another voice's circuit.
             continue
         per_call = _filter_step_per_call(step, multiplier)
-        if filt.free_running:
+        block = None
+        if sfx_blips and i in sfx_blips and resctl & 0x0F:
+            blip, first_hit = sfx_blips[i]
+            block = _sfx_bandpass_block(
+                filt.passband, blip, resctl, filt.cutoff, step, multiplier,
+                det.sfx_period, first_hit, len(entries) + 1)
+            if len(entries) + len(block) > GT_MAX_FILT:
+                block = None        # the blip does not fit: keep the sweep
+        if block is not None:
+            pass
+        elif filt.free_running:
             block = _free_running_block(filt.passband, resctl, per_call,
                                         len(entries) + 1)
         elif filt.clamp:

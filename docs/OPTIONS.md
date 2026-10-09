@@ -1779,6 +1779,81 @@ a song whose search fails outright keeps what the previous run recorded. The
 overflow itself is open: above `-S1` a drum record takes six entries and only
 its sweep is checked against the budget.
 
+## `--sfx-drum-bandpass` (the drum's one frame of bandpass)
+
+The drum's fire block writes more than noise. Nineteen `$948A`: `$48 → $D40F`,
+`$81 → $D412`, `$60 → $D416`, `$2F → $D418`, and the next frame's
+`LDY #$1F / STY $D418` takes the passband back. On the sfx-drum files that
+filter, **1109-1487 routed frames a file are that bandpass** (`-t 180`, v0.5.516,
+historical) and `--sfx-drum` emitted none of them. Needs `--sfx-drum`, `--filter`
+and `--format gts5`. **Off by default, and measured to lose on the one column
+that can see it** — see below. `detect.find_sfx_drum_bandpass` reads the pair
+only where it sits directly behind the drum's `SFX_DRUM_SHAPE` match.
+
+**The blip lives in the drum record's own filter program.** Goattracker has one
+filter pointer for the whole tune, so a wavetable `CMD_SETFILTERPTR` from the
+drum would abandon whatever sweep was running — another voice's included — and
+could not come back to it: nothing records where the accumulator stood. A
+record that is both a drum and a filter carries a loop instead:
+
+```
+90 F4   set params: lowpass, voice 3 (the record's own)
+00 40   set cutoff
+A0 F4   ← the blip: bandpass for one FRAME (multiplier calls)
+90 F4   the record's own passband back
+04 FA   the sweep, 4 calls     ┐ period * step spread over the
+FF 03   jump to the blip       ┘ period*multiplier - 2 calls that modulate
+```
+
+The two params calls do not modulate (gplay.c:265-275), so the period's whole
+travel is spread over the other calls and every period ends where the player's
+does. The jump takes no call (gplay.c:256-260), which is also why the sweep no
+longer stops after the table's longest step. Where the noise lands is read off
+the **laid-out wavetable** (`sfx_drum_hit_lattice`), not derived: the plain loop
+opens a whole frame in (`-S3`: call 3), the second-note prologue one call in.
+A block that does not fit `GT_MAX_FILT` keeps the old sweep. A record routing no
+voice (Nineteen's 14, a clear) gets none: the bandpass would be inaudible.
+
+**Five files move** (forced on over the presets; 89 compared, 6 not in
+presets): I_Ball (filter table 15 → 22 of 64 rows), Nineteen (15 → 20), Pandora
+(16 → 25), Thundercats (28 → 33), Trans-Atlantic (8 → 10). Bangkok_Knights and
+Mega_Apocalypse do not: their fire block has no `$D418` store to read. Star_Paws
+does not: its drum record is not a filtered one (0 of its original's 1116 BP
+frames are reachable, `-t 180`). Thundercats reaches 114 of the original's
+1171 BP frames: its drum is mostly record 0, unfiltered, and a blip there would
+have to live in whichever OTHER record's program is running.
+
+**THE `$60` CUTOFF IS NOT CARRIED, AND IT CANNOT BE WITHIN THE TABLE.** After
+the spike the sweep is where it would have been, which is a different number at
+every hit; restoring it takes an absolute `FILT_SET_CUTOFF` per hit — a params
+row and a cutoff row for the blip, the same two for the restore, one modulation
+row: five rows a hit. A note sustains up to ~20 hits (chains of 19-20 at exactly
+`period` frames on Nineteen, `-t 180`), so one record needs ~100 rows against 64
+for the whole table. A looped restore can only be a constant. Measured at
+`-t 180` (`cutoff_sweep`, ours over original travel; historical): restoring to
+the record's start cutoff after a `$60` spike takes Nineteen 0.451 → 0.639 and
+Pandora 0.503 → 0.734 (I_Ball 1.071 → 1.064) and costs the sweep's range
+(65024 → 24576: it no longer wraps); not restoring takes them to 0.334 / 0.372.
+Neither is shipped.
+
+**Measured: `band` falls on all five, and the emission is not why.** `passband_agree`
+(`-t 180` under presets, off → on): I_Ball 0.818 → 0.734, Nineteen 0.830 → 0.712,
+Pandora 0.877 → 0.754, Thundercats 0.867 → 0.858, Trans-Atlantic 0.848 → 0.806.
+Our BP frames are our noise frames one for one (the offset histograms of BP and
+noise onset against the original's are identical on every file), and within its
+note the blip sits where the original's does: BP minus the voice's last attack is
+`{1: 226, 7: 226}` on both sides on Trans-Atlantic and bin for bin equal on
+Pandora. What the lag-aligned union charges is the drum's note onsets, which sit
+on the original's frame in only 16-27% of hits on Nineteen, I_Ball and
+Trans-Atlantic and 2% on Pandora (3-4 frames early on voice 3; `-t 60`, after
+the global startup lag). A column that
+reads the blip relative to its note would score it; this one cannot.
+**A known residual:** the loop runs until the next filtered note loads its
+pointer, while a rest silences the drum's wavetable first, so a few BP frames
+land on rests (Nineteen `-t 40`: 2 of 235).
+
+`tests/test_sfx_drum_bandpass.py`.
+
 ## `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **44 corpus files** the instrument effect byte's bit `$04` is not an arpeggio

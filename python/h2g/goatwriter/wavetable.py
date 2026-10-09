@@ -25,6 +25,7 @@ from .arpeggio import (fixed_arp_duty_entries, gateoff_nibble_arp_budget_pair,
                        GatePhase)
 from .call_phase import nibble_gate_step_lead
 from .attack import (_counter_gate_restore_call, _fixed_attack_note,
+                     fixed_attack_only,
                      _note_alternate_note, _two_stage_entries,
                      _two_stage_frames, _two_stage_pitch_seq_entries,
                      _voice_two_stage_entries, _wave_alternate_entries)
@@ -320,6 +321,35 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                          if effects else None))
             if two is not None:
                 return two
+
+    # Effect bit $40 with no $04 beside it: the fixed attack pitch alone, on
+    # the same counter. The record's waveform does not change, so the block is
+    # `_two_stage_entries` with the record's own waveform as the "attack" --
+    # the lead frame, `frames` frames at the fixed note, then the played note
+    # back (or held to the vibrato gate, `restore_call`). Before this the
+    # record fell through to the plain shape and never sounded the pitch
+    # (`fixed_attack_only`; Lightforce 6, the one such record the corpus
+    # plays). `frames` is the byte as it stands: no `$04` handler halves it.
+    #
+    # **Only a record some reachable pattern names.** `instr_used` is a count
+    # of waveform-looking +2 bytes, and where the extension sits inside a
+    # 16-byte record (Sun_Never_Shines) it runs past the table into data:
+    # record 17 there reads `$40`, frames 128 and note index 0, and laying
+    # 128 frames of fixed pitch out for a record no music plays cost 252
+    # bytes of wavetable. `min_notes` omits an instrument no orderlist-
+    # reachable pattern plays (`patterns.min_played_notes`), which is the
+    # question here; None (a direct call) emits as the record says.
+    if (two_stage and effects and det.effect_two_stage
+            and (min_notes is None or (i + lead + 1) in min_notes)):
+        only = fixed_attack_only(sid, det, i)
+        if only is not None:
+            held = _two_stage_entries(
+                wave, wave, only[1], multiplier, attack_note=only[0],
+                budget=budget, written=no_test_restart, start=start,
+                restore_call=_counter_gate_restore_call(
+                    sid, det, i, multiplier, no_test_restart))
+            if held is not None:
+                return held
 
     # The same attack with per-voice parameters (Ninja). Gated on `effects`
     # like every other reading of +7 -- with the flag off this function still
@@ -1075,6 +1105,35 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
 
     Pinned by `tests/test_drum_hard_restart_window.py`. Probes:
     C:/t/drum-note-envelope-reset-above-s1/p.
+
+    **Neither does release nibble 0 on the record, nor `gt2reloc -A0000`**
+    (A/B at the bridged tree dbb9364 = v0.5.516's code, not shipped;
+    `tests/test_drum_release_adparam.py`). Release 0 on the drum records
+    (bit $01, drum player, -S>1; the same 29 files the hard restart
+    reached) does remove the wrap: the share of drum attacks starting
+    within 5 lines of the rise goes 0.019 -> 0.864 on Rasputin (0.88-0.91
+    on Formula_1, Warhawk, Proteus, Bump_Set_Spike; median delay 514 -> 0,
+    the original's is 1) and ENV3 energy over 4 frames rises (Rasputin
+    76.42 -> 76.88 dB, original 78.31; Formula_1 76.68 -> 77.78). But the
+    release is what the drum rings with after its gate-off tick, and R=0
+    cuts it: ENV3 summed over 8 frames from the rise 501665 -> 278660 on
+    Rasputin (original 531166), energy over 8 frames 80.44 -> 78.14 dB
+    (original 80.71). Fidelity, -t 180, presets, --sound, 29 files:
+    `adsr_exact` falls on 28 and rises on none (mean -24 pp),
+    `release_tail_agreement` the same (mean -31 pp, Proteus 1.0 -> 0.31),
+    `loud` -1 pp and `aud` -1.5 pp, `nrun` up on two files. The R=0 write
+    has to survive into the gate-off tick for the wrap to stay gone, so a
+    form that restores the record's release after the attack starts is the
+    untried one.
+    `-A0000` (the original writes $0000 before every rise; Goattracker's
+    `adparam` default is $0F00) changes no packed byte under presets on
+    any of the 89 files that convert: every file carries `no_hard_restart`,
+    greloc.c counts hard-restart instruments over USED instruments only and
+    player.s assembles the `ADPARAM` store only when there is one. Forced
+    to `no_hard_restart=False` on 14 files it lifts `adsr` (mean +8.5 pp;
+    Warhawk 82.2 -> 96.8, Thrust 76.5 -> 95.4) and moves no other column,
+    but the `.sng` does not store `adparam`: GoatTracker plays $0F00 where
+    the harness would have measured $0000.
 
     `written` (`--no-test-restart`, or a `real_firstwave_instruments`
     record) keeps the gate. There the tick follows the firstwave call

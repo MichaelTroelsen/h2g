@@ -12347,6 +12347,23 @@ remainder, 1109-1487 frames per file, is the drum's own one-frame bandpass,
 which nothing emits. Exactly those seven files move bytes (corpus byte-hash,
 89 compared). `tests/test_first_d418_passband.py`.
 
+**That remainder is now emittable, behind `--sfx-drum-bandpass`, and the
+`$60` half is not.** The drum record's own filter program carries the
+bandpass as a loop (`goatwriter.sfx_bandpass_plan`; § `--sfx-drum-bandpass`
+in OPTIONS.md): set, blip for one frame, restore, sweep, jump, with the
+period's travel spread over the calls that modulate. It is in the record's
+program and not behind a wavetable `CMD_SETFILTERPTR` because Goattracker has
+one filter pointer, which a jump from the drum would take from whatever sweep
+was running. The drum's `$D416` write cannot be carried: restoring the cutoff
+after it is an absolute row per hit and a note sustains ~20 hits, five rows
+each, against a 64-row table. Five files move forced on (I_Ball, Nineteen,
+Pandora, Thundercats, Trans-Atlantic; 89 compared); the option stays off
+because `passband_agree` falls on all five (0.82 -> 0.73, 0.83 -> 0.71, 0.88 ->
+0.75, 0.87 -> 0.86, 0.85 -> 0.81, `-t 180`, historical), while the blip sits on
+our noise frame exactly and at the original's phase within its note: the loss
+is the drum's note onsets, which the lag-aligned union charges twice.
+`tests/test_sfx_drum_bandpass.py`.
+
 ### 7.eeeeee The bounds engine's pulse phase: a free flag, a per-voice sim, and the original's clock
 
 § 7.ccc's bounds engine reseeds `$D402/$D403` from the record at every note
@@ -13713,12 +13730,79 @@ of 82 frames over 120 s. With the lag it agrees on 112 and 82.
 The corpus byte-hash under presets (`fidelity._preset_opts`) compared 95
 files: 89 converted, 6 refused, and 2 moved, Battle_of_Britain and
 Game_Killer. The same two moved, and only those, with `tie_restart` forced
-on. The other three files are logged and not emitted. Crazy_Comets and
-Chimera have rows of three ticks, which hold a store on alternating halves.
-Human_Race's patterns go past the packed limit.
+on. Of the other three files, Human_Race's patterns go past the packed
+limit and is logged and not emitted. Crazy_Comets and Chimera were declined
+at that time for rows of three ticks, which hold a store on alternating
+halves; see "Rows of three ticks" below.
 
 `tests/test_note_rise.py` re-reads the sweep off the original's trace and
 re-measures both files' high-byte agreement through gt2reloc.
+
+**Rows of three ticks** (Crazy_Comets `$5509` `DEC`, Chimera `$C661` `INC`,
+both -S1, one call a tick). A store is every second tick and a row is three,
+so a row holds one store on its tick 0, 1 or 2, or two on its ticks 0 and 2,
+and the rows alternate one and two. The counter reads `base + first + a *
+frames` on the fetch tick of lap row `a`, so with three ticks a row the phase
+flips with the row's own parity (`store_phase`; two ticks leave it alone).
+siddump of Crazy_Comets voice 0 from the attack at frame 481 reads `5C 5F 5C
+61 5B 5E 5A 5C 59 5F 58 61 ...`: the stores `5C 5B 5A 59 ...` on every second
+frame from the third, the vibrato between them. A program is keyed on the
+ticks it stores on (`row_calls_of`): a note on the call before each store and
+on the call after it, a note on the row's last call, and for two stores both
+steps in one program. The tail after the last store is shared by every
+program that ends on the same tick, and is empty where the step is the row's
+last call. `store_rows` is the store-to-row map. A row of three has a gap of
+`2 * tick_calls - 2` calls to its last call, so it is placed only to 8 calls
+a tick (`delays_fit`; no corpus file is there). The one-call-tick decline of
+the old planner ("a one-call tick with the store on the second") is gone: its
+only cause was a tail of delay -1, which is now an empty tail.
+
+Measured with the tree at the bridged base dbb9364 plus this change, under
+presets, -t 180 (`fidelity.measure`, nothing written). "High byte" is the
+original's frames, inside the notes of the record, 1 to `$20` below (above,
+for Chimera: 3 to `$20`) the note's high byte, on which ours reads the same
+byte, lag-aligned:
+
+| file | column | before | after |
+|---|---|---:|---:|
+| Crazy_Comets | high byte, voice 0, `$0FF` notes | 0 of 384 | 384 of 384 |
+| Crazy_Comets | `reversal_ratio`, `depth_ratio` | 0.751, 0.207 | 0.924, 0.795 |
+| Crazy_Comets | `bend_ratio`, `travel_ratio` | 1.639, 0.628 | 1.162, 0.818 |
+| Crazy_Comets | `tie_ratio`, `tie_agreement` | 0.602, 0.569 | 0.689, 0.652 |
+| Chimera | high byte, voice 1, `$0F0` notes | 0 of 186 | 174 of 186 |
+| Chimera | `reversal_ratio` | 0.811 | 0.861 |
+| Chimera | `bend_ratio`, `travel_ratio` | 1.033, 0.717 | 0.941, 0.735 |
+| Chimera | `tie_ratio`, `tie_agreement` | 0.781, 0.675 | 0.826, 0.716 |
+
+Every other column of both rows is identical. At 90 s the 8 Chimera frames
+that differ are 4 pairs of consecutive frames on which the original holds one
+store byte for two frames (`21 21` at frames 505-506, ours `01 01`: a repeated
+frame, not a store we placed wrong); the 12 at 180 s were not itemised. The
+planner also leaves Chimera's one row with its command column in use (pattern
+52, row 0, stores 26 and 27) and Crazy_Comets' five mixed rows alone. The
+corpus byte-hash compared 95 files, 89 converted, 6 refused, and 2 moved:
+Chimera and Crazy_Comets; Battle_of_Britain and Game_Killer are
+byte-identical to before.
+
+**The rise yields wavetable rows to the past-table split.** Crazy_Comets'
+46 store values take 117 of the wavetable's 120 free entries, and the
+past-table wave split (`past_table_wave.retarget_mixed_steps`, which runs on
+the finished song and needs 12 of them for 3 pinned copies of its wave
+program) then left its 5 note rows on a relative step past the table, which
+`tests/test_past_table_split.py` forbids (the harness could not see it: with
+the split switched off, `mixed_split(False)`, the base tree moved one column
+at -t 180, `our_oscillation` 0.99838 to 0.99837). So `convert._assemble`
+asks `past_table_wave.wave_rows_short` how many rows the split lacks on a
+song whose rise spent wavetable entries, and builds it again with that many
+held back (`build_sng(wave_reserve=)`, `note_rise_plan(reserve=)`, up to
+twice more). Spreading 13 values over the range to make room is not the
+answer for rows of three: each spread value repeats in every kind of row (a
+row of three has four), and 28% of the stores agreed. So where the rise has
+more than one kind of row it keeps its lowest values exact and leaves the
+stores above them to the vibrato (Crazy_Comets: 43 of 46 values, 23 stores
+and 16 rows left out); where it has one (Game_Killer's) it spreads and takes
+the nearest, as before. Game_Killer and Battle_of_Britain asked for no
+reserve (their bytes are unchanged).
 
 ### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
@@ -14062,6 +14146,42 @@ its patterns holding only records without an attack. The four Flash_Gordon and t
 Shockway_Rider "instrument unsettled" rows are in patterns no orderlist reaches.
 (`tests/test_free_note_entry_split.py`.)
 
+**The walk starts on the original's instrument, not Goattracker's 1** (task
+`entry-instruments-init-index`, figures historical at dbb9364, under presets).
+Goattracker starts a channel on instrument 1 (gplay.c:223); Hubbard's init writes one
+index into all three voice slots (`LDA #$1B / STA $0955,X / DEX / BPL` at Knucklebusters
+`$043B`, `LDA #$05 / STA $C2FE,X` at Delta `$BE13`) and a voice sounds it until a pattern
+names another. `detect._find_init_instrument` reads it off that loop (36 corpus players;
+`Detection.init_instrument`), never off the file image of the array -- Knucklebusters'
+image is `$1B $13 $0B` and Delta's `$10 $12 $0F` against inits of `$1B` and `$05`. A
+siddump of frame 0 finds the index in all three slots of subtune 0 in 34 of the 36; in
+One_on_One and Powerplay_Hockey `A = 0` branches round the music init, and 24 later
+subtunes of six players never run the loop (of 166 subtunes, 108 start on the index in
+all three slots, 32 on voice 0 alone, 26 on the image; `tests/test_init_instrument.py`). `_entry_instruments` and `_position_entries` start
+every voice's first lap on it (`note_passes.init_entry_start`, opened around `build_sng`
+by `entry_instruments_start`, so every reader of the walk agrees), except where the player
+parks silence until the first instrument (`pre_instrument_silence`: nothing before it is
+heard) or the index names no record the writer keeps (Wiz's `$1B` against 20 records).
+`_initial_for`, the option path (`--initial-instrument`), reads it too, so voices 1 and 2
+of Knucklebusters no longer start on the image's `$13` and `$0B`.
+
+**It moves no byte, and that is the finding.** Corpus byte-hash under presets: 95 files,
+6 refused in both arms, 89 compared, 0 moved; the free-note decline counts are the same
+in Knucklebusters (1), Delta (11), Flash_Gordon (4) and Shockway_Rider (1). 18 players take
+a start; forcing `initial_instrument` on for them moves one file (Dragons_Lair_Part_II,
+two voice orderlists), so in the other 17 no orderlist's first sounding row lacks an
+instrument column and the init instrument is never what a first-lap row plays. In
+Knucklebusters the start changes the entry set of 11 patterns, 8 of which name an
+instrument on row 0; the other three (`$00`, `$07`, `$B6`) change no respell.
+
+**Delta's "held `$02`" is not the walk.** The original enters pattern `$02` holding idx 0,
+1 and 2 on the three laps (frames 2, 7202, 9602); the walk lists GT `{1, 2}` for it
+because the converted voice-0 orderlist is cut at 254 entries
+(`tracks.py`: `if count >= 254: b1 = 0xFF`), before the original's pattern `$05` -- the
+one that names idx 2 -- so the converted file never holds GT 3 there. The walk is right
+about the file it walks; the cut is the VB6 read limit, on an orderlist the original
+plays on past frame 11997 (position `$16` onward, siddump-rt `-w` on `$C2EC`).
+
 **Records with no attack: the pulse-only variant** (task `free-note-pulse-only-variant`,
 figures historical at 6e467ff plus the cycle-5 merge, under presets). The skipped block
 is the same whatever the record holds, so a flagged note on a record with no attack
@@ -14077,10 +14197,12 @@ one.
 - **One definition of "an attack"**: `free_note_record_has_attack`, which both the
   split above and this variant read. It is the attack our full start plays and a
   flagged note skips: the two-stage block, or the bit-$80 drum's fixed-pitch prologue
-  ($80 and $40). The player's counter also drives $40 alone (Lightforce record 6) and
-  $04 with attack waveform 0, but our wavetable writes no attack for either, so they
-  count as none. No corpus row the pass sees plays one of those records
-  (`C:/t/free-note-pulse-only-variant/attack_rows.py`).
+  ($80 and $40), or a record that is exactly $40 (`fixed_attack_only`, 7.NEW: Lightforce
+  record 6; it counts since the wavetable emits its fixed pitch, and
+  `free_note_wave_start` returns 0 for it, so a flagged row on it declines). The
+  player's counter also drives $04 with attack waveform 0, but our wavetable writes no
+  attack for it, so it counts as none. No corpus row the pass sees plays one of those
+  records (`C:/t/free-note-pulse-only-variant/attack_rows.py`).
 - **The counter guards are read off the player** (`free_note_attack_bits`). Every read
   of the frame counter the block reloads must sit behind `AND #$04 / BEQ` or
   `BIT / BVC` on the record's effect byte (Lightforce $F414 and $F4A1). A read behind
@@ -14988,3 +15110,71 @@ carry the program are the swell's `4xy`/`8xx` commands. Open: free the
 wavetable (the loops' entries are two each and differ only in the speed row
 they name), then emit the alternation with the vibrato kept on the frames
 between. `tests/test_counter_fall.py`.
+
+### 7.NEW Effect bit `$40` alone: the fixed attack pitch on a record with no `$04`
+
+The `$40` handler (`BIT effect / BVC / LDA counter,X / BEQ / DEC counter,X /
+LDA idx,Y`, Lightforce `$F4A1`) tests the same per-voice counter bit `$04`'s
+attack waveform does. In all 43 corpus files that carry both blocks the
+handler's `LDA counter,X` names the cell the two-stage block's does
+(`tests/test_fixed_attack_only.py` re-derives it). The counter is reloaded from
+the frame-count array at a note's first call (Lightforce `$F20A LDA $F6CB,X ...
+PLA / STA $F5FC,X`) whatever the record's bits say, so a record that sets only
+`$40` still runs the count: frame 0 plays the pattern's note (the init path
+jumps past the handler, `$F24E JMP $F4CA`), then the fixed pitch stands for
+`frames` frames, then the handler yields to the vibrato where the record's `+5`
+is set. **The count is not halved**: `_two_stage_frames`' halving is two
+handlers decrementing one counter, and only `$40` does here.
+
+Measured on the original (siddump-rt, -m1, `C:/t/fixed-attack-pitch-40-only-records/tr40.py`):
+Lightforce record 6 (`$40`, frame byte 4, note index `$26` = `$09C4`), voice 3,
+frame 897: `04E2` (the played note), `09C4` for exactly 4 frames, then the
+vibrato from the played note, `04D1 04E2 04F3 0504`. Before this change
+`_two_stage_entries` emitted the pitch only inside the `$04` block, so a
+`$40`-only record fell to the plain shape and sounded none of it.
+
+`fixed_attack_only` (attack.py) returns `(absolute note, frames)` for a record
+whose effect byte is **exactly** `$40`, and `_wavetable_entries` hands the block
+to `_two_stage_entries` with the record's own waveform as the "attack": the lead
+frame, `frames * multiplier` calls on the fixed note, then the played note back
+(or held to the vibrato gate, `restore_call`). Under `two_stage` only, like the
+rest of the family. Exactly `$40` rather than "`$40` and not `$04`" because
+every other bit has an emitter that reaches the record first, and no record
+carrying `$40` plus a second bit is measured.
+
+**Only a record some reachable pattern names** (`min_notes`, when given).
+`instr_used` counts waveform-looking `+2` bytes, and where the extension sits
+inside a 16-byte record (Sun_Never_Shines) it runs past the table: record 17
+there reads `$40`, frames 128, note index 0, and laying it out cost 252 bytes of
+wavetable for a record no music plays. The corpus holds three records that are
+exactly `$40`: Lightforce 6, Knucklebusters 13 and that phantom.
+
+Reach, corpus byte-hash under presets (95 files, 6 refused, 89 compared): two
+files move, Lightforce (+14 bytes) and Knucklebusters (+16); Commando is
+unchanged. Sun_Never_Shines moves by 252 bytes without the named-record guard and
+not with it.
+
+- **Lightforce** plays record 6 on 16 onsets in the first 180 s. Pitch frames 1-4
+  after those onsets agreeing with the original within 2 frequency units: **0 of
+  64 -> 64 of 64**; all frames of all voices 17593 -> 17721 of 26982. The `slides`
+  column reads 1946 -> 1866 against the original's 2100, which is the wrong way
+  by the count and the right way frame by frame: the original does not slide on
+  frames 1-4 of those notes (a constant pitch), the old conversion did, and the
+  column counts sliding frames, so removing 4 per onset moves it away from an
+  original that the conversion already undercounts elsewhere.
+- **Knucklebusters** plays record 13 only in subtune 0, at 418 s and 513 s, both
+  times on a note equal to the fixed pitch (`$2BD6`), so the emission is neutral
+  there and no column sees it.
+
+`free_note_record_has_attack` counts such a record as having an attack now (a
+flagged note skips it, the counter not being reloaded), and
+`free_note_wave_start` returns 0 for it, so a flagged row on it declines. The
+free-note log of both movers is unchanged line for line: no flagged row reaches
+one.
+
+Not modelled: a short note whose vibrato gate never opens holds the fixed pitch
+to its end in the original (`_attack_hold_records`, which takes `$44` records
+only); Lightforce's vibrato gate is a duration gate (3), and no short record-6
+note was looked for -- the 16 measured onsets all agree on frames 1-4. The shape of the vibrato after the pitch (the original
+steps down first, `04D1`; ours up) is the vibrato's, not this block's.
+`tests/test_fixed_attack_only.py`.

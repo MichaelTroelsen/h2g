@@ -171,6 +171,10 @@ def test_rasputin_packs_under_pulse_phase_at_S2_only_with_the_budget(monkeypatch
     doc = _presets()
     opts = F._preset_opts(doc, "Rasputin.sid")
     opts["pulse_phase"] = True
+    # The configuration the case was measured at, held here rather than read
+    # from presets.json: v0.5.523's size search moved Rasputin to max_rows 94,
+    # dedup off (0a67940), where no pattern reaches the limit at all.
+    opts.update(max_rows=128, dedup=True)
     multiplier = doc["songs"]["Rasputin.sid"]["multiplier"]
     assert multiplier > 1, "the case is a multispeed file"
 

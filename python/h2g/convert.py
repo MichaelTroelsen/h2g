@@ -6,6 +6,7 @@ from typing import Callable, List
 
 from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import call_phase as _call_phase
+from .goatwriter import note_passes as _gw_note_passes
 from .goatwriter import skydive as _gw_skydive
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          TEMPO_FASTEST_STEADY,
@@ -33,7 +34,7 @@ from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
 from . import past_table_wave as _past_table_wave
-from .past_table_wave import pin_past_table_wave_notes
+from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
 from .sidfile import SidFile, load_sid
 from .stored_wave import stored_wave_copies
 from .tracks import (apply_initial_instruments, convert_tracks,
@@ -235,6 +236,7 @@ def convert(sid_path: str, log: Logger = print,
             ilv_filter_routing: bool = False,
             gate_off_firstwave_instruments: tuple = (),
             tie_restart: bool = False,
+            sfx_drum_bandpass: bool = False,
             regrid_full_debt: bool = False,
             regrid_per_play: bool = False,
             regrid_prepay: int = 0) -> bytes:
@@ -407,6 +409,14 @@ def convert(sid_path: str, log: Logger = print,
     counter's phase. Needs `tie`. Off by default: Commando is one of
     these players, and the fixture encodes the old spelling (its own ties
     all restart silently, so presets move none of its bytes either).
+
+    sfx_drum_bandpass writes the one frame of bandpass the sfx drum's fire
+    block sets (`detect.find_sfx_drum_bandpass`) into the filter program of
+    each drum record that also carries a filter: the program becomes a loop
+    of [blip, restore, sweep] on the drum's own period, so the sweep runs
+    through it (`goatwriter.sfx_bandpass_plan`). The drum's `$D416` cutoff
+    write is not carried. Needs `sfx_drum`, `filters` and gts5. Off by
+    default: it moves the bytes of the sfx-drum files that filter.
 
     regrid_full_debt makes `regrid`'s budget pay the whole debt: it counts
     every PLAY of a voice-0 pattern, packed `$D0+n` repeats included, and
@@ -1046,8 +1056,8 @@ def convert(sid_path: str, log: Logger = print,
     # song is built a second time (below) from these copies.
     pristine = (copy.deepcopy(tracks), copy.deepcopy(new_patterns))
 
-    def _assemble(tracks, new_patterns, gate_off, log):
-        sng = build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
+    def _build(tracks, new_patterns, gate_off, log, reserve):
+        return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                          speed_table=speed_table, effects=effects,
                          pulse=pulse, multiplier=multiplier,
                          sustain_exact=sustain_exact,
@@ -1083,7 +1093,41 @@ def convert(sid_path: str, log: Logger = print,
                          arps=ilv_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
-                         tie_restart=tie_restart)
+                         tie_restart=tie_restart,
+                         wave_reserve=reserve,
+                         sfx_drum_bandpass=sfx_drum_bandpass)
+
+    def _assemble(tracks, new_patterns, gate_off, log):
+        # Every pass that settles which instrument a row plays walks the
+        # orderlists from the instrument the ORIGINAL starts a voice on
+        # (`Detection.init_instrument`), not Goattracker's instrument 1.
+        # Around every build, the note rise's rebuilds included.
+        with _gw_note_passes.entry_instruments_start(
+                _gw_note_passes.init_entry_start(det, instr_base)):
+            if det.note_rise is None:
+                sng = _build(tracks, new_patterns, gate_off, log, 0)
+            else:
+                # The note rise's per-row programs (`goatwriter.note_rise`) spend
+                # the wavetable's free entries, and the past-table split that runs
+                # on the finished song spends them too: Crazy_Comets' 117 left it
+                # 3 of the 12 it needs, and `tests/test_past_table_split.py` holds
+                # that no note row is left on a layout-dependent cell. So a song
+                # whose split came up short of wavetable rows is built again with
+                # that many held back from the rise (the pass that is only
+                # decoration gives way to the one that is a pitch).
+                reserve = 0
+                for attempt in range(3):
+                    lines: List[str] = []
+                    sng = _build(copy.deepcopy(tracks), copy.deepcopy(new_patterns),
+                                 gate_off, lines.append, reserve)
+                    short = wave_rows_short(sng, sid, det)
+                    spent = any("wavetable step(s) at" in m for m in lines
+                                if m.startswith("Note rise"))
+                    if not short or not spent or attempt == 2:
+                        break
+                    reserve += short
+                for message in lines:
+                    log(message)
         # A relative wave step past Goattracker's 96 notes reads gt2reloc's
         # orderlist addresses in the packed file, so its pitch moved with the
         # layout. Pinned to what the original reads there. Not an option: it is

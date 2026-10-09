@@ -187,7 +187,7 @@ def test_a_counter_read_behind_another_bit_turns_the_variant_off():
 @needs_corpus
 @pytest.mark.parametrize("record, attack", [
     (7, False),   # fx $20, frames 2: the record the flagged notes play
-    (6, False),   # fx $40 alone: a fixed attack pitch our wavetable never writes
+    (6, True),    # fx $40 alone: the fixed attack pitch, written since fixed_attack_only
     (5, True),    # fx $04: the two-stage waveform
     (9, False),   # fx $10, a pitch sequence on a global phase
 ])

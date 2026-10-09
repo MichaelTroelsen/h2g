@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.524 — 2026-10-09
+
+- runqueue cycle 7 at 7d02efe -- 7 subtasks, 6 worktree patches merged (note-rise rows of three, $40-only fixed attack pitch, init-instrument entry walk, --sfx-drum-bandpass off by default, two pin tests); --adsr-prime held; 4 converted files move under presets, exactly the union the agents reported
+
 ## 0.5.523 — 2026-10-09
 
 - runqueue cycle 6 at 862f703 -- 7 subtasks, 5 worktree patches merged (sigma-seven fetch hold + start, past-table transpose clones, Knucklebusters boundary-tie slide, Rasputin EOR toggle, Game_Killer triangle period per the user); tarzan and ilv-86 read-only; 8 converted files move under presets, exactly the union the agents reported

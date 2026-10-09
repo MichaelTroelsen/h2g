@@ -403,6 +403,14 @@ class Detection:
     # names it (INSTRUMENT_INDEX_SHAPE) is not present. See
     # tracks.apply_initial_instruments.
     initial_instruments: Tuple[int, ...] = ()
+    # The instrument index the player's INIT writes into all three voices'
+    # slots (`LDA #imm / STA array,X / DEX / BPL`), or None where its init
+    # writes none (the image value above is then the only reading there is).
+    # Unlike the image, this is what the tune starts every voice on, in 108
+    # of the 166 subtunes of the 36 players that carry it (a siddump of
+    # frame 0 finds the file image instead in 26: see
+    # `note_passes._track_start`). See `_find_init_instrument`.
+    init_instrument: Optional[int] = None
     # The per-instrument filter array, once located. None in the 71 corpus
     # files whose player either has no filter routine or whose sweep origin
     # cannot be read statically -- see find_filter().
@@ -606,13 +614,56 @@ def _find_instrument_index(sid: SidFile, det: Detection, log: Logger,
     i = (search or _windowed_search(data, 0, len(data)))(INSTRUMENT_INDEX_SHAPE)
     if i <= -1:
         return -1
-    off = sid.to_offset(_addr16(data, i + 1, i + 2))
+    array = _addr16(data, i + 1, i + 2)
+    det.init_instrument = _find_init_instrument(data, array)
+    off = sid.to_offset(array)
     if off < 0 or off + 3 > len(data):
         return i
     det.initial_instruments = tuple(data[off:off + 3])
     log("Initial instruments.....: "
         + " ".join(f"${b:02X}" for b in det.initial_instruments))
+    if det.init_instrument is not None:
+        log(f"Init instrument.........: ${det.init_instrument:02X} on every "
+            "voice (the player's init writes it, not the file image above)")
     return i
+
+
+def _find_init_instrument(data: bytes, array: int) -> Optional[int]:
+    """The instrument index the player's init stores into the per-voice array
+    at `array`, or None.
+
+    The init loop clears the SID and seeds the player's state for all three
+    voices at once:
+
+        99 06 D4   STA $D406,Y         ; ... the SID clear
+        A9 1B      LDA #$1B
+        9D 55 09   STA array,X         ; <- the instrument every voice starts on
+        CA         DEX
+        10 xx      BPL
+
+    so a tune that runs it starts all three voices on the same value,
+    whatever the file image of the array holds -- the image is a snapshot of
+    whatever the ripper last played, and differs: Knucklebusters' image is
+    `$1B $13 $0B` against an init that writes `$1B` to all three, Delta's
+    `$10 $12 $0F` against `$05`. 36 corpus players carry the idiom
+    (`tests/test_init_instrument.py` re-derives the list and checks each
+    against a siddump of frame 0); the rest never store an immediate there,
+    and the image stays the only reading. Not every subtune runs the loop
+    (26 of 166 start on the image: `note_passes._track_start`).
+
+    The `CA 10` that closes the loop is part of the signature: it is what
+    says the store covers every voice rather than one. Matches that disagree
+    return None. Read off the bytes, never the file image; whether the index
+    names a record that exists is the caller's question (`instr_used` is
+    not known yet here)."""
+    lo, hi = array & 0xFF, array >> 8
+    found = set()
+    k = data.find(bytes((0x9D, lo, hi, 0xCA, 0x10)))
+    while k != -1:
+        if k >= 2 and data[k - 2] == 0xA9:
+            found.add(data[k - 1])
+        k = data.find(bytes((0x9D, lo, hi, 0xCA, 0x10)), k + 1)
+    return found.pop() if len(found) == 1 else None
 
 
 # The same interleaved-table engine as `_detect_digi`, in a build whose
@@ -6185,6 +6236,44 @@ def _find_sfx_drum(sid: SidFile, det: Detection) -> tuple[int, int, int]:
         if d[k] == 0xC9 and d[k + 2:k + 3] and d[k + 1] > 1:
             period = d[k + 1]
     return d[off + 1], voice, period
+
+
+# The tail of the sfx drum's fire block: the two stores that follow the
+# `SFX_DRUM_SHAPE` pair, `LDA #cutoff / STA $D416 / LDA #mode / STA $D418`.
+# Nineteen `$948A`: `$48 -> $D40F`, `$81 -> $D412`, `$60 -> $D416`,
+# `$2F -> $D418`. The `$D418` immediate's bits 4-6 are the passband the drum
+# sets for ONE frame (bandpass), and every other frame of a record carrying the
+# effect writes `LDY #$1F / STY $D418` back (lowpass).
+SFX_DRUM_BANDPASS_TAIL = "A9 ?? 8D 16 D4 A9 ?? 8D 18 D4"
+
+
+def find_sfx_drum_bandpass(sid: SidFile) -> tuple[int, int]:
+    """(passband bits, cutoff high byte) the sfx drum's fire block writes.
+
+    (-1, -1) unless the `SFX_DRUM_SHAPE` pair is found AND the ten bytes
+    directly after it are the `$D416` / `$D418` stores. Anchored on the drum's
+    own block rather than searched for alone, because `FILTER_EFFECT_CUTOFF_SHAPE`
+    followed by a mode write also spells the player's ordinary filter set-up,
+    and a bare scan would take that for the drum. The shadow form (IK+, whose
+    pair is two stores into RAM) is not read: its tail is not directly behind
+    the pair.
+
+    The bits are returned as the `$D418` carries them (`$20` for bandpass), the
+    form `FILT_SET_PARAMS | passband` and `FilterInfo.passband` use. 0 is
+    refused: a mode write with no passband selected is a volume write, not a
+    filter blip.
+    """
+    d = sid.data
+    off = search_file(d, SFX_DRUM_SHAPE)
+    if off < 0 or off + 20 > len(d):
+        return -1, -1
+    t = off + 10
+    if not match_at(d, t, SFX_DRUM_BANDPASS_TAIL):
+        return -1, -1
+    passband = d[t + 6] & 0x70
+    if not passband:
+        return -1, -1
+    return passband, d[t + 1]
 
 
 def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
