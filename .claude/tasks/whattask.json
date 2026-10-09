@@ -7631,6 +7631,62 @@
    "why_offload": null,
    "why_mode": "self-contained in its own worktree, verified by a corpus byte-hash plus a targeted A/B",
    "why_lane": "no declared path overlaps another task where either side writes"
+  },
+  {
+   "id": "las-vegas-classic-vibrato-original-depth",
+   "title": "Las_Vegas_Video_Poker: give the classic vibrato the original's depth (user decision classic-vibrato-balance-rate-and-depth)",
+   "source": "runqueue cycle 4 (2026-10-09, 81a766c)",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/las-vegas-classic-vibrato-original-depth"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": "keep the original's depth for Las_Vegas (user, 2026-10-09; decisions.jsonl classic-vibrato-balance-rate-and-depth). Scope Las_Vegas_Video_Poker only; trade period for depth there.",
+   "verify": "Las_Vegas_Video_Poker only. Pick the _classic_vibrato_entry cmp (or a per-file depth setting) so $6B9A's per-note swing matches the original's (2.99 depths at v0.5.520) without breaking $0AA0, which shares the $1A entry. A/B both records against the original under presets at -t 180 (bend, depth, reversals per instrument). Corpus byte-hash under presets: the only mover is Las_Vegas_Video_Poker. Commando byte-exact.",
+   "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
+   "why_effort": "a real diagnosis against the disassembly and a trace, not a mechanical change",
+   "why_offload": null,
+   "why_mode": "self-contained in its own worktree, verified by a corpus byte-hash plus a targeted A/B",
+   "why_lane": "no declared path overlaps another task where either side writes"
+  },
+  {
+   "id": "past-table-cells-layout-independent-then-skydive-carry",
+   "title": "Pin past-table wave cells so table growth cannot move them, then re-land the held skydive carry patch",
+   "source": "runqueue cycle 4 (2026-10-09, 81a766c)",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/past-table-cells-layout-independent-then-skydive-carry"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "1) 5_Title_Tunes subtune 1 voice 0 plays wavetable notes past note 95 whose cells the packed player reads out of the orderlists' address bytes; growing the wavetable moved $F701 -> $8B01 (frames 1050-1054). Make those cells independent of table size (or pin them), byte-hash the corpus (movers named and explained). 2) Then apply C:/t/skydive-vibrato-held/final.patch (held at cycle 4, carried skydive programs) on top, resolve conflicts, and show 5_Title_Tunes -a 1 travel_ratio no longer swings 0.856 -> 1.637 while Hunter_Patrol/Zoids keep their in-window gains (frame-exact oracles in test_skydive_vibrato.py). Full suite; Commando byte-exact.",
+   "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
+   "why_effort": "a real diagnosis against the disassembly and a trace, not a mechanical change",
+   "why_offload": null,
+   "why_mode": "self-contained in its own worktree, verified by a corpus byte-hash plus a targeted A/B",
+   "why_lane": "no declared path overlaps another task where either side writes"
   }
  ],
  "closed": [
@@ -11052,7 +11108,7 @@
    "id": "document-the-0-5-495-drain-in-the-method-and-lessons",
    "title": "Record the 0.5.495 drain's mechanisms in H2G-CONVERSION-METHOD.md and docs/LESSONS.md",
    "closed_by": "a5ea6d1",
-   "reason": "Done in the second /runqueue drain (runs.jsonl latest record, head d52a1bf), landed in a5ea6d1 (v0.5.496): METHOD gains § 7.mmmmmm (the 0.5.495 drain's mechanisms) and re-grades 7.bbbbbb (per-note split built) and 7.iiii (wave_alternate exists); LESSONS gains the dated drain evidence, re-grades the four-VBI-carriers section and the drift split; figure tests green; OPTIONS.md/CLAUDE.md items opened; uncommitted."
+   "reason": "Done in the second /runqueue drain (runs.jsonl latest record, head d52a1bf), landed in a5ea6d1 (v0.5.496): METHOD gains \u00a7 7.mmmmmm (the 0.5.495 drain's mechanisms) and re-grades 7.bbbbbb (per-note split built) and 7.iiii (wave_alternate exists); LESSONS gains the dated drain evidence, re-grades the four-VBI-carriers section and the drift split; figure tests green; OPTIONS.md/CLAUDE.md items opened; uncommitted."
   },
   {
    "id": "fix-shapes-census-phantom-records",

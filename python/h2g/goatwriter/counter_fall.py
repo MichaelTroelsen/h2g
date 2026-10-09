@@ -1,0 +1,696 @@
+"""Bit $02's counter-started fall (detect._find_counter_fall) as per-row programs.
+
+Mega_Apocalypse `$4DBF` is the skydive's falling high byte (`skydive.py`) with
+a different gate. Where Hunter_Patrol starts it in the last ticks of a long
+note and stops it at zero, this block
+
+* starts it from a FRAME COUNT: the voice's counter (`$BC,X`, zeroed by the
+  instrument start of every note whose byte does not carry bit 7, INC'd every
+  frame, a BYTE) must be at or above the record's own threshold
+  (`$54A7,Y`), and odd -- so the stores are on frames 1, 3, 5 ... of the
+  note, whatever the global clock says;
+* has no `BEQ` on savehi, so the byte runs through zero and on to `$FF`,
+  `$FE` ... (measured down to `$DE` on record 9);
+* does not stop with the note: the counter keeps counting through the rests
+  that follow it, and it WRAPS at 256 -- the stores stop until it is back at
+  the threshold (record 16: 114..255, 370..511, 626..767 of a note and the
+  rests after it), savehi going on from where it was.
+
+So a store's value is the note's own high byte minus the number of stores the
+note has had, and in Goattracker terms store `n` is the note's frequency
+`$100 * n` lower. A frame with no store keeps the pitch (where the record has
+no vibrato) or is back on the vibrato (where it has).
+
+**What this emits, and what it does not.**
+
+*A record with no vibrato byte* (record 16, `$0CFC`, notes of 384 and 768
+frames) is emitted: each row that holds a store gets a `CMD_SETWAVEPTR` to a
+program of its own three frames -- a delay to the store's tick, an `F2` (or
+`F1`, for a step of 128 high-byte units or more, the same modulo $10000) of
+`$100 * size` on it, a stop -- and programs are shared by the shape of the
+row, so the whole fall costs a handful of wavetable steps
+(`counter_fall_entries`). `size` is how many stores the row's frame is ahead
+of what the voice has been given so far, so a store the plan could not place
+(a row whose command column is taken) is made up on the next one, and a
+legato note, which puts the voice back on its note, starts the count over.
+The rows are mostly in the rest pattern every voice shares, so the walk is
+per ORDERLIST POSITION (`rest_reseed`'s): a position's rows are written only
+where every visit of it agrees, and a pattern its positions want written
+differently is cloned, one copy per distinct set, the positions repointed.
+
+*A record with a vibrato byte* (record 9, `$09F9`, the 288-frame note whose
+227 reversals open this file) alternates the fall with the vibrato on every
+frame. That is counted and NOT emitted. Each store has to be undone on the
+frame after it -- the vibrato is back on the NOTE, not on the fallen byte --
+so a pair of frames needs two steps of its own, and the step of a pair is a
+different size every time (a loop cannot count). 114 stores on that one note
+are about 228 wavetable steps, against the 22 Mega_Apocalypse's wavetable had
+free before the other record's falls (8 after them); the rows that would hold
+them already carry the swell's `4xy`/`8xx` commands, which they would have to
+give up. The figures are logged for the follow-up.
+
+**Where a store falls.** Original frame `j` of a note (its fetch frame is 0
+and runs no effects) is our call `j + lag` of the note's row (`lag` is
+`skydive_plan`'s: our attack is the first AUDIBLE call), so its row is
+`(j + lag) // frames` and its tick the remainder. A fetch frame -- the first
+frame of any event row, a rest's included -- runs no effects either, so a
+store that would land on one is not made and the count does not advance
+(`fall_stores`). Only -S1 is emitted: this player is not a multispeed one,
+and the one file with the block packs at -S1.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Set, Tuple
+
+from ..detect import Detection
+from ..sidfile import SidFile
+from .constants import (CMD_SETWAVEPTR, FORMAT_GTS5, GT_FIRST_NOTE,
+                        GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST,
+                        PACKED_PATTERN_LIMIT, WAVECMD_PORTADOWN,
+                        WAVECMD_PORTAUP, _SONG_MAX_PATTERNS)
+from ..patterns import MAX_TRACK_LEN
+from . import pulse as _gw_pulse
+from . import skydive as _gw_skydive
+from . import tempo as _gw_tempo
+
+# Effect-byte bits that rewrite the frequency after the block, or skip it:
+# $01 the byte-code wave program (its paths leave through `$4E63`), $10 the
+# pitch sequence and $40 the fixed pitch (both rewrite $C0/$C3 from the note
+# table), $80 the voice-3 drum.
+COUNTER_FALL_EXCLUDED = 0x01 | 0x10 | 0x40 | 0x80
+# The counter is a byte: stores need `counter & $FF >= threshold`.
+COUNTER_FALL_WRAP = 0x100
+# A speed row is a 16-bit step below $8000 (gplay.c:543-551), so a step of
+# `$100 * size` needs size <= $7F; 128 high-byte units is $8000 either way.
+COUNTER_FALL_MAX_SIZE = 0x7F
+COUNTER_FALL_HALF = 0x80
+
+
+@dataclass(frozen=True)
+class CounterFallPlan:
+    """The finished patterns and orderlists, and the programs to append to
+    the wavetable."""
+    patterns: List[List[int]]
+    tracks: List[List[int]]
+    entries: List[Tuple[int, int]]
+
+
+def counter_fall_records(sid: SidFile, det: Detection,
+                         records: int) -> Dict[int, bool]:
+    """{record index: whether its fall alternates with the vibrato}.
+
+    A record sets bit $02 and none of COUNTER_FALL_EXCLUDED. It alternates
+    where its vibrato byte is nonzero -- the block that rewrites the whole
+    frequency on the frames between the stores.
+    """
+    vib = (det.triangle_vibrato if det.triangle_vibrato is not None
+           else det.vibrato_offset)
+    out: Dict[int, bool] = {}
+    for i in range(records):
+        base = det.instr_start + i * det.instr_stride
+        if base + 7 >= len(sid.data):
+            break
+        fx = sid.data[base + 7]
+        if not fx & 0x02 or fx & COUNTER_FALL_EXCLUDED:
+            continue
+        out[i] = bool(vib is not None and sid.data[base + vib])
+    return out
+
+
+def record_threshold(sid: SidFile, det: Detection, i: int) -> Optional[int]:
+    """The frame count record `i`'s stores start from, or None off the file."""
+    cf = det.counter_fall
+    if cf is None:
+        return None
+    at = sid.to_offset(cf.threshold + i * det.instr_stride)
+    return sid.data[at] if 0 <= at < len(sid.data) else None
+
+
+def fall_stores(length: int, threshold: int,
+                fetches: Set[int] = frozenset()) -> List[int]:
+    """The frames of a note of `length` frames on which the block stores.
+
+    Frame 0 is the fetch and runs no effect. The counter on frame `j` is `j`
+    taken as a byte; the block needs it at or above `threshold` and odd. A
+    frame that fetches the next EVENT of the voice (`fetches`, frames from
+    the note's own) runs no effect either, so it stores nothing.
+    """
+    return [j for j in range(1, length)
+            if j & 1 and (j % COUNTER_FALL_WRAP) >= threshold
+            and j not in fetches]
+
+
+def step_command(size: int) -> Optional[Tuple[int, int]]:
+    """(wavetable command, speed-table high byte) for a fall of `size`
+    high-byte units, or None where it is nothing or unrepresentable.
+
+    The frequency is 16 bits, so `size` is taken modulo 256: a step of 128 or
+    more high-byte units down is the same as one of 256 - size up, and 128
+    itself is $8000, which a speed row reads as a note-relative one.
+    """
+    s = size % COUNTER_FALL_WRAP
+    if s == 0 or s == COUNTER_FALL_HALF:
+        return None
+    if s <= COUNTER_FALL_MAX_SIZE:
+        return WAVECMD_PORTADOWN, s
+    return WAVECMD_PORTAUP, COUNTER_FALL_WRAP - s
+
+
+def counter_fall_entries(key: Tuple[Optional[int], ...],
+                         speed_index) -> List[Tuple[int, int]]:
+    """The wavetable steps of one row's program: `key` is the row's calls,
+    each None (nothing) or the size of the fall made on it.
+
+    A run of calls with nothing on them is a delay (`value + 1` calls,
+    gplay.c:697-704), the steps are the command entries, and the program
+    stops after the last of them (`$FF 00` takes no call of its own); the
+    calls after it are the row's own effects.
+    """
+    calls: List[Optional[Tuple[int, int]]] = []
+    for size in key:
+        cmd = None if size is None else step_command(size)
+        calls.append(None if cmd is None else (cmd[0], speed_index(cmd[1])))
+    while calls and calls[-1] is None:
+        calls.pop()
+    return _gw_skydive._compress(calls)
+
+
+def row_falls(events, frames: int, usable) -> Dict[int, Dict[int, int]]:
+    """{row offset: {tick: size}}: the fall to make on each tick, given a
+    note's `events` -- (call, kind, n) sorted, kind 0 the store `n` (0-based)
+    and kind -1 a legato note that puts the voice back on its own pitch --
+    and `usable(row offset)`, whether that row can take a program.
+
+    `size` is how many stores the voice is behind when the store comes: a
+    store on a row that cannot take it is made up by the next that can, and
+    a legato note starts the count over. Store 0 writes the note's own byte
+    and moves nothing.
+    """
+    applied = 0
+    per_row: Dict[int, Dict[int, int]] = {}
+    for call, kind, n in events:
+        if kind < 0:
+            applied = 0
+            continue
+        e, tick = divmod(call, frames)
+        if not usable(e):
+            continue
+        size = n - applied
+        if size % COUNTER_FALL_WRAP == COUNTER_FALL_HALF:
+            continue                 # $8000: no speed row says it
+        if size % COUNTER_FALL_WRAP:
+            per_row.setdefault(e, {})[tick] = size
+        applied = n
+    return per_row
+
+
+def _visits(track: List[int], patterns: List[List[int]]):
+    """(position, pattern, repeat index, transpose) for every visit of one
+    lap of an orderlist, in play order (`skydive._lap_rows`' walk, with the
+    orderlist position kept)."""
+    transpose, repeat, operand = 0, 1, False
+    for pos, b in enumerate(track):
+        if operand:
+            break                    # the restart's operand: the lap is over
+        if b == 0xFF:
+            operand = True
+            continue
+        if 0xE0 <= b < 0xFF:
+            transpose = b - 0xF0
+            continue
+        if 0xD0 <= b < 0xE0:
+            repeat = b - 0xD0 + 1
+            continue
+        if b >= len(patterns):
+            continue
+        for k in range(repeat):
+            yield pos, b, k, transpose
+        repeat = 1
+
+
+def _pattern_positions(track: List[int], patterns: int):
+    """(position, pattern) for every position of an orderlist that names a
+    pattern -- visited or not, since a position's pattern is shared by all."""
+    for pos, b in enumerate(track):
+        if b == 0xFF:
+            break
+        if b < patterns and b < 0xD0:
+            yield pos, b
+
+
+@dataclass
+class _Segment:
+    """One note's frame counter: from a non-legato note to the next."""
+    track: int
+    start: int                  # lap row of the note
+    end: int                    # lap row of the next non-legato note
+    number: int                 # GT instrument number
+    frames: int
+    lag: int
+    fetches: Set[int]           # frames of the segment's own event starts
+    resets: List[int]           # row offsets of legato notes (back on the note)
+    ok: str = ""                # why it is declined, "" when it is not
+
+
+def _walk(tracks, patterns, bit7, by_number, speeds, no_test_restart,
+          real_firstwave):
+    """(rows, segments, visits, free, declined) for one lap of every
+    orderlist.
+
+    `rows[ti]` is the lap's rows, (pattern, row, transpose, position,
+    repeat index); `segments` every note of a fall record from its fetch to
+    the next non-legato note -- the span of one frame counter; `visits[(ti,
+    position)]` how many times the position is played; `free[(ti, position,
+    row)]` whether a pointer may replace that row's command on EVERY visit
+    (the row is a bare rest and its command persists the row before's, so
+    nothing but the pointer changes).
+    """
+    declined: Dict[str, int] = {}
+    rows: Dict[int, List[tuple]] = {}
+    out: List[_Segment] = []
+    visits: Dict[tuple, int] = {}
+    free: Dict[tuple, bool] = {}
+    for ti, track in enumerate(tracks):
+        lap: List[tuple] = []
+        for pos, p, k, t in _visits(track, patterns):
+            visits[(ti, pos)] = visits.get((ti, pos), 0) + 1
+            pat = patterns[p]
+            for r in range(len(pat) // 4):
+                if pat[4 * r] == 0xFF:
+                    break
+                lap.append((p, r, t, pos, k))
+        rows[ti] = lap
+        for a, (p, r, _t, pos, _k) in enumerate(lap):
+            cell = tuple(patterns[p][4 * r:4 * r + 4])
+            prev = (tuple(patterns[lap[a - 1][0]][4 * lap[a - 1][1] + 2:
+                                                  4 * lap[a - 1][1] + 4])
+                    if a else None)
+            ok = (cell[0] == GT_REST and cell[1] == 0 and prev is not None
+                  and cell[2:] == prev
+                  and cell[2] in _gw_skydive.SKYDIVE_PERSISTENT_COMMANDS)
+            key = (ti, pos, r)
+            free[key] = free.get(key, True) and ok
+        frames = speeds.frames_for(ti // 3)
+        if frames is None:
+            continue
+        current = 0
+        seg: Optional[_Segment] = None
+        first = None
+        for a, (p, r, t, _pos, _k) in enumerate(lap):
+            note, instr = patterns[p][4 * r], patterns[p][4 * r + 1]
+            is_note = GT_FIRST_NOTE <= note <= GT_LAST_NOTE
+            flags = bit7.get(p) if is_note else frozenset()
+            legato = is_note and flags is not None and r in flags
+            if is_note and not legato:
+                if seg is not None:
+                    seg.end = a
+                    out.append(seg)
+                    seg = None
+                current = instr or current
+                if flags is None:
+                    declined["bit 7 of a note unknown"] = \
+                        declined.get("bit 7 of a note unknown", 0) + 1
+                    continue
+                if current in by_number:
+                    lag = 0 if no_test_restart or current in real_firstwave \
+                        else 1
+                    seg = _Segment(ti, a, len(lap), current, frames, lag,
+                                   set(), [])
+                    first = (note, t)
+                continue
+            if seg is None:
+                if instr:
+                    current = instr
+                continue
+            if instr and instr != seg.number:
+                seg.ok = "instrument changes"
+            if is_note:
+                if (note, t) != first:
+                    seg.ok = "legato note changes pitch"
+                seg.resets.append(a - seg.start)
+            if note != GT_REST:
+                seg.fetches.add((a - seg.start) * frames)
+        if seg is not None:
+            out.append(seg)
+    return rows, out, visits, free, declined
+
+
+def _setup(sid: SidFile, det: Detection, tracks: List[List[int]], lead: int,
+           instr_used: int, fmt: str, multiplier: int,
+           gate_skip: Optional[int], bit7: Optional[dict], log):
+    """(say, {GT instrument: alternates}, {GT instrument: threshold}, the
+    row clock) where the fall can be read, else None -- logged once."""
+    if det.counter_fall is None:
+        return None
+
+    def say(msg: str) -> None:
+        if log:
+            log(f"Counter fall (bit $02)..: {msg}")
+
+    records = counter_fall_records(sid, det, max(instr_used - lead, 0))
+    if not records:
+        return None
+    if fmt != FORMAT_GTS5 or multiplier != 1 or gate_skip:
+        say(f"{len(records)} record(s), not emitted ("
+            + ("GTS2 stores no speed table" if fmt != FORMAT_GTS5 else
+               f"only -S1 is read, this is -S{multiplier}" if multiplier != 1
+               else "outer gate") + ")")
+        return None
+    if bit7 is None:
+        say(f"{len(records)} record(s), not emitted (bit 7 of the notes not "
+            "read: it needs --tie)")
+        return None
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if speeds is None:
+        say("row clock not read, not emitted")
+        return None
+    if len(tracks) // 3 > max(sid.subtunes, 1):
+        return None                      # a split subtune shifted the numbering
+    by_number = {i + lead + 1: alt for i, alt in records.items()}
+    thresholds = {i + lead + 1: record_threshold(sid, det, i)
+                  for i in records}
+    return say, by_number, thresholds, speeds
+
+
+def unroll_repeats(track: List[int], positions: Set[int],
+                   patterns: int) -> List[int]:
+    """`track` with the `$Dx` repeat before each pattern at one of
+    `positions` replaced by that many entries of the pattern, and the
+    restart position moved to where it was.
+
+    A repeat plays the same orderlist position again, so every visit of it
+    gets the same rows; a fall's rows differ from one visit to the next (the
+    counter has moved on), and an unrolled position is one per visit. The
+    list grows by `count - 2` bytes a repeat; the caller checks the limit.
+    """
+    end = track.index(0xFF) if 0xFF in track else len(track)
+    tokens: List[list] = []            # [old position, byte]
+    pending: Optional[tuple] = None     # (token index of the $Dx, count)
+    for pos in range(end):
+        b = track[pos]
+        tokens.append([pos, b])
+        if 0xD0 <= b < 0xE0:
+            pending = (len(tokens) - 1, b - 0xD0 + 1)
+            continue
+        if b >= 0xD0 or b >= patterns:
+            continue
+        if pending is not None and pos in positions and pending[1] > 1:
+            tokens[pending[0]][1] = None
+            tokens += [[None, b] for _ in range(pending[1] - 1)]
+        pending = None
+    kept = [t for t in tokens if t[1] is not None]
+    restart = track[end + 1] if end + 1 < len(track) else None
+    new_restart = None
+    if restart is not None:
+        new_restart = next((i for i, t in enumerate(kept)
+                            if t[0] is not None and t[0] >= restart),
+                           len(kept))
+    out = [t[1] for t in kept]
+    if end < len(track):
+        out.append(track[end])
+        if new_restart is not None:
+            out.append(new_restart)
+        out += track[end + 2:]
+    return out
+
+
+def unroll_fall_repeats(sid: SidFile, det: Detection,
+                        tracks: List[List[int]], patterns: List[List[int]],
+                        lead: int, instr_used: int, fmt: str,
+                        multiplier: int, gate_skip: Optional[int],
+                        bit7: Optional[dict], no_test_restart: bool = False,
+                        real_firstwave: tuple = (), log=None
+                        ) -> List[List[int]]:
+    """`tracks` with every repeated position a no-vibrato fall's note runs
+    over unrolled, so its visits can be written differently
+    (`counter_fall_plan`). Before the orderlists are written: it changes
+    their lengths. The tracks come back unchanged where there is nothing to
+    unroll or the orderlist would pass `MAX_TRACK_LEN`."""
+    ctx = _setup(sid, det, tracks, lead, instr_used, fmt, multiplier,
+                 gate_skip, bit7, None)
+    if ctx is None:
+        return tracks
+    _say, by_number, _thr, speeds = ctx
+    rows, segs, visits, _free, _declined = _walk(
+        tracks, patterns, bit7, by_number, speeds, no_test_restart,
+        real_firstwave)
+    want: Dict[int, Set[int]] = {}
+    for s in segs:
+        if by_number[s.number] or s.ok:
+            continue
+        for p, r, _t, pos, _k in rows[s.track][s.start:s.end]:
+            if visits.get((s.track, pos), 1) > 1:
+                want.setdefault(s.track, set()).add(pos)
+    out = [list(t) for t in tracks]
+    changed = refused = 0
+    for ti, positions in sorted(want.items()):
+        grown = unroll_repeats(tracks[ti], positions, len(patterns))
+        if len(grown) >= MAX_TRACK_LEN:
+            refused += 1
+            continue
+        out[ti] = grown
+        changed += 1
+    if log and (changed or refused):
+        log(f"Counter fall (bit $02)..: {changed} orderlist(s) unrolled over "
+            f"{sum(len(want[t]) for t in want)} repeated position(s)"
+            + (f", {refused} left alone at {MAX_TRACK_LEN} bytes"
+               if refused else ""))
+    return out if changed else tracks
+
+
+def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
+                      patterns: List[List[int]], lead: int, instr_used: int,
+                      fmt: str, multiplier: int, gate_skip: Optional[int],
+                      speed_table: List[tuple], wave_used: int,
+                      bit7: Optional[dict] = None,
+                      no_test_restart: bool = False,
+                      real_firstwave: tuple = (),
+                      log=None, wave_entries: Optional[List[tuple]] = None,
+                      wave_starts: Optional[List[int]] = None
+                      ) -> Optional[CounterFallPlan]:
+    """The rows that hold a store of a fall, pointed at their programs, or
+    None where nothing is taken.
+
+    Walks one lap of every orderlist in play order. A row of an orderlist
+    POSITION is taken only where every visit of the position asks for the
+    same program and its command column persists the row before's; a row
+    that is not taken leaves its store to the next one that is (`size`
+    counts from what the voice has been given). Everything declined is
+    counted in the log line.
+    """
+    ctx = _setup(sid, det, tracks, lead, instr_used, fmt, multiplier,
+                 gate_skip, bit7, log)
+    if ctx is None:
+        return None
+    say, by_number, thresholds, speeds = ctx
+    if wave_entries is None or wave_starts is None:
+        say("wavetable not given, not emitted")
+        return None
+    rows, segs, visits, free, declined = _walk(
+        tracks, patterns, bit7, by_number, speeds, no_test_restart,
+        real_firstwave)
+    hold = [s for s in segs if not by_number[s.number]]
+    alternating = [s for s in segs if by_number[s.number]]
+    stores_alt = sum(len(fall_stores((s.end - s.start) * s.frames,
+                                     thresholds[s.number], s.fetches))
+                     for s in alternating)
+    for s in hold:
+        if s.ok:
+            declined[s.ok] = declined.get(s.ok, 0) + 1
+    hold = [s for s in hold if not s.ok]
+    # The instrument's own program must be over before a row points away
+    # from it.
+    own: Dict[int, Optional[int]] = {}
+    for s in hold:
+        if s.number not in own:
+            start = (wave_starts[s.number - 1]
+                     if s.number - 1 < len(wave_starts) else 0)
+            calls = (_gw_skydive.instrument_calls(wave_entries, start)
+                     if start else [])
+            own[s.number] = None if calls is None else len(calls)
+    kept = []
+    for s in hold:
+        if own[s.number] is None:
+            declined["instrument program loops"] = \
+                declined.get("instrument program loops", 0) + 1
+        else:
+            kept.append(s)
+    hold = kept
+
+    # Per segment: the stores as (call, n), the legato resets as calls.
+    instances = []
+    for s in hold:
+        length = (s.end - s.start) * s.frames
+        js = fall_stores(length, thresholds[s.number], s.fetches)
+        events = [(j + s.lag, 0, n) for n, j in enumerate(js)]
+        events += [(off * s.frames, -1, 0) for off in s.resets]
+        instances.append((s, sorted(events)))
+
+    def asks_for(avail: Set[tuple]) -> Dict[tuple, Dict[int, Dict[int, tuple]]]:
+        """{(track, position): {repeat index: {row: key}}} -- what each
+        visit of a position wants written, given the rows still free."""
+        asks: Dict[tuple, Dict[int, Dict[int, tuple]]] = {}
+        for s, events in instances:
+            lap = rows[s.track]
+
+            def usable(e: int, s=s, lap=lap) -> bool:
+                if e >= s.end - s.start or e * s.frames < own[s.number]:
+                    return False
+                _p, r, _t, pos, _k = lap[s.start + e]
+                return (s.track, pos, r) in avail
+            for e, ticks in row_falls(events, s.frames, usable).items():
+                p, r, _t, pos, k = lap[s.start + e]
+                asks.setdefault((s.track, pos), {}).setdefault(k, {})[r] = \
+                    tuple(ticks.get(t) for t in range(s.frames))
+        return asks
+
+    def solve(eligible: Set[tuple]):
+        """({(track, position, row): key}, rows mixed) at the fixpoint: a
+        row that is dropped leaves its store to the next, which changes
+        that one's size."""
+        avail = set(eligible)
+        taken: Dict[tuple, tuple] = {}
+        mixed = 0
+        for _ in range(len(eligible) + 1):
+            asks = asks_for(avail)
+            taken, wanted = {}, 0
+            for (ti, pos), by_visit in asks.items():
+                every = {r for rr in by_visit.values() for r in rr}
+                for r in every:
+                    wanted += 1
+                    got = [by_visit.get(k, {}).get(r)
+                           for k in range(visits[(ti, pos)])]
+                    if None not in got and len(set(got)) == 1:
+                        taken[(ti, pos, r)] = got[0]
+            mixed = wanted - len(taken)
+            if set(taken) == avail or not asks:
+                break
+            avail = set(taken)
+        return taken, mixed
+
+    def fit(taken: Dict[tuple, tuple]):
+        """(program keys that fit, those that do not): the wavetable's room,
+        the commonest shapes first, and the speed table's."""
+        uses: Dict[tuple, int] = {}
+        for key in taken.values():
+            uses[key] = uses.get(key, 0) + 1
+        room = GT_MAX_TABLELEN - wave_used
+        speed_room = GT_MAX_TABLELEN - len(speed_table)
+        have = {h for h, _lo in speed_table}
+        new_speeds: Set[int] = set()
+        good, bad = [], []
+        for key in sorted(uses, key=lambda k: (-uses[k], k)):
+            sizes = {step_command(v)[1] for v in key
+                     if v is not None and step_command(v) is not None}
+            cost = len(counter_fall_entries(key, lambda h: 1))
+            extra = sizes - have - new_speeds
+            if cost > room or len(new_speeds) + len(extra) > speed_room:
+                bad.append(key)
+                continue
+            room -= cost
+            new_speeds |= extra
+            good.append(key)
+        return good, bad
+
+    eligible = {key for key, ok in free.items() if ok}
+    mixed = 0
+    while True:
+        keys_taken, mixed = solve(eligible)
+        if not keys_taken:
+            break
+        good, bad = fit(keys_taken)
+        if not bad:
+            break
+        # A shape that does not fit leaves its rows out, and the stores
+        # after them are sized without it: solve again without those rows.
+        eligible -= {k for k, v in keys_taken.items() if v in bad}
+    if not keys_taken:
+        say(f"{len(hold)} note(s) on {len(set(s.number for s in hold))} "
+            f"record(s), no row taken ({mixed} mixed or occupied)"
+            + (f"; {len(alternating)} alternating note(s), {stores_alt} "
+               f"store(s), not emitted" if alternating else ""))
+        return None
+
+    table = speed_table
+    snapshot = list(table)
+
+    def speed_index(high: int) -> int:
+        entry = (high, 0x00)
+        if entry not in table:
+            table.append(entry)
+        return table.index(entry) + 1
+
+    programs: Dict[tuple, int] = {}
+    entries: List[Tuple[int, int]] = []
+    for key in good:
+        block = counter_fall_entries(key, speed_index)
+        programs[key] = wave_used + len(entries) + 1
+        entries += block
+
+    # pattern -> {writes: [(track, position), ...]}, then one copy per
+    # distinct set (`rest_reseed`): the pattern keeps the largest group.
+    wants: Dict[tuple, Dict[int, tuple]] = {}
+    for (ti, pos, r), key in keys_taken.items():
+        wants.setdefault((ti, pos), {})[r] = key
+    groups: Dict[int, Dict[frozenset, list]] = {}
+    for ti, track in enumerate(tracks):
+        for pos, b in _pattern_positions(track, len(patterns)):
+            groups.setdefault(b, {}).setdefault(
+                frozenset(wants.get((ti, pos), {}).items()), []).append(
+                    (ti, pos))
+    groups = {b: g for b, g in groups.items() if any(g)}
+    out = [list(pat) for pat in patterns]
+    new_tracks = [list(t) for t in tracks]
+    written = clones = full = skipped = 0
+
+    def patched(b: int, want: frozenset) -> Optional[List[int]]:
+        trial = list(patterns[b])
+        for r, key in want:
+            trial[4 * r + 2], trial[4 * r + 3] = CMD_SETWAVEPTR, programs[key]
+        if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(trial))
+                > PACKED_PATTERN_LIMIT):
+            return None
+        return trial
+
+    for b in sorted(groups):
+        by_want = groups[b]
+        # The pattern keeps the positions that want nothing, or else the
+        # largest group; every other group gets a copy of its own.
+        stays = (frozenset() if frozenset() in by_want else
+                 max(by_want, key=lambda w: (len(by_want[w]), repr(sorted(w)))))
+        for want in sorted((w for w in by_want if w),
+                           key=lambda w: (w != stays, repr(sorted(w)))):
+            trial = patched(b, want)
+            if trial is None:
+                skipped += len(want) * len(by_want[want])
+                continue
+            if want == stays:
+                out[b] = trial
+            else:
+                if len(out) >= _SONG_MAX_PATTERNS:
+                    full += len(want) * len(by_want[want])
+                    continue
+                out.append(trial)
+                clones += 1
+                for ti, pos in by_want[want]:
+                    new_tracks[ti][pos] = len(out) - 1
+            written += len(want) * len(by_want[want])
+    if not written:
+        table[:] = snapshot
+        return None
+    numbers = sorted({s.number for s in hold})
+    notes = ", ".join(f"{n} {why}" for why, n in declined.items() if n)
+    say(f"{written} row(s) over the orderlists on instrument(s) {numbers}, "
+        f"{len(programs)} program(s), {len(entries)} wavetable step(s) at "
+        f"{wave_used + 1}, {clones} pattern copy(ies) ({len(hold)} note(s))"
+        + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
+        + (f"; {skipped} row(s) past the packed pattern limit"
+           if skipped else "")
+        + (f"; {full} row(s) left alone: pattern table full" if full else "")
+        + (f"; declined: {notes}" if notes else "")
+        + (f"; {len(alternating)} alternating note(s) on instrument(s) "
+           f"{sorted({s.number for s in alternating})}, {stores_alt} "
+           f"store(s), not emitted: ~{2 * stores_alt} steps"
+           if alternating else ""))
+    return CounterFallPlan(patterns=out, tracks=new_tracks, entries=entries)

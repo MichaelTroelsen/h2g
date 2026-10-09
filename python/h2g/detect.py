@@ -166,6 +166,11 @@ class Detection:
     # _find_wave_eor(). DETECTED AND NOT EMITTED; the measured reason is at
     # WAVE_EOR_SHAPE. Consulted only where no other bit-$02 reading matched.
     wave_eor: Optional["WaveEor"] = None
+    # Bit $02 read a FIFTH way, Mega_Apocalypse $4DBF: the skydive's falling
+    # high byte, started by a per-record frame count on a per-voice counter
+    # that the note's fetch resets, with no stop at zero -- see
+    # _find_counter_fall(). Consulted only where no other reading matched.
+    counter_fall: Optional["CounterFall"] = None
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
     # Semitones *up* for the second arpeggio dialect, whose interval is
     # hardcoded in the routine rather than taken from the record's high
@@ -2097,6 +2102,13 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # Bit $02's EOR dialect (Rasputin), after every other reading of the bit
     # because it is a fallback: `_find_wave_eor` declines wherever one of them
     # matched. Logged and not emitted -- see WAVE_EOR_SHAPE for the A/B.
+    det.counter_fall = _find_counter_fall(sid, det)
+    if det.counter_fall is not None:
+        cf = det.counter_fall
+        log(f"Effect bit $02..........: counter fall -- the high byte steps "
+            f"{'up' if cf.step > 0 else 'down'} on every odd frame of the "
+            f"per-voice counter ${cf.counter:02X},X from a per-record "
+            f"threshold (table ${cf.threshold:04X}), no stop at zero")
     det.wave_eor = _find_wave_eor(sid, det)
     if det.wave_eor is not None:
         we = det.wave_eor
@@ -2862,6 +2874,84 @@ def _find_vibrato_site(sid: SidFile,
                     data[k + 1] | data[k + 2] << 8) - det.instr_start
                 if 0 <= off < det.instr_stride:
                     return off, at
+    # Consulted only where the record read above found nothing (the rescue
+    # rule): the patched-immediate spelling of the interleaved-classic files.
+    for at in matches:
+        off = _patched_split_record_offset(sid, det, at)
+        if off is not None:
+            return off, at
+    return None
+
+
+# --- ...and the spelling where the split reads a patched immediate -----------
+#
+# The six interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart,
+# Pacific_Coast, Radio_ACE, Sun_Never_Shines) split a vibrato byte that is not
+# loaded from the record at the split. Go_Go_Dash, with the instrument table
+# at $1B4E (a 16-byte stride, X the byte offset into it):
+#
+#     147B  BD 5B 1A  LDA $1A5B,X      ; the voice's current vibrato byte
+#     147E  D0 03     BNE on
+#     1480  4C 4A 15  JMP past         ; zero -> none
+#     1483  8D 92 14  STA $1492        ; patch the LDA #imm below
+#     1491  A9 00     LDA #imm         ; <- the byte
+#     1493  48        PHA              ; the split, as everywhere else
+#
+# and that cell has two writers, one per origin of the byte:
+#
+#     11C6  B1 FA     LDA ($FA),Y      ; the pattern command `$86 nn`
+#     11C8  9D 5B 1A  STA $1A5B,X
+#
+#     12ED  BD 50 1B  LDA $1B50,X      ; the INSTRUMENT RECORD, +2 here
+#     12F0  8D FF 12  STA $12FF        ; patch the LDA #imm below
+#     12FE  A9 00     LDA #imm
+#     1300  9D 5B 1A  STA $1A5B,X
+#
+# guarded by `LDA $1A62 / BNE skip` at $12E8, where $1A62 is zeroed at the top
+# of every pattern event and set by `$86`. So the record's byte is the default
+# and the pattern command overrides it for that event; the override is not
+# read here (the census of `$86` operands is in the task that opened this).
+# The offset is the record read two patches back.
+PATCHED_SPLIT_REACH = 24        # bytes before the split the cell's load sits
+
+
+def _patched_split_record_offset(sid: SidFile, det: Detection,
+                                 at: int) -> Optional[int]:
+    """Record offset of the vibrato byte for a split at data index `at` whose
+    `LDA #imm` is patched from a per-voice cell, or None.
+
+    `LDA cell,X / BNE / JMP / STA imm_operand` before the split names the
+    cell; its writer `LDA #imm / STA cell,X` is itself patched by
+    `LDA record+n,X / STA imm_operand`, which is the read wanted. Every link is
+    an exact byte shape and every address must resolve into the file, so an
+    unfamiliar spelling returns None -- an under-read, never a wrong one.
+    """
+    data = sid.data
+    if at < 3 or data[at - 2] != 0xA9:                      # LDA #imm / PHA
+        return None
+    operand_addr = sid.to_address(at - 1)
+    cell = None
+    for k in range(at - 3, max(0, at - PATCHED_SPLIT_REACH), -1):
+        if (data[k] == 0x8D and data[k + 1] | data[k + 2] << 8
+                == operand_addr and k >= 8
+                and data[k - 8] == 0xBD and data[k - 5] == 0xD0
+                and data[k - 3] == 0x4C):
+            cell = data[k - 7], data[k - 6]
+            break
+    if cell is None:
+        return None
+    for w in range(2, len(data) - 2):
+        if (data[w] != 0x9D or (data[w + 1], data[w + 2]) != cell
+                or data[w - 2] != 0xA9):
+            continue
+        patch = sid.to_address(w - 1)
+        for k in range(3, len(data) - 2):
+            if (data[k] == 0x8D and data[k + 1] | data[k + 2] << 8 == patch
+                    and data[k - 3] == 0xBD):
+                off = sid.to_offset(
+                    data[k - 2] | data[k - 1] << 8) - det.instr_start
+                if 0 <= off < det.instr_stride:
+                    return off
     return None
 
 
@@ -2925,6 +3015,10 @@ VIBRATO_GATE_SHAPES = (
     ("counter", "4C ?? ?? B5 ?? C9 ?? 90", 4, True, 6),
     ("duration", "4C ?? ?? BD ?? ?? 29 1F C9 ?? 90", 4, False, 9),
     ("duration", "4C ?? ?? B5 ?? 29 1F C9 ?? 90", 4, True, 8),
+    # Lakers_vs_Celtics $152B: the same counter compare behind a leftover
+    # debug store to a VIC register (`LDA #$02 / STA $D02C`) that the other
+    # five `$1003` files do not carry.
+    ("counter", "4C ?? ?? A9 ?? 8D ?? D0 BD ?? ?? C9 ?? 90", 9, False, 12),
 )
 # How far past the split the gate may sit. The census spans +115..+137 bytes
 # (the subtraction loop in between is the same routine in every copy); the
@@ -5035,6 +5129,97 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
         min_length=data[b + NOTE_RISE_AT_MIN], step=step)
 
 
+# Bit $02 read a FIFTH way: the skydive's falling high byte, gated by a count
+# of frames since the note began instead of by the note's length. Mega_Apocalypse
+# $4DBF, the only corpus file with the block (a byte scan of all 95 files for
+# the shape below, and for a looser one with every operand a wildcard, finds
+# no other):
+#
+#     4DBF  A5 EC     LDA $EC         ; the record's effect byte (+7)
+#           29 02     AND #$02 / BEQ out
+#           A4 E3     LDY $E3         ; record * 8
+#           B5 BC     LDA $BC,X       ; frames since the voice's last NON-LEGATO
+#                                     ;   note began ($4BDB zeroes it on the
+#                                     ;   instrument start, which a note byte's
+#                                     ;   bit 7 skips); INC'd at $4E76 every
+#                                     ;   frame, a byte, so it WRAPS at 256
+#           D9 A7 54  CMP $54A7,Y     ; the record's own threshold
+#           90 0C     BCC out
+#           29 01     AND #$01 / BEQ out      ; every other frame
+#           BD AF 53  LDA $53AF,X     ; savehi: $4BED copies the note's high
+#                                     ;   byte here at the instrument start
+#           95 C0     STA $C0,X       ; the zero-page frequency HIGH shadow
+#           DE AF 53  DEC $53AF,X     ; A holds the value BEFORE the step
+#
+# Three differences from the skydive (SKYDIVE_SHAPE) and the rise
+# (NOTE_RISE_SHAPE), which is why neither matched: the window is a frame count
+# per record rather than the note's length or its ticks left; the parity is the
+# voice's own counter rather than a global one, so it is a property of the NOTE
+# (frame 1, 3, 5 ... from its fetch); and there is no `BEQ` on savehi, so the
+# byte runs through zero and on to $FF, $FE ... Hunter_Patrol stops at 1.
+# The store goes to the shadow and not to $D401, so it is written by the
+# per-frame writer ($4E63) with the low byte the record's vibrato (or nothing)
+# left there. Measured on the original (siddump -w, -t 180): voice 1 from
+# frame 3745, record 9 (threshold 31, vibrato byte $2D) stores $4E, $4D, $4C ...
+# on frames 31, 33, 35 ... of the note and reads its vibrato on the frames
+# between, down to $DE at frame 255, where the counter wraps to 0 and the
+# stores stop until it is back at 31.
+COUNTER_FALL_SHAPE = ("29 02 F0 ?? A4 ?? B5 ?? D9 ?? ?? 90 ?? 29 01 F0 ?? "
+                      "BD ?? ?? 95 ?? ?? ?? ??")
+# Offsets into COUNTER_FALL_SHAPE (past the effect-byte load).
+COUNTER_FALL_AT_COUNTER = 7
+COUNTER_FALL_AT_THRESHOLD = 9
+COUNTER_FALL_AT_SAVE = 18
+COUNTER_FALL_AT_STEP = 22         # the opcode: $DE DEC, $FE INC
+COUNTER_FALL_STEPS = {0xDE: -1, 0xFE: 1}
+
+
+@dataclass(frozen=True)
+class CounterFall:
+    """The counter-started fall block's operands, read from the block itself."""
+    counter: int        # zero-page base of the per-voice frame counter (,X)
+    threshold: int      # address of the per-record threshold table (,Y)
+    step: int           # -1 where the block DECs savehi, +1 where it INCs
+
+
+def _find_counter_fall(sid: SidFile, det: Detection) -> Optional[CounterFall]:
+    """The block of COUNTER_FALL_SHAPE, or None.
+
+    A fallback: None wherever another reading of bit $02 matched. Keyed on the
+    resolved +7 address like every other effect-byte probe, and structural
+    beyond the shape: the `DEC`/`INC` must name the very cell the `LDA savehi`
+    read, which is what makes the store a stepping byte, and the threshold
+    table must lie inside the file for every record.
+    """
+    if (det.effect_rise or det.skydive is not None
+            or det.note_rise is not None):
+        return None
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    data = sid.data
+    at = search_file(data, f"{load} {COUNTER_FALL_SHAPE}")
+    if at < 1:
+        return None
+    b = at + lead
+    step = COUNTER_FALL_STEPS.get(data[b + COUNTER_FALL_AT_STEP])
+    if step is None or data[b + COUNTER_FALL_AT_SAVE:
+                            b + COUNTER_FALL_AT_SAVE + 2] != \
+            data[b + COUNTER_FALL_AT_STEP + 1:b + COUNTER_FALL_AT_STEP + 3]:
+        return None
+    threshold = (data[b + COUNTER_FALL_AT_THRESHOLD]
+                 | data[b + COUNTER_FALL_AT_THRESHOLD + 1] << 8)
+    if det.instr_used < 1 or not (
+            0 <= sid.to_offset(threshold + (det.instr_used - 1)
+                               * det.instr_stride) < len(data)):
+        return None
+    return CounterFall(counter=data[b + COUNTER_FALL_AT_COUNTER],
+                       threshold=threshold, step=step)
+
+
 # Bit $02 read a FOURTH way -- not the rise, the skydive, the alternation or
 # the per-voice two-stage attack. Rasputin $C35A, the only corpus file with
 # the block (a byte-level scan for any `AND #$02 / Bxx` followed within 30
@@ -5132,7 +5317,7 @@ def _find_wave_eor(sid: SidFile, det: Detection) -> Optional[WaveEor]:
     and a kept toggle rather than any two table accesses.
     """
     if (det.effect_rise or det.skydive is not None or det.wave_alternate >= 0
-            or det.note_rise is not None
+            or det.note_rise is not None or det.counter_fall is not None
             or det.wave_alternate_noise or det.voice_two_stage_alt >= 0):
         return None
     found = _effect_byte_address(sid, det)

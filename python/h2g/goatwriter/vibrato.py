@@ -89,9 +89,12 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE,
       Sun_Never_Shines), whose update holds the bound for two updates;
       `half = bound * multiplier` below takes the first for all of them,
-      except where `dwell` is set (`Detection.vibrato_dwell`, which only
-      Mozart reads in the converter: the other six resolve no classic
-      vibrato at all).
+      except where `dwell` is set (`Detection.vibrato_dwell`, which all
+      seven read: the six `$1003` files resolve their vibrato byte through
+      `detect._patched_split_record_offset` since classic-vibrato-period-
+      dwell-family, their split reading a patched `LDA #imm` fed from record
+      +5, not the record itself; the pattern command `$86 nn`, which
+      overrides the byte for one event, is not emitted).
 
       **The update does not run once a frame in a player whose outer gate
       stops the whole play routine** (mozart-classic-vibrato-file-wide-rate,

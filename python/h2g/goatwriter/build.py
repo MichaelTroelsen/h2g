@@ -37,6 +37,7 @@ from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
+from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
@@ -602,6 +603,17 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     def bit7_rows(pats: List[List[int]]) -> dict:
         return _gw_note_passes.split_bit7_rows(
             note_bit7_rows(pats, known_bit7, decoded, ghosts), split_copies)
+    # The counter-started fall's notes run over repeated orderlist positions
+    # (a long rest is `$D5 00`), whose visits it has to write differently:
+    # unrolled here, before the orderlists are written, since it changes
+    # their lengths (`counter_fall_plan` writes the rows, further down).
+    if effects and det.counter_fall is not None:
+        tracks = _gw_counter_fall.unroll_fall_repeats(
+            sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
+            gate_skip,
+            bit7_rows(patterns) if known_bit7 is not None else None,
+            no_test_restart=no_test_restart,
+            real_firstwave=tuple(real_firstwave_instruments), log=log)
     out.append((len(tracks) // 3) & 0xFF)
 
     # Where each orderlist's bytes start, for a late pass that repoints a
@@ -892,6 +904,26 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if rise is not None:
             patterns = rise.patterns
             wave_entries = wave_entries + rise.entries
+    # The counter-started fall (`counter_fall_plan`): the same stepping byte
+    # gated by a frame count the note's fetch zeroes. Its rows are taken
+    # before the passes that fill free command columns, and it needs the
+    # decoder's bit-7 note rows, which say where that count carries on.
+    if effects and det.counter_fall is not None:
+        fall = _gw_counter_fall.counter_fall_plan(
+            sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
+            gate_skip, table, len(wave_entries),
+            bit7=(bit7_rows(patterns) if known_bit7 is not None else None),
+            no_test_restart=no_test_restart,
+            real_firstwave=tuple(real_firstwave_instruments), log=log,
+            wave_entries=wave_entries, wave_starts=wave_starts)
+        if fall is not None:
+            patterns = fall.patterns
+            wave_entries = wave_entries + fall.entries
+            # Its pattern copies repoint orderlist positions: same length,
+            # same place, so the bytes already written are written over.
+            tracks = fall.tracks
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
     # The swell's hold rows onto wavetable loops that step the triangle on
     # every call, tick 0 included (`_expanding_vibrato_loops`). After the
     # skydive for the same reason it is after the drums -- its loops are

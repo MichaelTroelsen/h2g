@@ -162,7 +162,7 @@ def test_a_deeper_shift_loop_halves_the_depth_it_asks_of_the_entry():
 # --- detection --------------------------------------------------------------
 
 @needs_corpus
-def test_only_mozart_reads_as_dwelling_and_as_shifting_one_more():
+def test_the_dwelling_files_are_mozart_and_the_dollar_1003_six_and_only_mozart_shifts_more():
     got, extra = [], []
     for path in sorted(CORPUS.glob("*.sid")):
         try:
@@ -176,14 +176,17 @@ def test_only_mozart_reads_as_dwelling_and_as_shifting_one_more():
             got.append(path.stem)
         if det.vibrato_shift_extra:
             extra.append(path.stem)
-    assert got == ["Mozart"]
+    # The six `$1003` files resolve their vibrato byte since
+    # classic-vibrato-period-dwell-family (tests/test_classic_vibrato_patched_
+    # split.py), so the dwell they hold now reaches the converter.
+    assert sorted(got) == sorted(("Mozart",) + DWELL_FAMILY_C)
     assert extra == ["Mozart"]
 
 
 @needs_corpus
 def test_the_dwell_reads_the_six_dollar_1003_files_too_and_not_the_others():
-    """The converter does not resolve these six (no `vibrato_offset`), so the
-    reader is exercised at their update directly. The stepping-back family
+    """The reader is exercised at their update directly (the converter now
+    resolves these six too, but through a different site). The stepping-back family
     (`STA ctr / DEC dir / DEC ctr`) must read False."""
     for name in DWELL_FAMILY_C:
         sid = load_sid(str(CORPUS / f"{name}.sid"))

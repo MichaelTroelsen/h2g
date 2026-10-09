@@ -1,9 +1,11 @@
 """End-to-end .sid -> .sng conversion (port of loadfile()'s FindEnd block)."""
 from __future__ import annotations
 
+import copy
 from typing import Callable, List
 
 from .detect import Detection, PlayerView, detect, player_view
+from .goatwriter import call_phase as _call_phase
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          TEMPO_FASTEST_STEADY,
                          append_song, build_sng, derived_group_tempos,
@@ -14,7 +16,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
-                         HEADER_LEN, startup_phase)
+                         HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -1032,54 +1034,63 @@ def convert(sid_path: str, log: Logger = print,
         if dropped:
             log(f"Pruned {len(dropped)} more pattern(s) the later passes' "
                 "copies left unplayed")
-    sng = build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
-                     speed_table=speed_table, effects=effects,
-                     pulse=pulse, multiplier=multiplier,
-                     sustain_exact=sustain_exact,
-                     no_hard_restart=no_hard_restart,
-                     wide_hard_restart=wide_hard_restart,
-                     max_hard_restart=max_hard_restart,
-                     hard_restart_frames=hard_restart_frames,
-                     no_test_restart=no_test_restart,
-                     two_stage=two_stage,
-                     voice_two_stage=voice_two_stage,
-                     wave_alternate=wave_alternate,
-                     instr_voices=instrument_voices(tracks, new_patterns),
-                     # Per instrument where the orderlists allow it: the
-                     # file-wide `short_row_calls` below caps EVERY instrument
-                     # at the fastest subtune's row, including the ones that
-                     # never sound in it. Returns {} wherever the attribution
-                     # is unsafe, and then the file-wide bound stands.
-                     instr_row_calls=instrument_row_calls(
-                         tracks, new_patterns, group_tempos or []),
-                     gate_skip=gate_skip,
-                     sfx_drum=sfx_drum,
-                     wave_program=wave_program,
-                     vibrato_command=vibrato_command,
-                     cut_release=cut_release,
-                     pitch_seq=pitch_seq,
-                     filters=filters, vibrato=vibrato,
-                     min_notes=min_played_notes(tracks, new_patterns),
-                     note_rows=median_played_durations(tracks, new_patterns),
-                     row_calls=short_row_calls,
-                     compact_instruments=compact_instruments,
-                     real_firstwave_instruments=real_firstwave_instruments,
-                     gate_off_firstwave_instruments=gate_off_firstwave_instruments,
-                     arps=ilv_arps,
-                     pulse_plan=pulse_plan,
-                     ilv_filter_routing=ilv_filter_routing,
-                     tie_restart=tie_restart)
-    # A relative wave step past Goattracker's 96 notes reads gt2reloc's
-    # orderlist addresses in the packed file, so its pitch moved with the
-    # layout. Pinned to what the original reads there. Not an option: it is
-    # what the player does. Before the appended players, whose steps belong
-    # to another table (past_table_wave).
-    sng = pin_past_table_wave_notes(sng, sid, det, log)
-    sng = _append_players(sng, sid, det, multiplier, opts, log)
-    if drop_unnamed_instruments:
-        # Last, on the finished bytes: every pass that writes or renumbers
-        # an instrument column (the clone passes included) has run.
-        sng = drop_unnamed_instruments_from(sng, log)
+    # `build_sng` changes the tracks and patterns it is given; a phased
+    # song is built a second time (below) from these copies.
+    pristine = (copy.deepcopy(tracks), copy.deepcopy(new_patterns))
+
+    def _assemble(tracks, new_patterns, gate_off, log):
+        sng = build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
+                         speed_table=speed_table, effects=effects,
+                         pulse=pulse, multiplier=multiplier,
+                         sustain_exact=sustain_exact,
+                         no_hard_restart=no_hard_restart,
+                         wide_hard_restart=wide_hard_restart,
+                         max_hard_restart=max_hard_restart,
+                         hard_restart_frames=hard_restart_frames,
+                         no_test_restart=no_test_restart,
+                         two_stage=two_stage,
+                         voice_two_stage=voice_two_stage,
+                         wave_alternate=wave_alternate,
+                         instr_voices=instrument_voices(tracks, new_patterns),
+                         # Per instrument where the orderlists allow it: the
+                         # file-wide `short_row_calls` below caps EVERY instrument
+                         # at the fastest subtune's row, including the ones that
+                         # never sound in it. Returns {} wherever the attribution
+                         # is unsafe, and then the file-wide bound stands.
+                         instr_row_calls=instrument_row_calls(
+                             tracks, new_patterns, group_tempos or []),
+                         gate_skip=gate_skip,
+                         sfx_drum=sfx_drum,
+                         wave_program=wave_program,
+                         vibrato_command=vibrato_command,
+                         cut_release=cut_release,
+                         pitch_seq=pitch_seq,
+                         filters=filters, vibrato=vibrato,
+                         min_notes=min_played_notes(tracks, new_patterns),
+                         note_rows=median_played_durations(tracks, new_patterns),
+                         row_calls=short_row_calls,
+                         compact_instruments=compact_instruments,
+                         real_firstwave_instruments=real_firstwave_instruments,
+                         gate_off_firstwave_instruments=gate_off,
+                         arps=ilv_arps,
+                         pulse_plan=pulse_plan,
+                         ilv_filter_routing=ilv_filter_routing,
+                         tie_restart=tie_restart)
+        # A relative wave step past Goattracker's 96 notes reads gt2reloc's
+        # orderlist addresses in the packed file, so its pitch moved with the
+        # layout. Pinned to what the original reads there. Not an option: it is
+        # what the player does. Before the appended players, whose steps belong
+        # to another table (past_table_wave).
+        sng = pin_past_table_wave_notes(sng, sid, det, log)
+        sng = _append_players(sng, sid, det, multiplier, opts, log)
+        if drop_unnamed_instruments:
+            # Last, on the finished bytes: every pass that writes or renumbers
+            # an instrument column (the clone passes included) has run.
+            sng = drop_unnamed_instruments_from(sng, log)
+        return sng
+
+    sng = _assemble(tracks, new_patterns,
+                    gate_off_firstwave_instruments, log)
     # The packed song's call phase (goatwriter.call_phase): part of what
     # `skip_gate` means, because it is the phase of the grid that option
     # corrects the rows to. After the drop above, which would remove the
@@ -1094,16 +1105,46 @@ def convert(sid_path: str, log: Logger = print,
                if (skip_gate and group_tempos and not step_tempos
                    and not no_test_restart and not real_firstwave_instruments)
                else None)
-    if startup is not None:
-        before = len(sng)
-        sng = add_startup_tempo(sng, startup.tempo, log)
-        if len(sng) != before:
-            log(f"Startup call phase......: instrument 63 AD ${startup.tempo:02X} "
-                f"-- a {startup.tempo}-call startup row where gt2reloc's "
-                f"default is {startup.default}; onsets off the original's "
-                f"frame on {startup.default_mismatched} of {startup.rows} "
-                f"rows -> {startup.mismatched}")
-    return sng
+    if startup is None:
+        return sng
+    # **Under the phase the note-init call is the one frame in m that can be
+    # sampled, and it is sampled in the frame BEFORE the original's onset.**
+    # `startup_phase` puts our onset (the call after the init) in the
+    # original's frame, so an init that is the previous frame's last call is
+    # what the trace reads there, and the testbit `$09` it writes selects no
+    # waveform: the note before reads one frame short and the gate opens a
+    # frame before the original's. The record's own waveform with the gate
+    # CLEAR (`goatwriter.gate_off_firstwave`) is what the original's chip
+    # holds on that frame, and the next call's wavetable entry writes the
+    # gate. Every instrument, because which init calls are sampled is a
+    # property of the call grid, not of the instrument
+    # (tests/test_gate_off_firstwave_call_phase.py). It is only right WITH
+    # the phase -- at the default phase the same byte costs `gate` on the
+    # files it does not reach -- so the song is built again with it, from the
+    # copies taken before the first build, and kept only where the record is
+    # then written. `call_phase.GATE_OFF_FIRSTWAVE` is the seam a test turns
+    # off.
+    written = None
+    if _call_phase.GATE_OFF_FIRSTWAVE:
+        phased = _assemble(copy.deepcopy(pristine[0]),
+                           copy.deepcopy(pristine[1]),
+                           tuple(range(1, GT_TEMPO_INSTRUMENT)),
+                           lambda message: None)
+        out = add_startup_tempo(phased, startup.tempo, log)
+        if len(out) != len(phased):
+            written = out
+    if written is None:
+        out = add_startup_tempo(sng, startup.tempo, log)
+        if len(out) != len(sng):
+            written = out
+    if written is None:
+        return sng
+    log(f"Startup call phase......: instrument 63 AD ${startup.tempo:02X} "
+        f"-- a {startup.tempo}-call startup row where gt2reloc's "
+        f"default is {startup.default}; onsets off the original's "
+        f"frame on {startup.default_mismatched} of {startup.rows} "
+        f"rows -> {startup.mismatched}")
+    return written
 
 
 def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,

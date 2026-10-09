@@ -623,7 +623,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        event_log: Optional[List[tuple]] = None,
                        wave_notes: Optional[Dict[int, int]] = None,
                        event_rows: Optional[List[int]] = None,
-                       gate_clear_records: frozenset = frozenset()
+                       gate_clear_records: frozenset = frozenset(),
+                       legato_bit7: bool = False
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -678,6 +679,13 @@ def _build_raw_pattern(data: bytes, addr: int,
     It travels exactly as `exits_tied` does -- an out-parameter that changes
     no byte of the stream -- and is empty for a player without `note_flag`,
     where bit 7 is pitch (see the wrap below) and not a flag.
+
+    `legato_bit7` lets `free_rows` collect bit-7 notes WITHOUT `note_flag`: for
+    a player that tests the bit (Mega_Apocalypse `$4BB3 BMI`, which skips the
+    instrument start and with it the per-voice frame counter's reset) but
+    whose store `detect.note_flag` does not spell. Pure bookkeeping: the bytes
+    of the event stream are the same either way, because the frequency lookup
+    drops bit 7 itself (the wrap below).
 
     `note_base` shifts every note byte before it becomes a Goattracker note,
     for the player whose frequency table does not start where Goattracker's
@@ -1061,7 +1069,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         if get_next or not no_note:
             i2 += 1
             g_note = data[addr + i2]
-            free_note = bool(note_flag and g_note & 0x80)
+            free_note = bool((note_flag or legato_bit7) and g_note & 0x80)
             # **THE LOOKUP IS EIGHT BITS WIDE, SO A BYTE AT OR ABOVE $80 WRAPS
             # INTO THE TABLE.** Every classic player indexes its frequency
             # table with `ASL / TAY / LDA freqtbl,Y` (or `TAX`/`,X`) --
@@ -2387,7 +2395,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               wave_notes=wave_notes,
                               event_rows=event_rows,
                               gate_clear_records=(record_gate_clear(sid, det)
-                                                  if tie else frozenset()))
+                                                  if tie else frozenset()),
+                              legato_bit7=det.counter_fall is not None)
 
 
 def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
@@ -2919,7 +2928,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     # spelled under the flag, whatever `free_rows` asked. The out-parameter
     # is pure -- `_build_raw_pattern` only appends to it -- so collecting it
     # moves no byte.
-    want_bit7 = tie and det.note_flag
+    want_bit7 = tie and (det.note_flag or det.counter_fall is not None)
     collect = free_rows or want_bit7
     # Entry -> raw rows on which an event starts, or None where unknown
     # (only when asked for; see `event_rows` in the docstring).

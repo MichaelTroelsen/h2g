@@ -4814,8 +4814,9 @@ against the original's 5.0 (401 cycles in a 180 s window against 128):
   pattern clock alone leaves the update running each frame.
 - **The counter dwells on the bound** (above), so the half-period is `bound +
   1/2` updates. `Detection.vibrato_dwell` reads it off the clamp (`BCS` over
-  `STA ctr / LDA #$FF / STA dir`, or a lone `DEC dir`); the converter
-  resolves a classic vibrato in only one of the seven dwelling files, Mozart.
+  `STA ctr / LDA #$FF / STA dir`, or a lone `DEC dir`); at v0.5.518 the
+  converter resolved a classic vibrato in only one of the seven dwelling
+  files, Mozart (the other six: see "The six `$1003` files" below).
 - **The depth loop tests its count last** (`LSR / ROR / DEC cnt / BPL`), so
   it shifts `shift + 1` times where Las_Vegas' `DEC cnt / BMI / LSR / ROR /
   JMP` shifts `shift`. `Detection.vibrato_shift_extra`; only Mozart.
@@ -4833,6 +4834,49 @@ refused in both arms, exactly those seven move. Pinned in
 is the shared counter (voice 2's `$4820`, 339 notes, now reads 115 cycles
 against 317) and voice 1's `$3800`, a 23-depth swing that is no bound/shift
 vibrato.
+
+**The six `$1003` files (classic-vibrato-period-dwell-family, v0.5.520 base;
+figures historical).** Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart,
+Pacific_Coast, Radio_ACE and Sun_Never_Shines hold the bound for two updates
+like Mozart, but emitted no classic vibrato at all: their split is
+`LDA $1A5B,X / BNE / JMP / STA $1492`, patching the `LDA #imm` that precedes
+the split's `PHA`, so no `LDA record+n,Y` stands in front of it and the byte
+search found nothing. The cell has two writers. The pattern command `$86 nn`
+(`LDA ($FA),Y / STA $1A5B,X`, `$11C5`) sets it for one event, and
+`$12E8 LDA $1A62 / BNE skip` lets it stand; otherwise `$12ED LDA $1B50,X /
+STA $12FF` patches the `LDA #imm / STA $1A5B,X` at `$12FE` with the instrument
+record's byte. So the record's byte is the default and `$86` overrides it.
+`detect._patched_split_record_offset` follows the two patches back (an exact
+byte shape at each link) and reads record +5, the same offset as the other
+55 files; it is consulted only where the record read found nothing. The same
+six now read the dwell (`Detection.vibrato_dwell`) and the age gate (`LDA
+$1ACE,X / CMP #4 / BCC`; Lakers_vs_Celtics carries a leftover `LDA #$02 / STA
+$D02C` in front of the compare, which one more gate shape skips). `$86` is
+not emitted: 35 in Go_Go_Dash's patterns, 25 in Sun_Never_Shines, 13 in
+Radio_ACE, 1 in Pacific_Coast, none in Lakers_vs_Celtics or Lion_Heart.
+
+Corpus byte-hash under presets: 89 compared, 6 refused in both arms, exactly
+those six move; Commando.sng unchanged. At -t 180 under presets (the six plus
+Mozart, which is unmoved), base to after: `reversal_ratio` Go_Go_Dash 0.018 ->
+0.273, Lakers_vs_Celtics 0.001 -> 0.370, Lion_Heart 0.556 -> 1.007,
+Pacific_Coast 0.002 -> 0.119, Radio_ACE 0.000 -> 0.425, Sun_Never_Shines
+0.000 -> 0.506; `bend_ratio` 0.13 -> 1.21, 0.12 -> 1.62, 0.11 -> 0.80, 0.07
+-> 1.31, 0.05 -> 0.87, 0.02 -> 1.28 (the same order). `depth` now has a
+population on all six. The dwell itself, ablated on the same six (dwell read
+as False, everything else held): on the 15 instruments of the six whose
+`depth` ratio lands within 0.5-2 and whose original reverses 100 or more
+times, the median `log2` of the reversal ratio goes 0.167 -> 0.053 and the
+mean absolute value 0.400 -> 0.390 (with Mozart's six such instruments, n =
+21: 0.407 -> 0.167 and 0.474 -> 0.435); the `depth` ratio per instrument
+rises towards 1 (Lakers' `$0B9D` 0.65 -> 0.86 and `$17BA` 0.64 -> 0.85,
+Sun_Never_Shines' `$354B` 0.80 -> 1.06). So the period gain is small and the
+depth gain is the larger one. It is the
+same trade the LVVP section describes: a longer `cmp` buys depth with rate,
+and `bend` on Go_Go_Dash, Pacific_Coast, Sun_Never_Shines and Lakers_vs_Celtics
+is 1.2-1.6 against the original. What stays open is mostly coverage, not
+period: instruments whose oscillation is an arpeggio or an `$44` attack pitch
+sweep (Lakers' `$02A9`, `$09CA`, `$0875`; Sun_Never_Shines' `$0047`) read
+ratios far from 1 whatever the dwell does.
 
 #### Reach
 
@@ -12850,6 +12894,44 @@ into it; 192 counts the copy's 16), Flash_Gordon 22 -> 24, 0 kept (was 1),
 Knucklebusters 16 -> 20, 0 kept (was 2) (`tests/test_entry_instrument_split.py`).
 The free-note variants' own two-instrument declines are not split for here.
 
+**A legato clone of a bit-$10 record restarts a program the original's phase
+cell never restarts** (open; `star-paws-legato-vibrato-travel`; figures are
+historical -- Star_Paws, -t 180, under presets, 81a766c, 2026-10-09). The
+question was whether a clone's *vibrato* restart matches the original's at the
+tie landing; it does not arise. All 192 tie rows land on records whose effect
+byte carries bit $10 (`$30`/`$38`, the 3-step pitch sequence), and none of the
+four records with a vibrato pointer is cloned (`tests/test_legato_clone_records.py`).
+With every tie left `CMD_TONEPORTA 00` the vibrato records' reversal counts
+are identical to the clone arm's (ADSR `$0A98` 937 and 937, `$0AAA` 280 and
+280, the original's 877 and 264). What the entry split moved (`travel` 0.9873
+-> 0.9689, `vib` 1.0878 -> 1.0965) is the pitch sequence of ONE record (GT 15,
+ADSR `$09C8`: 414 reversals in the original, 952 on clones, 647 with plain
+ties): of the 134 voice-0 frames the split changes, 131 lie in frames
+5412-5760, inside the two long arpeggio notes -- where the one change is the
+16 rows of pattern `$34` going from plain ties to clones, the notes' other
+rows being clones already. The mechanism is the phase cell: the original
+steps it once per call (`DEC $B8FA` at `$B44C`, reload 2) and a fetch
+restarts nothing in it, so on 2-frame rows over a 3-frame cell the `+12` step
+falls on one row in three (`X..X..`, 18 of 54 rows); a clone restarts the
+record's block at its first step, so it falls on every row (54 of 54). Octave
+frames in the two notes, original | clones | plain ties: 70 | 208 | 68 and
+68 | 203 | 89. The ratio near 1 is cancellation, not agreement: `travel` is
+938,967 for the original, all voice 0, against 909,752 for the conversion, of
+which 356,056 is voice 0. Leaving the bit-$10 ties plain is not a fix: whole
+file `vib` 1.0965 -> 1.0412 and `cut` 1.0816 -> 1.0131 move toward 1, but
+`travel` goes to 1.2075 and `aud`/`loud` fall 0.8973 -> 0.8957 and
+0.9594 -> 0.9572. The fix is a clone whose block is rotated to the cell's
+reading at the landing, which needs the cell's clock for this player (an
+undivided phase behind an outer gate; `_pitch_seq_flat_clock` declines on the
+gate and `_pitch_seq_clock` on the missing divider, and the shape matches 27
+corpus files) and, per landing, one tuple: a 16-row pattern of 2-frame rows is
+32 frames, 2 mod 3, so a pattern replayed in sequence lands each play on
+another phase and needs the repeat unrolling `_phase_divergent_repeats` does
+for attacks. A scratch prototype (clock, per-row tuple, one block per tuple, a
+lead of 2 calls found by experiment) reproduced `X..X..` exactly on the first
+12 rows of the first note and retargeted 115 of 200 rows; it was not
+merged.
+
 **The interleaved dialect's per-voice filter routing is written as `B`
 commands** (`ilv_filter_routing_plan`, `goatwriter/filters.py`; the
 `ilv_filter_routing` option, in `presets.json`'s always block). Two facts of the
@@ -14182,6 +14264,32 @@ from exact to a frame early (v1 372 of 1782). The onset and the in-note
 programs want one grid; that is a follow-up, not a reason to leave the onsets
 a frame off.
 
+**Re-read at 81a766c (-t 180, presets; C:/t/tick0-grid-vs-onset-grid): the
+two grids are not in conflict, and the residual was the sampled note-init
+call.** Against the same song built with no startup record, the record RAISES
+`tie_agreement` on every entry-family file read (Warhawk .6614 -> .8343,
+Proteus .6482 -> .9194, Game_Killer .5411 -> .7588, Thrust .5548 -> .6011);
+the in-note events sit on the original's frames. What stayed down was the
+HOLD: at `-S m` the onset sits one call after its tick 0, so on one note in
+`m` the init is the previous frame's LAST call, which the trace samples, and
+the testbit `$09` it writes selects no waveform (the note before reads one
+frame short; Game_Killer `sound_run_agreement` .8182 without the record,
+.4545 with it) and opens the gate a frame before the original's. A song that
+gets the record now gets `gate_off_firstwave` on every instrument
+(`call_phase.GATE_OFF_FIRSTWAVE`; `convert` builds it with and keeps that
+build only where the record is written). Measured on all 18 files that get
+a record (the 12 JMP-form ones included), 89 of the 95 corpus files convert
+(6 refused both sides) and exactly those 18 move: `sound_run_agreement`
+rises on 15 of them and falls on none (Game_Killer .4545 -> 1.0, Thrust .5
+-> .8889, ACE_II .375 -> 1.0, Food_Feud .2727 -> 1.0, Chain_Reaction .2 ->
+.9), `wave` rises on 16 and falls on none, `gate` rises on 15 and falls on
+one (Rock_Tells_the_Tale .4120 -> .4084); Kentilla and W_A_R move `aud` and
+`loud` only. `onset_timing`, `melody` and `adsr` do not move. Costs: `aud`
+falls on 14 files, at most .0022 (Thrust); `tie_agreement` falls on four,
+at most .0009 (International_Karate). Not re-examined at this base, and
+not a grid: Warhawk voice 0, Game_Killer voice 2's per-note step frames
+(both read at 82d60ac), Thrust's remaining held instruments.
+
 ### 7.zzzzzzz A wave step past note 95 read gt2reloc's orderlist addresses
 
 A wavetable right side `$00`-`$7F` is relative: both players look up
@@ -14320,7 +14428,7 @@ Without `tie_restart` the landing is a `CMD_TONEPORTA 00`, which keeps the
 `$0FFF` record's wave program (triangle, arp -5) instead of the `$0F0A` one
 (ring-mod, arp -2). `tests/test_gate_hold_zp.py`.
 
-### 7.NEW Bit `$02` under the arpeggio: the climb as a pattern-side stair
+### 7.eeeeeeee Bit `$02` under the arpeggio: the climb as a pattern-side stair
 
 A record setting the rise AND the nibble arpeggio runs both blocks every
 working frame, rise first (Warhawk `$13A2` then `$13CD`, Spellbound `$E2FF`
@@ -14420,3 +14528,104 @@ compares the climb level frame by frame:
 
 `melody` and `pitch` do not move on any of the four files. Both are read
 at attacks, and the climb moves no attack. `tests/test_rise_arp_pattern_stair.py`.
+
+### 7.ffffffff Bit `$02`'s fifth reading: Mega_Apocalypse's counter-started fall
+
+Mega_Apocalypse `$4DBF` is the skydive's falling high byte (7.ppppppp) under
+a different gate, and none of the three readings of the bit matched it
+(`skydive`, `note_rise` and the rise all need a shape it does not have).
+
+    4DBF  A5 EC     LDA $EC          ; the record's effect byte
+          29 02     AND #$02 / BEQ out
+          A4 E3     LDY $E3          ; record * 8
+          B5 BC     LDA $BC,X        ; the voice's frame counter, a byte
+          D9 A7 54  CMP $54A7,Y      ; the record's own threshold
+          90 0C     BCC out
+          29 01     AND #$01 / BEQ out
+          BD AF 53  LDA $53AF,X      ; savehi, the note's high byte ($4BED)
+          95 C0     STA $C0,X        ; the zero-page frequency high shadow
+          DE AF 53  DEC $53AF,X      ; A holds the value BEFORE the step
+
+- **The window is a frame count.** `$BC,X` is zeroed at `$4BDB`, inside the
+  instrument start that a note byte's bit 7 skips (`$4BB3 BMI`), INC'd every
+  frame at `$4E76`, and a byte. The stores are on frames 1, 3, 5 ... of the
+  note whatever the global clock says, from the record's threshold on
+  (record 9: 31, record 12: 12, record 16: 114), and they stop when the
+  counter wraps at 256 until it is back at the threshold.
+- **It does not stop with the note, or at zero.** The counter runs on through
+  the rests that follow, savehi goes on from where it was, and with no `BEQ`
+  the byte runs through `$00` to `$FF`, `$FE` ... (down to `$DE` on record 9).
+  Record 16's `$0CFC` notes are 384 and 768 frames of falling pitch.
+- **A frame that fetches an event stores nothing.** The fetch frame leaves
+  through `$4E63` before the effects, and every row that starts an event
+  (a rest's too) is one.
+- **The vibrato byte decides the rest.** The store goes to the shadow, which
+  the per-frame writer sends with the low byte left there. A record with a
+  vibrato byte rewrites the whole frequency on the frames between the stores,
+  so it ALTERNATES (record 9: 227 reversals on a 288-frame note); one without
+  holds the fallen pitch (record 16).
+
+**The model, against the original.** `fall_stores(length, threshold,
+fetches)` is the schedule. Measured with `siddump -t 180 -v1` at 81a766c
+(historical): voice 3's note at frame 289 (672 frames, threshold 114, fetches
+every 96) reads the model's high byte on 671 of 671 frames, 165 stores; the
+note at 1057 on 287 of 287, 71 stores; voice 1's note at frame 3745 (record 9)
+on all 114 store frames. `siddump -w` on `$BC,$BD,$BE,$53AF` shows the counter
+reset on `$4BDB`'s notes only and the wrap at 256.
+
+**What is emitted.** Records without a vibrato byte, at -S1 and GTS5 (this
+player is not a multispeed one). Store `n` is the note's frequency `$100 * n`
+lower, so each row that holds a store gets a `CMD_SETWAVEPTR` to a program of
+its own three calls (`counter_fall_entries`): a delay to the store's tick, an
+`F2` of `$100 * size` (`F1` of `$100 * (256 - size)` from 129 up -- the
+frequency is 16 bits; 128 is `$8000`, which a speed row reads as note-relative,
+so a store of exactly that size is left to the next), a stop. Programs are
+shared by the row's shape. `size` is how many stores the voice is behind, so a
+store on a row whose command column is taken (an event row carrying a tempo
+command, the row after a tie) is made up on the next one (`row_falls`).
+A store is on our call `j + lag` of the note's row, `skydive_plan`'s lag.
+
+Two things the rows needed. The rest pattern every voice shares, so the walk
+is per orderlist position (`rest_reseed`'s) and a pattern its positions want
+written differently is cloned; and the long rests are `$D5 00` -- one position
+played six times, each visit with the counter somewhere else -- which are
+unrolled before the orderlists are written (`unroll_fall_repeats`). The
+decoder's bit-7 note rows (`PatternList.note_bit7`) are read for this player
+too (`legato_bit7`): Mega has exactly two, entry 25 row 32 (record 9) and
+entry 39 row 32 (record 16), the legato continuation of a 32-row event. With
+the plan switched off the conversion is byte-identical to before (3d8e9b92c7e9).
+
+**What moved.** Measured at 81a766c plus this change, `-t 180`, presets
+(historical).
+
+- Corpus byte-hash under presets: 95 files, 89 converted, 6 refused (the same
+  in both arms), 89 compared, 1 moved: Mega_Apocalypse `3d8e9b92c7e9` ->
+  `3dd7d6f19319`. Commando is unchanged.
+- Record 16 (`$0CFC`) on voice 3: the high byte matches the original's on 985
+  of the 1010 frames from 320 to 1329 (299 before); the 25 are the frames
+  round the event rows that carry the tempo command. Within-note travel on
+  those notes 55808 against 55552 (steps under 1/8 of the pitch). Reversals
+  0 -> 4 (original 4).
+- File level: reversals 3936 -> 3940 (original 4459), `melody`, `sequence`,
+  `wave`, `adsr`, `gate` and `pitch` unchanged; `aud` 0.8848 -> 0.8838 and
+  `loud` 0.8404 -> 0.8401; `travel_ratio` 1.141 -> 1.187 and `bend_ratio` 1.570
+  -> 1.947, both moving away from 1 because the file already overshoots them
+  elsewhere (the notes themselves agree) and because the original's falls
+  print as blank note cells where ours print as pitch changes.
+- The .sng grows by 977 bytes: 924 of pattern rows (7 pattern copies), 12 of
+  orderlist (two unrolled), 14 wavetable steps, 3 speed rows.
+
+**What is not emitted: the alternating record.** Record 9 (and record 12,
+381 notes across the subtunes, 1659 stores) alternates the fall with the
+vibrato on every frame. The log counts it (`Counter fall (bit $02)..: ...
+alternating note(s) ... not emitted`). Each store has to be undone on the
+frame after it -- the vibrato is back on the NOTE, not on the fallen byte --
+and the step is a different size every time, which a loop cannot count; so
+the 114 stores of the 288-frame note are about 228 wavetable steps (or, with
+the sizes quantised, a handful of loops, the vibrato given up for them). The
+wavetable holds 247 of 255 entries after this change (233 before; the
+expanding vibrato's loops are about 110 of them), and the rows that would
+carry the program are the swell's `4xy`/`8xx` commands. Open: free the
+wavetable (the loops' entries are two each and differ only in the speed row
+they name), then emit the alternation with the vibrato kept on the frames
+between. `tests/test_counter_fall.py`.

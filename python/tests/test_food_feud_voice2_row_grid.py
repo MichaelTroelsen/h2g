@@ -17,6 +17,14 @@ original runs in the attack frame itself (the init-visible-at-phase-m-1 effect
 of tests/test_gate_off_firstwave_call_phase.py).
 
 Measured 2026-10-09 on 9d1ff22: C:/t/food-feud-voice2-row-grid-tie-deficit/.
+
+**That residual is gone since the phase takes the gate-off firstwave**
+(`call_phase.GATE_OFF_FIRSTWAVE`, tests/test_phase_firstwave.py): the init call
+the trace sampled now writes the record's own waveform with the gate clear, as
+the original's chip holds on that frame. Measured on 81a766c, 60 s: with the
+seam off 22 of 323 windows lose their last-frame tie (1233 ties of the
+original's 1256), with it none do (1255), and the one window left differing is
+the 27-frame note below.
 """
 import json
 import pathlib
@@ -30,6 +38,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import fidelity                                              # noqa: E402
 import h2g.convert as convert_module                         # noqa: E402
 from corpus import CORPUS, needs_corpus                      # noqa: E402
+from h2g.goatwriter import call_phase                        # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 NAME = "Food_Feud.sid"
@@ -44,13 +53,14 @@ needs_gt2reloc = pytest.mark.skipif(
     reason="no gt2reloc on this machine")
 
 
-def _voice2(tmp_path, startup: bool, monkeypatch):
+def _voice2(tmp_path, startup: bool, monkeypatch, gate_off: bool = True):
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     mult = fidelity._preset_multiplier(doc, NAME)
     opts = dict(fidelity._preset_opts(doc, NAME), pitch_seq=True)
     if not startup:
         monkeypatch.setattr(convert_module, "startup_phase",
                             lambda *a, **k: None)
+    monkeypatch.setattr(call_phase, "GATE_OFF_FIRSTWAVE", gate_off)
     sng = convert_module.convert(str(CORPUS / NAME), log=lambda m: None,
                                  **opts)
     sng, _ = fidelity.legalise_restarts(sng)
@@ -75,8 +85,10 @@ def _windows(orig, ours):
 @needs_gt2reloc
 def test_voice_2_windows_are_the_originals_and_the_tie_loss_is_the_last_frame(
         tmp_path, monkeypatch):
+    """Without the gate-off firstwave (seam off) the windows are the original's
+    and the only loss is the last-frame tie the testbit init costs."""
     orig = fidelity.run_siddump(CORPUS / NAME, SECONDS, 0)[VOICE]
-    ours = _voice2(tmp_path, True, monkeypatch)
+    ours = _voice2(tmp_path, True, monkeypatch, gate_off=False)
     rows = list(_windows(orig, ours))
     assert Counter(lu - lo for lo, lu, *_ in rows) == {0: len(rows)}
     assert len({lag for _, _, lag, *_ in rows}) == 1
@@ -86,6 +98,20 @@ def test_voice_2_windows_are_the_originals_and_the_tie_loss_is_the_last_frame(
     assert len(at_end) > 10
     # One 27-frame note moves a tie by a frame (7 -> 6): not the grid either.
     assert len(differing) - len(at_end) <= 1, differing
+
+
+@needs_corpus
+@needs_siddump
+@needs_gt2reloc
+def test_the_gate_off_firstwave_closes_the_last_frame_tie_loss(
+        tmp_path, monkeypatch):
+    orig = fidelity.run_siddump(CORPUS / NAME, SECONDS, 0)[VOICE]
+    ours = _voice2(tmp_path, True, monkeypatch)
+    rows = list(_windows(orig, ours))
+    assert Counter(lu - lo for lo, lu, *_ in rows) == {0: len(rows)}
+    differing = [(lo, so, su) for lo, _, _, so, su in rows if so != su]
+    # Only the 27-frame note (7 -> 6) differs.
+    assert len(differing) <= 1, differing
 
 
 @needs_corpus

@@ -46,6 +46,19 @@ firstwave and returns (player.s `jmp mt_loadregswaveonly`/`mt_loadregs`,
 next call. Measured at -m1 (one dump row a call) on Game_Killer, Chain_Reaction
 and Kings_of_the_Beach_intro: every attack at `lead + 1` modulo the row.
 
+**And the init call is visible in the frame before it, so its byte is the
+original's, not the testbit's** (`GATE_OFF_FIRSTWAVE`). The onset standing in
+the original's frame puts the init call -- the call before it -- in the
+previous frame whenever the onset is that frame's first call, one note in `m`
+on average, and the trace samples a frame after its last call. There the
+testbit `$09` selects no waveform, so the note before reads one frame short
+and `$09`'s gate bit opens the gate a frame before the original's. The
+record's own waveform with the gate CLEAR is what the original's chip holds on
+that frame, and the next call's wavetable entry writes the gate. It is only
+right WITH the phase: at the default phase the init lies inside the original's
+onset frame and the same byte costs `gate`
+(tests/test_gate_off_firstwave_call_phase.py).
+
 **The original's grid, read from the player.** Its rows start on passing calls
 `first + frames * j` (`arpeggio.fixed_arp_first_fetch`: the speed counter's
 byte; `SongSpeeds.frames_for`), and passing call `w` falls on the frame the
@@ -128,6 +141,16 @@ STARTUP_RESET_CALLS = 1
 # init call writes only the test-bit firstwave (`$09`, no key-on below `$10`,
 # siddump.c:434-437) and the wavetable's first entry the waveform, one call on.
 ONSET_CALL = 1
+
+# Whether a song that gets the startup record also gets every instrument's
+# gate-off firstwave (`instruments.gate_off_firstwave`; `convert`). The init
+# call of the note whose onset the phase put in the original's frame is the
+# previous frame's last call one time in m, and the trace samples it there: the
+# testbit `$09` it would write selects no waveform (the note before reads a
+# frame short) and opens the gate a frame before the original's. A module
+# constant rather than an option because it is what the phase means, not a
+# choice; the seam exists so a test can measure the song without it.
+GATE_OFF_FIRSTWAVE = True
 
 
 @dataclass(frozen=True)

@@ -210,7 +210,10 @@ for a human listening check into gitignored `build/listen/`.
 - **Instrument 63 is gt2reloc's startup row** (`goatwriter.call_phase`): its
   AD sets the packed song's call phase under an entry outer gate, added LAST
   on the finished bytes (`instrument_drop.add_startup_tempo`, after the drop,
-  which would remove it). A pass that adds instruments runs before it.
+  which would remove it). A pass that adds instruments runs before it. A song
+  that gets the record is built TWICE: `convert` rebuilds it with
+  `gate_off_firstwave` on every instrument and keeps that build only where
+  `add_startup_tempo` then writes the record (`call_phase.GATE_OFF_FIRSTWAVE`).
 - **Row 0's command column belongs to the subtune's clock.** `apply_tempos`
   skips a pattern whose command column is occupied, so a row-0 command costs
   that subtune its `CMD_SETTEMPO`. A new row-0 command must declare itself in

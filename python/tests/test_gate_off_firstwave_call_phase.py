@@ -84,14 +84,23 @@ needs_gt2reloc = pytest.mark.skipif(
 
 def _arms(name: str, tmp_path: pathlib.Path):
     from h2g.convert import convert
+    from h2g.goatwriter import call_phase
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     mult = fidelity._preset_multiplier(doc, name)
     out = {}
     for arm, instrs in (("off", ()), ("gate_off", EVERY)):
         opts = fidelity._preset_opts(doc, name)
         opts["gate_off_firstwave_instruments"] = instrs
-        sng, _ = fidelity.legalise_restarts(
-            convert(str(CORPUS / name), log=lambda m: None, **opts))
+        # A song the startup record phases takes this byte on every
+        # instrument by itself (`convert`); the 'off' arm is the song without
+        # it, so the seam is turned off for the build.
+        saved = call_phase.GATE_OFF_FIRSTWAVE
+        call_phase.GATE_OFF_FIRSTWAVE = arm == "gate_off"
+        try:
+            blob = convert(str(CORPUS / name), log=lambda m: None, **opts)
+        finally:
+            call_phase.GATE_OFF_FIRSTWAVE = saved
+        sng, _ = fidelity.legalise_restarts(blob)
         work = tmp_path / arm
         work.mkdir()
         packed = fidelity.pack_sid(sng, work, multiplier=mult)

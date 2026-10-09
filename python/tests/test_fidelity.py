@@ -3946,22 +3946,25 @@ def test_no_dimension_is_unreachable_from_the_generated_artefact():
 def test_depths_ten_null_rows_are_two_different_findings():
     """`depth_compare` returns {} for two unrelated reasons and both print `-`.
 
-    Seven of the ten null rows have NO vibrato population at all -- the filter
+    Seven of the ten null rows had NO vibrato population at all -- the filter
     working, and `-` is right. Three have one and fail to pair, which is the
     shape that was a real defect for Powerplay's `onset`. Pinned so the
     two cannot be conflated, and so a future interleaved vibrato decode fails
-    HERE rather than silently changing what the dash means.
+    HERE rather than silently changing what the dash means -- and it did:
+    the six interleaved files resolve their `$78/$07` byte through the patched
+    split since classic-vibrato-period-dwell-family, so `depth` measures them
+    and they moved to `has_population` below, leaving one.
     """
-    no_population = ["Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics",
-                     "Pacific_Coast", "Go_Go_Dash", "Sun_Never_Shines",
-                     "Kings_of_the_Beach_ingame"]
+    no_population = ["Kings_of_the_Beach_ingame"]
     # Re-run at v0.5.488 with the player's own exclusions applied
     # (`vibrato_population`): the three v0.5.467 no-shared-key files split
     # 2 / 1. Commodore_64_Music_Examples (9 keys, 0 dropped) and BMX_Kidz
     # (2 keys, `$78/$07` engine, no exclusion applies) keep a population;
     # 5_Title_Tunes' six are all ones the player never opens and it is now
     # the `gated` refusal -- pinned by its own test below.
-    has_population = ["Commodore_64_Music_Examples", "BMX_Kidz"]
+    has_population = ["Commodore_64_Music_Examples", "BMX_Kidz",
+                      "Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics",
+                      "Pacific_Coast", "Go_Go_Dash", "Sun_Never_Shines"]
     for stem in no_population:
         path = CORPUS / f"{stem}.sid"
         if not path.exists():
@@ -4133,13 +4136,14 @@ def test_triangle_gate_walk_drops_a_record_played_only_short(monkeypatch):
 
 
 @needs_corpus
-def test_the_interleaved_dialect_has_no_vibrato_engine_any_detector_reads():
+def test_the_interleaved_dialect_vibrato_engine_is_the_78_07_pair_read_through_a_patched_split():
     """The six ILV files share one cause, and it is about the DIALECT.
 
-    None of the three engines `vibrato_records` covers -- the $78/$07 pair,
-    the LFO table, the bare right-shift -- matches the interleaved player. If
-    it oscillates, this project cannot see it, which is why `depth`, and only
-    `depth`, is blank on all six.
+    Until classic-vibrato-period-dwell-family none of the three engines
+    `vibrato_records` covers matched the interleaved player, because its split
+    reads a per-voice cell into a patched `LDA #imm` and not the record
+    (`detect._patched_split_record_offset`). It is the $78/$07 pair, read at
+    record +5 like every other file, and `depth` measures all six.
     """
     ilv = ["Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics", "Pacific_Coast",
            "Go_Go_Dash", "Sun_Never_Shines"]
@@ -4149,7 +4153,7 @@ def test_the_interleaved_dialect_has_no_vibrato_engine_any_detector_reads():
         if not path.exists():
             continue
         seen += 1
-        assert not fidelity.vibrato_records(path), stem
+        assert fidelity.vibrato_records(path), stem
     assert seen >= 5, f"only {seen} of the six ILV files are in the corpus"
 
 

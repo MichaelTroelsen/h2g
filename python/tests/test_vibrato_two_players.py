@@ -115,9 +115,11 @@ def test_powerplay_reads_its_vibrato_at_the_same_plus_five_as_everyone_else():
 def test_trying_every_match_moves_exactly_one_corpus_file():
     """Widening a search can rescue a refusal and must disturb nothing else.
 
-    The whole corpus, old rule against new: only Powerplay's offset moves, and
-    it moves from None. Every file whose first match already resolved keeps the
-    offset it always had, because the first match is still the first candidate.
+    The whole corpus, old rule against new: only Powerplay's offset moves from
+    the widening itself (and from None), plus the six `$1003` files the
+    patched-split rescue reads. Every file whose first match already resolved
+    keeps the offset it always had, because the first match is still the first
+    candidate.
     """
     moved = {}
     seen = 0
@@ -132,4 +134,10 @@ def test_trying_every_match_moves_exactly_one_corpus_file():
         if old != new:
             moved[path.name] = (old, new)
     assert seen >= 90, f"only {seen} files were read"
-    assert moved == {POWERPLAY: (None, 5)}, moved
+    # Powerplay by the second copy of the player; the six `$1003` interleaved
+    # files by the patched-immediate split (classic-vibrato-period-dwell-
+    # family, tests/test_classic_vibrato_patched_split.py). Nothing else.
+    assert moved == {POWERPLAY: (None, 5),
+                     **{n + ".sid": (None, 5) for n in (
+                         "Go_Go_Dash", "Lakers_vs_Celtics", "Lion_Heart",
+                         "Pacific_Coast", "Radio_ACE", "Sun_Never_Shines")}}, moved

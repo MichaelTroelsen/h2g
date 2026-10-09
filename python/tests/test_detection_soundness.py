@@ -365,6 +365,11 @@ _GATE_COUNTER = {
     "Rikky.sid", "Rock_Tells_the_Tale.sid", "Saboteur_II.sid",
     "Shockway_Rider.sid", "Skate_or_Die_intro.sid", "Star_Paws.sid",
     "Thundercats.sid", "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
+    # The six `$1003` interleaved files, which resolve their vibrato byte
+    # through the patched split since classic-vibrato-period-dwell-family
+    # (Lakers_vs_Celtics behind a leftover `LDA #$02 / STA $D02C`).
+    "Go_Go_Dash.sid", "Lakers_vs_Celtics.sid", "Lion_Heart.sid",
+    "Pacific_Coast.sid", "Radio_ACE.sid", "Sun_Never_Shines.sid",
 }
 _GATE_DURATION = {
     "Bump_Set_Spike.sid", "Chain_Reaction.sid", "Deep_Strike.sid",

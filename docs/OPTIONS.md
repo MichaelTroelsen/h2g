@@ -593,9 +593,10 @@ row (greloc.c:1140-1141) -- empty records pad 1..62, and the packed `.sid`
 carries none of them. Six corpus files get one (Game_Killer, International
 Karate, Kentilla, Proteus, Thrust, Warhawk); on all six every onset that was a
 frame off lands on the original's frame. A constant shift under one frame: no
-listener hears it, every per-frame column sees it. Warhawk's ties and wave
-read lower for it -- its in-note steps sit one call ahead of its onsets (see
-the METHOD section on the call phase).
+listener hears it, every per-frame column sees it. The phase also makes the
+note-init call visible in the frame before the original's onset, so a song
+that gets the record gets every instrument's gate-off firstwave with it
+(`call_phase.GATE_OFF_FIRSTWAVE`; see the METHOD section on the call phase).
 
 ## `--fold-transpose` (transposes past Goattracker's ceiling)
 
