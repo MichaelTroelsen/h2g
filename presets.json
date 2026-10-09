@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.519 presets.py",
+  "generator": "h2g 0.5.520 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -176,7 +176,7 @@
       "bytes": 19662,
       "subtunes": 2,
       "rows": 18341,
-      "multiplier": 5
+      "multiplier": 3
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -346,7 +346,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 11175,
+      "bytes": 11239,
       "subtunes": 1,
       "rows": 12912,
       "multiplier": 2,
@@ -357,9 +357,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12188,
+      "bytes": 12266,
       "subtunes": 1,
-      "rows": 8113,
+      "rows": 8132,
       "multiplier": 9,
       "max_hard_restart": true
     },
@@ -368,7 +368,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10872,
+      "bytes": 10901,
       "subtunes": 8,
       "rows": 4175,
       "multiplier": 1
@@ -403,7 +403,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 52077,
+      "bytes": 52106,
       "subtunes": 7,
       "rows": 36980,
       "multiplier": 1
@@ -483,7 +483,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 32907,
+      "bytes": 32835,
       "subtunes": 1,
       "rows": 36388,
       "multiplier": 10,
@@ -790,7 +790,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 13248,
+      "bytes": 13198,
       "subtunes": 1,
       "rows": 16038,
       "multiplier": 7,
@@ -829,7 +829,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 30365,
+      "bytes": 30402,
       "subtunes": 2,
       "rows": 21593,
       "multiplier": 2
@@ -952,7 +952,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 35874,
+      "bytes": 35768,
       "subtunes": 3,
       "rows": 27200,
       "multiplier": 5,
@@ -1095,7 +1095,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18913,
+      "bytes": 19273,
       "subtunes": 9,
       "rows": 21455,
       "multiplier": 7,
