@@ -261,6 +261,11 @@ The change itself is a whole number of calls, so the part of a row it rounds
 away is spent inside each segment's patterns as short runs at one call more
 or less (`patterns._compensate_fractional_rows`): Rasputin's `drift` goes
 -11.9 -> +0.3 per 1000 and its knee 37 -> 0.2 over 180 s. Same section.
+The clock it aims at is the player's own count, not the average row. Rasputin's
+handler restarts the gate it reloads, which makes each segment up to a frame
+shorter than the average. Read that way, the remaining +0.3 goes to 0.0 and
+the matched-attack offset holds at the startup lag of 7 frames, where it had
+crept 8 -> 11 (v0.5.516 + rasputin-clock-drift).
 
 Hubbard's `$FE` track byte means *this tune has ended*. Every dialect
 implements it the same way — it calls the player's jump-table entry +3, which
@@ -2494,6 +2499,48 @@ Trans-Atlantic_Balloon_Challenge). Each of those adoptions was measured under
 the old budget, so each must be re-measured before it changes. With the flag
 off, the corpus byte-hash moves 0 of 89 under presets and 0 of 89 with `regrid`
 forced. `tests/test_regrid_full_debt.py` pins both budgets.
+
+**`--regrid-per-play` (`regrid_per_play`) debits each row at the play that
+delivers it.** Both budgets above charge a pattern for all of its plays at the
+visit that buys a row. A pattern's bytes are global, so the walk's timeline is
+not the song's. A count raised on a later visit also fires at the earlier
+plays, so the conversion runs late until the debt catches up. Measured at
+39b5de2 under presets with `regrid_full_debt` (calls delivered minus owed,
+voice 0, one pass), the late peak is Bangkok_Knights +16.90, Nineteen +5.27 and
+Auf_Wiedersehen_Monty +2.46. With the flag, every play is one ledger
+(`patterns._regrid_per_play`). A count may rise only by what keeps that ledger
+at or below zero at every play boundary from the pattern's first play on. The
+flag implies `--regrid-full-debt`'s walk. The cost is that it is greedy.
+Star_Paws (`regrid` forced) is paid 135 of 147.28 calls a pass, against 147
+under `--regrid-full-debt`. Its patterns 33-38 play twice in a row, and pattern
+33's second play leaves the others no room. On the 15 files that ship `regrid`,
+`-t 180`, S shipped / F `+ regrid_full_debt` / N `+ regrid_per_play` (39b5de2):
+
+| file | drift/1000 S / F / N | gate S / F / N | wave S / F / N |
+|---|---|---|---|
+| After_8 | 0.00 / 0.00 / 0.00 | 54.5 / 54.5 / 59.5 | 94.3 / 94.3 / 95.9 |
+| Arcade_Classics | 0.13 / 0.00 / 0.21 | 51.4 / 56.6 / 68.0 | 73.5 / 74.8 / 76.8 |
+| Auf_Wiedersehen_Monty | 0.00 / 0.00 / 0.00 | 59.3 / 59.3 / 73.3 | 84.2 / 84.2 / 89.3 |
+| Bangkok_Knights | 0.62 / 2.58 / 0.00 | 50.2 / 67.0 / 78.1 | 51.6 / 59.8 / 68.9 |
+| I_Ball | 3.06 / 0.00 / -0.49 | 39.3 / 40.6 / 44.5 | 55.9 / 60.9 / 60.9 |
+| IK_plus | 0.91 / 0.21 / 0.39 | 43.1 / 48.6 / 56.5 | 58.7 / 58.9 / 59.2 |
+| Nemesis_the_Warlock | 0.00 / 0.00 / 0.00 | 28.8 / 27.6 / 29.6 | 85.2 / 81.3 / 85.5 |
+| Nineteen | -1.61 / 0.00 / 0.00 | 48.5 / 60.1 / 63.4 | 48.2 / 57.0 / 62.9 |
+| One_on_One_Jordan_vs_Bird | 1.56 / 0.44 / 0.00 | 39.0 / 41.6 / 53.3 | 81.0 / 80.7 / 86.1 |
+| Pandora | 0.00 / 0.00 / 0.00 | 34.6 / 62.0 / 62.0 | 72.2 / 85.0 / 85.0 |
+| Powerplay_Hockey_USA_vs_USSR | 0.99 / 0.99 / 1.09 | 46.3 / 46.3 / 45.2 | 95.3 / 95.3 / 95.4 |
+| Rikky | -0.77 / -0.77 / -0.64 | 46.9 / 46.9 / 46.9 | 95.1 / 95.1 / 95.2 |
+| Sigma_Seven | 0.00 / 0.00 / 0.00 | 26.4 / 26.4 / 50.5 | 88.2 / 88.2 / 89.6 |
+| Trans-Atlantic_Balloon_Challenge | -0.22 / -0.22 / 0.00 | 65.2 / 65.2 / 58.0 | 78.4 / 78.4 / 78.6 |
+| Wiz | -0.24 / -0.24 / -0.58 | 22.6 / 22.6 / 25.0 | 78.6 / 78.6 / 77.7 |
+
+`melody` moves at most 0.18pp (Arcade_Classics) from S to N. Against S, `drift`
+is better on seven files, worse on three (Arcade_Classics, Powerplay, Wiz) and
+level on five. Against F it is better on four and worse on five. `gate` is up
+on 12 of 15 against S and down on two (Powerplay, Trans-Atlantic). The flag is
+**off by default** and adopted per song like `regrid`. With it off, the corpus
+byte-hash moves 0 of 89 under presets. Forced on, it moves exactly the 15 files
+that ship `regrid`. `tests/test_regrid_per_play.py` pins it.
 
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores

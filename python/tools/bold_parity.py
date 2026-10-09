@@ -147,6 +147,13 @@ def check_file(path: str) -> int:
 
 
 def main(argv: list[str]) -> int:
+    # Findings quote prose that may hold non-cp1252 characters; a cp1252 pipe
+    # would raise UnicodeEncodeError (exit 1, the code for "odd"). Write UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     if len(argv) < 2:
         print(f"usage: {argv[0]} <markdown-file> [markdown-file ...]", file=sys.stderr)
         return 2

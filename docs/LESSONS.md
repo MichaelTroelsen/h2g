@@ -1611,6 +1611,13 @@ test dependency).
     v0.5.510 drain (898b491) is one candidate -- `5tt-multirate-subtunes` names
     this file among its 13 movers -- but which change cost `gate` 14 points is
     NOT measured. TODO: bisect it before quoting a cause.
+    **BISECTED at 39b5de2** (`kotb-898b491-patch-bisect`, each converter patch
+    of 898b491 applied alone onto 3105806, `-t 180`, that tree's presets):
+    `5tt-multirate-subtunes` alone reproduces the whole fall, gate 85.16% ->
+    71.09%, wave 94.35% -> 94.08%, and 898b491's exact output_sha
+    (828c4c688679 -> 7c3e3ee909db); the other five converter patches leave the
+    row byte-identical. WHY that change costs the gate is still not measured,
+    and whether the loss is accepted is a user decision.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
@@ -3159,6 +3166,13 @@ under presets, and none has been re-taken since. The mechanisms are in
     `VIBRATO_SHAPES` split matches:
     - All 61 carry the subtract loop.
     - 59 carry the add loop on the counter cell. Mozart and Tarzan were not resolved.
+      RESOLVED at 6e467ff (`classic-vibrato-census-unresolved`, landed in 86ac533,
+      read off the disassembly for all 61): Mozart's add loop is `LDY $0C24` with
+      no `,X`, so voices 1 and 2 add voice 0's counter; Tarzan is the same
+      mechanism in another spelling (zero-page counter `$49,X`). The shared
+      counter is opened as `mozart-vibrato-voice-zero-counter`, whose model was
+      held unmerged at 39b5de2 for a user decision (per-record swing right,
+      file-level vib/depth/bend worse).
   - No byte moved: the retraction corrects the explanation, not the emitted value.
   - The retraction text quoting the old words stands in
     `python/h2g/goatwriter/vibrato.py` (the `_classic_vibrato_entry` Excursion
@@ -3174,3 +3188,26 @@ Historical figures from the run records at 8586101, under presets unless stated.
 * **greloc's -S>1 legato slip lands on a decoy** (`greloc-multispeed-legato-slip`). `greloc.c` bumps `numnohr` at multiplier > 1, so `FIRSTLEGATOINSTR` sits one past the first legato record, which then packs as no-HR. `legato_slip_decoy` names a copy of the held instrument on a `GT_REST` row, numbered below every clone, and the copy takes the slip. The packed thresholds were read on all 12 movers (ACE_II, Deep_Strike, Delta, Dragons_Lair_Part_II, Flash_Gordon, Food_Feud, Knucklebusters, Lightforce, Shockway_Rider, Star_Paws, Thanatos, W_A_R). Shockway_Rider noise frames 1144 -> 1167, equal to the original's 1167.
 * **Legato starts count as note starts in fidelity's per-note splits** (`fidelity-legato-start-attribution`, `fidelity.note_starts`). Spellbound's 1.64x `0F0A` excess was the split's attribution: the 13 `0FFF->0F0A` legato transitions were charged to the wrong instrument, and it now reads 0.94. Chimera's original depth 0.613 was a swing measured across a legato jump that spliced two notes; it now reads 0.022.
 * **The plain wavetable program withholds effect calls 1-3** (`expanding-vibrato-early-frames`): H2G-CONVERSION-METHOD.md § 7.sssssss.
+
+## The 0.5.514-0.5.516 drain (2026-10-07, at 6e467ff, committed as 86ac533, c2f625a and 8d6445c)
+
+Historical figures from the run records, under presets unless stated.
+
+* **The triangle walk's turns** (`triangle-table-wraps-out-of-band-phases`, `triangle-leg-span-turns-on-the-nibble-lattice`). The entry ramps follow the sweep out of its band (`_leg_ramps`, METHOD § 7.ttttttt), and the walk turns on the first lattice width whose high nibble matches the bound, as `PulsePhaseSim` does, not at the bound (23 files moved under presets at 6e467ff). The phased legs and the per-record-bounds engine still aim at the bound: opened as `phase-block-legs-on-the-nibble-lattice` and `bounds-engine-lattice-turns`.
+* **Skipping unused records in the statics reserve buys nothing** (`pulse-reserve-skip-unused-records`): letting `pulse_usage == 0` records skip the reserve frees 12 rows on Last_V8 (223 -> 211; the C128 version 224 -> 212) and gains no record anywhere its phases, so nothing shipped, by the task's own gate.
+* **The vibrato damp on plain instruments was inert** (`vibrato-damp-on-non-vibrato-instrument`): dropping it moved 25 triangle-vibrato files, every one of the 31,788 changed bytes `$04 -> $00`, and moved no measured fidelity field.
+* **The reset idiom is a census now** (`reset-idiom-census-silent-power-on-record`): `python/reset_idiom_census.py`, pinned by `tests/test_reset_idiom_census.py`, finds every corpus file's reset idiom (`LDA #imm / STA cell,X` on a voice's instrument cell), the index it resets to, and whether that record is all-zero -- a silent power-on instrument, as Mega_Apocalypse's record 17 is. A "missing instrument" report against that shape is checked against it before it is believed.
+* **`tie_restart` was held, then re-adopted** (`tie-restart-adoption-review`). Adopted corpus-wide by the v0.5.514 presets regeneration it failed 8 tests pinned under the shipped presets, so v0.5.515 moved it to `presets.EXCLUDED_FROM_ALWAYS`. Traced one by one: 5 walked instruments assuming nothing is appended past the written records (the legato clones and decoys carry gatetimer bit 6), 1 pinned the declined spelling, and 2 (Thing_on_a_Spring g0v0, Devils_Galop g0v2, forced `pulse_phase`) lost a `CMD_SETPULSEPTR` while the packed width at the attack was still the planned one by `_reach`'s own rule. None was a regression in what the original plays; re-adopted at v0.5.516.
+* **The first adoption's other changes were presets.py's own size search**, not hand-chosen: the v0.5.514 regeneration (the first after `drop_unplayed_patterns` and the rest of the drain landed; which change made each choice flip was not traced) turned `prune` on for 15 songs, raised `max_rows` 94 -> 128 on 6 and turned `dedup` on for Bangkok_Knights. Four tests pinned to the old settings were re-pinned with the reason (Flash_Gordon's split sources renumbered, Monty voice 1 reaching 61 of 61).
+
+## The 0.5.517 drain (2026-10-07, at 39b5de2)
+
+Historical figures from the run records, `-t 180`, under presets unless stated.
+
+* **An orderlist command that stores into a gate's counter restarts the cycle; it does not just reload it** (`rasputin-clock-drift`, `detect.track_fe_restarts_gate`). Rasputin's `$FE` handler (`C0A5 LDA ($FC),Y / STA $C539 / STA $C53A`) writes the outer gate's reload AND its counter, so every tempo change starts a fresh cycle and drops the skip the old one was working towards. Each segment of W working calls is then `W/R - (W-1)//R` frames (more than 0, at most 1) shorter than the average row the compensator aimed at, and it never cancels: the per-window offset crept 8 -> 11 frames against `startup_lag` 7. The original's trace confirms it -- an opening gap of 11 frames where ours was 12, and segment 1's attacks on the restarted grid. Costing rows on the restarted clock took it to 7 in every window: drift +0.271 -> 0.0 per 1000, wave .768 -> .824, gate .507 -> .748. The `+-74 frames` premise the task opened with had already been fixed at v0.5.510; it was quoted from the docs, not measured.
+* **The first `LDA #imm / STA $D418` is not always the player's mode** (`first-d418-passband-choice`): on IK_plus, I_Ball, Nineteen, Pandora, Star_Paws, Thundercats and Trans-Atlantic it is the sfx drum's one-frame bandpass, and `find_filter` now passes over it. No column moved: `filtered_frames` counts any passband (opened as `fidelity-passband-agreement-column`).
+* **`gate_off_firstwave`'s gate loss is call phase, not instruments** (`gate-off-firstwave-gate-loss`, `tests/test_gate_off_firstwave_call_phase.py`): all 181 played singletons on the 16 losing files lower gate, and their extra gate-off frames sum exactly to the forced arm's. A loser's visible init sits inside the original's onset frame, a gainer's in the frame before it.
+* **`regrid_per_play`** (`regrid-debit-per-delivered-play`): debits a pattern's regrid rows per delivered play; off by default, 0 movers under presets, 15 regrid adopters move when forced. Star_Paws still falls short (135 of 147.28 calls).
+* **Kings_of_the_Beach_ingame's gate fall is `5tt-multirate-subtunes` alone** (`kotb-898b491-patch-bisect`; the paragraph headed "BISECTED at 39b5de2" above).
+* **Mega_Apocalypse adopts `pitch_seq`** (`mega-0a06-frame-2-pitch-move`): reversal_ratio 0.722 -> 0.883, tie_agreement 0.579 -> 0.630, melody, sequence and pitch unchanged. Applied by the main lane DURING the fan-out, it made every agent's `test_output_sha` fail on Mega_Apocalypse -- by construction, not their change.
+* Not merged: `mozart-vibrato-voice-zero-counter`'s shared-counter model (per-record swing 0.653 -> 0.108, but file-level vib 2.26 -> 2.76) is held for a user decision.

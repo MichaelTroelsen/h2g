@@ -151,6 +151,16 @@ def gate_off_firstwave(waveform: int) -> int:
     the select bits and clears the gate, so gate, frequency and pulse arrive
     together on call 1, as in the original.
 
+    "On every note" holds at -S1 (Confuzion). Above it, the byte reaches the
+    frame trace only on a note whose init call is the frame's LAST call, and
+    whether the original's gate is still off on that frame depends on where
+    our call grid sits against the original's onset frame, not on the
+    instrument: on 16 multispeed files (Food_Feud, ACE_II, ...) the init
+    lies inside the original's onset frame, the original's gate is already
+    on, and this byte costs `gate` a frame per such note; every instrument
+    that sounds loses, none gains, so no subset keeps `gate`
+    (tests/test_gate_off_firstwave_call_phase.py).
+
     Two values cannot carry it, and keep the testbit (gplay.c:355-363): a
     record with no waveform selected (`& $F0` zero -- $00 would read as "no
     firstwave" and $08 is a different, test-bit byte), and a result of $FE,

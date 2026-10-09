@@ -46,7 +46,8 @@ GENERATED = {"SURVEY.md", "FIDELITY.md", "QUEUE.md", "SUBTUNES.md",
 
 def _run_tool(path: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(TOOL), str(path)],
-                          capture_output=True, text=True, timeout=60)
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=60)
 
 
 def _head_baseline(path: pathlib.Path) -> str | None:
@@ -80,7 +81,9 @@ def _head_baseline(path: pathlib.Path) -> str | None:
 def main() -> int:
     try:
         data = json.load(sys.stdin)
-    except Exception:                                          # noqa: BLE001
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("BOLD PARITY: unreadable hook input, skipped: %r\n"
+                         % (exc,))
         return 0
     ti = data.get("tool_input") or {}
     raw = ti.get("file_path") or ti.get("path")
@@ -93,12 +96,18 @@ def main() -> int:
         return 0
     try:
         r = _run_tool(str(path))
-    except Exception:                                          # noqa: BLE001
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("BOLD PARITY: tool failed to run on %s, skipped: %r\n"
+                         % (path, exc))
         return 0
     if r.returncode == 2:
         sys.stderr.write("BOLD PARITY could not read %s: %s\n"
                          % (path, (r.stderr or "").strip()[:200]))
         return 2
+    if r.returncode not in (0, 1):
+        sys.stderr.write("BOLD PARITY: tool crashed (exit %s) on %s: %s\n"
+                         % (r.returncode, path, (r.stderr or "").strip()[-200:]))
+        return 0
     current_odd = r.returncode == 1
 
     baseline = _head_baseline(path)
@@ -121,7 +130,9 @@ def main() -> int:
             tf.write(baseline)
             baseline_path = tf.name
         rb = _run_tool(baseline_path)
-    except Exception:                                          # noqa: BLE001
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("BOLD PARITY: baseline check failed for %s, "
+                         "skipped: %r\n" % (path, exc))
         return 0
     finally:
         if baseline_path:

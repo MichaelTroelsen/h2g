@@ -87,6 +87,13 @@ written once, in the serial order, so N changes only the wall clock. Each row
 records `measure_seconds`, its own convert-pack-trace-render time, which the
 listening pages print beside the tune's length.
 
+Ties are counted twice, file-wide and per voice. `tie_ratio_audible` leaves
+out ties on frames where that side's envelope is at zero, and
+`tie_audible_voices` carries the same four figures for each voice (since
+v0.5.514), so a one-voice defect is not averaged away: Hunter_Patrol's file
+total read 1.06 while voice 1 read 0.67 (historical, 6e467ff). The
+definitions are `tie_audibility`'s docstring in `python/fidelity.py`.
+
 ### The window is a prefix, and that limits what a single run can settle
 
 **Since v0.5.489 `-t` is a floor.** When the length probe finds the original

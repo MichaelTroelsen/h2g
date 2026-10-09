@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.517 — 2026-10-08
+
+- runqueue drain at 39b5de2: first-d418 passband, Rasputin gate restart, regrid_per_play, gate_off_firstwave phase pin, bold_parity robustness, Mega pitch_seq
+
 ## 0.5.516 — 2026-10-07
 
 - tie_restart re-adopted after tie-restart-adoption-review traced the 8 tests it broke; 9 tests re-pinned

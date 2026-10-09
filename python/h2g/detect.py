@@ -195,6 +195,11 @@ class Detection:
     # assumed from the version, for the reason `track_fd_ends` records.
     track_fd_transpose: bool = False
     track_fe_command: bool = False
+    # ...and the `$FE nn` operand is stored into the outer gate's COUNTER as
+    # well as its reload, so every tempo change restarts the gate's cycle
+    # (R working calls, then the skip) instead of letting the old cycle run
+    # out. See _find_fe_gate_restart and goatwriter.restarted_gate_calls.
+    track_fe_restarts_gate: bool = False
     # File offset of a static PER-INSTRUMENT note-transpose table, or -1.
     # One corpus file has it (Food_Feud, $956D, 14 bytes: +12 on records 11
     # and 12, 0 elsewhere). The player reads it at every instrument change
@@ -2012,6 +2017,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                    else " -- every record, no bit $08 test"))
 
     det.track_fd_ends, det.track_fe_command = _find_track_terminators(sid)
+    det.track_fe_restarts_gate = (det.track_fe_command
+                                  and _find_fe_gate_restart(sid))
     if det.track_fd_transpose:
         # `$FD` is a two-byte TRANSPOSE in this reader, not a terminator.
         # `_find_track_terminators` looks for a `CMP #$FD` within reach of the
@@ -2025,7 +2032,9 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.track_fd_ends:
         log("Track reader............: $FD ends a voice's orderlist"
             + (" and $FE nn is a two-byte tempo command"
-               if det.track_fe_command else ""))
+               if det.track_fe_command else "")
+            + (" that restarts the outer gate's count"
+               if det.track_fe_restarts_gate else ""))
 
     det.instr_transpose = _find_instr_transpose(sid, det)
     if det.instr_transpose >= 0:
@@ -2311,6 +2320,51 @@ FILTER_MODE_ENTRY_SHAPE = "4C ?? ?? 4C ?? ?? A9 ?? 8D 18 D4"
 #    note-start load, no burst -- so it starts from its file bytes ($08 for
 #    voice 0) and runs on, wrapping, across every note of a filtered record.
 #    That is a reading, not a refusal: see `FilterInfo.free_running`.
+# 4. **The mode write that brings its own cutoff.** Seven files (I_Ball,
+#    IK_plus, Nineteen, Pandora, Star_Paws, Thundercats, Trans-Atlantic) carry
+#    a one-frame voice-3 drum in the play loop, and its mode write is the
+#    FIRST `LDA #imm / STA $D418` in each of them. Nineteen $946E:
+#
+#        946E  AD AB 96  LDA $96AB
+#        9471  10 2D     BPL $94A0        ; drum off: skip the block
+#        9473  AD 2A 97  LDA $972A
+#        9476  C9 01     CMP #$01
+#        9478  F0 10     BEQ $948A        ; its first frame
+#        947A  A0 1F     LDY #$1F
+#        947C  8C 18 D4  STY $D418        ; every later frame: restore
+#        ...
+#        948A  A9 48     LDA #$48 / STA $D40F
+#        948F  A9 81     LDA #$81 / STA $D412
+#        9494  A9 60     LDA #$60
+#        9496  8D 16 D4  STA $D416        ; its own fixed cutoff
+#        9499  A9 2F     LDA #$2F
+#        949B  8D 18 D4  STA $D418        ; <- the first FILTER_MODE_SHAPE
+#
+#    Bandpass lasts for that one frame. The `LDY #$1F` restore in the same
+#    block puts lowpass back on the next frame, and the subtune init's own
+#    `LDA #$1F / STA $D418` (Nineteen $9DB3) has set it before the first
+#    note. The trace agrees: on each of the seven files the original runs
+#    under lowpass on 83-88% of its routed frames (-t 180, v0.5.516).
+#    The instrument sweep's cutoff is its accumulator. A mode write that
+#    comes with its own immediate cutoff (`LDA #imm / STA $D416` right in
+#    front of it) is an effect's, not the sweep's, so `_filter_mode_write`
+#    passes it over and takes the next mode write.
+FILTER_EFFECT_CUTOFF_SHAPE = "A9 ?? 8D 16 D4"
+
+
+def _filter_mode_write(data: bytes) -> int:
+    """Offset of the `LDA #imm / STA $D418` the instrument filter runs under.
+
+    The first FILTER_MODE_SHAPE in the file, except that one directly behind a
+    fixed-cutoff write (rescue 4 above) is passed over for the next match.
+    When every match is such a write, the first is kept, so no file can lose
+    a passband it reads today.
+    """
+    first = j = search_file(data, FILTER_MODE_SHAPE)
+    while j > -1 and match_at(data, j - 5, FILTER_EFFECT_CUTOFF_SHAPE):
+        k = search_file(data[j + 4:], FILTER_MODE_SHAPE)
+        j = j + 4 + k if k > -1 else -1
+    return j if j > -1 else first
 
 
 def _stores_to(data: bytes, addr: int, span: int = 3) -> list:
@@ -2455,7 +2509,7 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
     if resctl != step - 1:
         return None
 
-    j = search_file(data, FILTER_MODE_SHAPE)
+    j = _filter_mode_write(data)
     if j <= -1:
         return None
     passband = data[j + 1] & 0x70
@@ -4947,6 +5001,18 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
 # static phase is wrong for half the notes by construction. Record 4's
 # static choice is already what we emit: of its 128 notes 59 toggle on
 # frame 1, 5 on frame 2 and 64 never (one-tick notes on the other phase).
+#
+# **The drift that A/B ran under was not "+-74 frames".** That figure dates
+# from before v0.5.510's `_compensate_fractional_rows`. Measured at v0.5.516
+# (39b5de2): the matched-attack offset read 8 -> 11 frames against a startup
+# lag of 7, so the misalignment was +1 to +4 frames. That tree's Rasputin row
+# has the same melody, wave and gate as the A/B's base (0.99939 / 0.7675 /
+# 0.5065), but the offsets were not re-taken at 6e467ff itself. The cause
+# was `$FE nn` restarting the outer gate as well as reloading it
+# (`_find_fe_gate_restart`), which the compensation did not model. With that
+# read, the offset is 7 in every 500-frame window (rasputin-clock-drift,
+# v0.5.516 + the change). The emission A/B has NOT been re-run on that
+# clock, and the decline above stands until it is.
 WAVE_EOR_SHAPE = ("29 02 F0 ?? BD ?? ?? F0 ?? DE ?? ?? 10 ?? A9 ?? 9D ?? ?? "
                   "BD ?? ?? 49 ?? 9D ?? ?? AC ?? ?? 99 04 D4")
 # Offsets into WAVE_EOR_SHAPE (past the effect-byte load).
@@ -6301,6 +6367,42 @@ def _find_track_terminators(sid: SidFile) -> tuple:
     fd = any(TRACK_FD_TEST in sid.data[m.start():m.start() + 48]
              for m in TRACK_READER.finditer(sid.data))
     return fd, bool(TRACK_FE_COMMAND.search(sid.data))
+
+
+# The outer gate spelled with a CELL reload (`OUTER_GATE` wants an immediate):
+#
+#     C012  DEC $C53A / BPL work / LDA $C539 / STA $C53A / JMP exit  (Rasputin)
+#
+# Groups: the counter the DEC counts, the reload cell, the counter the STA
+# writes back (the same cell, checked by the caller).
+FE_OUTER_GATE = re.compile(rb"\xce(..)\x10.\xad(..)\x8d(..)\x4c", re.DOTALL)
+
+
+def _find_fe_gate_restart(sid: SidFile) -> bool:
+    """Does the `$FE nn` handler restart the gate its operand reloads?
+
+    Rasputin's handler is `LDA (ptr),Y / STA $C539 / STA $C53A`: the operand
+    goes into the outer gate's reload cell AND its counter. The counter is
+    what decides when the next call is skipped, so every tempo change starts
+    a fresh cycle -- R working calls, then the skip -- and the cycle the old
+    value was part-way through is dropped, never run out. Read as a reload
+    alone, each segment of the orderlist would carry a skip it does not have:
+    `W / R` against the `(W - 1) // R` the player makes in a segment of `W`
+    working calls (`goatwriter.restarted_gate_calls`).
+
+    True only where the two cells the handler stores to are exactly the
+    counter and the reload of one `FE_OUTER_GATE`, so a handler that writes
+    the reload and some other cell reads False and keeps the plain ratio.
+    """
+    m = TRACK_FE_COMMAND.search(sid.data)
+    if not m:
+        return False
+    stores = {m.group(4), m.group(5)}
+    for g in FE_OUTER_GATE.finditer(sid.data):
+        counter, reload, back = g.group(1), g.group(2), g.group(3)
+        if counter == back and counter != reload and {counter, reload} == stores:
+            return True
+    return False
 
 
 def _find_two_stage(sid: SidFile, det: Detection):

@@ -9548,6 +9548,74 @@ stays within -6.3 .. +6.7 calls; its widest point is the R 6 entry whose last
 pattern copies (72 -> 133 patterns) and the `.sng` 18125 -> 26750 bytes;
 it still packs. Only Rasputin carries `$FE nn`, and only its bytes move.
 
+#### The change restarts the gate, it does not only reload it
+
+The "1..4 frames" above was not a residue of the rounding. It was a second
+error in the clock the accumulator aims at, and it grows with every change.
+The handler at `$C09D` stores the operand twice:
+
+    C0A5  LDA (ptr),Y / STA $C539 / STA $C53A / INC index,X / JMP $C094
+
+`$C539` is the outer gate's reload and `$C53A` is the **counter** that
+`$C012` decrements. So a change does not wait for the running cycle to end.
+It starts a new one: R working calls, then the skip. The skip the old cycle
+was working towards is dropped, never made. The change is read on a fetch
+call, which is the first working call of the segment's row 0. Row j
+therefore starts `frames * j + max(0, (frames * j - 1) // R)` frames after
+it (`goatwriter.restarted_gate_calls`), and a segment of W working calls is
+`W / R - (W - 1) // R` frames shorter than the average `frames * (R + 1) / R`
+says. That is more than 0 and at most 1, so it never cancels. Subtune 0 opens
+on `$FE 02`, so its rows are 2, 3, 3, 3 ... frames. The original's own trace
+shows it:
+
+- The opening gap on voices 1 and 2 is 11 frames, where ours was 12.
+- Every attack in the R = 2 segment sits on 3j - 1.
+- The R = 3 segment starts at frame 1151 = 3 * 384 - 1, and every attack in
+  it sits on the restarted grid (`tests/test_fe_gate_restart.py`).
+
+Against that clock, the v0.5.516 `.sng` ran +1.0 frame late from its second
+row on, +4.1 by frame 9000 (mean over frames 9000-10000), and 6.5 frames
+late at the end of its first pass. The measured offset matches: 8 for the first 1000 frames, then 9, 10
+and 11, against a startup lag of 7. `drift_lag` read 8.1.
+
+`orderlist_tempo_clocks` passes `(frames, R, multiplier)` for each change
+whose handler restarts its gate (`Detection.track_fe_restarts_gate`, read
+by `detect._find_fe_gate_restart`). For those changes,
+`_compensate_fractional_rows` costs an entry `j0` rows into its segment as
+`restarted_gate_calls(j0 + rows) - restarted_gate_calls(j0)` instead of
+`rows * c`. A handler that stores only the reload keeps the average. So does
+an operand of `$80` or more, which `BPL` reads as negative. Only Rasputin
+carries the handler.
+
+Measured at v0.5.516 + this change, presets, `-t 180`, one file (base ->
+change):
+
+- `drift`: +0.27 -> 0.0 per 1000.
+- MAD: 0.35 -> 0.0.
+- `drift_lag`: 8.1 -> 7.0, equal to `startup_lag`.
+- Median matched offset in every 500-frame window: 7 (was 8 -> 11). One
+  window reads 6 on voice 1.
+- `melody`: 99.94 -> 99.96%.
+- `wave`: 76.8 -> 82.4%.
+- `adsr`: 68.3 -> 77.4%.
+- `gate`: 50.7 -> 74.8%.
+- `tie`: 32.4 -> 55.4%.
+- `aud`: 0.911 -> 0.927.
+- `loud`: 0.963 -> 0.975.
+- Costs:
+  - `sound_run`: 0.5 -> 0.4.
+  - `bend`: 0.941 -> 0.931.
+  - `travel`: 1.097 -> 1.105.
+  - Our noise: 5134 -> 5114 frames, against the original's 5454.
+- Subtune 1 (114 attacks, one R 3 segment, `-a 1`) is mixed: `wave` 94.3 ->
+  93.7%, `tie` 43.2 -> 38.7%, `gate` 79.8 -> 81.1%, `adsr` 78.0 -> 78.5%.
+
+Voice 2's first pass now stays within 9 calls (4.5 frames) of the restarted
+clock and ends on 0.0. The widest point is still the R 6 portamento entry at
+frame ~12616, past the window. Corpus byte-hash under presets: 95 files, 6
+refused on both sides, 89 compared, 1 moved (Rasputin, 23922 -> 23912
+bytes). The Commando fixture is unchanged.
+
 #### Measured
 
 `-t 60`, shipped preset, and `Rasputin.sid` is the only file whose bytes move
@@ -12011,6 +12079,42 @@ Thanatos 8996 / 0 -> 8994, Tarzan 8637 / 0 -> 8632, Sigma_Seven 3296 / 0 ->
 bytes and no other (corpus byte-hash, 89 compared). Measured on 6e467ff plus
 the cycle-2 merge. `tests/test_filter_absent_four.py`.
 
+**A fourth reading: the mode write that brings its own cutoff.** Seven files
+(I_Ball, IK_plus, Nineteen, Pandora, Star_Paws, Thundercats, Trans-Atlantic)
+read bandpass `$20` for every filter program, but their originals run under
+lowpass. Their first `LDA #imm / STA $D418` is not the player's mode write.
+It is the § 7.jj sound-effect drum's: `LDA #$60 / STA $D416 / LDA #$2F / STA
+$D418` (Nineteen `$9494`), which fires for one frame. On every later frame of
+the effect, the same block's `LDY #$1F / STY $D418` (`$947A`) puts lowpass
+back, and the subtune init's `LDA #$1F / STA $D418` (`$9DB3`) has set lowpass
+before the first note. The comments in § 7.jj's listing call these two writes
+"volume down" and "volume back up". Both are volume `$F`; what changes is the
+passband, lowpass to bandpass and back. `detect._filter_mode_write` now
+passes over a mode write that sits directly behind `LDA #imm / STA $D416`
+(`FILTER_EFFECT_CUTOFF_SHAPE`), because the sweep's cutoff is its
+accumulator, never an immediate. It takes the next mode write instead. Where
+no other mode write exists, it keeps the first one. That applies to two held
+files, After_8 and Rikky, which enable no record and so move no byte.
+
+The A/B was run under presets at `-t 180`, base 39b5de2 (v0.5.516) against
+this change. On the frames where both sides filter, the passband now agrees
+on these frames (before -> after, out of the original's filtered frames):
+
+* I_Ball: 1425 -> 7212 of 8730.
+* IK_plus: 1486 -> 7505 of 8997.
+* Nineteen: 1304 -> 6677 of 8016.
+* Pandora: 1108 -> 7883 of 8997.
+* Star_Paws: 1116 -> 7876 of 8998.
+* Thundercats: 1146 -> 7506 of 8657.
+* Trans-Atlantic: 1366 -> 7625 of 8996.
+
+The counts are lag-aligned. No `FIDELITY.md` column can see this change,
+because `filtered_frames` counts a frame under any passband. Filtered frames,
+cutoff travel, melody, wave and adsr are identical on all seven. The
+remainder, 1109-1487 frames per file, is the drum's own one-frame bandpass,
+which nothing emits. Exactly those seven files move bytes (corpus byte-hash,
+89 compared). `tests/test_first_d418_passband.py`.
+
 ### 7.eeeeee The bounds engine's pulse phase: a free flag, a per-voice sim, and the original's clock
 
 § 7.ccc's bounds engine reseeds `$D402/$D403` from the record at every note
@@ -13734,7 +13838,15 @@ is byte-inert on the note_flag family.
 
 Measured HISTORICALLY (6e467ff + this change, 2026-10-06, under presets,
 `fidelity.measure` -t 180, `C:/t/motr-family-tie-reruns-note-start/ab4/`):
-23 files move; nothing outside the family does. Kentilla voice-3 attacks
+23 files move; nothing outside the family does. (Historical, 6e467ff. The live
+count is `tests/test_tie_restart.py`'s `MOVERS`, re-measured by
+`test_the_option_moves_exactly_the_familys_heard_files`: 26 once
+`entry_instrument_split` and the zero-page gate hold landed, 25 from v0.5.515
+when Action_Biker's `max_rows` rose 94 -> 128. `tie_restart` was held out of
+the `always` block at v0.5.515 and re-adopted at v0.5.516, after the 8 pinned
+tests its first adoption failed were each traced to appended legato clones, a
+declined-spelling pin, or a lost `CMD_SETPULSEPTR` whose packed width was still
+the planned one -- run record `tie-restart-adoption-review`.) Kentilla voice-3 attacks
 355 -> 379 (original 379), melody .952 -> .982, wave .889 -> .946, gate .527
 -> .600; Thrust voice-3 attacks 346 -> 386 (original 411), melody .978 ->
 1.000 -- its drum record re-attacks with its noise frame, as the original

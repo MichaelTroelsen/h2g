@@ -8,7 +8,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          TEMPO_FASTEST_STEADY,
                          append_song, build_sng, derived_group_tempos,
                          file_multiplier, orderlist_tempo_calls,
-                         orderlist_tempo_values,
+                         orderlist_tempo_clocks, orderlist_tempo_values,
                          write_funktempo,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
@@ -230,7 +230,8 @@ def convert(sid_path: str, log: Logger = print,
             ilv_filter_routing: bool = False,
             gate_off_firstwave_instruments: tuple = (),
             tie_restart: bool = False,
-            regrid_full_debt: bool = False) -> bytes:
+            regrid_full_debt: bool = False,
+            regrid_per_play: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -410,6 +411,15 @@ def convert(sid_path: str, log: Logger = print,
     files that ship `regrid` (measured at 6e467ff), whose adoptions were
     measured under the old budget; per song, hand-adopted like `regrid`.
 
+    regrid_per_play debits each compensating row at the play that delivers
+    it rather than charging all of a pattern's plays when the row is bought.
+    It walks every play as `regrid_full_debt` does (so it implies that walk)
+    and keeps the running ledger, calls delivered minus owed, at or below
+    zero at every play boundary (patterns `_regrid_per_play`). Needs
+    `regrid`. Off by default, per song: it moves the bytes of every file
+    that ships `regrid`, and it is greedy -- Star_Paws is paid 135 of 147.28
+    calls a pass against 147 under `regrid_full_debt` (measured at 39b5de2).
+
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
     before, then appends each further player's own conversion as the next
@@ -564,9 +574,15 @@ def convert(sid_path: str, log: Logger = print,
     # patterns._compensate_fractional_rows.
     step_calls = (orderlist_tempo_calls(sid, det, raw_tempos, tempo, skip_gate)
                   if step_tempos else None)
+    # ...and, where each change restarts the gate it reloads, the player's
+    # own count instead of the average (goatwriter.restarted_gate_calls).
+    step_clocks = (orderlist_tempo_clocks(sid, det, raw_tempos, tempo,
+                                          skip_gate)
+                   if step_tempos else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows,
-                            tempos=step_tempos, tempo_calls=step_calls)
+                            tempos=step_tempos, tempo_calls=step_calls,
+                            tempo_clocks=step_clocks)
     if step_tempos:
         n = sum(len(m) for m in step_tempos)
         log(f"Orderlist tempo.........: {n} mid-song tempo change(s) from the "
@@ -706,7 +722,8 @@ def convert(sid_path: str, log: Logger = print,
                                        skip_gate, multiplier)
             if any(deficits):
                 regrid_tempos(new_patterns, tracks, values, deficits,
-                              multiplier, log, full_debt=regrid_full_debt)
+                              multiplier, log, full_debt=regrid_full_debt,
+                              per_play=regrid_per_play)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "

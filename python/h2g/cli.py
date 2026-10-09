@@ -118,6 +118,13 @@ def main(argv=None) -> int:
              "(-S2) under-delivered 23 of 147 calls a pass without it. Per "
              "song: it moves ten -S1 files that ship --regrid. Off by default")
     parser.add_argument(
+        "--regrid-per-play", action="store_true",
+        help="with --regrid, debit each compensating row at the play that "
+             "delivers it, over every play (implies --regrid-full-debt's "
+             "walk), so the running ledger never goes late at a play "
+             "boundary. Greedy: Star Paws is paid 135 of 147 calls a pass "
+             "against 147 under --regrid-full-debt. Per song. Off by default")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -612,6 +619,7 @@ def main(argv=None) -> int:
                           ("--skip-gate", "skip_gate"),
                           ("--regrid", "regrid"),
                           ("--regrid-full-debt", "regrid_full_debt"),
+                          ("--regrid-per-play", "regrid_per_play"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -697,6 +705,7 @@ def main(argv=None) -> int:
                       force_park=args.force_park,
                       regrid=args.regrid,
                       regrid_full_debt=args.regrid_full_debt,
+                      regrid_per_play=args.regrid_per_play,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

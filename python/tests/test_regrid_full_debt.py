@@ -167,11 +167,11 @@ def _star_paws_regrid(monkeypatch, full_debt):
     real = C.regrid_tempos
 
     def spy(patterns, tracks, bases, deficits, multiplier=1, log=None,
-            full_debt=False):
+            **kw):
         seen["tracks"] = copy.deepcopy(tracks)
         seen["bases"], seen["deficits"], seen["mult"] = bases, deficits, multiplier
         seen["rows"] = [len(p) // 4 for p in patterns]
-        r = real(patterns, tracks, bases, deficits, multiplier, log, full_debt)
+        r = real(patterns, tracks, bases, deficits, multiplier, log, **kw)
         seen["out"] = copy.deepcopy(patterns)
         return r
 

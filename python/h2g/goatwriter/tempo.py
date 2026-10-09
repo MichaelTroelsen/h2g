@@ -627,6 +627,32 @@ def orderlist_tempo_calls(sid: SidFile, det: Detection,
     cannot disagree about which number was rounded. Rasputin subtune 0 at
     `-S2`: `2 * (R+1)/R * 2` calls, i.e. R 3 -> 5.333, R 5 -> 4.8, R 10 ->
     4.4, R 60 -> 4.067, R 120 -> 4.033, R 6 -> 4.667, R 2 -> 6.
+
+    That is the segment's AVERAGE row. Where the change also restarts the
+    gate's count (`Detection.track_fe_restarts_gate`, Rasputin), each
+    segment is `restarted_gate_calls` long instead -- up to one frame
+    shorter -- and `orderlist_tempo_clocks` says so.
+    """
+    out: List[dict] = []
+    for m in _orderlist_tempo_terms(sid, det, reloads, tempo, skip_gate):
+        row = {}
+        for at, (base, r, mult) in m.items():
+            if base is None:
+                base = TEMPO_FASTEST_STEADY
+            row[at] = base * (r + 1) / r * mult
+        out.append(row)
+    return out
+
+
+def _orderlist_tempo_terms(sid: SidFile, det: Detection,
+                           reloads: List[dict],
+                           tempo: int | str | None = None,
+                           skip_gate: bool = False) -> List[dict]:
+    """{at: (frames a row works, the gate's reload R, multiplier)} per track.
+
+    The three numbers both `orderlist_tempo_calls` and
+    `orderlist_tempo_clocks` are made of, read once so they cannot disagree.
+    `frames` is None where the player's speed gate could not be read.
     """
     speeds = find_song_speeds(sid, det)
     mult = 1
@@ -640,11 +666,49 @@ def orderlist_tempo_calls(sid: SidFile, det: Detection,
         # what the operand *is*, so taking a correction for it out of the file
         # image as well would apply it twice.
         base = None if speeds is None else speeds.frames_for(ti // 3)
-        if base is None:
-            base = TEMPO_FASTEST_STEADY
-        out.append({at: base * (r + 1) / r * mult
-                    for at, r in m.items() if r})
+        out.append({at: (base, r, mult) for at, r in m.items() if r})
     return out
+
+
+def restarted_gate_calls(frames: int, reload: int, mult: int,
+                         rows: int) -> int:
+    """Our calls from a gate-restarting `$FE nn` to the start of row `rows`.
+
+    Rasputin's handler stores the operand into the outer gate's counter as
+    well as its reload (`detect._find_fe_gate_restart`). The change is read
+    on a fetch call -- the first working call of the segment's row 0 -- and
+    leaves the counter at R, so the next R calls work and the one after is
+    skipped: the k-th skip follows working call k*R. Row `rows` starts on
+    working call `w = frames * rows`, after `(w - 1) // R` skips (none before
+    row 1). Per row that averages `frames * (R + 1) / R`, but every segment
+    is `W / R - (W - 1) // R` frames SHORTER than the average says -- the
+    skip the old cycle was working towards is dropped at the change, never
+    made: 1 frame on an even segment at R = 2 (rows of 2, 3, 3, 3 ...
+    frames, which is the original's opening gap of 11 frames against our
+    12), 0.4 to 0.93 on Rasputin's other segments.
+    """
+    w = frames * rows
+    return mult * (w + max(0, (w - 1) // reload))
+
+
+def orderlist_tempo_clocks(sid: SidFile, det: Detection,
+                           reloads: List[dict],
+                           tempo: int | str | None = None,
+                           skip_gate: bool = False) -> List[dict]:
+    """{at: (frames, R, mult)} per track for `restarted_gate_calls`, or {}.
+
+    Empty maps unless the `$FE nn` handler restarts the gate it reloads
+    (`Detection.track_fe_restarts_gate`); where the speed gate was not read
+    the row's working frames are not known either, so those changes keep
+    the average row (`orderlist_tempo_calls`) alone. So does an operand of
+    `$80` or more, which `BPL` reads as negative -- not the count
+    `restarted_gate_calls` models (Rasputin's largest is `$78`).
+    """
+    terms = _orderlist_tempo_terms(sid, det, reloads, tempo, skip_gate)
+    if not getattr(det, "track_fe_restarts_gate", False):
+        return [{} for _m in terms]
+    return [{at: t for at, t in m.items() if t[0] is not None and t[1] < 0x80}
+            for m in terms]
 
 
 def derived_group_tempos(sid: SidFile, det: Detection, groups: int,

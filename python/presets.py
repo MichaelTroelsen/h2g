@@ -357,6 +357,12 @@ EXCLUDED_FROM_ALWAYS = {
     # under the old budget, so it cannot be a default until each is
     # re-measured. Inert without `regrid`.
     "regrid_full_debt",
+    # Each row debited at the play that delivers it (convert's
+    # `regrid_per_play`). Per song, for `regrid_full_debt`'s reasons and one
+    # more: it is greedy, and it pays Star_Paws less than `regrid_full_debt`
+    # does (135 against 147 of 147.28 calls a pass, measured at 39b5de2).
+    # Inert without `regrid`.
+    "regrid_per_play",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own
@@ -947,7 +953,12 @@ CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
 # 0.9334, sequence 0.9685 and pitch_jaccard 0.8298 with `pitch_seq` off and
 # on alike, and a one-song `--fidelity` search into scratch SELECTS it, on
 # 075a175 and on the flat-clock change alike -- the refusal above is
-# historical; shipped presets.json still lacks it until the next search.
+# historical. ADOPTED at 39b5de2 (v0.5.516 + tie_restart) as a hand-recorded
+# setting in Mega_Apocalypse.sid's entry, carried forward like the regrid
+# adopters: -t 180 under presets, pitch_seq off -> on, reversal_ratio 0.7221
+# -> 0.8827, tie_agreement 0.5786 -> 0.6303, tie_ratio_audible 0.7070 ->
+# 0.8063, aud 0.8810 -> 0.8848; melody, sequence and pitch_jaccard unchanged;
+# tie_ours_only 1137 -> 1629 is the one figure that grows the wrong way.
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the

@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
 from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
-                         TEMPO_FASTEST_STEADY)
+                         TEMPO_FASTEST_STEADY, restarted_gate_calls)
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -3664,7 +3664,7 @@ def _regrid_spots(pattern: List[int], n: int, rows: int):
 def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                   bases: List[int], deficits: List[float],
                   multiplier: int = 1, log=None,
-                  full_debt: bool = False) -> int:
+                  full_debt: bool = False, per_play: bool = False) -> int:
     """Spend the fractional part of a row the tempo cannot express.
 
     A Goattracker row is a whole number of play calls, so a player whose row
@@ -3984,7 +3984,8 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # charges only rows the writer places; without it the budget is the
         # one the -S1 adopters were measured under. See `_regrid_order`,
         # `_regrid_spots` and convert's `regrid_full_debt`.
-        order = (_regrid_order(tracks[3 * k], len(patterns), full_debt)
+        order = (_regrid_order(tracks[3 * k], len(patterns),
+                               full_debt or per_play)
                  if 3 * k < len(tracks) else [])
         if not order:
             continue
@@ -3992,6 +3993,13 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # plays would deliver the same row twice inside one subtune.
         exclusive = {p for p in set(order)
                      if reach.get(p) == {k} and where.get(p) == {(k, 0)}}
+        if per_play:
+            # Debited at the play that delivers it, over every play; see
+            # `_regrid_per_play`. The walk below is left byte for byte.
+            for pat, n in _regrid_per_play(patterns, order, exclusive,
+                                           d * multiplier).items():
+                plan[pat] = (base, n)
+            continue
         # Error diffusion along the orderlist: every played row adds its own
         # fraction of a call to the debt, and only an exclusive pattern can
         # pay it. The debt a shared pattern raises is carried forward rather
@@ -4077,6 +4085,89 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                if shifted else "")
             + (f", {skipped} skipped (command column in use)" if skipped else ""))
     return written
+
+
+def _regrid_per_play(patterns: List[List[int]], order: List[int],
+                     exclusive: set, owed_per_row: float) -> dict:
+    """`regrid_per_play`'s schedule, `{pattern: n}` for one subtune's voice 0.
+
+    **A ROW IS DEBITED AT THE PLAY THAT DELIVERS IT.** The budget walk in
+    `regrid_tempos` charges a pattern for all `p` of its plays at the visit
+    that buys the row, but a pattern's bytes are global, so the timeline it
+    walks is not the song's. The `p - 1` later deliveries are paid before
+    they happen, so the walk withholds rows elsewhere and the song runs early
+    until they arrive. And a count raised on a later visit is delivered at
+    the EARLIER plays too, which the walk has already passed, so the song
+    runs late until the debt catches up. Measured at 39b5de2 under presets
+    with `regrid_full_debt` (calls delivered minus owed along voice 0, row by
+    row, one pass), the late excursion peaks at Bangkok_Knights +16.90,
+    Nineteen +5.27 and Auf_Wiedersehen_Monty +2.46 calls.
+
+    Here the voice-0 orderlist, every play expanded (`_regrid_order` with
+    repeats), is one ledger: `delivered - owed` after each play, with every
+    row booked at every play that fires it. The plays are walked in order.
+    At each play of an exclusive pattern its count may rise by the largest
+    increment that keeps the ledger at or below zero AT EVERY PLAY from the
+    pattern's first play on. That includes past plays, because they deliver
+    the raised count as well. So at a play boundary the conversion is never
+    late against its own debt (those three peaks become +0.63, +0.50 and
+    +0.54, all of it inside a pattern). A debt nothing can pay under that
+    rule carries forward. As under `regrid_full_debt`, only rows the writer
+    places are booked (`_regrid_spots` on a copy), and the pattern's geometry
+    caps the count.
+
+    **IT IS GREEDY, AND THAT COSTS SOME FILES THEIR DEBT.** A pattern that
+    buys at one visit and replays a few plays later can pay the backlog
+    twice over at the replay. After that, the patterns first played in
+    between have no room left at that point, and the debt after it has
+    nowhere to go. Star_Paws (-S2, `regrid` forced) is paid 135 of the
+    147.28 calls a pass owes, against 147 under `regrid_full_debt`.
+    Patterns 33-38 play twice in a row, and pattern 33's second play is what
+    shuts out 34-38. Two refinements were tried and dropped: a row-weighted
+    least-squares descent (ledger allowed both ways) made the drift worse on
+    Arcade_Classics, IK_plus, Nineteen and Pandora, and the same descent kept
+    to ledger <= 0 found no single-pattern move at all. The measurements are
+    in `runs.jsonl` under `regrid-debit-per-delivered-play`.
+    """
+    owed = 0.0
+    ledger: List[float] = []
+    plays_at: dict = {}
+    for i, pat in enumerate(order):
+        owed += owed_per_row * (len(patterns[pat]) // 4)
+        ledger.append(-owed)
+        plays_at.setdefault(pat, []).append(i)
+
+    def fired(idx: List[int]):
+        """(play s, plays of the pattern up to and including s), for every s
+        from the pattern's first play on."""
+        k = 0
+        for s in range(idx[0], len(order)):
+            while k < len(idx) and idx[k] <= s:
+                k += 1
+            yield s, k
+
+    want: dict = {}
+    placed: dict = {}
+    for pat in order:
+        rows = len(patterns[pat]) // 4
+        # `rows` counts the GT_END_PATTERN row; see `regrid_tempos`.
+        if pat not in exclusive or rows < 4:
+            continue
+        idx = plays_at[pat]
+        room = min(-ledger[s] / k for s, k in fired(idx))
+        afford = int(room + 1e-9)            # a negative room truncates to 0
+        if afford < 1:
+            continue
+        prev, got = want.get(pat, 0), placed.get(pat, 0)
+        top = min(prev + afford, max(1, (rows - 3) // 2))
+        for n in range(top, prev, -1):
+            w = len(_regrid_spots(patterns[pat], n, rows)[0])
+            if got < w <= got + afford:
+                want[pat], placed[pat] = n, w
+                for s, k in fired(idx):
+                    ledger[s] += (w - got) * k
+                break
+    return want
 
 
 # Commands 1XY-4XY run every call until a row replaces them; 0XY resets the
@@ -4710,7 +4801,9 @@ def _fraction_runs(pattern: List[int], rows: int, d: int, b: int,
 
 def _compensate_fractional_rows(new_track: List[int], moved: dict,
                                 calls: dict, patterns: List[List[int]],
-                                copies: dict, log=None) -> Tuple[int, float]:
+                                copies: dict, log=None,
+                                clocks: Optional[dict] = None
+                                ) -> Tuple[int, float]:
     """Spend the part of a row an orderlist tempo change rounds away.
 
     `_apply_orderlist_tempos` writes each change as a whole number of calls,
@@ -4741,6 +4834,18 @@ def _compensate_fractional_rows(new_track: List[int], moved: dict,
     has no two usable rows (`_fraction_row_ok`), already changes tempo past
     row 0, or would need a value outside 3..$7F, or the table is full.
 
+    **`clocks` replaces the average with the player's own count** where a
+    change restarts the gate it reloads ({at: (frames, R, mult)}, from
+    `goatwriter.orderlist_tempo_clocks`). `rows * c` is then not what an
+    entry costs: the segment's clock starts again at its change, and an
+    entry `j0` rows into it costs `restarted_gate_calls(j0 + rows) -
+    restarted_gate_calls(j0)`, which sums to up to one frame LESS per
+    segment than the average. Integrated over Rasputin's window that was
+    the matched-attack offset creeping 8 -> 11 frames against a startup lag
+    of 7 (v0.5.516; the first segment's 1 is the opening gap, 11 frames in
+    the original against our 12). An entry this pass leaves alone still
+    advances `j0`, so the next one is read at its own place in the cycle.
+
     Returns (entries compensated, final accumulator in calls).
     """
     end = len(new_track)
@@ -4749,21 +4854,32 @@ def _compensate_fractional_rows(new_track: List[int], moved: dict,
             end = i
             break
     starts = {}
+    seg_clocks = {}
     for at, c in calls.items():
         i = moved.get(at)
         if i is not None and i < end:
             starts[i] = c
+            # Keyed like `starts`, so where two changes land on one entry the
+            # later one's clock wins with its `c`, as its value does.
+            if clocks and at in clocks:
+                seg_clocks[i] = clocks[at]
+            else:
+                seg_clocks.pop(i, None)
     if not starts:
         return 0, 0.0
     first = min(starts)
     err = 0.0
     c = None
+    clock = None                     # (frames, R, mult) of a restarted gate
+    j0 = 0                           # rows since the segment's change
     b = None                         # the CMD_SETTEMPO value in effect
     done = 0
     i = first
     while i < end:
         if i in starts:
             c = starts[i]
+            clock = seg_clocks.get(i)
+            j0 = 0
         entry = new_track[i]
         if entry >= MAX_PATTERNS or entry >= len(patterns):
             i += 1
@@ -4786,9 +4902,16 @@ def _compensate_fractional_rows(new_track: List[int], moved: dict,
         if not steady:
             # The clock here is not one this pass can read, so it cannot say
             # what the entry costs; keep the accumulator where it is.
+            j0 += reps * rows
             i = j
             continue
-        ideal = rows * c
+        if clock is not None:
+            # Per play, so `reps * ideal` below is the run's exact cost.
+            ideal = (restarted_gate_calls(*clock, j0 + reps * rows)
+                     - restarted_gate_calls(*clock, j0)) / reps
+        else:
+            ideal = rows * c
+        j0 += reps * rows
         d = int(round(ideal - rows * b - err / reps))
         applied = 0
         if d:
@@ -5603,7 +5726,9 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    patterns: Optional[List[List[int]]] = None,
                    max_rows: int = GT_DEFAULT_ROWS,
                    tempos: Optional[List[dict]] = None,
-                   tempo_calls: Optional[List[dict]] = None) -> List[List[int]]:
+                   tempo_calls: Optional[List[dict]] = None,
+                   tempo_clocks: Optional[List[dict]] = None
+                   ) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
     The length check runs at the end of each track so that `pack` -- which only
@@ -5695,8 +5820,11 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
             # `pack_repeats` must see), and after the changes it measures
             # from: each segment's exact row against the value written.
             if tempo_calls and ti < len(tempo_calls) and tempo_calls[ti]:
-                _compensate_fractional_rows(new_track, moved, tempo_calls[ti],
-                                            patterns, fraction_copies, log)
+                _compensate_fractional_rows(
+                    new_track, moved, tempo_calls[ti], patterns,
+                    fraction_copies, log,
+                    clocks=(tempo_clocks[ti] if tempo_clocks
+                            and ti < len(tempo_clocks) else None))
         # Same placement, and for the same two reasons: the tie rides in a
         # *copy*, so it has to be substituted before pack_repeats can fold the
         # step back into the run around it -- and after the tempo pass, whose

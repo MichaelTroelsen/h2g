@@ -153,11 +153,23 @@ def _rasputin_song():
 
 
 def _voice2_clock_error(song, raw2):
-    exact = [2 * (r + 1) / r * 2 for _at, r in sorted(raw2.items())]
-    k, v, c = -1, None, None
-    ours = ideal = 0.0
+    # The player's clock, row by row: each `$FE nn` restarts the outer
+    # gate's count (detect._find_fe_gate_restart), so row j of a segment
+    # starts `2 * (2j + max(0, (2j - 1) // R))` calls after its change --
+    # not `j * 2 * (R+1)/R * 2`, the average this helper read through
+    # v0.5.516 and that every segment overstates by up to one frame.
+    reloads = [r for _at, r in sorted(raw2.items())]
+    k, v = -1, None
+    ours = 0.0
+    seg = 0.0                     # the clock at the current segment's change
+    j = 0                         # rows since it
     worst = 0.0
     rep = 1
+
+    def clock(r, rows):
+        w = 2 * rows
+        return 2 * (w + max(0, (w - 1) // r))
+
     for e in song.tracks[2]:
         if e == 0xFF:
             break
@@ -175,28 +187,36 @@ def _voice2_clock_error(song, raw2):
                 if pat[r + 2] == CMD_SETTEMPO:
                     v = pat[r + 3]
                     if r == 0:
+                        if k >= 0:
+                            seg += clock(reloads[k], j)
                         k += 1
-                        c = exact[k]
+                        j = 0
                 ours += v
-                ideal += c
-                worst = max(worst, abs(ours - ideal))
-    return k + 1, worst, ours - ideal
+                j += 1
+                worst = max(worst, abs(ours - seg - clock(reloads[k], j)))
+    return k + 1, worst, ours - seg - clock(reloads[k], j)
 
 
 @needs_corpus
 def test_rasputin_s_clock_stays_on_the_player_s():
     """Voice 2's first pass, read back from the finished .sng (songview, a
-    second reader), row by row against `2 * (R+1)/R * 2` calls for the `$FE`
-    in effect. Uncompensated (v0.5.509) the gap ran -217.6 .. +145.1 calls
+    second reader), row by row against the player's clock for the `$FE` in
+    effect. Uncompensated (v0.5.509) the gap ran -217.6 .. +145.1 calls
     over the pass (-109 .. +73 frames at -S2) and ended 145 calls out;
-    compensated it read -6.3 .. +6.7 (about 3 frames) and ended +0.07. The
-    widest excursion is the R = 6 entry whose last 32 rows carry a
-    portamento on every row, so no run can sit there."""
+    compensated against the AVERAGE row (v0.5.510-516) it read -6.3 .. +6.7
+    against that average and ended +0.07 -- but the player restarts its
+    gate at every change, and against the restarted clock the same file
+    read 18 calls worst and ended +13 (6.5 frames late, the 8 -> 11 creep
+    of the matched-attack offset). Against the restarted clock it now reads
+    9.0 worst and ends 0.0 (v0.5.516 + rasputin-clock-drift). The widest
+    excursion is still the R = 6 entry whose last 32 rows carry a
+    portamento on every row, so no run can sit there (frame ~12616, past
+    the 180 s window)."""
     sid, det = _detect_tables(load_sid(str(CORPUS / "Rasputin.sid")),
                               lambda *a, **k: None)
     raw: list = []
     convert_tracks(sid, det, lambda *a, **k: None, None, raw)
     changes, worst, last = _voice2_clock_error(_rasputin_song(), raw[2])
     assert changes == len(raw[2]) == 8
-    assert worst <= 8.0, worst
+    assert worst <= 9.0, worst
     assert abs(last) <= 1.0, last
