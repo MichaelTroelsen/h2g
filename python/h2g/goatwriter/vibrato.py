@@ -111,6 +111,8 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       frame and is not this: seven classic-vibrato files qualify
       (International_Karate, Kentilla, Las_Vegas_Video_Poker, Mozart,
       Proteus, Thrust, Warhawk); the other 48 are unchanged byte for byte.
+      (Bump_Set_Spike joined them when the gate read became the one its play
+      address enters, `tempo.outer_gate_match`.)
 
       **Mozart's depth loop shifts `shift + 1` times** (`LSR / ROR / DEC
       cnt / BPL` tests its count last, where Las_Vegas' `DEC cnt / BMI /
@@ -183,9 +185,49 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       phase can beat another. Only a free-running phase would, and the
       phase reset above rules that out. FIDELITY.md's `depth` is a
       peak-to-peak, so it reads the swing's size and not its centre. Both
-      records share speed entry 2, yet ours swings 2 depths on $6B9A
-      (voice 2, low notes) and 3 on $0AA0. That gap is open and is not
-      explained here.
+      records carry vibrato byte $1A and so share one speed entry, yet at
+      8586101 ours swung 2 depths on $6B9A (voice 2, low notes) and 3 on
+      $0AA0.
+
+      **That gap has closed from the other side (lvvp-6b9a-vibrato-depth,
+      39b5de2 + the cycle-2 merge; figures historical, one sample per frame
+      at -t 180 under presets).** The swing a note gets is `(cmp + 2) * (I
+      >> rshift)`, `I` being Goattracker's interval from the note UP
+      (gplay.c:790-793), against the original's `bound * u` with `u = (f(n)
+      - f(n-1)) >> shift`. At the shipped entry that expression predicts
+      the measured peak-to-peak of each of $6B9A's 305 notes to a mean 0.02
+      depth (3.48 predicted, 3.46 measured; the original 2.99). The "2 depths"
+      was reproduced exactly by switching `gate_skip` off (the pre-v0.5.517
+      entry `($89, 4)`: 280 of 305 notes span 2.0, 0AA0 82 of 84 span 3.0),
+      so it was the missing gate stretch -- `cmp + 2` = 11 calls where the
+      original's half-period asks 15 -- and not the low notes. v0.5.517
+      stretched it to `($8C, 4)`, 14 calls after the tick-0 compensation, and
+      $6B9A now swings 3.46 depths (span 3.0 on 64 notes, 3.5 on 125, 4.0 on
+      116): past the original's 3.0 by 16%. The rest of the 16% is the
+      integer `rshift`: the amplitude is `(cmp + 2) / (bound * 2^(rshift -
+      shift))` of the original's, 14/12 here, and `rshift` 5 would be 14/24.
+      Not explained, and not chased: at `($89, 4)` the formula gave 2.73 and
+      the trace 2.04 on $6B9A (the plateaus: two equal frames at each peak)
+      while $0AA0 read 2.87 against 2.88.
+
+      Shortening `cmp` buys depth with rate. Same run, LVVP rows (original
+      bend 216015, travel 159896, reversals 6272; direction reversals in a
+      note's first 40 frames: original 7.54):
+
+          entry                  $6B9A depths  bend   travel  reversals  rev/40f
+          ($89, 4) no gate_skip  2.04          0.809  0.798   1.035      9.31
+          ($8A, 4) cmp 10        2.72          0.888  0.959   1.047      8.31
+          ($8B, 4) cmp 11        2.73          0.912  0.982   1.045      8.23
+          ($8C, 4) shipped       3.46          1.027  1.083   1.057      7.23
+
+      The shared entry is a compromise: voice 0 (the $0AA0 record, bend
+      110792 shipped, 95104 at cmp 10, original 112719) and voice 2 ($6B9A,
+      111040 shipped, 96628 at cmp 10, original 103296) are 2% shallow and 7%
+      deep, and no file column moves clearly closer: bend leaves 1.027 for
+      0.888 while travel goes 1.083 -> 0.959. NOT CHANGED. Whether to give up
+      the original's period for its depth is the user's call (opened as
+      `classic-vibrato-balance-rate-and-depth`). Pinned in
+      tests/test_lvvp_vibrato_depth.py.
 
     * `multiplier` is in both because Goattracker's counter advances per play
       call and the player's per frame -- the same per-frame/per-call division

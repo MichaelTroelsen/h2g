@@ -114,10 +114,11 @@ from . import tempo as _gw_tempo
 from .constants import (GT_DEFAULT_TEMPO_CALLS, GT_MIN_TEMPO, OUTER_GATE,
                         OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE)
 
-# How many `JMP`s to follow from the PSID play address to the routine's first
-# instruction (Kentilla's play address is the gate itself; a jump table in
-# front of it is followed, never searched past).
-PLAY_ENTRY_JMPS = 4
+# `play_entry` (and PLAY_ENTRY_JMPS, how many `JMP`s it follows) live in
+# tempo.py: `outer_gate_match` needs them to pick the gate the play routine
+# enters, and this module imports tempo. Re-exported here under the old names.
+play_entry = _gw_tempo.play_entry
+PLAY_ENTRY_JMPS = _gw_tempo.PLAY_ENTRY_JMPS
 
 # Calls before row 0's startup row begins: the first call after init only
 # resets the song (player.s `mt_initsongnum`, the `bpl` not taken once).
@@ -146,25 +147,6 @@ class StartupPhase:
     rows: int
 
 
-def play_entry(sid: SidFile) -> Optional[int]:
-    """Image offset of the first instruction the play routine runs, or None.
-
-    Follows a chain of `JMP`s from the PSID play address. None where the
-    header names no play routine (the tune installs its own IRQ), or the chain
-    leaves the image.
-    """
-    if not sid.play_addr:
-        return None
-    at = sid.to_offset(sid.play_addr)
-    for _ in range(PLAY_ENTRY_JMPS + 1):
-        if not 0 <= at < len(sid.data) - 2:
-            return None
-        if sid.data[at] != 0x4C:            # JMP abs
-            return at
-        at = sid.to_offset(sid.data[at + 1] | sid.data[at + 2] << 8)
-    return None
-
-
 def entry_gate(sid: SidFile) -> bool:
     """Whether the outer gate is the play routine's first instruction and its
     underflow call does nothing else.
@@ -173,16 +155,17 @@ def entry_gate(sid: SidFile) -> bool:
     Game_Killer), `OUTER_GATE_PAL` (Las_Vegas_Video_Poker), and the `JMP`
     spelling `OUTER_GATE` where the jump lands on an `RTS` (Kentilla `$AB10
     JMP $AEEE`, `$AEEE RTS`). **And it must be the gate the rest of the writer
-    reads**: `_find_outer_gate` and `nibble_gate_byte` take the first match of
-    `OUTER_GATE`, then `OUTER_GATE_RTS`, then the PAL spelling at the entry --
-    Bump_Set_Spike carries an NTSC gate at `$B00B` above the one its play
-    address enters at `$B016`, and the reload read is the NTSC one's.
+    reads**: `_find_outer_gate` and `nibble_gate_byte` take
+    `tempo.outer_gate_match` -- the first match of `OUTER_GATE`, then
+    `OUTER_GATE_RTS`, except that an `RTS` gate the play routine enters wins
+    (Bump_Set_Spike carries an NTSC gate at `$B00B` above the one its play
+    address enters at `$B016`; the reload read used to be the NTSC one's) -- then the PAL spelling at the entry.
     """
     at = play_entry(sid)
     if at is None:
         return False
     data = sid.data
-    first = OUTER_GATE.search(data) or OUTER_GATE_RTS.search(data)
+    first = _gw_tempo.outer_gate_match(sid)
     if first is not None:
         if first.start() != at or first.group(1) != first.group(3):
             return False
@@ -482,8 +465,7 @@ def nibble_gate_step_lead(sid: SidFile, det: Detection, multiplier: int,
     halves are then a spread `nibble_arp_half_cycle`), the frame-0 lead is not
     an entry (`written`, `--no-test-restart`, whose firstwave plays frame 0),
     or the gate is not `entry_gate`'s -- the precondition of `startup_phase`,
-    without which nothing anchors our lattice to the original's frames
-    (Bump_Set_Spike, whose play address enters below an NTSC gate).
+    without which nothing anchors our lattice to the original's frames.
     """
     per = det.arp_nibble_period
     m = max(1, multiplier)

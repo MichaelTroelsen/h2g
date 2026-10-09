@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.520 — 2026-10-09
+
+- runqueue cycle 3 at 9d1ff22: PAL outer gate for Bump_Set_Spike, arp overwrites drum sweep, unrolled loop laps, tie phase blocks
+
 ## 0.5.519 — 2026-10-09
 
 - runqueue cycle 2 at 82d60ac: rise-arp note stair, wave-program restore gate, JMP-form outer-gate clock, appender bounds, regrid_prepay (off), travel column

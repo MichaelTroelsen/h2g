@@ -1597,6 +1597,94 @@ def _share(held: dict, lap: dict, rows: int) -> None:
     lap.clear()
 
 
+# GoatTracker's orderlist is 254 entries and a restart byte.
+ORDERLIST_MAX = 254
+
+
+def _body_rows(body: List[int], patterns: List[List[int]]) -> int:
+    """Rows one pass over the orderlist bytes `body` plays, repeats
+    expanded -- the count `_orderlist_occurrences` walks `row` by."""
+    rows, repeat = 0, 1
+    for b in body:
+        if 0xE0 <= b < 0xFF:
+            continue
+        if 0xD0 <= b < 0xE0:
+            repeat = b - 0xD0 + 1
+            continue
+        if b < len(patterns):
+            n = 0
+            for r in range(0, len(patterns[b]), 4):
+                if patterns[b][r] == 0xFF:
+                    break
+                n += 1
+            rows += n * repeat
+        repeat = 1
+    return rows
+
+
+def fixed_arp_unrolled_tracks(sid: SidFile, det: Detection,
+                              tracks: List[List[int]],
+                              patterns: List[List[int]]) -> tuple:
+    """(tracks, folds): `tracks` with each looping orderlist's body written
+    out until the counter's residue repeats -- the same list where nothing
+    needs it -- and, per track, the (start, end, length) of the body the
+    copies were made from, or None.
+
+    `fixed_arp_note_residues` walks ONE lap, and the song loops: the
+    counter (`fixed_arp_counter_base`) steps once per passing call, so a
+    loop body of `R` rows of `frames` calls starts its next lap on residue
+    `(R * frames) % period` further on, and every lap after the first
+    plays its notes on residues the first lap's walk never saw. Game_Killer
+    voice 2 is one 18-row pattern, 36 calls, a shift of 4 in a period of 8:
+    the original alternates two spellings of the pattern a lap apiece and
+    the one-lap plan renamed for the first for ever (260 of 1649 octave
+    frames disagree at 60 s, `tests/test_arp_unrolled_laps.py`). Writing the
+    body out `period / gcd(shift, period)` times gives each lap its own
+    pattern positions, so `_note_phase_split` can spell each one.
+
+    Declined, the track left as it is: no restart byte, a restart target
+    after a `$Dn` repeat (the first lap would repeat what the others do
+    not), a body whose laps already agree (shift 0), a speed the walk cannot
+    read, or an orderlist the copies would push past `ORDERLIST_MAX`.
+    """
+    base = fixed_arp_counter_base(sid, det)
+    mask = _gw_primitives.fixed_arp_mask(sid, det)
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if base is None or mask is None or speeds is None:
+        return tracks, [None] * len(tracks)
+    period = fixed_arp_period(mask[0])
+    out = []
+    folds: list = []
+    changed = False
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        new = track
+        fold = None
+        end = None
+        if frames is not None:
+            operand = False
+            for i, b in enumerate(track):
+                if operand:
+                    operand = False
+                elif b == 0xFF:
+                    end = i
+                    operand = True
+        if end is not None and end + 1 < len(track):
+            start = track[end + 1]
+            body = track[start:end]
+            shift = (_body_rows(body, patterns) * frames) % period
+            if (0 <= start < end and shift
+                    and not (start and 0xD0 <= track[start - 1] < 0xE0)):
+                laps = period // math.gcd(shift, period)
+                cand = track[:end] + body * (laps - 1) + track[end:]
+                if len(cand) <= ORDERLIST_MAX:
+                    new, changed = cand, True
+                    fold = (start, end, end - start)
+        out.append(new)
+        folds.append(fold)
+    return (out, folds) if changed else (tracks, folds)
+
+
 def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
                                tracks: List[List[int]],
                                patterns: List[List[int]], effects: bool,
@@ -1621,7 +1709,9 @@ def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
     orderlist entry whose plays want different bytes keeps the first play's
     spelling (the others sound the record's or another clone's phase, never
     another record: a clone and its record share every byte but the
-    wavetable start). Clones are numbered from `first_clone` up to
+    wavetable start). A looping orderlist is written out as many laps as
+    the counter needs to come round (`fixed_arp_unrolled_tracks`), each lap
+    spelled for its own residues. Clones are numbered from `first_clone` up to
     `TEMPO_DUTY_MAX_CLONE`, most-voted first; past that, or past 208
     patterns, the plan declines.
     """
@@ -1632,6 +1722,14 @@ def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
         return None
     period, residues = walked
     phases = fixed_arp_phases(sid, det, tracks, patterns)
+    # The votes stay the first lap's; the spelling is written over every lap
+    # the counter needs (`fixed_arp_unrolled_tracks`).
+    spell = None
+    unrolled, folds = fixed_arp_unrolled_tracks(sid, det, tracks, patterns)
+    if unrolled is not tracks:
+        later = fixed_arp_note_residues(sid, det, unrolled, patterns)
+        if later is not None:
+            spell = (unrolled, later[1], folds)
     data = sid.data
     arp_records = set()
     for i in range(max(instr_used - lead, 0)):
@@ -1642,7 +1740,7 @@ def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
         return None
     return _note_phase_split(tracks, patterns, residues, phases,
                              arp_records, first_clone, distinct,
-                             "arp phase split", log)
+                             "arp phase split", log, spell=spell)
 
 
 def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
@@ -1650,7 +1748,8 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
                       first_clone: int, distinct=None,
                       label: str = "phase split",
                       log=None,
-                      factor: Optional[int] = FIXED_ARP_SPLIT_FACTOR
+                      factor: Optional[int] = FIXED_ARP_SPLIT_FACTOR,
+                      spell: Optional[tuple] = None
                       ) -> Optional[ArpPhaseSplit]:
     """The per-note split shared by `fixed_arp_phase_split_plan` and
     `pitch_seq_phase_split_plan`: `residues` is {(track, orderlist position,
@@ -1660,10 +1759,16 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
     fixed arp's counter residue, or bit $10's phase tuple -- and the clones'
     third slot carries it to `_wavetable_layout` unchanged. The rules are
     `fixed_arp_phase_split_plan`'s, documented there; `factor` None clones
-    every minority residue (`nibble_gate_phase_split_plan`)."""
-    def plays():
+    every minority residue (`nibble_gate_phase_split_plan`).
+
+    `spell` is (tracks, residues, folds) of a longer orderlist than the one
+    voted on (`fixed_arp_unrolled_tracks`): the renaming below walks that
+    one, and the returned tracks are its -- except a track whose copied laps
+    all want what their first lap wants, which goes back to its own: a longer
+    orderlist that sounds the same is only bytes (Zoids, +42 under presets)."""
+    def plays(source=tracks):
         """(ti, pos, play, pattern) in play order, per track."""
-        for ti, track in enumerate(tracks):
+        for ti, track in enumerate(source):
             seen = Counter()
             for pos, p in _orderlist_occurrences(track):
                 if p >= len(patterns):
@@ -1744,12 +1849,14 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
         clones.append((rec, first_clone + k, r))
 
     # Per play: the edit set the new walk wants, first play of an entry wins.
+    stracks, sresidues, folds = (spell if spell is not None
+                                 else (tracks, residues, []))
     spelled: dict = {}                       # (ti, pos) -> edit tuple
     cur_ti, cur, new_cur = -1, 0, 0
-    for ti, pos, play, p in plays():
+    for ti, pos, play, p in plays(stracks):
         if ti != cur_ti:
             cur_ti, cur, new_cur = ti, 0, 0
-        pat, res = patterns[p], residues.get((ti, pos, play), {})
+        pat, res = patterns[p], sresidues.get((ti, pos, play), {})
         rows = []
         for k in range(len(pat) // 4):
             if pat[k * 4] == 0xFF:
@@ -1778,10 +1885,22 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
                 cur = new_cur = b
             if k in kept:
                 new_cur = kept[k][1]
+    stracks = list(stracks)
+    for ti, fold in enumerate(folds):
+        if fold is None:
+            continue
+        start, end, size = fold
+        extra = [pos for pos in range(end, len(stracks[ti]) - 2)
+                 if (ti, pos) in spelled]
+        if all(spelled[(ti, pos)] == spelled.get((ti, start + (pos - start) % size))
+               for pos in extra):
+            for pos in extra:
+                del spelled[(ti, pos)]
+            stracks[ti] = tracks[ti]
     by_pat: dict = {}
     for (ti, pos), key in spelled.items():
-        by_pat.setdefault(tracks[ti][pos], Counter())[key] += 1
-    new_tracks = [list(t) for t in tracks]
+        by_pat.setdefault(stracks[ti][pos], Counter())[key] += 1
+    new_tracks = [list(t) for t in stracks]
     new_patterns = [list(p) for p in patterns]
     edits: dict = {}
     copy_of: dict = {}
@@ -1802,7 +1921,7 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
                 "not splitting")
         return None
     for (ti, pos), key in spelled.items():
-        n = copy_of.get((tracks[ti][pos], key))
+        n = copy_of.get((stracks[ti][pos], key))
         if n is not None:
             new_tracks[ti][pos] = n
     if not edits:
@@ -2153,7 +2272,7 @@ def nibble_gate_byte(sid: SidFile) -> Optional[int]:
     image and reads None, as does any cell some other code stores to.
     """
     data = sid.data
-    m = OUTER_GATE.search(data) or OUTER_GATE_RTS.search(data)
+    m = _gw_tempo.outer_gate_match(sid)
     if m is not None:
         cell = m.group(1)[0] | m.group(1)[1] << 8
         if cell != (m.group(3)[0] | m.group(3)[1] << 8):

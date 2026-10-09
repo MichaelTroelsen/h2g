@@ -594,13 +594,18 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
                       tracks: Optional[List[List[int]]],
                       cloneable: Set[int], first_number: int,
                       last_number: int = 0, log=None, kind=None,
-                      kinds: Optional[dict] = None):
+                      kinds: Optional[dict] = None, row_kind=None,
+                      phased: Optional[dict] = None):
     """Respell each of `rows` (`legato_tie_rows`) as a plain note on a legato
     clone of the instrument it plays. Returns (patterns, clones, declined):
     `clones` is [(instrument, clone number)] in number order from
     `first_number`; `declined` the rows that kept `CMD_TONEPORTA 00`.
     `kind` splits an instrument's clones (`_respell_on_clones`); `kinds`,
-    where given, is filled with {clone number: its kind}.
+    where given, is filled with {clone number: its kind}. `row_kind(pattern,
+    row)` splits them by the ROW: a row it answers a tag for (not None) gets
+    a clone of its own per (instrument, kind, tag), and `phased`, where
+    given, is filled with {clone number: that tag} -- the wavetable start
+    the caller points the clone at (`build_sng`'s phase-mismatched ties).
 
     The instrument column latches (gplay.c:912-913, player.s `mt_instr`), so
     a clone left latched would make the NEXT note legato too. The base is
@@ -628,11 +633,16 @@ def legato_tie_clones(patterns: List[List[int]], rows: set,
     (gcommon.h MAX_INSTR - 1). The log names each decline's reason."""
     out, clone_of, declined, why = _respell_on_clones(
         patterns, rows, tracks, cloneable, first_number, last_number,
-        clear_command=True, kind=kind)
+        clear_command=True, kind=kind, row_kind=row_kind)
+    inner = {c: (key[0] if isinstance(key, _PhasedKey) else key)
+             for key, c in clone_of.items()}
+    if phased is not None:
+        phased.update({c: key[1] for key, c in clone_of.items()
+                       if isinstance(key, _PhasedKey)})
     if kind is not None and kinds is not None:
-        kinds.update({c: key[1] for key, c in clone_of.items()})
-    clones = sorted((((key[0] if kind is not None else key), c)
-                     for key, c in clone_of.items()), key=lambda bc: bc[1])
+        kinds.update({c: inner[c][1] for c in inner})
+    clones = sorted((((inner[c][0] if kind is not None else inner[c]), c)
+                     for c in inner), key=lambda bc: bc[1])
     if log is not None and (clones or declined):
         log(f"Legato tie..............: "
             f"{len(rows) - len(declined)} tie row(s) on "
@@ -756,12 +766,21 @@ def legato_slip_decoy(patterns: List[List[int]],
     return None
 
 
+class _PhasedKey(tuple):
+    """A clone key `(inner key, tag)` for a row `row_kind` tagged: kept
+    apart from the plain keys so a tagged row never shares a clone with an
+    untagged one of the same instrument."""
+
+    def __new__(cls, inner, tag):
+        return super().__new__(cls, (inner, tag))
+
+
 def _respell_on_clones(patterns: List[List[int]], rows: set,
                        tracks: Optional[List[List[int]]],
                        cloneable: Set[int], first_number: int,
                        last_number: int = 0, clear_command: bool = True,
                        uncloneable="no record to clone",
-                       kind=None, refuse=None):
+                       kind=None, refuse=None, row_kind=None):
     """`legato_tie_clones`' walk, shared with `free_note_variants`: each of
     `rows` names a clone of the instrument it plays, numbered from
     `first_number` per base, and the base is re-latched before anything
@@ -778,7 +797,9 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
     the instrument the channel holds just before the row, 0 where
     unsettled -- splits a base's clones
     by its value: one clone per (base, kind), keyed so in the returned map;
-    None keys by base alone. Returns (patterns, {base or (base, kind):
+    None keys by base alone. `row_kind(pattern, row)`, where given, tags a
+    row (None: untagged); a tagged row's key is a `_PhasedKey` of the key it
+    would have had and its tag. Returns (patterns, {base or (base, kind):
     clone}, declined rows, {reason: count})."""
     last_number = last_number or GT_MAX_INSTRUMENTS
     entry = _entry_instruments(tracks, patterns) if tracks else {}
@@ -843,6 +864,9 @@ def _respell_on_clones(patterns: List[List[int]], rows: set,
             # `live` is read from each row BEFORE its respell, so a tie chain
             # sees the base, not the clone the row before was given.
             key = base if kind is None else (base, kind(base, held_before))
+            tag = row_kind(pn, r) if row_kind is not None else None
+            if tag is not None:
+                key = _PhasedKey(key, tag)
             if key not in clone_of:
                 number = first_number + len(clone_of)
                 if number > last_number:

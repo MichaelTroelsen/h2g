@@ -102,6 +102,13 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     drum = (arp_style & 1) == 1
     arp = (arp_style & 4) == 4
     tick = False
+    # The nibble arpeggio block runs for every record that sets bit $04 and
+    # writes $D400/$D401 from the note table on EVERY frame, a nibble of zero
+    # included (it subtracts zero: Warhawk `$13F4 SBC #nibble`, `$140A STA
+    # $D401,Y`). Under a drum it runs after the sweep and overwrites it, so the
+    # sweep never reaches the chip. `arp` is cleared below for a zero nibble --
+    # there is nothing to alternate -- but the overwrite is still there.
+    arp_overwrites_sweep = False
     if effects:
         if not det.effect_drum:
             drum = False
@@ -139,6 +146,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # noise in the original and on a pitched waveform here.
             drum = False
             tick = True
+        arp_overwrites_sweep = (arp and det.effect_arp
+                                and not det.arp_fixed_up and arp_note == 0)
         if not det.effect_arp or arp_note == 0:
             arp = False
         if drum and arp:
@@ -621,7 +630,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              sustain=data[base + 4] >> 4, budget=budget,
                              tick_frames=_noise_tick_frames(sid, det),
                              note_rows=typical, row_calls=row_calls,
-                             written=no_test_restart, gate_skip=gate_skip)
+                             written=no_test_restart, gate_skip=gate_skip,
+                             sweep=not arp_overwrites_sweep)
 
     if drum and not tick:
         if effects:
@@ -1083,7 +1093,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   note_rows: Optional[int] = None,
                   row_calls: int = 0,
                   written: bool = False,
-                  gate_skip: Optional[int] = None) -> tuple:
+                  gate_skip: Optional[int] = None,
+                  sweep: bool = True) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1246,7 +1257,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # picked out one sustaining record (Commando's, sustain 4) as "out of
     # tune", and suppressing its sweep as "much better". 60 of the corpus's
     # 284 drum-flagged records sustain; the other 224 keep the sweep.
-    if index and not sustain:
+    if index and not sustain and sweep:
         # `budget` is how many entries this record may occupy in total; the
         # caller shrinks it when the 255-entry table is running out. Below the
         # fixed five it changes nothing, so a file with room behaves as it did.
@@ -1718,6 +1729,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       clone_starts: Optional[list] = None,
                       phase_clones: Optional[List[tuple]] = None,
                       phase_clone_starts: Optional[list] = None,
+                      tie_blocks: Optional[List[tuple]] = None,
+                      tie_block_starts: Optional[list] = None,
                       phase_probe: Optional[List[tuple]] = None,
                       attack_holds: Optional[List[int]] = None,
                       attack_hold_starts: Optional[list] = None,
@@ -1888,7 +1901,14 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
     # the same reason: the record's own entries at the clone's residue. One
     # that does not fit, or whose block is the record's, gets start 0 and
     # the caller points it at its record's block.
-    for record, _clone, residue in (phase_clones or []):
+    # `tie_blocks` ((record GT number, residue) pairs, `build_sng`'s tie
+    # respell) are laid out right after them by the same code: a block for
+    # a tie landing on a residue no clone of the record covers. Their starts
+    # go to `tie_block_starts`, not to the clones'.
+    jobs = ([(r, x, phase_clone_starts, False)
+             for r, _c, x in (phase_clones or [])]
+            + [(r, x, tie_block_starts, True) for r, x in (tie_blocks or [])])
+    for record, residue, sink, for_tie in jobs:
         i = record - lead - 1
         start = len(entries) + 1
         block = None
@@ -1906,8 +1926,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 entered = _entered_record_block(alone, entries,
                                                 starts[i + lead])
         if isinstance(entered, int):
-            if phase_clone_starts is not None:
-                phase_clone_starts.append(entered)
+            if sink is not None:
+                sink.append(entered)
             continue
         if entered is not None:
             block = entered
@@ -1921,9 +1941,13 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 block = _shared_loop_block(block, start, entries,
                                            starts[i + lead])
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
-            if phase_clone_starts is not None:
-                phase_clone_starts.append(0)
-            if log:
+            if sink is not None:
+                sink.append(0)
+            if log and for_tie:
+                log(f"tie phase block: {record:02X} at residue {residue} "
+                    "has no room in the wavetable; its ties keep the old "
+                    "spelling")
+            elif log:
                 kind = ("pitch phase split" if isinstance(residue, tuple)
                         else "gate phase split"
                         if isinstance(residue, GatePhase)
@@ -1931,8 +1955,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 log(f"{kind}: clone of {record:02X} at residue "
                     f"{residue} has no block of its own")
             continue
-        if phase_clone_starts is not None:
-            phase_clone_starts.append(start)
+        if sink is not None:
+            sink.append(start)
         entries += list(zip(*block))
     # `_attack_hold_records`' second programs, after everything else for the
     # same reason: the record's own block with the fixed attack pitch held

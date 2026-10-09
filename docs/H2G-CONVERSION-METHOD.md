@@ -2015,7 +2015,12 @@ The mapping, derived rather than fitted:
   `$6B9A` notes start from six phases, 49–53 notes each of 305; ours all
   start from one (305 of 305), because Goattracker zeroes `vibtime` on every
   wavetable note step (gplay.c:723). The table and census are in
-  `goatwriter/vibrato.py` `_classic_vibrato_entry`.
+  `goatwriter/vibrato.py` `_classic_vibrato_entry`. The swing's SIZE on that
+  record is `(cmp + 2) × (I >> rshift)` against the original's `bound × u`:
+  2.0 depths before the outer-gate stretch (v0.5.517), 3.46 after, the
+  original's 3.0 between them, and no integer `cmp` gives the depth without
+  giving up the period (lvvp-6b9a-vibrato-depth, 2026-10-09, table in the
+  same docstring; not changed).
 * Both numbers here are the **corrected** ones (v0.5.129). This section
   originally read Goattracker's half-period as `cmp / 2` and emitted
   `cmp = 2 × bound × multiplier`; see § 7.ll.
@@ -12018,6 +12023,28 @@ patterns. Hunter_Patrol's offset-1 octave up-fraction reads 0.40 against the
 original's 0.40, and Game_Killer's reversal_ratio 0.234 -> 0.527 at -t 60 with
 melody 1.0; exactly the six split-vote files move (§ 7.mmmmmm).
 
+**Every lap, not the first** (`fixed_arp_unrolled_tracks`, built after v0.5.519). The walk
+above is one lap and the song loops: a loop body of `R` rows of `frames` calls
+starts its next lap `(R * frames) % period` residues on, so a pattern played
+every lap attacks on other residues each time round. Game_Killer voice 2 is
+one 18-row pattern at 2 calls a row, 36 calls a lap, a shift of 4 in a period
+of 8; the original alternates two spellings of it, a lap apiece, and the
+one-lap plan renamed for the first for ever. The plan now writes the body out
+`period / gcd(shift, period)` times (declined past 254 orderlist entries, or
+after a `$Dn` repeat the first lap alone would hear) and spells each copy; the
+votes and each record's own phase stay the first lap's, and a track whose
+copies all want what their first lap wants goes back to its own orderlist
+(Zoids, +42 bytes of orderlist for the same sound, before that rule). Octave
+state frame by frame against the original, voice 2, 60 s: 260 of 1649 frames
+disagreed, 149 of 1612 do now (180 s: 785 of 4949 -> 449 of 4837); the corpus
+byte-hash under presets moves Game_Killer alone. What is left is not the
+residue: all 149 sit in the 7-frame notes (those spanning the gate's skipped
+frame), at offsets 1, 5 and 6, and the 337 compared frames of the 6-frame
+notes are exact. Which frame the skip lands on is a second axis (residue x
+skip phase, 72 pairings; 12 on this voice) that a clone keyed on the residue
+cannot say, and a clone per pair does not fit a wavetable already at 232 of
+255 entries. `tests/test_arp_unrolled_laps.py`.
+
 **The trap that cost the first attempt.** The phase was first read off a
 siddump of `Commando.sid` — the repo fixture, not the corpus file — and the
 two disagree: the fixture is the same player saved mid-run, so its gate
@@ -12960,6 +12987,61 @@ the 6/5 overshoot that had partly hidden that -- a per-subtune value in a
 global structure, carried open rather than fixed here.
 `tests/test_drum_sweep_gate_skip.py`.
 
+### 7.oooooooo A drum that shares its record with an arpeggio never sweeps -- even at nibble zero
+
+Warhawk's and Proteus's `$0F09` record (record 6, `80 01 41 0F 09 00 40 05`:
+drum `$01` + arpeggio `$04`, nibble 0) plays 82 and 100 notes in 60 s in the
+original with the frequency **never moving** -- `0F82` on every frame of the
+note, depth 0 -- where the conversion swept it `$0300` (the shape of the
+drum-only `$0F0A`). Read off the disassembly at 9d1ff22, the player does not
+skip the drum block for it:
+
+```
+1366  LDA effect / AND #$01 / BEQ $13A2     ; drum: runs (guards pass)
+1387  LDA $15B1,X / DEC $15B1,X / STA $D401,Y   ; the sweep step
+1390  LDA $157C,X / AND #$FE ... STA $D404,Y    ; gate-off waveform
+13CD  LDA effect / AND #$04 / BEQ $1413     ; arpeggio: runs
+13DB  STA $13F5                             ; nibble -> operand of the SBC at $13F4
+13F4  SBC #nibble                           ; nibble 0 subtracts 0
+140A  STA $D401,Y / 1410 STA $D400,Y        ; EVERY frame, from the note table
+```
+
+The arpeggio block writes the whole frequency every frame, after the drum, so
+the sweep never reaches the chip; the drum's *waveform* write (noise tick, then
+gate-off) does. Proteus `$0BC4` is the same block (`SBC #$0C`-operand `$0BEC`,
+`STA $D401,Y` at `$0C01`). `_wavetable_entries` cleared `arp` for a zero
+nibble -- correctly, there is nothing to alternate -- and so fell to the
+drum-only shape with its sweep. It now passes `sweep=False` to `_drum_entries`
+for exactly `drum and arp-bit and effect_arp and not arp_fixed_up and nibble ==
+0`: the tick and the gate-off stay, the `CMD_PORTADOWN` run goes. A record with
+a nonzero nibble already kept the arpeggio and no sweep; a drum-only record
+(`$0F0A`, `+7 = $01`) has nothing writing the frequency after the drum and still
+sweeps (`$0300`, original-matching).
+
+Measured on the original and ours (first 9 frames from each gate rise, depth =
+attack frequency less the lowest, 60 s, presets; Spellbound and Bump_Set_Spike
+40 s per subtune):
+
+| record | original | before | after |
+|---|---|---|---|
+| Warhawk `$0F09` | 82 notes, depth 0 | 69 sweep `$300` | 0 sweep (73 flat; 9 are a next-note artefact the original also never shows) |
+| Proteus `$0F09` | 100 notes, depth 0 | 83 sweep `$300` | 0 sweep |
+| Kentilla `$0F0F` | 38 notes, depth 0 | 38 sweep `$2E0` | 0 sweep |
+| Spellbound `$0F0D` (subtunes 1, 2) | 8 notes, depth 0 | 6 sweep `$02E` | 0 sweep |
+| Bump_Set_Spike `$0F0F` (subtune 1) | 112 notes, depth 0 | 34 sweep `$0FC` | 0 sweep |
+
+The corpus byte-hash under presets moves five files: Warhawk, Proteus, Kentilla,
+Spellbound, Bump_Set_Spike. The drum shapes are shorter, so the table-full files
+(Kentilla, Spellbound, Bump_Set_Spike, Warhawk) hand later records a larger
+`budget` and those take their full arpeggio shape where they had been cut to
+five entries -- a second-order move, not a different rule. Warhawk's is the
+largest: its wavetable now has room for the gate-phase split's clones
+(`tests/test_gate_phase_split.py` no longer lists it among the tables that
+cannot hold one), so the split is taken -- 19273 bytes against 18871 flat. That
+effect is unmeasured on Warhawk (the original has no two-valued arpeggio notes
+for `_first_runs` to pair); it was validated on Las_Vegas_Video_Poker only.
+`tests/test_drum_arp_overwrite.py`.
+
 ### 7.ooooooo The drum tick's gate bit, and Rasputin's noise a frame late
 
 Measured on Rasputin, 180 s under presets, over the attacks of its four drum
@@ -13887,6 +13969,38 @@ Kept outright: the row-locked tie-chain shape (`fixed_arp_tie_rows`, built
 for a tie that does NOT restart it -- Chimera's 541), and blocks carrying bit
 $10's phase or the nibble gate's, which no residue walk here models.
 
+**A tie played on ONE other residue restarts the block laid for that
+residue.** The counter is global, so the original's restart at a tie landing
+is a fresh attack at the landing's residue -- exactly what a phase clone's
+block is (`record_entries(phase=residue)`). `_tie_phase_verdicts` finds the
+rows (`why == "arpeggio phase"`, one residue); `_tie_block_source` names where
+the block already exists (a phase clone of that record and residue, or the
+record's own where `distinct` says the residue changes nothing);
+`_tie_blocks_wanted` plans, before the layout, the pairs nobody laid out, and
+`_wavetable_layout(tie_blocks=...)` lays them out beside the phase clones. The
+legato clone of such a row is split per block start (`legato_tie_clones(
+row_kind=...)`) and its wave start is that block's. The split plan could not
+have made these clones: it votes on untied notes only. Read at 9d1ff22 with
+the option forced: Rasputin 8, Gremlins 5, Geoff_Capes 2 and Formula_1_Simulator
+3 respelled (one extra block each); Las_Vegas_Video_Poker's
+6 stay declined because its gate-phase split leaves the table no room for the
+block (`tie phase block: 15 at residue 1 has no room`), and its 16 gated rows
+are the nibble gate's, unmodelled; Chimera's 477 row-locked rows are DECIDED
+KEPT -- forced onto the same machinery (the row-locked verdict switched off in
+a scratch copy) the file moves the wrong way on `travel_ratio` .717 -> .652 and
+`our_pulse_changes` 4182 -> 3607 against `tie_agreement` .676 -> .711 and
+`adsr` .824 -> .845 (`fidelity.measure` -t 180): a trade, not a fix, and the
+row-locked shape already carries the restart's effect on the octave (its
+octave is written only from tick 2 of each row). Frame-level A/B against the
+original (`frames.py`, semitone/waveform per frame, only the frames where the
+two spellings differ): Gremlins sub 3 voice 1 20 frames, base matches the
+original on 0, new on 10; Rasputin voice 1 40 frames, waveform base 0, new 18;
+Geoff_Capes sub 3 voice 1 4 frames, base 0, new 2; Formula_1_Simulator voice 2
+432 waveform frames, base 0, new 216 -- and `fidelity.measure` moves
+Formula_1_Simulator melody .978 -> 1.000, sequence .984 -> 1.000, retrigger
+.969 -> 1.000 (voice 2 melody .946 -> 1.000), and no column at all on the other
+three. HISTORICAL figures, 9d1ff22.
+
 **The clone's firstwave is 0** where the record's is the test bit and its
 block's first entry writes the waveform. The init call writes no pitch, so
 the record's own waveform there would open a gate an effect had closed on the
@@ -13907,7 +14021,8 @@ Measured HISTORICALLY (6e467ff + this change, 2026-10-06, under presets,
 count is `tests/test_tie_restart.py`'s `MOVERS`, re-measured by
 `test_the_option_moves_exactly_the_familys_heard_files`: 26 once
 `entry_instrument_split` and the zero-page gate hold landed, 25 from v0.5.515
-when Action_Biker's `max_rows` rose 94 -> 128. `tie_restart` was held out of
+when Action_Biker's `max_rows` rose 94 -> 128, 26 again once
+Formula_1_Simulator's phase-mismatched ties were respelled. `tie_restart` was held out of
 the `always` block at v0.5.515 and re-adopted at v0.5.516, after the 8 pinned
 tests its first adoption failed were each traced to appended legato clones, a
 declined-spelling pin, or a lost `CMD_SETPULSEPTR` whose packed width was still
@@ -13968,10 +14083,14 @@ carries none of them, only the define.
 **Only for a gate that is the play routine's first instruction and returns**
 (`call_phase.entry_gate`: `OUTER_GATE_RTS` or the PAL spelling at the play
 entry, or the `JMP` spelling landing on an `RTS` -- Kentilla), and only where
-that is the gate the rest of the writer reads (Bump_Set_Spike's play address
-enters BELOW an NTSC gate at `$B00B`, whose reload 5 is what
-`_find_outer_gate` reads; its conversion drifts for that reason, a separate
-defect). There every call, the new-song one included, passes the gate, so the
+that is the gate the rest of the writer reads (`tempo.outer_gate_match`: the
+first `OUTER_GATE`/`OUTER_GATE_RTS` hit, except that an `RTS` gate the play
+routine enters wins -- Bump_Set_Spike's play address enters at the PAL gate
+`$B016`, below an NTSC compensator at `$B00B` whose reload 5 `search` used to
+return: the row came out 18/5 frames where the original's is 10/3, `-S5` for
+a tune that wants `-S3`, and 3/214, 2/257, 1/197 onsets exact at 60 s became
+219/219, 278/278, 214/214 with the entered gate read; HISTORICAL, measured
+2026-10-09 on 9d1ff22 plus this change, `tests/test_bump_set_spike_gate.py`). There every call, the new-song one included, passes the gate, so the
 file's byte is the phase of call 0. The `JMP` gate inside the routine
 (Chain_Reaction `$0859`) is another clock, read in its own right below
 (`call_phase.jmp_gate`, `jmp_gate_ticks`); fed this model's frames it moved

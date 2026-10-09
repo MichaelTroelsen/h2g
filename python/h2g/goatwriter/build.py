@@ -129,32 +129,34 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
     return distinct
 
 
-def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
-                       tracks: List[List[int]], patterns: List[List[int]],
-                       record_of: dict, lead: int, arp_phases, arp_tie_rows,
-                       pitch_phases, arp_gate_phases, phase_clones,
-                       distinct, log=None) -> set:
-    """The tie rows a legato clone would put out of phase: kept on
-    `CMD_TONEPORTA 00`, which runs the wavetable on through the tie.
+def _record_numbers(lead: int, instr_used: int, duty_split, phase_split,
+                    drum_variants) -> dict:
+    """{instrument GT number: source record index} -- every record, and each
+    clone the splits and the drum variants append, as its record."""
+    record_of = {g: g - lead - 1 for g in range(lead + 1, instr_used + 1)}
+    for plan in (duty_split.clones if duty_split is not None else [],
+                 phase_split.clones if phase_split is not None else [],
+                 drum_variants):
+        for record, number, _ in plan:
+            if record in record_of:
+                record_of[number] = record_of[record]
+    return record_of
 
-    A clone restarts its record's block (gplay.c:363 `ptr[WTBL] =
-    iptr->ptr[WTBL]`), and a block that carries an arpeggio carries the
-    counter's residue on a fresh attack -- the record's majority
-    (`arp_phases`), or a phase clone's own (`phase_clones`). The counter is
-    global in the original (Commando `$5365 LDA $5525 / AND #$01`), so the
-    tie's landing does not restart it there, and the octave after a
-    restarted block is right only where the tie lands on that same residue,
-    or on one whose block `distinct` says is identical. Each row is checked
-    on every place it is played (`arp_row_residues`). Kept outright: a
-    record whose block is the row-locked tie-chain shape (`arp_tie_rows`,
-    built for a tie that does NOT restart it), and one whose block carries
-    bit $10's phase (`EFFECT_PITCH_SEQ_MASK`) or the nibble gate's
-    (`distinct` at its own residue), which no residue walk here models. A
-    record no residue changes (`distinct` False everywhere) is free to
-    restart."""
+
+def _tie_phase_verdicts(sid: SidFile, det: Detection, rows: set,
+                        tracks: List[List[int]], patterns: List[List[int]],
+                        record_of: dict, lead: int, arp_phases, arp_tie_rows,
+                        pitch_phases, arp_gate_phases, phase_clones,
+                        distinct) -> dict:
+    """{(pattern, row): (why, record GT number, residue)} for every tie row
+    in `rows` a legato clone of the instrument it plays would put out of
+    phase. `why` is one of the four reasons `_phase_locked_ties` logs;
+    `residue` is the one counter residue an "arpeggio phase" row is played
+    on (`arp_row_residues`), else None -- a row played on several has no
+    one block to restart on. The rules are `_phase_locked_ties`'."""
     if not rows or not (arp_phases or arp_tie_rows or pitch_phases
                         or arp_gate_phases):
-        return set()
+        return {}
     entry = _gw_note_passes._entry_instruments(tracks, patterns)
     residues = (_gw_arpeggio.arp_row_residues(sid, det, tracks, patterns)
                 if arp_phases else None) or {}
@@ -178,15 +180,15 @@ def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
             fx = sid.data[fx] if 0 <= fx < len(sid.data) else 0
             mine = (arp_phases or {}).get(g)
             if arp_tie_rows and g in arp_tie_rows:
-                kept[(pn, r)] = "row-locked arpeggio"
+                kept[(pn, r)] = ("row-locked arpeggio", g, None)
             elif (pitch_phases and g in pitch_phases
                   and fx & EFFECT_PITCH_SEQ_MASK):
-                kept[(pn, r)] = "pitch-sequence phase"
+                kept[(pn, r)] = ("pitch-sequence phase", g, None)
             elif (arp_gate_phases and g in arp_gate_phases
                   and mine is not None and distinct(g, mine)):
                 # Its block at its own residue differs from the one laid
                 # out: the gate's phase is in it.
-                kept[(pn, r)] = "gated arpeggio phase"
+                kept[(pn, r)] = ("gated arpeggio phase", g, None)
             elif (mine is not None
                   and any(distinct(g, x) for x in seen)):
                 own = clone_residue.get(live, mine)
@@ -194,7 +196,82 @@ def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
                 if not got or not all(
                         x == own or not (distinct(g, x) or distinct(g, own))
                         for x in got):
-                    kept[(pn, r)] = "arpeggio phase"
+                    kept[(pn, r)] = ("arpeggio phase", g,
+                                     next(iter(got)) if got and len(got) == 1
+                                     else None)
+    return kept
+
+
+def _tie_block_source(g: int, x: int, mine: Optional[int], distinct,
+                      phase_clones) -> Optional[str]:
+    """Where a block laid out for record `g` at counter residue `x` already
+    exists: "clone" (a phase clone of that record and residue), "record"
+    (the record's own block, which `x` does not change: `x` is the residue
+    it was laid out at, or `distinct` says the two are the same), else None
+    -- the block a tie landing there needs is one nobody laid out."""
+    if any(rec == g and res == x for rec, _c, res in phase_clones):
+        return "clone"
+    if mine is not None and (x == mine or not distinct(g, x)):
+        return "record"
+    return None
+
+
+def _tie_blocks_wanted(verdicts: dict, arp_phases, distinct,
+                       phase_clones) -> List[tuple]:
+    """The (record GT number, residue) blocks the "arpeggio phase" verdicts
+    in `verdicts` need laid out: one per pair, in sorted order, none for a
+    pair `_tie_block_source` finds already laid out."""
+    wanted = set()
+    for why, g, x in verdicts.values():
+        if (why == "arpeggio phase" and x is not None
+                and _tie_block_source(g, x, (arp_phases or {}).get(g),
+                                      distinct, phase_clones) is None):
+            wanted.add((g, x))
+    return sorted(wanted)
+
+
+def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
+                       tracks: List[List[int]], patterns: List[List[int]],
+                       record_of: dict, lead: int, arp_phases, arp_tie_rows,
+                       pitch_phases, arp_gate_phases, phase_clones,
+                       distinct, log=None, block_start=None,
+                       respelled=None) -> set:
+    """The tie rows a legato clone would put out of phase: kept on
+    `CMD_TONEPORTA 00`, which runs the wavetable on through the tie.
+
+    A clone restarts its record's block (gplay.c:363 `ptr[WTBL] =
+    iptr->ptr[WTBL]`), and a block that carries an arpeggio carries the
+    counter's residue on a fresh attack -- the record's majority
+    (`arp_phases`), or a phase clone's own (`phase_clones`). The counter is
+    global in the original (Commando `$5365 LDA $5525 / AND #$01`), so the
+    tie's landing does not restart it there, and the octave after a
+    restarted block is right only where the tie lands on that same residue,
+    or on one whose block `distinct` says is identical. Each row is checked
+    on every place it is played (`arp_row_residues`). Kept outright: a
+    record whose block is the row-locked tie-chain shape (`arp_tie_rows`,
+    built for a tie that does NOT restart it), and one whose block carries
+    bit $10's phase (`EFFECT_PITCH_SEQ_MASK`) or the nibble gate's
+    (`distinct` at its own residue), which no residue walk here models. A
+    record no residue changes (`distinct` False everywhere) is free to
+    restart.
+
+    A row of the "arpeggio phase" kind played on ONE residue is not kept
+    where `block_start(record, residue)` names a wavetable start for it (a
+    phase clone's, the record's own, or a block `_tie_blocks_wanted` had
+    laid out): the clone restarts THAT block, which is the fresh attack the
+    original's restart is at that residue. Those rows go into `respelled`
+    as {(pattern, row): start}."""
+    verdicts = _tie_phase_verdicts(
+        sid, det, rows, tracks, patterns, record_of, lead, arp_phases,
+        arp_tie_rows, pitch_phases, arp_gate_phases, phase_clones, distinct)
+    kept = {k: v[0] for k, v in verdicts.items()}
+    if block_start is not None and respelled is not None:
+        for key, (why, g, x) in verdicts.items():
+            if why == "arpeggio phase" and x is not None:
+                start = block_start(g, x)
+                if start:
+                    respelled[key] = start
+                    del kept[key]
     if log is not None and kept:
         why: dict = {}
         for w in kept.values():
@@ -667,6 +744,32 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     and det.pitch_seq is not None else None)
     clone_starts: List[int] = []
     phase_clone_starts: List[int] = []
+    # The blocks the phase-mismatched tie rows need (`_tie_blocks_wanted`):
+    # a legato clone of a record restarts the block it points at, and a tie
+    # landing on a residue no block was laid for would restart the wrong
+    # one. Planned on the patterns as the legato pass will see them (the
+    # phase clones' names applied), laid out beside the phase clones.
+    tie_blocks: List[tuple] = []
+    tie_block_starts: List[int] = []
+    if restart_kind and legato_rows:
+        plan_clones = phase_split.clones if phase_split is not None else []
+        plan_distinct = _arp_phase_distinct(
+            sid, det, tracks, patterns, instr_used, effects, fmt, table,
+            multiplier, min_notes, lead, two_stage, sfx_drum, wave_program,
+            pitch_seq, note_rows, row_calls, no_test_restart,
+            voice_two_stage, instr_voices, gate_skip,
+            real_firstwave_instruments, wave_alternate=wave_alternate,
+            instr_row_calls=instr_row_calls,
+            phases=(arp_phases, arp_tie_rows, pitch_phases, arp_gate_phases))
+        tie_blocks = _tie_blocks_wanted(
+            _tie_phase_verdicts(
+                sid, det, legato_rows, tracks,
+                apply_tempo_duty_edits(patterns, phase_split),
+                _record_numbers(lead, instr_used, duty_split, phase_split,
+                                []),
+                lead, arp_phases, arp_tie_rows, pitch_phases,
+                arp_gate_phases, plan_clones, plan_distinct),
+            arp_phases, plan_distinct, plan_clones)
     attack_holds = _attack_hold_records(sid, det, instr_used, lead, effects,
                                         two_stage)
     if attack_holds:
@@ -697,7 +800,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         clone_starts=clone_starts,
         phase_clones=(phase_split.clones if phase_split is not None
                       else None),
-        phase_clone_starts=phase_clone_starts, attack_holds=attack_holds,
+        phase_clone_starts=phase_clone_starts, tie_blocks=tie_blocks,
+        tie_block_starts=tie_block_starts, attack_holds=attack_holds,
         attack_hold_starts=attack_hold_starts,
         wave_alternate=wave_alternate, log=log,
         instr_row_calls=instr_row_calls,
@@ -722,6 +826,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             blocks += [(record - lead - 1, start)
                        for (record, _c, _x), start in zip(plan, starts)
                        if start]
+        blocks += [(record - lead - 1, start)
+                   for (record, _x), start in zip(tie_blocks,
+                                                  tie_block_starts) if start]
         # The records the swell pass commanded hold rows for, as it asks.
         swelling = (set(_gw_note_passes._expanding_vibrato_records(
                         sid, det, vib_ptrs, table))
@@ -885,13 +992,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     stair_aliases: List[tuple] = []
     if legato_rows:
         # Each GT number's source record, for the clone's real firstwave.
-        record_of = {g: g - lead - 1 for g in range(lead + 1, instr_used + 1)}
-        for plan in (duty_split.clones if duty_split is not None else [],
-                     phase_split.clones if phase_split is not None else [],
-                     drum_variants):
-            for record, number, _ in plan:
-                if record in record_of:
-                    record_of[number] = record_of[record]
+        record_of = _record_numbers(lead, instr_used, duty_split, phase_split,
+                                    drum_variants)
         cloneable = {g for g, i in record_of.items()
                      if i >= 0 and out[instr_at + 1 + (g - 1) * 25 + 2]}
         still = {(p, r) for p, r in legato_rows
@@ -903,7 +1005,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # block would put out of the arpeggio counter's phase
         # (`_phase_locked_ties`): both keep the old spelling, which runs the
         # program on, and get the envelope pass a declined tie gets.
-        def clone_firstwave(g: int) -> int:
+        def clone_firstwave(g: int, start: Optional[int] = None) -> int:
             # The record's own waveform with the gate where the record's is
             # the test bit: the original re-stores its waveform at the
             # landing and resets no oscillator. In the classic restart
@@ -922,7 +1024,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             if ((fw != FIRSTWAVE_TESTBIT and fw & 0x01)
                     or i is None or i < 0):
                 return fw
-            start = out[instr_at + 1 + (g - 1) * 25 + 2]
+            if start is None:
+                start = out[instr_at + 1 + (g - 1) * 25 + 2]
             if (restart_kind and 0 < start <= len(wave_entries)
                     and GT_WAVE_LAST_DELAY < wave_entries[start - 1][0]
                     < GT_WAVE_FIRST_CMD):
@@ -931,6 +1034,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     | 0x01) & 0xFF
 
         phase_kept: set = set()
+        retarget: dict = {}
         if restart_kind:
             heard = _restart_heard(still, tracks, patterns, record_of, out,
                                    instr_at, wave_entries, pulse_entries,
@@ -942,21 +1046,38 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     "already holds")
             phase_kept |= quiet
             still = heard
+            live_clones = phase_split.clones if phase_split is not None else []
+            tie_distinct = _arp_phase_distinct(
+                sid, det, tracks, patterns, instr_used, effects, fmt,
+                table, multiplier, min_notes, lead, two_stage, sfx_drum,
+                wave_program, pitch_seq, note_rows, row_calls,
+                no_test_restart, voice_two_stage, instr_voices,
+                gate_skip, real_firstwave_instruments,
+                wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls,
+                phases=(arp_phases, arp_tie_rows, pitch_phases,
+                        arp_gate_phases))
+            laid = dict(zip(tie_blocks, tie_block_starts))
+            clone_start = {(rec, res): at for (rec, _c, res), at
+                           in zip(live_clones, phase_clone_starts)}
+
+            def block_start(g: int, x: int) -> int:
+                # The wavetable start of record `g`'s block at residue `x`:
+                # where it was laid out, 0 where it could not be.
+                source = _tie_block_source(g, x, (arp_phases or {}).get(g),
+                                           tie_distinct, live_clones)
+                own = wave_starts[g - 1] if 0 < g <= len(wave_starts) else 0
+                if source == "clone":
+                    return clone_start.get((g, x)) or own
+                if source == "record":
+                    return own
+                return laid.get((g, x), 0)
+
             phase_kept |= _phase_locked_ties(
                 sid, det, still, tracks, patterns, record_of, lead,
                 arp_phases, arp_tie_rows, pitch_phases, arp_gate_phases,
-                phase_split.clones if phase_split is not None else [],
-                _arp_phase_distinct(
-                    sid, det, tracks, patterns, instr_used, effects, fmt,
-                    table, multiplier, min_notes, lead, two_stage, sfx_drum,
-                    wave_program, pitch_seq, note_rows, row_calls,
-                    no_test_restart, voice_two_stage, instr_voices,
-                    gate_skip, real_firstwave_instruments,
-                    wave_alternate=wave_alternate,
-                    instr_row_calls=instr_row_calls,
-                    phases=(arp_phases, arp_tie_rows, pitch_phases,
-                            arp_gate_phases)),
-                log)
+                live_clones, tie_distinct, log, block_start=block_start,
+                respelled=retarget)
             still -= phase_kept
         # In the "record" dialect a tie into the instrument the channel
         # already holds moves no pulse (the fetch writes the record's live,
@@ -968,6 +1089,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
              and record_of.get(held) == record_of.get(base))
             if restart_kind == "record" else None)
         kinds: dict = {}
+        phased: dict = {}
         # At -S2 and above the first legato number is the decoy's, which
         # gt2reloc's slip turns into a no-HR record (see the decline above);
         # the clones are numbered after it.
@@ -980,7 +1102,15 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, legato_clones, declined = legato_tie_clones(
             patterns, still, tracks, cloneable, written_instr + 1 + slip,
             last_number=ceiling, log=log,
+            **({"row_kind": lambda pn, r: retarget.get((pn, r)),
+                "phased": phased} if retarget else {}),
             **({"kind": hold_pulse, "kinds": kinds} if hold_pulse else {}))
+        if log and retarget:
+            moved = sum(1 for key in retarget if key not in declined)
+            if moved:
+                log(f"Legato tie..............: {moved} tie row(s) restart "
+                    "the block of the residue they land on "
+                    f"({len(tie_blocks)} block(s) laid out for them)")
         if log and declined and ceiling < GT_MAX_INSTRUMENTS:
             log(f"Legato tie..............: clone numbers stop at {ceiling}, "
                 f"below dangling instrument ${ceiling + 1:X}")
@@ -1014,7 +1144,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             rec = instr_at + 1 + (base - 1) * 25
             clone = bytearray(out[rec:rec + 25])
             clone[7] |= GATETIMER_LEGATO
-            clone[8] = clone_firstwave(base)
+            if number in phased:
+                clone[2] = phased[number] & 0xFF
+            clone[8] = clone_firstwave(base, phased.get(number))
             if kinds.get(number):
                 clone[3] = 0
             out += clone

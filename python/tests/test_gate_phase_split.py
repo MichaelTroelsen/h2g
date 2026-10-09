@@ -200,11 +200,15 @@ def test_the_lvvp_clones_enter_their_records_blocks():
 
 
 @needs_corpus
-@pytest.mark.parametrize("name", ["Bump_Set_Spike", "Thrust", "Warhawk"])
+@pytest.mark.parametrize("name", ["Bump_Set_Spike", "Thrust"])
 def test_a_split_the_table_cannot_hold_moves_no_byte(name):
-    """These three plan gate clones (the plan is not empty) whose blocks the
+    """These two plan gate clones (the plan is not empty) whose blocks the
     full wavetable cannot hold; the dry layout finds them first, so the
-    conversion is byte for byte the one without the split."""
+    conversion is byte for byte the one without the split.
+
+    Warhawk was a third until its `$0F09` drum stopped sweeping
+    (test_drum_arp_overwrite.py): the shorter wavetable has room for its
+    clones now, and the split is taken (19273 bytes against 18871 flat)."""
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     sng, got = _converted(name)

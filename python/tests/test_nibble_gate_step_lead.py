@@ -84,14 +84,29 @@ def test_no_lead_where_any_precondition_fails():
 
 @needs_corpus
 def test_no_lead_without_the_entry_gate():
-    """Bump_Set_Spike (-S5, O 5): h = 6 is whole and its counter is gated,
-    but the play address enters below the gate, so nothing anchors our
-    lattice to the original's frames (`startup_phase`'s precondition)."""
-    sid, det = _det("Bump_Set_Spike")
-    assert outer_gate_skip(sid, 0) == 5
+    """Formula_1_Simulator (O 4): h = 5 at -S4 is whole and its counter is
+    gated, but its RTS gate is not the play routine's first instruction, so
+    nothing anchors our lattice to the original's frames (`startup_phase`'s
+    precondition). (This was Bump_Set_Spike's test, written when `search`
+    returned its NTSC gate; its play address enters the PAL gate, so it IS an
+    entry-gate player -- tests/test_bump_set_spike_gate.py.)"""
+    sid, det = _det("Formula_1_Simulator")
+    assert outer_gate_skip(sid, 0) == 4
     assert nibble_arp_counter_gated(sid, det.arp_nibble_period)
     assert not entry_gate(sid)
-    assert nibble_gate_step_lead(sid, det, 5, 5, False) == 0
+    assert nibble_gate_step_lead(sid, det, 4, 4, False) == 0
+
+
+@needs_corpus
+def test_bump_set_spike_has_the_gate_but_no_whole_step():
+    """Bump_Set_Spike (O 9, -S3): the entered gate is read now, so the
+    precondition holds -- but h = 3 * 10 / 9 is not whole, a spread cycle
+    (`nibble_arp_half_cycle`), so there is no lead to give."""
+    sid, det = _det("Bump_Set_Spike")
+    assert outer_gate_skip(sid, 0) == 9
+    assert nibble_arp_counter_gated(sid, det.arp_nibble_period)
+    assert entry_gate(sid)
+    assert nibble_gate_step_lead(sid, det, 3, 9, False) == 0
 
 
 @needs_corpus

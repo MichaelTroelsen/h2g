@@ -246,6 +246,63 @@ def _adjacent_table_bound(sid: SidFile, bd_pos: int,
     return best
 
 
+# How many `JMP`s to follow from the PSID play address to the routine's first
+# instruction (Kentilla's play address is the gate itself; a jump table in
+# front of it is followed, never searched past).
+PLAY_ENTRY_JMPS = 4
+
+
+def play_entry(sid: SidFile) -> Optional[int]:
+    """Image offset of the first instruction the play routine runs, or None.
+
+    Follows a chain of `JMP`s from the PSID play address. None where the
+    header names no play routine (the tune installs its own IRQ), or the chain
+    leaves the image.
+    """
+    if not sid.play_addr:
+        return None
+    at = sid.to_offset(sid.play_addr)
+    for _ in range(PLAY_ENTRY_JMPS + 1):
+        if not 0 <= at < len(sid.data) - 2:
+            return None
+        if sid.data[at] != 0x4C:            # JMP abs
+            return at
+        at = sid.to_offset(sid.data[at + 1] | sid.data[at + 2] << 8)
+    return None
+
+
+def outer_gate_match(sid: SidFile):
+    """The outer-gate match every reader of the gate takes, or None.
+
+    The first `OUTER_GATE`, then the first `OUTER_GATE_RTS`, in the file --
+    **except that a gate the play routine itself ENTERS wins** when it is the
+    `RTS` spelling: the gate the PSID play address reaches is the one that
+    runs on every frame the player is called. Bump_Set_Spike carries two of
+    them back to back, the NTSC compensator's first and the PAL one the play
+    address names:
+
+        B006  LDA $02A6 / BNE $B016      ; PAL -> skip the NTSC gate
+        B00B  DEC $B4F5 / BPL $B016 / LDA #$05 / STA $B4F5 / RTS    (NTSC)
+                                         ; (BPL lands on the PAL gate)
+        B016  DEC $B4F4 / BPL $B021 / LDA #$09 / STA $B4F4 / RTS    (play)
+
+    `search` returned the NTSC one at `$B00B` -- reload 5, the other
+    territory's -- so a PAL conversion ran a skip of 6 calls where the
+    original skips every 10th: 3/214, 2/257 and 1/197 onsets exact over 60 s,
+    the offset growing every row. A file whose play entry is not an `RTS`
+    gate keeps the first match, so this moves only a file with two or more
+    gates ahead of the play address's own.
+    """
+    data = sid.data
+    first = OUTER_GATE.search(data) or OUTER_GATE_RTS.search(data)
+    at = play_entry(sid)
+    if at is not None and (first is None or first.start() != at):
+        entered = OUTER_GATE_RTS.match(data, at)
+        if entered is not None:
+            return entered
+    return first
+
+
 def _find_outer_gate(sid: SidFile, subtunes: int):
     """(per-subtune reloads, table address) for the counter above the gate.
 
@@ -257,7 +314,7 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
     is a decoy. v0.5.102 read the image byte and concluded the value was a
     per-player constant; it is per subtune in 32 of the 51 files that have it.
     """
-    m = OUTER_GATE.search(sid.data) or OUTER_GATE_RTS.search(sid.data)
+    m = outer_gate_match(sid)
     if not m:
         # The two rescue spellings, in the order that keeps them
         # harmless: only a file the pair above could not read reaches

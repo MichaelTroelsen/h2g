@@ -1126,7 +1126,9 @@ onto a sweep the "voice" dialect reseeds -- becomes a plain note on a legato
 clone (gatetimer `$40`), as `legato_tie_clones` spells the note_flag players'
 unflagged ties; a tie whose restart writes what the voice already holds keeps
 `CMD_TONEPORTA 00`, and so does one a restarted arpeggio block would put out
-of the global counter's phase. Method: H2G-CONVERSION-METHOD.md, *A tie in
+of the global counter's phase -- unless it lands on one residue only, in which
+case it restarts the block laid for that residue (a phase clone's, the
+record's own, or one the layout adds for it). Method: H2G-CONVERSION-METHOD.md, *A tie in
 the classic players without the legato marker re-runs the instrument start*.
 
 Measured at 6e467ff + the change, -t 180, under presets (historical): 23

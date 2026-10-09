@@ -45,9 +45,12 @@ from h2g.sidfile import load_sid                              # noqa: E402
 # -- test_classic_vibrato_census.DWELL -- and the ones the converter resolves.
 DWELL_FAMILY_C = ("Go_Go_Dash", "Lakers_vs_Celtics", "Lion_Heart",
                   "Pacific_Coast", "Radio_ACE", "Sun_Never_Shines")
-ENTRY_GATE_CLASSIC = {"International_Karate": 10, "Kentilla": 10,
-                      "Las_Vegas_Video_Poker": 4, "Mozart": 2, "Proteus": 7,
-                      "Thrust": 9, "Warhawk": 7}
+# Bump_Set_Spike joined once the gate read was the one its play address enters
+# (reload 9, not the NTSC compensator's 5): a classic vibrato behind an RTS gate
+# that is the routine's first instruction is exactly this family.
+ENTRY_GATE_CLASSIC = {"Bump_Set_Spike": 9, "International_Karate": 10,
+                      "Kentilla": 10, "Las_Vegas_Video_Poker": 4, "Mozart": 2,
+                      "Proteus": 7, "Thrust": 9, "Warhawk": 7}
 
 
 def _byte(bound, shift=0):
@@ -194,7 +197,7 @@ def test_the_dwell_reads_the_six_dollar_1003_files_too_and_not_the_others():
 
 
 @needs_corpus
-def test_the_entry_gate_players_with_a_classic_vibrato_are_these_seven():
+def test_the_entry_gate_players_with_a_classic_vibrato_are_these_eight():
     got = {}
     for path in sorted(CORPUS.glob("*.sid")):
         try:

@@ -182,8 +182,9 @@ LIVE_ON = {
     # tests/test_tie_restart.py's MOVERS (re-measured there by
     # test_the_option_moves_exactly_the_familys_heard_files). 23 at 6e467ff,
     # 26 after entry_instrument_split and the zero-page gate hold, 25 at
-    # v0.5.515 once Action_Biker's max_rows rose 94 -> 128.
-    "tie_restart": 25,
+    # v0.5.515 once Action_Biker's max_rows rose 94 -> 128, 26 once
+    # Formula_1_Simulator's phase-mismatched ties were respelled (MOVERS).
+    "tie_restart": 26,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:

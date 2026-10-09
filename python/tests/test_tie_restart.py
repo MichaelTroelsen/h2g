@@ -326,10 +326,16 @@ def test_a_record_dialect_clone_holds_the_pulse_only_on_its_own_record(
 
 @needs_corpus
 def test_the_phase_locked_ties_keep_the_old_spelling():
+    # Rasputin's 8 ties off their record's residue (record 8 at residue 2)
+    # kept the old spelling until they were respelled onto a block laid for
+    # their own residue (tests/test_tie_phase_blocks.py): 8 more on a clone
+    # of that block beside the 8 that were always free to restart.
     _, lines = _convert("Rasputin.sid", tie_restart=True)
-    assert any("8 tie row(s) kept CMD_TONEPORTA, the clone's restart out of "
-               "phase (8 arpeggio phase)" in line for line in lines), lines
-    assert any("8 tie row(s) on 1 legato clone(s)" in line for line in lines)
+    assert not any("out of phase" in line for line in lines), lines
+    assert any("8 tie row(s) restart the block of the residue they land on"
+               in line for line in lines), lines
+    assert any("16 tie row(s) on 2 legato clone(s)" in line
+               for line in lines), lines
     _, lines = _convert("Chimera.sid", tie_restart=True)
     # 541 before record 8's rows (waveform `$10`) and the attacks after them
     # stopped reading as ties (tests/test_gate_clear_record.py).
@@ -346,8 +352,12 @@ def test_the_phase_locked_ties_keep_the_old_spelling():
 MOVERS = {
     # Action_Biker left at v0.5.514: presets.py raised its max_rows 94 -> 128,
     # and its two-entry pattern no longer needs the entry split.
+    # Formula_1_Simulator joined with the phase-mismatched ties: its 3 ties
+    # off their record's residue kept the old spelling until they were
+    # respelled onto a block laid for the residue they land on
+    # (tests/test_tie_phase_blocks.py).
     "5_Title_Tunes.sid", "Bump_Set_Spike.sid", "Chimera.sid", "Confuzion.sid",
-    "Crazy_Comets.sid", "Devils_Galop.sid",
+    "Crazy_Comets.sid", "Devils_Galop.sid", "Formula_1_Simulator.sid",
     "Geoff_Capes_Strongman_Challenge.sid", "Gerry_the_Germ.sid",
     "Gremlins.sid", "Human_Race.sid", "Hunter_Patrol.sid",
     "International_Karate.sid", "Kentilla.sid", "Las_Vegas_Video_Poker.sid",

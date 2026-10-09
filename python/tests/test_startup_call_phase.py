@@ -166,7 +166,9 @@ def test_game_killers_startup_row_is_read_off_the_player():
     ("Proteus.sid", True), ("Thrust.sid", True), ("Warhawk.sid", True),
     ("Las_Vegas_Video_Poker.sid", True),   # the PAL spelling
     ("Chain_Reaction.sid", False),     # JMP form inside the routine
-    ("Bump_Set_Spike.sid", False),     # an NTSC gate sits above the entry
+    ("Bump_Set_Spike.sid", True),      # an NTSC gate sits above the entry; the
+                                       # PAL one the play address enters is read
+                                       # (tests/test_bump_set_spike_gate.py)
     ("Formula_1_Simulator.sid", False),    # RTS gate, not at the entry
     ("Commando.sid", False),           # no outer gate
 ])
