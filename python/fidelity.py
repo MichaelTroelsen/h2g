@@ -3537,6 +3537,75 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
     }
 
 
+# How far from `attack + lag` an attack of ours may land and still be "the same
+# note": the pairing window of `onset_timing_compare`. Two frames either side is
+# wider than any call-phase error the packed player produces (at most one
+# frame, 1/multiplier of it per play call) and narrower than the shortest note
+# gap, so a neighbouring note is not claimed.
+ONSET_TIMING_WINDOW = 2
+
+
+def onset_timing_compare(orig: list[Voice], ours: list[Voice],
+                         nframes: int, lag: int = 0) -> dict:
+    """Do our notes open on the frame the original's do, once `startup_lag`
+    is taken out?
+
+    **The gap `onset_agreement` leaves.** It reads each side at its OWN attack
+    frames (`onset_shapes`), so the startup latency cancels -- and so does any
+    OTHER constant offset. A conversion whose every sampled onset is a frame
+    late (the call phase sits 1/multiplier past the original's, which a
+    per-frame trace rounds up to a whole frame) reads 1.000 there, because
+    each side's four-frame shape starts at its own attack and the shapes agree.
+    This column is the one that can see it: it takes `lag` as `wave_compare`
+    does, shifts the original's attack frames by it, and asks whether ours
+    land on the same frame.
+
+    **Paired, as the other onset columns are.** An original attack with no
+    attack of ours within `ONSET_TIMING_WINDOW` frames is a missing note,
+    which `melody` reports; counting it here would let one defect move two
+    columns. Likewise an attack of ours with no original near it (`retrig`).
+
+    **Estimated lag, not fitted.** `lag` is `startup_lag`'s. The first note of
+    the tune is therefore at offset zero by construction when its attack is
+    pitched where it rises (`pitched_attack_frame` is why that can differ by
+    one); every later note is a measurement.
+
+    Returns `onset_timing` (fraction at offset 0), `onset_timing_paired`,
+    `onset_timing_late` and `onset_timing_early` (ours after / before the
+    shifted original), and `onset_timing_offset`, the median signed offset.
+    """
+    zero = late = early = 0
+    offsets: list[int] = []
+    for a, b in zip(orig, ours):
+        theirs = sorted(f for f in b.attack_frames if 0 <= f < nframes)
+        if not theirs:
+            continue
+        for f in a.attack_frames:
+            want = f + lag
+            if f < 0 or want < 0 or want >= nframes:
+                continue
+            near = min(theirs, key=lambda g: (abs(g - want), g))
+            d = near - want
+            if abs(d) > ONSET_TIMING_WINDOW:
+                continue
+            offsets.append(d)
+            if d == 0:
+                zero += 1
+            elif d > 0:
+                late += 1
+            else:
+                early += 1
+    paired = zero + late + early
+    offsets.sort()
+    return {
+        "onset_timing": (zero / paired) if paired else None,
+        "onset_timing_paired": paired,
+        "onset_timing_late": late,
+        "onset_timing_early": early,
+        "onset_timing_offset": (offsets[len(offsets) // 2] if offsets
+                                else None),
+    }
+
 # The kinds an onset disagreement can be. Ordered as the report prints them:
 # the match first, then the two that name a fix, then the three that are
 # emitter quality.
@@ -4691,7 +4760,42 @@ def _filter_side(f: FilterState, nframes: int) -> dict:
     }
 
 
-def filter_compare(orig: FilterState, ours: FilterState, nframes: int) -> dict:
+def _filter_band_timeline(f: FilterState, nframes: int) -> list[int]:
+    """Per frame: the $D418 passband (bits 4-6, as 1..7) while a voice is
+    routed into the filter, else 0 -- the frames `filtered_frames` counts,
+    each tagged with WHICH output reaches the mixer."""
+    ctrl = register_timeline(f.ctrl_events, nframes)
+    band = register_timeline(f.passband_events, nframes)
+    return [p if (r & FILTER_ROUTE) and p else 0 for r, p in zip(ctrl, band)]
+
+
+def passband_agreement(orig: FilterState, ours: FilterState, nframes: int,
+                       lag: int = 0) -> dict:
+    """Frames both sides filter UNDER THE SAME PASSBAND, lag-aligned.
+
+    `filtered_frames` counts a frame as filtered under any passband, so a
+    conversion that filters on exactly the original's frames through the
+    wrong output (bandpass where the original runs lowpass) scores 1.00x
+    there. This is the share of the frames EITHER side filters on which both
+    do and select the same passband: `agree / union`. It falls for a filter
+    we miss, one we invent, and one we run through the wrong output alike.
+
+    Aligned by the row's own `startup_lag`, exactly as `wave` is. Ignores:
+    the cutoff, resonance and which voices are routed (only that some voice
+    is), and the volume nibble; a combined passband (two of bits 4-6) is one
+    value and equal only to itself. `None` when neither side ever filters.
+    """
+    ao, au = _aligned(_filter_band_timeline(orig, nframes),
+                      _filter_band_timeline(ours, nframes), lag)
+    agree = sum(1 for x, y in zip(ao, au) if x and x == y)
+    union = sum(1 for x, y in zip(ao, au) if x or y)
+    return {"passband_agree_frames": agree,
+            "passband_union_frames": union,
+            "passband_agree": (agree / union) if union else None}
+
+
+def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
+                   lag: int | None = None) -> dict:
     """The global filter: whether we filter where the original does, and how far.
 
     Two questions, and a count answers only the first:
@@ -4723,6 +4827,8 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int) -> dict:
     out.update({f"our_{k}": v for k, v in u.items()})
     out["cutoff_sweep"] = (u["cutoff_travel"] / o["cutoff_travel"]
                            if o["cutoff_travel"] else None)
+    if lag is not None:
+        out.update(passband_agreement(orig, ours, nframes, lag))
     return out
 
 
@@ -6202,6 +6308,12 @@ DIMENSIONS = (
     # on the effect where the player opens on the record's own waveform.
     Dimension("onset_agreement", "onset", ("$D404",), "fraction",
               "instruments whose notes open on the original's waveforms"),
+    # The column for the offset `onset_agreement` cancels. That one reads each
+    # side at its own attack, so a conversion whose every onset is a frame late
+    # reads 1.000 there; this one shifts by `startup_lag` and asks whether ours
+    # land on the same frame.
+    Dimension("onset_timing", "otime", ("$D404",), "fraction",
+              "notes whose attack lands on the original's frame, once the startup lag is taken out"),
     # What happens after the gate closes. `adsr` compares the pair while the
     # note plays and agrees; both sides also gate off on the same frame, so
     # $D404 says nothing either. See `release_tails`.
@@ -6243,6 +6355,14 @@ DIMENSIONS = (
               "selected", source="our_filtered_frames"),
     Dimension("cutoff_sweep", "cut", ("$D415/$D416",), "ratio",
               "how far the cutoff travels, over the original's travel"),
+    # `filt` counts a filtered frame under ANY passband, so filtering on the
+    # right frames through the wrong output (bandpass for lowpass) reads 1.00x.
+    # This is the share of the frames either side filters on which both do,
+    # under the same $D418 bits 4-6, lag-aligned like `wave`. Ignores cutoff,
+    # resonance, voice routing and volume. `-` on --vice rows (no lag).
+    Dimension("passband_agree", "band", ("$D417", "$D418"), "fraction",
+              "share of frames either side filters on which both select the "
+              "same passband"),
     # **The first column here that measures *when* rather than *what*.** Every
     # dimension above compares content at aligned frames; none of them can see
     # two copies of the right music parting company, and this report said so
@@ -7371,6 +7491,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # startup latency cancels rather than needing correcting. See
             # onset_shapes.
             row.update(onset_agreement(a, best_dump, nframes))
+            # Unlike the line above this one DOES take the lag: it is the column
+            # for a constant offset, which the own-attack reading cancels.
+            row.update(onset_timing_compare(a, best_dump, nframes, lag=lag))
             # No `lag` here either, and for a stronger reason than onset's:
             # the fit's *intercept* is the startup lag, so it falls out of the
             # slope rather than needing to be estimated and subtracted. It is
@@ -7444,7 +7567,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # vibrato_records). A file whose player has no vibrato routine
             # contributes no row rather than a reading over its portamentos.
             row.update(depth_compare(a, best_dump, nframes, vib_keys))
-            row.update(filter_compare(a.filter, best_dump.filter, nframes))
+            row.update(filter_compare(a.filter, best_dump.filter, nframes,
+                                      lag=lag))
         if row.get("depth_refusal") == "gated":
             # Which of the player's two exclusions emptied the population,
             # and how big it was: `-` alone cannot say, and a reader of the
@@ -7908,6 +8032,13 @@ def report(rows: list[dict], args) -> str:
         "that runs past the player's own counter travels further at the same "
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
+        "* **band** -- of the frames on which EITHER side filters, the share "
+        "on which both do and select the same $D418 passband (low/band/high "
+        "pass), aligned on the startup lag as **wave** is. **filt** counts "
+        "any passband, so filtering on the right frames through the wrong "
+        "output reads 1.00x there and low here. Ignores cutoff, resonance, "
+        "which voices are routed and the volume nibble. `-` on a run taken "
+        "with `--vice` (no lag) or where neither side filters.",
         "",
         "* **depth** -- how far our vibrato *swings*, over the original's: "
         "the median peak-to-peak excursion of the frequency within a note, as "
@@ -7971,8 +8102,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | tiefr | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | osplit | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | len | cov | osplit | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8003,6 +8134,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_depth(r)} | "
             f"{_fmt_drift(r)} | "
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
+            f"{_fmt_pct(r.get('onset_timing'))} | "
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('sound_run_agreement'))} | "
@@ -8012,7 +8144,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
-            f"{_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
+            f"{_fmt_pct(r.get('passband_agree'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{status} |")
 

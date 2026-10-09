@@ -2510,11 +2510,21 @@ voice 0, one pass), the late peak is Bangkok_Knights +16.90, Nineteen +5.27 and
 Auf_Wiedersehen_Monty +2.46. With the flag, every play is one ledger
 (`patterns._regrid_per_play`). A count may rise only by what keeps that ledger
 at or below zero at every play boundary from the pattern's first play on. The
-flag implies `--regrid-full-debt`'s walk. The cost is that it is greedy.
-Star_Paws (`regrid` forced) is paid 135 of 147.28 calls a pass, against 147
-under `--regrid-full-debt`. Its patterns 33-38 play twice in a row, and pattern
-33's second play leaves the others no room. On the 15 files that ship `regrid`,
-`-t 180`, S shipped / F `+ regrid_full_debt` / N `+ regrid_per_play` (39b5de2):
+flag implies `--regrid-full-debt`'s walk. The forward pass is greedy, and
+that used to cost some files their debt: Star_Paws (`regrid` forced) was paid
+135 of 147.28 calls a pass, against 147 under `--regrid-full-debt`, because its
+patterns 33-38 play twice in a row and pattern 33's second play left the others
+no room. Where the pass ends a call or more short, a repair now lowers one
+pattern and re-spends its room on the others, keeping the ledger at or below
+zero, and stops once the end is within a call. Star_Paws is paid 147 of 147.28.
+Files the pass already pays within a call are byte for byte as before. With
+`regrid` and the flag forced, the repair moves 9 of 95 corpus files (After_8,
+Bangkok_Knights, I_Ball, IK_plus, Nineteen, Sanxion, Star_Paws,
+Trans-Atlantic_Balloon_Challenge, Wiz) and none under presets
+(`tests/test_regrid_per_play_repair.py`). The table below was taken BEFORE the
+repair, so its N column is historical for those rows. On the 15 files that ship
+`regrid`, `-t 180`, S shipped / F `+ regrid_full_debt` / N `+ regrid_per_play`
+(39b5de2):
 
 | file | drift/1000 S / F / N | gate S / F / N | wave S / F / N |
 |---|---|---|---|

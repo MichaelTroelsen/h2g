@@ -4764,6 +4764,41 @@ hold the bound for two frames (Mozart, Go_Go_Dash, Lakers_vs_Celtics,
 Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines). Pinned in
 `tests/test_classic_vibrato_census.py`.
 
+Modelled afterwards (mozart-classic-vibrato-file-wide-rate, 2026-10-09, at
+v0.5.517; figures historical). Three things the entry had assumed away, found
+in Mozart, where voice 0's own bound-3 records read a 3-frame half-period
+against the original's 5.0 (401 cycles in a 180 s window against 128):
+
+- **The update does not run every frame.** Mozart's play entry
+  (`$0829 DEC $0C33 / BPL / LDA #$02 / STA $0C33 / RTS`) skips the whole
+  routine one call in three, so an update lasts 3/2 frames. Only a player
+  whose outer gate is its first instruction with nothing else on the underflow
+  call (`call_phase.entry_gate`) is stretched, by `(O + 1) / O`: seven
+  classic-vibrato files qualify (International_Karate, Kentilla,
+  Las_Vegas_Video_Poker, Mozart, Proteus, Thrust, Warhawk). A gate over the
+  pattern clock alone leaves the update running each frame.
+- **The counter dwells on the bound** (above), so the half-period is `bound +
+  1/2` updates. `Detection.vibrato_dwell` reads it off the clamp (`BCS` over
+  `STA ctr / LDA #$FF / STA dir`, or a lone `DEC dir`); the converter
+  resolves a classic vibrato in only one of the seven dwelling files, Mozart.
+- **The depth loop tests its count last** (`LSR / ROR / DEC cnt / BPL`), so
+  it shifts `shift + 1` times where Las_Vegas' `DEC cnt / BMI / LSR / ROR /
+  JMP` shifts `shift`. `Detection.vibrato_shift_extra`; only Mozart.
+
+One cause at a time on Mozart's voice 0 (half-period frames ours against 5.0,
+cycles against 128): neither 3.0 / 401, skip alone 5 / 144, dwell alone 4 /
+188, both 5 / 127. File level at -t 180 (7 files re-measured, melody,
+sequence, wave, ADSR and gate flat on all): Mozart `vib` 2.26 -> 1.62, `depth`
+1.42 -> 1.10, `bend` 1.48 -> 0.79. The other six entry-gate files move less
+and not all one way (`vib` closer on Proteus, Thrust and Warhawk, further on
+International_Karate and Las_Vegas_Video_Poker; `bend` Las_Vegas 0.81 ->
+1.03, Thrust 2.54 -> 2.79). Corpus byte-hash under presets: 89 compared, 6
+refused in both arms, exactly those seven move. Pinned in
+`tests/test_mozart_classic_vibrato_rate.py`. What is left of Mozart's `vib`
+is the shared counter (voice 2's `$4820`, 339 notes, now reads 115 cycles
+against 317) and voice 1's `$3800`, a 23-depth swing that is no bound/shift
+vibrato.
+
 #### Reach
 
 49 of 95 files change bytes — every file whose vibrato-byte addressing the

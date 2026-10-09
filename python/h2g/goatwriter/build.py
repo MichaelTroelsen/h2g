@@ -30,6 +30,8 @@ from .vibrato import (_classic_gate_refine, _free_gate_calls,
                       _vibrato_layout)
 from .wavetable import (_wavetable_layout, _write_wavetable)
 from . import arpeggio as _gw_arpeggio
+from . import call_phase as _gw_call_phase
+from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
@@ -572,7 +574,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead,
                                vibrato_command=vibrato_command,
-                               row_calls=row_calls, effects=effects)
+                               row_calls=row_calls, effects=effects,
+                               gate_skip=(_gw_tempo.outer_gate_skip(sid)
+                                          if _gw_call_phase.entry_gate(sid)
+                                          else None))
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.

@@ -1544,7 +1544,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr |"
             in text)
     # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1734,6 +1734,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  onset_agreement=melody, onset_matched=1,
                  onset_instruments=1, onset_first_matched=1,
                  onset_ours_early=0, onset_ours_late=0,
+                 onset_timing=melody, onset_timing_paired=1,
                  gate=melody, gate_frames=100,
                  tie_agreement=melody, tie_same_frame=10,
                  tie_ours_only=0, tie_orig_only=0,
@@ -1743,6 +1744,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  pulse_span=1.0,
                  orig_pulse_phases=0, our_pulse_phases=0,
                  pulse_phase=1.0,
+                 passband_agree=melody,
                  orig_ends_at=10.0, ours_ends_at=10.0,
                  length_delta=0.0, length_bounded=False,
                  # `cov`, from the same length probe as `length_delta`. A full

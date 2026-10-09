@@ -4087,8 +4087,14 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     return written
 
 
+# Moves `_regrid_per_play`'s repair may apply before it stops: each one lowers a
+# pattern and re-spends the room, and the Star_Paws case needs 12 of them.
+_REPAIR_ITERATIONS = 64
+
+
 def _regrid_per_play(patterns: List[List[int]], order: List[int],
-                     exclusive: set, owed_per_row: float) -> dict:
+                     exclusive: set, owed_per_row: float,
+                     repair: bool = True) -> dict:
     """`regrid_per_play`'s schedule, `{pattern: n}` for one subtune's voice 0.
 
     **A ROW IS DEBITED AT THE PLAY THAT DELIVERS IT.** The budget walk in
@@ -4116,25 +4122,27 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
     places are booked (`_regrid_spots` on a copy), and the pattern's geometry
     caps the count.
 
-    **IT IS GREEDY, AND THAT COSTS SOME FILES THEIR DEBT.** A pattern that
-    buys at one visit and replays a few plays later can pay the backlog
-    twice over at the replay. After that, the patterns first played in
+    **THE FORWARD PASS IS GREEDY, AND THAT COST SOME FILES THEIR DEBT.** A
+    pattern that buys at one visit and replays a few plays later can pay the
+    backlog twice over at the replay. After that, the patterns first played in
     between have no room left at that point, and the debt after it has
-    nowhere to go. Star_Paws (-S2, `regrid` forced) is paid 135 of the
-    147.28 calls a pass owes, against 147 under `regrid_full_debt`.
-    Patterns 33-38 play twice in a row, and pattern 33's second play is what
-    shuts out 34-38. Two refinements were tried and dropped: a row-weighted
-    least-squares descent (ledger allowed both ways) made the drift worse on
-    Arcade_Classics, IK_plus, Nineteen and Pandora, and the same descent kept
-    to ledger <= 0 found no single-pattern move at all. The measurements are
-    in `runs.jsonl` under `regrid-debit-per-delivered-play`.
+    nowhere to go. Star_Paws (-S2, `regrid` forced) was paid 135 of the
+    147.28 calls a pass owes, against 147 under `regrid_full_debt`: patterns
+    33-38 play twice in a row, and pattern 33's second play is what shut out
+    34-38. Single-pattern least-squares moves found nothing, and neither did
+    capping one pattern and re-running the pass (the shortfall only moved
+    to the next pattern). What does find it is a pair move: **lower one
+    pattern, then re-spend its room on the others** -- see the repair below.
+    It runs only where the pass ends a call or more short, so a file the pass
+    already pays within a call is byte for byte what it was. `repair=False`
+    is the bare pass, kept so a test can show the difference.
     """
     owed = 0.0
-    ledger: List[float] = []
+    start: List[float] = []
     plays_at: dict = {}
     for i, pat in enumerate(order):
         owed += owed_per_row * (len(patterns[pat]) // 4)
-        ledger.append(-owed)
+        start.append(-owed)
         plays_at.setdefault(pat, []).append(i)
 
     def fired(idx: List[int]):
@@ -4146,6 +4154,15 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
                 k += 1
             yield s, k
 
+    spots_of: dict = {}
+
+    def placed_rows(pat: int, n: int, rows: int) -> int:
+        key = (pat, n)
+        if key not in spots_of:
+            spots_of[key] = len(_regrid_spots(patterns[pat], n, rows)[0])
+        return spots_of[key]
+
+    ledger = list(start)
     want: dict = {}
     placed: dict = {}
     for pat in order:
@@ -4161,13 +4178,103 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
         prev, got = want.get(pat, 0), placed.get(pat, 0)
         top = min(prev + afford, max(1, (rows - 3) // 2))
         for n in range(top, prev, -1):
-            w = len(_regrid_spots(patterns[pat], n, rows)[0])
+            w = placed_rows(pat, n, rows)
             if got < w <= got + afford:
                 want[pat], placed[pat] = n, w
                 for s, k in fired(idx):
                     ledger[s] += (w - got) * k
                 break
-    return want
+    if not repair or ledger[-1] > -1.0:
+        return want
+
+    # **REPAIR: WHEN THE PASS ENDS A CALL OR MORE SHORT, RE-SPEND.** The
+    # ledger is linear in each pattern's placed-row count `w`, so the pass
+    # above is a greedy fill and the fix is a move in the same space: LOWER
+    # one pattern to a smaller attainable `w`, then raise every OTHER pattern
+    # as far as the freed room allows (the lowered one is frozen for that
+    # re-fill, or it simply takes its room back). A move is kept if it ends
+    # closer to the owed total, or equally close with less area under the
+    # ledger; the best move of an iteration is applied, and the search stops
+    # once the end is within a call or no move helps. Moves never leave the
+    # `ledger <= 0` region, so the "never late at a play boundary" property
+    # of the pass above is kept. Bounded by `_REPAIR_ITERATIONS`.
+    pats = [p for p in plays_at
+            if p in exclusive and len(patterns[p]) // 4 >= 4]
+    size = len(order)
+    levels: dict = {}
+    first: dict = {}
+    ks: dict = {}
+    for p in pats:
+        rows = len(patterns[p]) // 4
+        levels[p] = sorted({placed_rows(p, n, rows)
+                            for n in range(max(1, (rows - 3) // 2) + 1)})
+        first[p] = plays_at[p][0]
+        ks[p] = dict(fired(plays_at[p]))
+    cur = {p: placed.get(p, 0) for p in pats}
+
+    def shift(p: int, dw: int) -> None:
+        for s, k in ks[p].items():
+            ledger[s] += dw * k
+
+    def raise_max(p: int) -> bool:
+        room = min(-ledger[s] / k for s, k in ks[p].items()) + 1e-9
+        best = max((w for w in levels[p] if cur[p] < w <= cur[p] + room),
+                   default=cur[p])
+        if best == cur[p]:
+            return False
+        shift(p, best - cur[p])
+        cur[p] = best
+        return True
+
+    def refill(frozen: int) -> None:
+        moved = True
+        while moved:
+            moved = False
+            for p in pats:
+                if p != frozen and raise_max(p):
+                    moved = True
+
+    def score():
+        # End first, clipped once it is within a call so that area decides
+        # between two moves that both get there; rounded so that two ends
+        # equal in exact arithmetic compare equal.
+        return (round(min(ledger[-1], -1.0 + 1e-9), 6), round(sum(ledger), 6))
+
+    for _ in range(_REPAIR_ITERATIONS):
+        base = score()
+        best = None
+        for d in pats:
+            for wd in [w for w in levels[d] if w < cur[d]]:
+                keep, keep_led = dict(cur), list(ledger)
+                shift(d, wd - cur[d])
+                cur[d] = wd
+                refill(d)
+                refill(-1)
+                sc = score()
+                if sc > base and (best is None or sc > best[0]):
+                    best = (sc, dict(cur), list(ledger))
+                cur.clear()
+                cur.update(keep)
+                ledger[:] = keep_led
+        if best is None:
+            break
+        _, state, led = best
+        cur.clear()
+        cur.update(state)
+        ledger[:] = led
+        if ledger[-1] > -1.0:
+            break
+
+    out: dict = {}
+    for p in pats:
+        if cur[p] == placed.get(p, 0):
+            if p in want:
+                out[p] = want[p]
+        elif cur[p]:
+            rows = len(patterns[p]) // 4
+            out[p] = min(n for n in range(1, max(1, (rows - 3) // 2) + 1)
+                         if placed_rows(p, n, rows) == cur[p])
+    return out
 
 
 # Commands 1XY-4XY run every call until a row replaces them; 0XY resets the
@@ -4735,9 +4842,65 @@ def _fraction_row_ok(pattern: List[int], k: int, rows: int) -> bool:
 # took it back; per 16 rows it stays within about 3.
 FRACTION_CHUNK_ROWS = 16
 
+# The same, where the player's own per-row clock is known (`clocks`). That
+# clock steps 4, 4, 4, 6, 4, 4, 6 ... calls at R = 6, a sawtooth of up to two
+# calls about the average, and a stretch is dealt what brings the error at
+# its END to zero, so the stretch is the span over which the sawtooth stands.
+# Rasputin voice 2 against the player's clock, worst gap in calls / RMS
+# (v0.5.517 tree + fraction-runs-per-row-clock-placement; historical):
+# 4 rows 10 / .82, 6 rows 10 / .81, 8 rows 6 / .74, 12 rows 6 / .80,
+# 16 rows 6 / .92, 32 rows 6 / 1.44. Fewer than 8 rows cannot hold the run
+# the pattern's untouchable tail needs; more lets the sawtooth stand.
+FRACTION_CLOCK_CHUNK_ROWS = 8
+
+
+def _fraction_chunks(ok: List[bool], rows: int,
+                     size: int = FRACTION_CHUNK_ROWS) -> List[Tuple[int, int]]:
+    """The 16-row stretches that can hold a run at all.
+
+    A stretch whose every column is taken (Rasputin's R = 6 pattern carries a
+    portamento on each of its last 32 rows) would otherwise be dealt calls it
+    can only pass on to a stretch after it, and the last one has none.
+    """
+    chunks = []
+    for s in range(0, rows, size):
+        e = min(s + size, rows)
+        if any(ok[k] and k + 1 <= min(e, rows - 1) and ok[k + 1]
+               for k in range(max(s, 1), e)):
+            chunks.append((s, e))
+    return chunks
+
+
+def _balanced_fraction_d(pattern: List[int], rows: int, b: int,
+                         ideal_rows: List[float], err0: float) -> int:
+    """Net calls to add (+) or take (-) so the pattern's error is balanced.
+
+    On the average clock `d` zeroes the error at the pattern's END, which is
+    right where every row can carry a run. Where the last stretch that can
+    hold one ends short of the pattern (Rasputin's R = 6 pattern `$0A`: its
+    last 32 rows each carry a portamento), the rows after it are played at
+    `b` whatever is asked, and their drift `tail` lands after the last
+    correction. Zeroing the end then means correcting past zero by the whole
+    of `tail` first (the error dips to about -`tail`, and the next entry is
+    handed zero); leaving it entirely to the next entry hands over +`tail`.
+    Splitting it puts the error at about -`tail`/2 where the last run ends
+    and +`tail`/2 at the pattern's end, which is the smallest excursion the
+    pair can have, and the accumulator carries the +`tail`/2 on.
+    """
+    ok = [_fraction_row_ok(pattern, k, rows) for k in range(rows)]
+    chunks = _fraction_chunks(ok, rows, FRACTION_CLOCK_CHUNK_ROWS)
+    if not chunks:
+        return 0
+    stop = chunks[-1][1]
+    lead = err0 + sum(b - ideal_rows[k] for k in range(stop))
+    tail = sum(b - ideal_rows[k] for k in range(stop, rows))
+    return int(round(-(lead + tail / 2)))
+
 
 def _fraction_runs(pattern: List[int], rows: int, d: int, b: int,
-                   run_value: int, c: float) -> tuple:
+                   run_value: int, c: float,
+                   ideal_rows: Optional[List[float]] = None,
+                   err0: float = 0.0) -> tuple:
     """Where `_compensate_fractional_rows` puts `|d|` rows at `run_value`.
 
     `|d|` is shared over the pattern's 16-row stretches in proportion to
@@ -4747,50 +4910,88 @@ def _fraction_runs(pattern: List[int], rows: int, d: int, b: int,
     depends on the pattern and `d` alone and repeated asks share one copy.
     A share that cannot be placed whole is shortened and the rest offered to
     the next stretch. Returns ((first row, length), ...), possibly empty.
+
+    **`ideal_rows` is the player's own cost of each row**, where
+    `_compensate_fractional_rows` has a restarted clock to read it off
+    (`restarted_gate_calls`), and `err0` the error the entry is entered
+    with. The average `c` puts a row at 4.667 calls where the restarted
+    gate plays 4 or 6, so a run placed to cancel the average's error leaves
+    the sawtooth about it standing -- and an entry entered with the previous
+    one's carry (Rasputin's R = 6 pattern `$0A`, whose last 32 rows hold a
+    portamento on every row, hands on +6 calls) has to be placed against
+    THAT. With them the error is the running sum from the pattern's row 0
+    through the runs already placed, so what is minimised is the excursion
+    the player will actually hear; without them (`ideal_rows` None) each
+    stretch is measured from zero against `c`, as before.
     """
+    carry = ideal_rows is not None
+    if not carry:
+        ideal_rows = [c] * rows
+    act = [b] * rows                    # the cost each row has been given
     ok = [_fraction_row_ok(pattern, k, rows) for k in range(rows)]
     want = abs(d)
-    # Only stretches that can hold a run at all share in it: a stretch whose
-    # every column is taken (Rasputin's R = 6 pattern carries a portamento on
-    # each of its last 32 rows) would otherwise be dealt calls it can only
-    # pass on to a stretch after it, and the last one has none.
-    chunks = []
-    for s in range(0, rows, FRACTION_CHUNK_ROWS):
-        e = min(s + FRACTION_CHUNK_ROWS, rows)
-        if any(ok[k] and k + 1 <= min(e, rows - 1) and ok[k + 1]
-               for k in range(max(s, 1), e)):
-            chunks.append((s, e))
+    chunks = _fraction_chunks(ok, rows, FRACTION_CLOCK_CHUNK_ROWS if carry
+                              else FRACTION_CHUNK_ROWS)
     # Each usable stretch answers for the rows up to halfway to the next
     # one; the last answers for half of what follows it, and the other half
     # is left to the accumulator and so to the next entry -- the split that
     # keeps the error smallest when the pattern's tail cannot be touched.
+    # On the per-row clock `d` has already split the tail itself
+    # (`_balanced_fraction_d`), so the last stretch answers for all of it.
     bounds = [(e + chunks[m + 1][0]) / 2 for m, (_s, e) in
               enumerate(chunks[:-1])]
     if chunks:
-        bounds.append((chunks[-1][1] + rows) / 2)
+        bounds.append(rows if carry else (chunks[-1][1] + rows) / 2)
+    shares = None
+    if carry and chunks:
+        # Per-row clock: each stretch is dealt what brings the error at its
+        # END back to zero (the last one to -tail/2, as `d` was reckoned),
+        # rather than a share of `d` in proportion to its rows. The error a
+        # pattern is entered with, and the sawtooth the average hides, are
+        # then corrected in the stretch where they arise instead of being
+        # spread over the pattern.
+        sign = 1 if run_value > b else -1
+        stop = chunks[-1][1]
+        tail = sum(b - ideal_rows[k] for k in range(stop, rows))
+        shares, dealt = [], 0
+        for m, (_s, e) in enumerate(chunks):
+            target = -tail / 2 if m == len(chunks) - 1 else 0.0
+            at_end = err0 + sum(b - ideal_rows[k] for k in range(e))
+            total = min(want, max(dealt, int(round(sign * (target - at_end)))))
+            shares.append(total - dealt)
+            dealt = total
     runs = []
     owed = 0
     last = 0                            # the last row a command was put on
     prev = 0.0
-    for (s, e), upto in zip(chunks, bounds):
-        share = (round(want * upto / rows) - round(want * prev / rows)
-                 + owed)
+    for m, ((s, e), upto) in enumerate(zip(chunks, bounds)):
+        if shares is not None:
+            share = shares[m] + owed
+        else:
+            share = (round(want * upto / rows) - round(want * prev / rows)
+                     + owed)
         prev = upto
         owed = 0
         for n in range(min(share, rows - 2), 0, -1):
             best = None
+            start = (err0 + sum(act[k] - ideal_rows[k] for k in range(s))
+                     if carry else 0.0)
             for k1 in range(max(s, last + 1, 1), e):
                 k2 = k1 + n
                 if k2 > min(e, rows - 1) or not (ok[k1] and ok[k2]):
                     continue
-                err = worst = 0.0
+                err = start
+                worst = abs(err) if carry else 0.0
                 for k in range(s, e):
-                    err += (run_value if k1 <= k < k2 else b) - c
+                    cost = run_value if k1 <= k < k2 else act[k]
+                    err += cost - ideal_rows[k]
                     worst = max(worst, abs(err))
                 if best is None or worst < best[0]:
                     best = (worst, k1)
             if best is not None:
                 runs.append((best[1], n))
+                for k in range(best[1], best[1] + n):
+                    act[k] = run_value
                 last = best[1] + n
                 owed = share - n
                 break
@@ -4845,6 +5046,18 @@ def _compensate_fractional_rows(new_track: List[int], moved: dict,
     of 7 (v0.5.516; the first segment's 1 is the opening gap, 11 frames in
     the original against our 12). An entry this pass leaves alone still
     advances `j0`, so the next one is read at its own place in the cycle.
+
+    **The placement reads the same clock** (`_fraction_runs`, `ideal_rows`
+    and `err0`): each row's own cost rather than the average, the error the
+    entry is entered with, a share dealt per 8-row stretch to bring the error
+    at its end back to zero, and -- where the pattern's last rows cannot carry
+    a command (Rasputin's R = 6 pattern, 32 portamento rows) -- the drift of
+    that tail split between the dip before it and the carry after it
+    (`_balanced_fraction_d`). Against the average the worst gap to the
+    player's clock on Rasputin's voice 2 was 9.0 calls (4.5 frames, in that
+    entry and the one after it); against the row it is 6.0, and the copies
+    the pass writes go from 56 to 105 (the finished song's patterns 117 ->
+    166 of 208, the .sng 23912 -> 30365 bytes).
 
     Returns (entries compensated, final accumulator in calls).
     """
@@ -4913,10 +5126,24 @@ def _compensate_fractional_rows(new_track: List[int], moved: dict,
             ideal = rows * c
         j0 += reps * rows
         d = int(round(ideal - rows * b - err / reps))
+        ideal_rows = None
+        if clock is not None:
+            # What each row costs on the player's own clock, averaged over
+            # the repeats that will share this one copy. It sums to `ideal`
+            # above.
+            at0 = j0 - reps * rows
+            ideal_rows = [
+                sum(restarted_gate_calls(*clock, at0 + r * rows + k + 1)
+                    - restarted_gate_calls(*clock, at0 + r * rows + k)
+                    for r in range(reps)) / reps
+                for k in range(rows)]
+            d = _balanced_fraction_d(pattern, rows, b, ideal_rows,
+                                     err / reps)
         applied = 0
         if d:
             run_value = b + (1 if d > 0 else -1)
-            runs = (_fraction_runs(pattern, rows, d, b, run_value, c)
+            runs = (_fraction_runs(pattern, rows, d, b, run_value, c,
+                                   ideal_rows, err / reps)
                     if TEMPO_FASTEST_STEADY <= run_value <= 0x7F else ())
             if runs:
                 key = (entry, runs, run_value, b)

@@ -99,6 +99,14 @@ class Detection:
     # player's own compare. None where vibrato_offset is None or no gate was
     # found. See _find_vibrato_gate().
     vibrato_gate: "VibratoGate | None" = None
+    # Whether the classic update holds its counter on the bound for two
+    # updates, so the oscillation's period is `2 * bound + 1` and not
+    # `2 * bound`. See _find_vibrato_dwell().
+    vibrato_dwell: bool = False
+    # 1 where the depth loop tests its count last, so the record's shift field
+    # shifts `shift + 1` times; 0 where it shifts `shift` times. See
+    # _find_vibrato_shift_extra().
+    vibrato_shift_extra: int = 0
     # The OTHER vibrato: an LFO table walked one entry per frame, which is the
     # command-table engine's form and shares no byte format with the above.
     # Mutually exclusive with vibrato_offset -- see _find_table_vibrato().
@@ -1870,6 +1878,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log(f"Instrument vibrato......: record +{det.vibrato_offset} "
             "(bound $78>>3, depth shift $07, note-relative)")
         det.vibrato_gate = _find_vibrato_gate(sid, vib_site[1], det)
+        det.vibrato_dwell = _find_vibrato_dwell(sid, vib_site[1])
+        det.vibrato_shift_extra = _find_vibrato_shift_extra(sid, vib_site[1])
         vg = det.vibrato_gate
         if vg is not None:
             log(f"Vibrato gate............: {vg.form} ${vg.cell:04X},X "
@@ -3064,6 +3074,82 @@ def _find_vibrato_gate(sid: SidFile, at: int,
                 return VibratoGate("unread", None, operand, cell)
             return VibratoGate(form, operand, operand, cell)
     return None
+
+
+# --- ...and whether the counter holds the bound ----------------------------
+#
+# The classic update walks `ctr` between 0 and the bound, one step a frame the
+# player runs. Its top turnaround comes in two families
+# (tests/test_classic_vibrato_census.py): `clamp, step back` (`STA ctr / DEC
+# dir / DEC ctr`) turns AT the bound, period `2 * bound`; `clamp-to-bound` --
+# Mozart's `STA ctr / LDA #$FF / STA dir`, or the six `$1003` files' bare
+# `STA ctr / DEC dir` -- writes the bound back over an increment that went one
+# past it, so the counter sits on the bound for two updates, period
+# `2 * bound + 1`:
+#
+#     Mozart   09C3  INC $0C24,X
+#              09C6  LDA $0C30,X ; CMP $0C24,X
+#              09CC  BCS $09D6          ; ctr <= bound -> done
+#              09CE  STA $0C24,X        ; ctr = bound again
+#              09D1  LDA #$FF ; STA $0C2D,X   ; and turn
+#
+# Read as the clamp itself: the `BCS` over a `STA ctr`, then either
+# `LDA #$FF / STA dir` or a lone `DEC dir`. Mozart is the one family-A file;
+# the others are Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast,
+# Radio_ACE and Sun_Never_Shines (family C, whose bare `DEC dir` is not
+# followed by a `DEC ctr` the way the stepping-back family's is).
+VIBRATO_DWELL_SHAPES = (
+    "B0 ?? 9D ?? ?? A9 FF 9D ?? ??",        # STA ctr,X / LDA #$FF / STA dir,X
+    "B0 ?? 9D ?? ?? A9 FF 95 ??",
+    "B0 ?? 95 ?? A9 FF 9D ?? ??",
+    "B0 ?? 95 ?? A9 FF 95 ??",
+)
+# `STA ctr,X / DEC dir,X` -- a dwell only where no `DEC ctr,X` follows it.
+VIBRATO_DWELL_BARE_SHAPE = "B0 ?? 9D ?? ?? DE ?? ??"
+VIBRATO_DWELL_BARE_LEN = 8
+VIBRATO_DWELL_STEP_BACK = (0xDE, 0xD6)       # DEC abs,X / DEC zp,X
+
+
+# --- ...and how many times the depth is shifted ----------------------------
+#
+# The depth is the interval above the note, shifted right by the record's
+# shift field. Two spellings of that loop exist. Las_Vegas_Video_Poker's tests
+# the count FIRST, so a shift of `n` shifts `n` times:
+#
+#     520F  DEC $54D7 / BMI out        ; count first
+#     5214  LSR A / ROR $54D9 / JMP $520F
+#
+# Mozart's tests it LAST, so a shift of `n` shifts `n + 1` times -- a shift of
+# zero still halves the interval:
+#
+#     09EB  LSR A / ROR $0C20          ; shift, then count
+#     09EF  DEC $0C1E / BPL $09EB
+VIBRATO_SHIFT_LOOP_LAST = "4A 6E ?? ?? CE ?? ?? 10 F7"
+
+
+def _find_vibrato_shift_extra(sid: SidFile, at: int) -> int:
+    """1 where the depth loop after the split at file offset `at` shifts
+    `shift + 1` times (count tested last), else 0."""
+    data = sid.data
+    for k in range(at, min(len(data), at + VIBRATO_GATE_WINDOW)):
+        if match_at(data, k, VIBRATO_SHIFT_LOOP_LAST):
+            return 1
+    return 0
+
+
+def _find_vibrato_dwell(sid: SidFile, at: int) -> bool:
+    """Whether the classic update after the split at file offset `at` holds
+    the counter on the bound for two updates (period `2 * bound + 1`)."""
+    data = sid.data
+    for k in range(at, min(len(data), at + VIBRATO_GATE_WINDOW)):
+        if any(match_at(data, k, shape) for shape in VIBRATO_DWELL_SHAPES):
+            return True
+        if (match_at(data, k, VIBRATO_DWELL_BARE_SHAPE)
+                and k + VIBRATO_DWELL_BARE_LEN < len(data)
+                and data[k + VIBRATO_DWELL_BARE_LEN]
+                not in VIBRATO_DWELL_STEP_BACK):
+            return True
+    return False
 
 
 # --- The table-driven vibrato ----------------------------------------------

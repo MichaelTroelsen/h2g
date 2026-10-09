@@ -17,7 +17,10 @@ from .primitives import (_counter_gate_call, _rate_shift)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 def _classic_vibrato_entry(byte: int, multiplier: int,
-                           row_calls: int = 0) -> Optional[tuple]:
+                           row_calls: int = 0,
+                           gate_skip: Optional[int] = None,
+                           dwell: bool = False,
+                           depth_extra: int = 0) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the $78/$07 format.
 
     The mapping is close to literal because both sides express the depth the
@@ -84,8 +87,45 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       The counter's period is `2 * bound` in 54 of the 61 files and
       `2 * bound + 1` in seven (Mozart and the `$1003` family: Go_Go_Dash,
       Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE,
-      Sun_Never_Shines), whose update holds the bound for two frames;
-      `half = bound * multiplier` below takes the first for all of them.
+      Sun_Never_Shines), whose update holds the bound for two updates;
+      `half = bound * multiplier` below takes the first for all of them,
+      except where `dwell` is set (`Detection.vibrato_dwell`, which only
+      Mozart reads in the converter: the other six resolve no classic
+      vibrato at all).
+
+      **The update does not run once a frame in a player whose outer gate
+      stops the whole play routine** (mozart-classic-vibrato-file-wide-rate,
+      v0.5.517; figures historical). Mozart's `$0829 DEC $0C33 / BPL /
+      LDA #$02 / STA $0C33 / RTS` runs the update on two calls in three, so
+      an update lasts 3/2 frames, and with the two-update dwell its half-
+      period is `(bound + 1/2) * 3/2` frames. The entry said `bound`: voice
+      0's bound-3 records read a 3-frame half-period against the original's
+      5.0 (401 cycles in 180 s against 128). `gate_skip` (the gate's reload
+      `O`, for a player `call_phase.entry_gate` accepts) stretches `half` by
+      `(O + 1) / O` and `dwell` by `(2 * bound + 1) / (2 * bound)`; the
+      shift takes `log2` of the whole call rate, as it always did for the
+      multiplier. Ablated one cause at a time on those records (half-period
+      frames ours, original 5.0): neither 3.0, skip alone 5.0, dwell alone
+      4.0, both 5.0; cycles 401 / 144 / 188 / 127. A gate that guards only
+      the pattern clock (the JMP spelling) leaves the update running every
+      frame and is not this: seven classic-vibrato files qualify
+      (International_Karate, Kentilla, Las_Vegas_Video_Poker, Mozart,
+      Proteus, Thrust, Warhawk); the other 48 are unchanged byte for byte.
+
+      **Mozart's depth loop shifts `shift + 1` times** (`LSR / ROR / DEC
+      cnt / BPL` tests its count last, where Las_Vegas' `DEC cnt / BMI /
+      LSR / ROR / JMP` tests it first), so its depth is `interval >> (shift
+      + 1)` and its swing `bound` of those. `depth_extra` (1 for that loop,
+      `Detection.vibrato_shift_extra`) puts the shift on the emitted `cmp`
+      instead of on the multiplier: `rshift = shift + depth_extra +
+      round(log2((cmp + 2) / bound))`, the swing `(cmp + 2) * speed` matched
+      to `bound` depths in log space. Mozart's file `depth` 1.42 -> 1.10,
+      `bend` 1.48 -> 0.79, `vib` 2.26 -> 1.62 at -t 180; melody, sequence,
+      wave, ADSR and gate flat. What remains of `vib` is not this entry's
+      rate: voices 1 and 2 add voice 0's counter (above; voice 2's $4820,
+      339 notes, now reads 115 cycles against 317 where its own bound 5 had
+      matched the count by accident), and voice 1's $3800 swings 23 depths,
+      which is no bound/shift vibrato (491 cycles against 207).
 
     * **Phase and centre, which Goattracker cannot carry.** Two properties
       of that loop have no speed-table encoding. Both are measured, not
@@ -230,6 +270,20 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
         return None
     shift = byte & VIBRATO_SHIFT_MASK
     half = bound * multiplier
+    # How many of OUR calls one of the player's updates lasts, beyond
+    # `multiplier`. Both factors are 1 in every file but the ones that read
+    # them, so every other entry is the byte it always was.
+    stretch = 1.0
+    if dwell:
+        # The counter sits on the bound for two updates: a period of
+        # `2 * bound + 1`, so the mean half-period is `bound + 1/2`.
+        stretch *= (2 * bound + 1) / (2 * bound)
+    if gate_skip:
+        # The outer gate returns without running the update on one call in
+        # `O + 1`, so an update lasts (O + 1) / O frames.
+        stretch *= (gate_skip + 1) / gate_skip
+    if stretch != 1.0:
+        half = half * stretch
     # `row_calls` is what `build_sng` receives, which `convert` passes as
     # `short_row_calls` -- the file's *shortest* row, not `_scaled_step`'s
     # longest. Exact on the 44 of these 55 files that write one row length,
@@ -247,7 +301,21 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
     # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
     # shortest is two calls (cmp 0), which is what the clamp gives.
     cmp_value = min(0x7F, max(0, round(half) - VIBRATO_CMP_BIAS))
-    rshift = min(shift + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    if depth_extra:
+        # The depth loop shifts `shift + 1` times, so the player's depth is
+        # `interval >> (shift + 1)` and its swing `bound` of those. Ours is
+        # `(cmp + 2) * (interval >> rshift)`, so the shift that matches the
+        # two is read off the cmp ACTUALLY emitted -- which already carries
+        # the stretch and the tick-0 compensation -- and rounded in log space.
+        calls = cmp_value + VIBRATO_CMP_BIAS
+        rshift = shift + depth_extra + round(math.log2(calls / bound))
+    else:
+        # The depth is the same quantity per update, so a longer half-period
+        # must be paid for in the shift or the swing grows by the stretch.
+        # `_rate_shift` rounds log2 of the whole call rate, the way it always
+        # has for the multiplier alone.
+        rshift = shift + _rate_shift(multiplier * stretch)
+    rshift = min(max(rshift, 0), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
@@ -837,8 +905,18 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
                     speed_table: List[tuple], log=None,
                     lead: int = 1, vibrato_command: bool = False,
-                    row_calls: int = 0, effects: bool = False) -> dict:
+                    row_calls: int = 0, effects: bool = False,
+                    gate_skip: Optional[int] = None) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    `gate_skip` is the reload `O` of an outer gate that is the play routine's
+    first instruction with nothing else on its underflow call -- `build_sng`
+    passes `outer_gate_skip(sid)` for a player `call_phase.entry_gate`
+    accepts, None for every other. Such a player runs the classic update on
+    `O` calls in `O + 1`, so one update lasts `(O + 1) / O` frames
+    (`_classic_vibrato_entry`). A gate that guards only the pattern clock
+    leaves the update running every frame, which is why the reload alone is
+    not the question.
 
     **A fixed-interval arpeggio record gets no vibrato where its mask is a
     duty cycle.** The player's octave block writes the frequency from the
@@ -891,7 +969,9 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     mult = max(1, multiplier)
     if det.vibrato_offset is not None:
         offset = det.vibrato_offset
-        entry_of = lambda b: _classic_vibrato_entry(b, mult, row_calls)
+        entry_of = lambda b: _classic_vibrato_entry(
+            b, mult, row_calls, gate_skip=gate_skip, dwell=det.vibrato_dwell,
+            depth_extra=det.vibrato_shift_extra)
         engine = "bound/shift"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset

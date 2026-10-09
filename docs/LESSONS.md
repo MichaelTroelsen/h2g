@@ -1582,9 +1582,10 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **72 zero / 17 drifting of 89 rows** (95
-    traced, 89 measured, all 89 with a fit; re-graded at v0.5.513 against
-    that refresh's `build/fidelity.json` -- it read 69 / 20 from v0.5.495,
+  * **The drift split at 180 s is **73 zero / 16 drifting of 89 rows** (95
+    traced, 89 measured, all 89 with a fit; re-graded at v0.5.517 against
+    that refresh's `build/fidelity.json`, where Rasputin's drift went to 0
+    (`rasputin-clock-drift`) -- it read 72 / 17 from v0.5.513, 69 / 20 from v0.5.495,
     whose refresh gave the last two rows a fit, 68 / 19 / 87 from v0.5.489
     and 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86 at 60 s (v0.5.495,
     when one file crossed).** `drift_per_1000` is an INTEGRATED offset and so the most
@@ -3200,7 +3201,7 @@ Historical figures from the run records, under presets unless stated.
 * **`tie_restart` was held, then re-adopted** (`tie-restart-adoption-review`). Adopted corpus-wide by the v0.5.514 presets regeneration it failed 8 tests pinned under the shipped presets, so v0.5.515 moved it to `presets.EXCLUDED_FROM_ALWAYS`. Traced one by one: 5 walked instruments assuming nothing is appended past the written records (the legato clones and decoys carry gatetimer bit 6), 1 pinned the declined spelling, and 2 (Thing_on_a_Spring g0v0, Devils_Galop g0v2, forced `pulse_phase`) lost a `CMD_SETPULSEPTR` while the packed width at the attack was still the planned one by `_reach`'s own rule. None was a regression in what the original plays; re-adopted at v0.5.516.
 * **The first adoption's other changes were presets.py's own size search**, not hand-chosen: the v0.5.514 regeneration (the first after `drop_unplayed_patterns` and the rest of the drain landed; which change made each choice flip was not traced) turned `prune` on for 15 songs, raised `max_rows` 94 -> 128 on 6 and turned `dedup` on for Bangkok_Knights. Four tests pinned to the old settings were re-pinned with the reason (Flash_Gordon's split sources renumbered, Monty voice 1 reaching 61 of 61).
 
-## The 0.5.517 drain (2026-10-07, at 39b5de2)
+## The 0.5.517 drain (2026-10-07, at 39b5de2, committed as 3ea1cac)
 
 Historical figures from the run records, `-t 180`, under presets unless stated.
 
@@ -3211,3 +3212,14 @@ Historical figures from the run records, `-t 180`, under presets unless stated.
 * **Kings_of_the_Beach_ingame's gate fall is `5tt-multirate-subtunes` alone** (`kotb-898b491-patch-bisect`; the paragraph headed "BISECTED at 39b5de2" above).
 * **Mega_Apocalypse adopts `pitch_seq`** (`mega-0a06-frame-2-pitch-move`): reversal_ratio 0.722 -> 0.883, tie_agreement 0.579 -> 0.630, melody, sequence and pitch unchanged. Applied by the main lane DURING the fan-out, it made every agent's `test_output_sha` fail on Mega_Apocalypse -- by construction, not their change.
 * Not merged: `mozart-vibrato-voice-zero-counter`'s shared-counter model (per-record swing 0.653 -> 0.108, but file-level vib 2.26 -> 2.76) is held for a user decision.
+
+## The 0.5.518 drain (2026-10-09, at faef27d)
+
+Historical figures from the run records, `-t 180`, under presets unless stated.
+
+* **A classic-vibrato counter update is not one frame on an entry-gate player** (`mozart-classic-vibrato-file-wide-rate`). Mozart's play routine skips 1 call in 3 (`$0829 DEC $0C33 / BPL`), its update holds the bound for two updates (period 2b+1), and its depth loop tests the count last, so it shifts `shift + 1` times. `_classic_vibrato_entry` now models all three (`gate_skip`, `dwell`, `depth_extra`; `detect.vibrato_dwell`, `detect.vibrato_shift_extra`). Turned off one at a time, the skip alone or the dwell alone does not match; both together give the original's 5-frame half-period. Mozart vib 2.264 -> 1.615, bend 1.476 -> 0.786, melody/sequence flat. The 7 entry-gate classic-vibrato files move; Thrust's bend goes the wrong way (2.54 -> 2.79). The rest of Mozart's vib is voices 1/2 adding voice 0's counter (`mozart-vibrato-voice-zero-counter`, still held).
+* **Per-row clock placement for fractional rows** (`fraction-runs-per-row-clock-placement`): on the restarted-clock path `_fraction_runs` deals 8-row stretches (`FRACTION_CLOCK_CHUNK_ROWS`) against the player's per-row cost. Rasputin voice 2's worst gap 9.0 -> 6.0 calls, rows 7+ calls out 15 -> 0, drift still 0. It costs patterns: 117 -> 166 of 208, 23912 -> 30365 bytes.
+* **`regrid_per_play`'s greedy pass needs a repair** (`regrid-per-play-greedy-shortfall`): a pattern replayed later doubles its first visit's rows and starves its neighbours. Lowering one exclusive pattern and refilling the rest takes Star_Paws from 135 to 147 of 147.28 owed calls. Still off by default; 0 movers under presets.
+* **Two new fidelity columns, harness only**: `otime` (`onset-timing-column`) pairs each lag-shifted original attack with ours within +-2 frames and reads Food_Feud 0.668, all misses late, where `onset` reads 1.000 -- the call-phase offset `onset` cannot see. `band` (`fidelity-passband-agreement-column`) scores frames where both sides route a voice under the same $D418 passband.
+* **Kings_of_the_Beach_ingame's gate fall is a correct fix the column penalises** (`kotb-5tt-multirate-gate-diagnose`): the `own_row_calls` key correction swaps two gatetimers (0x84/0x86), giving instrument 5 its own 8-call row and a 4-call hard restart (1.33 frames) against the original's 2-4 frame gate-off. `max_hard_restart` + `hard_restart_frames 3` recovers s4 gate .711 -> .930.
+* Not merged: `multispeed-call-phase-one-call-earlier`'s `startup_early` shifts every onset window by exactly one call (gate_off_firstwave turns into a gain on Food_Feud and 6 others) but would be adopted corpus-wide, moving 42 files, with Rock_Tells_the_Tale's melody down 0.042. Held for an adoption decision.
