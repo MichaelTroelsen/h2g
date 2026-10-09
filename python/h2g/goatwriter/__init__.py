@@ -33,7 +33,7 @@ from ..sidfile import GT_FREQ0, SidFile, find_freq_table
 from .constants import (_ABS_X_LOAD, _ADJACENT_TABLE_WINDOW, ARP_HEAD_FRAMES,
                         ARP_MAX_STEPS, BEQ, BNE, CLASSIC_TIE_START_SHAPES,
                         CLASSIC_TIE_START_WINDOW, CMD_SETAD, CMD_SETFILTERCTRL,
-                        CMD_SETFILTERPTR, CMD_SETPULSEPTR, CMD_SETSR,
+                        CMD_SETFILTERPTR, CMD_SETFILTERCUTOFF, CMD_SETPULSEPTR, CMD_SETSR,
                         CMD_SETTEMPO, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         CMD_FUNKTEMPO, FUNK_ROW_CALLS, FUNK_SPEED_ENTRY,
                         CMD_VIBRATO, DEFAULT_FORMAT, DRUM_DEEPEN_MARGIN,
@@ -157,6 +157,7 @@ from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     _tri_turns, _nearest_ticks, _lattice_legs,
                     triangle_start, TriangleStart, _write_pulsetable)  # noqa: F401
 from .filters import (_clamp_frames, _clamped_block, _free_running_block,
+                      free_running_start, _pattern_bytes, _entry_position,
                       _classic_clearing_instruments, _filter_entries,
                       _filter_step_per_call, _highest_instrument_referenced,
                       _ilv_clearing_instruments, _ilv_filter_entries,
@@ -194,11 +195,16 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _tied_instrument_envelopes, _vibrato_command_pass)  # noqa: F401
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
+from .filters import (FETCH_HOLD_BACK, _FETCH_TAIL, _FETCH_TAIL_JMP,
+                      _FILTER_BLOCK_LEN, _VOICE_LOOP_DOWN, _fetch_hold_pattern,
+                      _fetch_hold_plan, free_running_fetch_hold_voice,
+                      free_running_fetch_holds)  # noqa: F401
 from .vibrato import (CLASSIC_DEPTH_CMP_TRIM, _classic_gate_delay,
                       _classic_gate_refine, _depth_trimmed,
                       _classic_vibrato_entry, _effect_call_list, _effect_calls,
                       _free_gate_calls, _gate_start_call, _step_calls,
-                      _table_vibrato_entry, _triangle_vibrato_entry,
+                      _table_vibrato_entry, _triangle_rate_shift,
+                      _triangle_vibrato_entry,
                       _vibrato_delay, _vibrato_layout)  # noqa: F401
 from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)  # noqa: F401
 from .notes import (_drum_steps_safe, _phase_note, _pitch_seq_entries,
@@ -261,6 +267,12 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
                          STARTUP_RESET_CALLS, StartupPhase,
                          GATE_OFF_FIRSTWAVE)  # noqa: F401
+from .wave_eor import (_hold, _is_drum, _plays, _record_effect, _row_tempos,
+                       carry_split_edits, eor_records, EorPhase, GT_KEYON,
+                       NO_TOGGLE, note_parities, WAVE_EOR_ARP_BIT,
+                       WAVE_EOR_DRUM_BIT, WAVE_EOR_EFFECT_BIT,
+                       wave_eor_block, wave_eor_note_residues,
+                       wave_eor_split_plan)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _record_numbers,
                     _restart_heard, _resolve_arp_pointers,

@@ -205,10 +205,13 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
     # lay the same table out with a phase clone in its place.
     kw2 = dict(kw)
     kw2["tie_blocks"], kw2["tie_block_starts"] = None, None
-    kw2["phase_clones"] = [(record, 99, residue)]
+    # Rasputin's own EOR phase split (`wave_eor_split_plan`) already lays
+    # clones out ahead of the tie block, so the stand-in goes after them.
+    kept = list(kw.get("phase_clones") or [])
+    kw2["phase_clones"] = kept + [(record, 99, residue)]
     kw2["phase_clone_starts"] = clone_starts = []
     entries2, _starts2, _a2 = real(*args, **kw2)
-    assert clone_starts == [at]
+    assert clone_starts[len(kept):] == [at]
     assert entries2[at - 1:] == entries[at - 1:]
     own = starts[record - 1] - 1                     # not the record's block
     assert entries[at - 1:at - 1 + 6] != entries[own:own + 6]

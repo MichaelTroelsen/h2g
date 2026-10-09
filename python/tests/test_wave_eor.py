@@ -1,12 +1,12 @@
-"""Effect bit $02's EOR dialect (Rasputin $C35A): detected, logged, NOT emitted.
+"""Effect bit $02's EOR dialect (Rasputin $C35A): the reading and its population.
 
 The block EORs `#$18` into the voice's stored waveform every second effect
-call on a per-voice counter nothing else writes, so its phase is per note --
-and every emission of it measured below the base on Rasputin's `wave` column,
-the per-note-correct one included, because of the file's clock drift. The
-numbers are at `detect.WAVE_EOR_SHAPE`. These tests pin the reading, its
-population and the decline, so emitting it is a decision someone has to make
-against that A/B rather than a side effect.
+call on a per-voice counter nothing else writes, so its phase is per note.
+Every emission first measured below the base on Rasputin's `wave` column,
+because of the file's clock drift; once the drift was repaired it is emitted
+per note by `goatwriter.wave_eor` (tests/test_wave_eor_emit.py, the A/B at
+`detect.WAVE_EOR_SHAPE`). These tests pin the reading and its population,
+and that `_wavetable_entries` alone -- with no residue -- does not toggle.
 """
 import dataclasses
 from pathlib import Path
@@ -106,9 +106,9 @@ def test_the_mask_is_read_from_the_block():
 
 @pytest.mark.parametrize("record,toggled", [(4, 0x5B), (10, 0x59)])
 def test_the_block_is_not_emitted(record, toggled):
-    """The decline, pinned: neither record's wavetable carries the toggled
-    waveform at Rasputin's -S2. Emitting it lowered `wave` on every arm
-    measured (`detect.WAVE_EOR_SHAPE`); change this only with a new A/B."""
+    """Neither record's own `_wavetable_entries` carries the toggled
+    waveform at Rasputin's -S2: the toggle is laid over it per residue by
+    `wave_eor.wave_eor_block` in the layout, never inside it."""
     sid, det = _rasputin()
     left, _ = _wavetable_entries(sid, det, record, True, "gts5", [], 2,
                                  start=1, budget=40)

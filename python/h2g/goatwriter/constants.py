@@ -1275,6 +1275,7 @@ ILV_FILTER_ROUTING = 0x07
 # from its restart, with commands placed only on an occurrence's FIRST play.
 CMD_SETFILTERPTR = 0x0A     # gcommon.h:14
 CMD_SETFILTERCTRL = 0x0B    # gcommon.h:15
+CMD_SETFILTERCUTOFF = 0x0C  # gcommon.h:16; gplay.c `filtercutoff = newcmddata`
 # The params-row value a passband-restore copy opens with ("restore" mode)
 # when nothing is routed and the resonance nibble is 0. A table row, not a
 # `B`, so it stops nothing; with no voice routed the resonance is inaudible.

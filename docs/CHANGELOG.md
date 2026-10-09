@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.523 — 2026-10-09
+
+- runqueue cycle 6 at 862f703 -- 7 subtasks, 5 worktree patches merged (sigma-seven fetch hold + start, past-table transpose clones, Knucklebusters boundary-tie slide, Rasputin EOR toggle, Game_Killer triangle period per the user); tarzan and ilv-86 read-only; 8 converted files move under presets, exactly the union the agents reported
+
 ## 0.5.522 — 2026-10-09
 
 - runqueue cycle 5: past-table split by note row, skydive carry, Knucklebusters FD tempo, Las_Vegas depth trim

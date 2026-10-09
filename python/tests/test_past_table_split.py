@@ -56,7 +56,8 @@ def _song(pattern_rows, *, vibrato=0, trans=0, extra_tracks=(), wave=None,
 
 
 # Tests that convert real files and so must read the real cells.
-_CORPUS_TESTS = ("test_5_title_tunes", "test_no_note_row", "still_open")
+_CORPUS_TESTS = ("test_5_title_tunes", "test_no_note_row",
+                 "test_shared_patterns")
 
 
 @pytest.fixture(autouse=True)
@@ -135,14 +136,71 @@ def test_a_vibrating_row_that_ends_its_pattern_is_left_alone():
     assert len(song.instruments) == 1
 
 
-def test_a_row_played_under_two_transposes_that_disagree_is_left_alone():
-    """Pattern 0 is played at +0 (85 + 12 = 97) and 14 semitones down (83)."""
+_TWO_TRANSPOSES = [bytes([0, 0xFF, 0]), bytes([0xF0 - 14, 0, 0xFF, 0]),
+                   bytes([0, 0xFF, 0])]
+
+
+def test_a_row_played_under_two_transposes_gets_its_own_pattern():
+    """Pattern 0 is played at +0 (85 + 12 = 97) and 14 semitones down (83):
+    the two visits at +0 point at a copy that takes the pointer, the visit
+    that reads inside the table keeps the original."""
     song = _song([_row(_note(85), 1), _row(_note(60), 1)],
-                 extra_tracks=[bytes([0, 0xFF, 0]), bytes([0xF0 - 14, 0, 0xFF, 0]),
-                               bytes([0, 0xFF, 0])])
+                 extra_tracks=_TWO_TRANSPOSES)
+    before = bytes(song.patterns[0])
+    changed, log = _split(song)
+    assert changed and "1 pattern cop" in log[0]
+    assert len(song.patterns) == 2
+    assert bytes(song.patterns[0]) == before            # the original, untouched
+    assert list(song.patterns[1][0:4]) == [_note(85), 1, 8, 4]
+    assert song.tracks[0] == bytes([1, 0xFF, 0])
+    assert song.tracks[1] == _TWO_TRANSPOSES[1]         # reads inside the table
+    assert song.tracks[2] == bytes([1, 0xFF, 0])
+    assert len(song.tables[0]) == 6
+
+
+def test_visits_that_overflow_alike_share_one_copy():
+    song = _song([_row(_note(85), 1)],
+                 extra_tracks=[bytes([0, 0xFF, 0]), bytes([0, 0xFF, 0]),
+                               bytes([0xF0 - 14, 0, 0xFF, 0])])
+    _split(song)
+    assert len(song.patterns) == 2
+    assert song.tracks[0] == song.tracks[1] == bytes([1, 0xFF, 0])
+
+
+def test_a_copy_nothing_uses_is_taken_back_out():
+    """The overflowing visit's row has its command column in use, so the
+    copy would only be a duplicate: no pattern, no orderlist change."""
+    song = _song([_row(_note(85), 1, 1, 0x20), _row(_note(60), 1)],
+                 extra_tracks=_TWO_TRANSPOSES)
+    tracks = list(song.tracks)
+    changed, log = _split(song)
+    assert not changed and "1 with the command column in use" in log[0]
+    assert len(song.patterns) == 1 and song.tracks == tracks
+
+
+def test_the_surviving_copy_is_renumbered_when_an_earlier_one_goes():
+    """Patterns 0 (busy column) and 1 (free) both want a copy, numbered 2
+    and 3; pattern 0's goes, so pattern 1's becomes pattern 2."""
+    song = _song([_row(_note(85), 1, 1, 0x20), _row(_note(60), 1)],
+                 extra_tracks=[bytes([0, 1, 0xFF, 0]),
+                               bytes([0xF0 - 14, 0, 1, 0xFF, 0]),
+                               bytes([0xF0 - 14, 0, 1, 0xFF, 0])])
+    song.patterns.append(bytearray(
+        b for row in [_row(_note(85), 1), _row(_note(60), 1)] for b in row))
+    changed, _log = _split(song)
+    assert changed and len(song.patterns) == 3
+    assert song.tracks[0] == bytes([0, 2, 0xFF, 0])     # restart byte untouched
+    assert list(song.patterns[2][0:4]) == [_note(85), 1, 8, 4]
+    assert list(song.patterns[0][0:4]) == [_note(85), 1, 1, 0x20]
+
+
+def test_no_copy_past_the_pattern_limit():
+    song = _song([_row(_note(85), 1), _row(_note(60), 1)],
+                 extra_tracks=_TWO_TRANSPOSES)
+    song.patterns.extend(bytearray(8) for _ in range(W.MAX_PATTERNS - 1))
     changed, log = _split(song)
     assert not changed and "contexts that disagree" in log[0]
-    assert len(song.tables[0]) == 3
+    assert len(song.patterns) == W.MAX_PATTERNS
 
 
 def test_an_existing_pointer_row_is_retargeted():
@@ -318,22 +376,38 @@ def _unpinned(blob, sid, det):
     "5_Title_Tunes.sid", "Crazy_Comets.sid", "Formula_1_Simulator.sid",
     "Gerry_the_Germ.sid", "Nineteen.sid", "One_Man_and_his_Droid.sid",
     "Star_Paws.sid", "Thing_on_a_Spring.sid",
-    "Trans-Atlantic_Balloon_Challenge.sid"])
+    "Trans-Atlantic_Balloon_Challenge.sid",
+    "Saboteur_II.sid", "Rock_Tells_the_Tale.sid"])
 def test_no_note_row_is_left_on_a_layout_dependent_cell(name):
-    """Every view the file converts, after the pass: the nine corpus files
-    whose rows could be split have none left."""
+    """Every view the file converts, after the pass: the eleven corpus files
+    whose rows could be split have none left. The last two share a pattern
+    between orderlist transposes, so the pattern is copied."""
     _out, seen = _corpus_convert(name)
     assert seen and all(_unpinned(a, sid, det) == 0
                         for _b, a, sid, det in seen)
 
 
-@pytest.mark.parametrize("name", ["Saboteur_II.sid", "Rock_Tells_the_Tale.sid"])
-def test_rows_played_under_disagreeing_transposes_are_still_open(name):
-    """Left on the relative step, counted: the same pattern row is inside the
-    table under one orderlist transpose and past it under another, and only a
-    cloned pattern could say both. A queue entry, not a pass."""
+@pytest.mark.parametrize("name,copies", [("Saboteur_II.sid", 3),
+                                         ("Rock_Tells_the_Tale.sid", 2)])
+def test_shared_patterns_under_two_transposes_are_copied(name, copies):
+    """The same pattern row is inside the table under one orderlist
+    transpose and past it under another; the visits that overflow play a
+    copy, only the orderlist entries and the new patterns change."""
     _out, seen = _corpus_convert(name)
-    assert any(_unpinned(a, sid, det) for _b, a, sid, det in seen)
+    changed = [(a, b) for a, b, _s, _d in seen if a != b]
+    assert changed, "the pass never split a step"
+    for old_blob, new_blob in changed:
+        old, new = _parse_song(old_blob), _parse_song(new_blob)
+        assert len(new.patterns) == len(old.patterns) + copies
+        assert new.patterns[:len(old.patterns)] == old.patterns   # originals kept
+        assert new.tables[0][:len(old.tables[0])] == old.tables[0]
+        assert new.instruments == old.instruments
+        assert len(new.patterns) <= W.MAX_PATTERNS
+        assert new.tracks != old.tracks
+        assert all(len(o) == len(n) for o, n in zip(old.tracks, new.tracks))
+        for copy in new.patterns[len(old.patterns):]:
+            assert any((copy[k + 2] & 0x0F) == 8 and copy[k + 3] > len(old.tables[0])
+                       for k in range(0, len(copy), 4))     # each takes a pointer
 
 
 def test_the_split_can_be_switched_off():

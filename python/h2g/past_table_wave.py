@@ -73,9 +73,23 @@ replaces the instrument's wave pointer on the note's first call and leaves
 the instrument alone otherwise (`note_passes._attack_hold_pass`), so no
 instrument is cloned and no later row needs restoring. A row is left
 on the relative step, counted in the log, when its command column is taken,
-when the contexts that play it disagree (a shared pattern under two
-transposes), when the copy does not fit the wavetable, or when the pattern
-would pack past `PACKED_PATTERN_LIMIT`.
+when the contexts that play it disagree and the pattern cannot be copied,
+when the copy does not fit the wavetable, or when the pattern would pack
+past `PACKED_PATTERN_LIMIT`.
+
+**One pattern, two transposes.** A pattern the orderlist plays under
+different transposes (or with a different instrument or note latched on
+entry) can send a row past the table on one visit and not on another, and
+one row cannot say both. Measured on Saboteur_II (pattern 28, played at +0
+and at +9/+7/+5: 20 rows) and Rock_Tells_the_Tale (patterns 43 and 44, +0
+and +12: 3 rows). `_split_patterns` gives each distinct set of overflowing
+rows its own copy of the pattern and repoints the orderlist entries that
+play it; the visits with nothing to pin keep the original. A copy no plan
+ends up editing is taken back out (`_drop_unused_clones`), so a file whose
+rows cannot be split pays nothing for the attempt. Patterns stop at
+`patterns.MAX_PATTERNS`. The cells matter only late in these tunes (the
+first differing frame is 9820 of 45000 at 900 s, past FIDELITY's 180 s
+window), which is why a 180 s layout comparison reads clean either way.
 
 Last, on the finished bytes, beside the other finished-bytes passes
 (`instrument_drop`), and before `_append_players`: the cells are read in
@@ -92,6 +106,7 @@ from .goatwriter.appending import _parse_song, _write_song
 from .goatwriter.constants import (CMD_VIBRATO as _CMD_VIBRATO, GT_MAX_TABLELEN,
                                   GT_TEMPO_INSTRUMENT, PACKED_PATTERN_LIMIT)
 from .goatwriter.pulse import packed_pattern_size, pattern_rows
+from .patterns import MAX_PATTERNS
 
 # Goattracker's frequency table length (gcommon.h:37 MAX_NOTES).
 GT_NOTES = 96
@@ -103,6 +118,7 @@ _KEEP = 0x80                               # right $80: no frequency change
 _VIBRATO_AT = 5                             # an instrument record's speed-table pointer
 # Instrument 63 is the startup row `instrument_drop.add_startup_tempo` adds.
 _MAX_SONG_INSTRUMENTS = GT_TEMPO_INSTRUMENT - 1
+_ORDER_REPEAT = 0xD0                        # orderlist: below this, a pattern
 
 # Held by PSID name -- see the module docstring.
 HELD = frozenset({"Commando"})
@@ -194,19 +210,18 @@ def _pin_target(sid, det, note: int, right: int) -> Optional[int]:
     return target if target < GT_NOTES else None
 
 
-def _reach(song) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
-    """{(pattern, byte offset of the row): [(wave row the row starts, note
-    it is played at, instrument latched at the row), ...]}, one entry per
-    orderlist visit.
+def _walk(song):
+    """(track number, orderlist position, pattern, [(byte offset of a row,
+    wave row it starts, note it is played at, instrument latched at it),
+    ...]) for every orderlist visit of every pattern.
 
     The walk of `_contexts`, but a note row that carries its own
     `CMD_SETWAVEPTR` starts only that program: the pointer replaces the
     instrument's before its first step runs."""
     count = len(song.instruments)
-    out: Dict[Tuple[int, int], List[Tuple[int, int, int]]] = defaultdict(list)
-    for track in song.tracks:
+    for ti, track in enumerate(song.tracks):
         trans, instr, note = 0, 1, None
-        for b in track[:-1]:
+        for pos, b in enumerate(track[:-1]):
             if b == 0xFF:
                 break
             if 0xE0 <= b < 0xFF:
@@ -215,6 +230,7 @@ def _reach(song) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
             if 0xD0 <= b < 0xE0 or b >= len(song.patterns):
                 continue
             pat = song.patterns[b]
+            rows = []
             for k in range(0, len(pat) - 3, 4):
                 nt, ins, cmd, data = pat[k:k + 4]
                 if ins:
@@ -227,8 +243,87 @@ def _reach(song) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
                 if (cmd & 0x0F) == _CMD_SETWAVEPTR and data and note is not None:
                     start = data
                 if start is not None and note is not None:
-                    out[(b, k)].append((start, note, instr))
+                    rows.append((k, start, note, instr))
+            yield ti, pos, b, rows
+
+
+def _reach(song) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
+    """{(pattern, byte offset of the row): [(wave row the row starts, note
+    it is played at, instrument latched at the row), ...]}, one entry per
+    orderlist visit (see `_walk`)."""
+    out: Dict[Tuple[int, int], List[Tuple[int, int, int]]] = defaultdict(list)
+    for _ti, _pos, b, rows in _walk(song):
+        for k, start, note, instr in rows:
+            out[(b, k)].append((start, note, instr))
     return out
+
+
+def _split_patterns(song, sid, det, cache: dict) -> Dict[int, int]:
+    """Give each orderlist visit of a pattern its own copy where the visits
+    disagree about which rows overflow the table and how (a shared pattern
+    under two orderlist transposes: row 12 plays note 85 + 12 = 97 under one
+    and 83 + 12 under the other). Edits `song`; {new pattern: the pattern it
+    copies}.
+
+    A visit's signature is the `_split_key` and instrument of each row whose
+    program overflows, so visits that differ only in rows that read inside
+    the table share a pattern. The group with no overflowing row keeps the
+    original (it needs no change); with none such, the largest does. Whatever
+    the pass cannot use is taken back out by `_drop_unused_clones`."""
+    groups: Dict[int, Dict[tuple, List[Tuple[int, int]]]] = defaultdict(dict)
+    for ti, pos, b, rows in _walk(song):
+        sig = []
+        for k, start, note, instr in rows:
+            key = _split_key(song, sid, det, start, note, cache)
+            if key is not None:
+                sig.append((k, key, instr))
+        groups[b].setdefault(tuple(sig), []).append((ti, pos))
+    made: Dict[int, int] = {}
+    tracks = [bytearray(t) for t in song.tracks]
+    for b in sorted(groups):
+        sigs = groups[b]
+        if len(sigs) < 2:
+            continue
+        host = min(sigs, key=lambda s: (bool(s), -len(sigs[s]), s))
+        for sig in sorted(sigs, key=lambda s: (-len(sigs[s]), s)):
+            if sig == host:
+                continue
+            if len(song.patterns) >= MAX_PATTERNS:
+                break
+            song.patterns.append(bytearray(song.patterns[b]))
+            made[len(song.patterns) - 1] = b
+            for ti, pos in sigs[sig]:
+                tracks[ti][pos] = len(song.patterns) - 1
+    song.tracks[:] = [bytes(t) for t in tracks]
+    return made
+
+
+def _drop_unused_clones(song, made: Dict[int, int], edited) -> int:
+    """Point the visits of every clone in `made` that no plan edited back at
+    the pattern it copies, and remove it. Clones are the last patterns in
+    the song, so the survivors renumber in order. Returns how many went."""
+    gone = {c for c in made if c not in edited}
+    if not gone:
+        return 0
+    number, kept = {}, min(made)
+    for c in sorted(made):
+        if c in gone:
+            number[c] = made[c]
+        else:
+            number[c] = kept
+            kept += 1
+    song.patterns[:] = [p for i, p in enumerate(song.patterns) if i not in gone]
+    tracks = []
+    for track in song.tracks:
+        out = bytearray(track)
+        for pos, b in enumerate(track[:-1]):
+            if b == 0xFF:
+                break
+            if b < _ORDER_REPEAT:
+                out[pos] = number.get(b, b)
+        tracks.append(bytes(out))
+    song.tracks[:] = tracks
+    return len(gone)
 
 
 def _closure(wave: List[Tuple[int, int]],
@@ -358,6 +453,7 @@ def retarget_mixed_steps(song, sid, det,
         return False
     wave = song.tables[0]
     cache: dict = {}
+    made = _split_patterns(song, sid, det, cache)
     plans: Dict[Tuple[int, int], tuple] = {}
     conflict = busy = edge = 0
     for (b, k), visits in _reach(song).items():
@@ -384,6 +480,7 @@ def retarget_mixed_steps(song, sid, det,
         else:
             busy += 1
     if not plans:
+        _drop_unused_clones(song, made, ())
         if log and (conflict or busy or edge):
             log(f"Past-table wave split...: {conflict + busy + edge} note "
                 f"row(s) left on a relative step past the table ({conflict} "
@@ -437,6 +534,7 @@ def retarget_mixed_steps(song, sid, det,
         if not dropped and not too_big:
             break
     if not plans:
+        _drop_unused_clones(song, made, ())
         if log:
             log(f"Past-table wave split...: {noroom + over} note row(s) left "
                 f"on a relative step past the table ({noroom} wavetable or "
@@ -450,6 +548,7 @@ def retarget_mixed_steps(song, sid, det,
         song.instruments.append(rec)
     for b, pat in edited.items():
         song.patterns[b][:] = pat
+    copies = len(made) - _drop_unused_clones(song, made, {b for b, _k in plans})
     if log:
         steps = sorted({r for key in starts for r, _t in key[1]})
         pointed = sum(1 for p in plans.values() if p[0] == "ptr")
@@ -459,6 +558,8 @@ def retarget_mixed_steps(song, sid, det,
             f"by {len(clones)} instrument clone(s)); steps "
             f"{', '.join(map(str, steps))} read past the table on those "
             "notes and inside it on others"
+            + (f"; {copies} pattern cop(ies) for orderlist visits that disagree"
+               if copies else "")
             + (f"; {conflict} row(s) left (contexts disagree)" if conflict else "")
             + (f"; {busy} left (command column in use)" if busy else "")
             + (f"; {edge} left (ends its pattern)" if edge else "")

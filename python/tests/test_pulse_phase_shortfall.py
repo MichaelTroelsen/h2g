@@ -183,7 +183,9 @@ def test_both_unions_are_three_rows_short_and_the_shipped_table_keeps_22():
     at_limit = _pass(cap, groups)
     assert (len(at_limit[0]), at_limit[3], at_limit[4]) == (255, 1, 1)
     assert _pointer0(at_limit) == [22]
-    assert cap["use"][22] == max(cap["use"].values()) == 1344
+    # 1345 since v0.5.522's Gremlins initial_instrument preset (5681fc2):
+    # subtune 3's entry instrument adds one use of record 22; 1344 before.
+    assert cap["use"][22] == max(cap["use"].values()) == 1345
     entries, starts, index = cap["table"]
     assert len(entries) == 252
     assert sorted({k[0] for k in index}) == [3, 6, 7, 20]

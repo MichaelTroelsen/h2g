@@ -20,7 +20,8 @@ from .pulse import (_pulse_layout, _write_pulsetable)
 from .filters import (_classic_clearing_instruments, _filter_entries,
                       _highest_instrument_referenced,
                       _ilv_clearing_instruments, _ilv_filter_entries,
-                      ilv_filter_routing_plan, _write_filtertable)
+                      free_running_start, ilv_filter_routing_plan,
+                      _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _expanding_vibrato_counter, _expanding_vibrato_pass,
                           legato_tie_clones, legato_tie_rows, note_bit7_rows,
@@ -35,8 +36,10 @@ from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
+from . import filters as _gw_filters
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
+from . import wave_eor as _gw_wave_eor
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
@@ -89,7 +92,8 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                         no_test_restart, voice_two_stage, instr_voices,
                         gate_skip, real_firstwave_instruments,
                         wave_alternate=False, instr_row_calls=None,
-                        phases: Optional[tuple] = None):
+                        phases: Optional[tuple] = None,
+                        eor_phases: Optional[dict] = None):
     """`fixed_arp_phase_split_plan`'s `distinct`: whether a record's block
     at a residue differs from its block at its own (`_wavetable_layout`'s
     `phase_probe`, with the arguments `build_sng` lays the table out with).
@@ -124,7 +128,8 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                           pitch_phases=pitch_phases, phase_probe=probe,
                           arp_gate_phases=arp_gate_phases,
                           wave_alternate=wave_alternate,
-                          instr_row_calls=instr_row_calls)
+                          instr_row_calls=instr_row_calls,
+                          eor_phases=eor_phases)
         cache[(record, residue)] = bool(probe[0][2])
         return cache[(record, residue)]
     return distinct
@@ -541,6 +546,41 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                     for rec, res in sorted(failed)))
                 no_room |= failed
                 phase_split = None
+    # Bit $02's EOR toggle (Rasputin, `wave_eor.wave_eor_split_plan`): the
+    # phase is the voice's event parity and the period the note's tick, so a
+    # record's notes split evenly between two blocks and each gets the one
+    # its counter reads. In the phase split's slot, which no other plan
+    # takes on such a file, and BESIDE the tempo split, which Rasputin's
+    # duty arpeggios already make: its clones are numbered after that
+    # split's (they are written after them), its clones' records are left
+    # alone, and a pattern this plan copies gets that plan's edits too.
+    eor_phases = None
+    if phase_split is None and effects and det.wave_eor is not None:
+        aliases = ({c: r for r, c, _s in duty_split.clones}
+                   if duty_split is not None else {})
+        walked = _gw_wave_eor.wave_eor_note_residues(
+            sid, det, tracks, patterns, instr_used, lead, aliases)
+        if walked is not None:
+            eor_phases = walked[0]
+            phase_split = _gw_wave_eor.wave_eor_split_plan(
+                sid, det, tracks, patterns, instr_used, lead,
+                instr_used + 1 + (len(duty_split.clones)
+                                  if duty_split is not None else 0),
+                distinct=_arp_phase_distinct(
+                    sid, det, tracks, patterns, instr_used, effects, fmt,
+                    table, multiplier, min_notes, lead, two_stage, sfx_drum,
+                    wave_program, pitch_seq, note_rows, row_calls,
+                    no_test_restart, voice_two_stage, instr_voices,
+                    gate_skip, real_firstwave_instruments,
+                    wave_alternate=wave_alternate,
+                    instr_row_calls=instr_row_calls,
+                    eor_phases=eor_phases),
+                aliases=aliases,
+                exclude=frozenset(aliases) | frozenset(aliases.values()),
+                log=log)
+            if phase_split is not None and duty_split is not None:
+                duty_split.edits = _gw_wave_eor.carry_split_edits(
+                    tracks, phase_split.tracks, duty_split.edits)
     if phase_split is not None:
         tracks, patterns = phase_split.tracks, phase_split.patterns
     # The interleaved dialect's per-voice routing as CMD_SETFILTERCTRL
@@ -772,7 +812,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             voice_two_stage, instr_voices, gate_skip,
             real_firstwave_instruments, wave_alternate=wave_alternate,
             instr_row_calls=instr_row_calls,
-            phases=(arp_phases, arp_tie_rows, pitch_phases, arp_gate_phases))
+            phases=(arp_phases, arp_tie_rows, pitch_phases, arp_gate_phases),
+            eor_phases=eor_phases)
         tie_blocks = _tie_blocks_wanted(
             _tie_phase_verdicts(
                 sid, det, legato_rows, tracks,
@@ -821,7 +862,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # `hold_travel`): only where every note opens on the test bit, so the
         # tail's pitch the next note's init call inherits is never heard.
         hold_travel=not (no_test_restart or real_firstwave_instruments
-                         or gate_off_firstwave_instruments))
+                         or gate_off_firstwave_instruments),
+        eor_phases=eor_phases)
     # A counter-gated record whose plain program holds the frequency over
     # its gate's call gives the re-pitching steps back to the effects
     # (`_free_gate_calls`), before anything copies a record's block and
@@ -952,6 +994,15 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, tracks, reseeded = _gw_rest_reseed.rest_pulse_reseeds(
             sid, det, tracks, patterns, pulse_starts, instr_used, lead,
             multiplier, log)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
+    # A free-running filter sweep's accumulator starts at the file's byte, not
+    # at Goattracker's 0 (`free_running_start`). After every pass that fills a
+    # command column, so it only takes row 0 where nobody else did.
+    if (filters and filter_entries and filter_ptrs and det.filter is not None
+            and det.filter.free_running and det.filter.cutoff):
+        patterns, tracks, _placed, _skipped = free_running_start(
+            tracks, patterns, det.filter.cutoff, log)
         for at, track in zip(track_at, tracks):
             out[at:at + len(track)] = bytes(track)
     if pulse_plan is not None or reseeded:
@@ -1088,7 +1139,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 wave_alternate=wave_alternate,
                 instr_row_calls=instr_row_calls,
                 phases=(arp_phases, arp_tie_rows, pitch_phases,
-                        arp_gate_phases))
+                        arp_gate_phases),
+                eor_phases=eor_phases)
             laid = dict(zip(tie_blocks, tie_block_starts))
             clone_start = {(rec, res): at for (rec, _c, res), at
                            in zip(live_clones, phase_clone_starts)}
@@ -1299,6 +1351,23 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             # Its copies repoint orderlist positions: same length, same
             # place, as `rest_reseed`'s do.
             patterns, tracks = stair
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
+    # A free-running filter sweep holds for one call on every event its
+    # driving voice fetches, and a tie or a KEYOFF is an event that loads no
+    # instrument, so nothing holds it (`free_running_fetch_holds`). Last of
+    # the passes that fill a command column, so it takes only columns nobody
+    # else wanted; the instrument records are final here, clones included.
+    # One call is a whole frame only at -S1: the original's hold is a frame
+    # without a step, which above it is `multiplier` calls, not one.
+    if (filters and filter_entries and filter_ptrs and det.filter is not None
+            and det.filter.free_running and multiplier == 1):
+        hold_voice = _gw_filters.free_running_fetch_hold_voice(sid)
+        if hold_voice is not None:
+            ptr_of = {g: out[instr_at + 1 + (g - 1) * 25 + 4]
+                      for g in range(1, written_instr + 1)}
+            patterns, tracks, _held = _gw_filters.free_running_fetch_holds(
+                tracks, patterns, ptr_of, hold_voice, log=log)
             for at, track in zip(track_at, tracks):
                 out[at:at + len(track)] = bytes(track)
     if fmt == FORMAT_GTS5:

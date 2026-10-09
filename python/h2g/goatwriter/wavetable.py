@@ -32,6 +32,7 @@ from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
+from .wave_eor import (EorPhase, wave_eor_block)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -1749,7 +1750,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       wave_alternate: bool = False,
                       log=None,
                       instr_row_calls: Optional[dict] = None,
-                      hold_travel: bool = False) -> tuple:
+                      hold_travel: bool = False,
+                      eor_phases: Optional[dict] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1793,12 +1795,29 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
     def record_entries(i: int, start: int, budget: int,
                        step: Optional[int] = None,
                        hold_attack: bool = False,
-                       phase=None) -> tuple:
+                       phase=None, toggled: bool = False) -> tuple:
         # `phase` is a phase clone's residue: an int is the fixed arp's
         # (`arp_phase`), a tuple bit $10's phase cells (`pitch_phase`,
         # `pitch_seq_phase_split_plan`), a `GatePhase` the gated nibble
         # record's residue modulo lcm(P, O) (`nibble_gate_phase_split_plan`):
-        # its counter residue and its gate phase both.
+        # its counter residue and its gate phase both. An `EorPhase` is bit
+        # $02's EOR toggle (`wave_eor_split_plan`), laid over the block the
+        # record gets with no residue at all; the record's own block takes
+        # its majority from `eor_phases` the same way.
+        gt_number = i + lead + 1
+        eor = phase if isinstance(phase, EorPhase) else None
+        if eor is not None:
+            phase = None
+        elif eor_phases and not toggled:
+            eor = eor_phases.get(gt_number)
+        if eor is not None:
+            return wave_eor_block(
+                sid, det, i, eor,
+                record_entries(i, start, budget, step, hold_attack, phase,
+                               toggled=True),
+                multiplier, start, budget,
+                written=(no_test_restart
+                         or gt_number in real_firstwave_instruments))
         gate = phase if isinstance(phase, GatePhase) else None
         if gate is not None:
             phase = gate.residue % gate.period

@@ -6567,6 +6567,21 @@ gives an implementer is everything except that mapping — the signature, the
 offset, the depth rule (`semitone >> (n+1)`, zero for large `n`), the period
 (8 calls), and a 25-file corpus to A/B over 60 s.
 
+#### The shift rounds the whole ratio (`game-killer-triangle-depth`, 2026-10-09)
+
+The emitted shift is `byte + 1 + round(log2(multiplier * (PERIOD / 2) / PEAK))`
+-- the `log2(4/3)` of the 8-call period against the `0..3` triangle is part of
+what is rounded. It used to be dropped before the rounding (`round(k + 0.415) ==
+k` holds for an integer `k`, and `log2(multiplier)` is one only at 1, 2, 4, 8),
+which left Game_Killer (`-S9`, the only triangle file whose multiplier it
+changes) swinging `36/8 = 4.5` depths against the player's 3: 1.50x. Rounded
+whole it is `36/16 = 2.25`: 0.75x, the nearer in log space. Read at call
+resolution (`fidelity.py --vice`), Game_Killer's one pure-triangle record
+(`$19BA`) went 1.49x -> 0.746x; the siddump `depth` column keeps one call in nine
+at `-S9`, read that record 1.27x -> 0.63x, and cannot see which side of the
+original either is. The period is untouched: it stays the original's, exactly.
+Figures historical (head 862f703); `tests/test_triangle_rate_shift.py`.
+
 ### 7.bbb A listening session, and six metrics it overruled
 
 Everything above this point was measured. This section is what happened when
@@ -12225,9 +12240,63 @@ the primary reading found nothing, so no file it already read can move.
   and runs on, wrapping, across notes. `FilterInfo.free_running`: its program
   is `[params][7F step][FF -> the 7F]` with no set-cutoff row, which loops
   with no gap because `mt_nextfiltstep` takes the jump on the call the
-  modulation runs out. Approximated, not read: GT starts this cutoff at 0,
-  not at `$08`, and keeps sweeping while an unfiltered record plays on that
-  voice, where the player pauses.
+  modulation runs out. The start is seeded once: GT powers its cutoff on at 0,
+  so `goatwriter.free_running_start` writes `CMD_SETFILTERCUTOFF` (`C`) `$08` on
+  row 0 of each subtune's entry pattern (never over an occupied command column;
+  a shared entry pattern is cloned). The filter step runs before the channels,
+  so the original's first write `$0A` (= `$08` + 2) is ours too, 5 frames on
+  (`startup_lag`); it was `$02`, and the sweep ran 8 behind. Occupancy of the
+  filter-enabling records, rows of the converted file: voice 0 1192 / 1192,
+  voice 1 26 / 1192, voice 2 0 / 1215. Voice 0 writes `$D416` last and never
+  plays an unfiltered record, so the player's pause while an unfiltered record
+  plays does not occur on the voice that drives the cutoff here.
+  `tests/test_free_running_start.py`.
+
+  **The note-FETCH hold is emitted too** (`goatwriter.free_running_fetch_holds`,
+  `tests/test_free_running_holds.py`). A voice that fetches an event ends
+  `JMP $8347` (`$8197`), past the filter block (`$8304-$831E`), so on that
+  frame it adds no step; the voices run X = 2, 1, 0 (`DEX / BMI`), so voice 0's
+  `STA $D416` is the one the chip keeps and voice 0's fetch frames are the
+  cutoff's holds -- 128 of the first 3563 frames in the original (frames 1-3
+  are power-on). Read from the
+  bytes (`free_running_fetch_hold_voice`: the block, a fetch tail before it
+  whose every JMP lands past it, the descending voice loop), so After_8,
+  Rikky and Mr_Meaner (free-running, DIGI held, no such tail) get nothing. A
+  NEW NOTE already holds in Goattracker: its instrument loads the filter
+  pointer and the next call runs the table's params row, which adds no step
+  (`gplay.c:265-275`, player.s `mt_setfilt`). A TIE skips the instrument load
+  (`gplay.c:354`) and a KEYOFF has none, so neither held, and each cost a step
+  the original does not take: the conversion held on 80 of those 128 frames
+  and so missed 48, drifting +2 each (+80 by frame 3460); the rows in question
+  are the 22 KEYOFFs and 20 ties of voice 0's orderlist. Each tie and
+  KEYOFF of voice 0 now takes a `CMD_SETFILTERPTR` to the params row of the
+  instrument it plays, on its own row where the column is free (a KEYOFF) and
+  otherwise on the nearest free row before it, up to `FETCH_HOLD_BACK` = 3 rows
+  and never back over the previous event, never under a running command
+  (a one-shot leaves the channel's running command running, `gplay.c:404-421`).
+  A tie into a new instrument has its SR on the row before and its AD after
+  (`_tied_instrument_envelopes`), so most ties hold two rows early: ours is 2
+  low for those 6 frames and level again at the fetch. Patterns the other
+  voices share (pattern `$04` is voice 0's and voice 1's) are cloned and only
+  voice 0's positions repointed. Mean circular |cutoff difference| at the
+  5-frame startup lag, frames 10-3500, presets, `-t 180`:
+
+  | | first 300 frames | whole tune |
+  |---|---|---|
+  | base 862f703 | 4.67 | 18.23 |
+  | start value alone | 3.33 | 25.43 |
+  | holds alone | 8.19 | 8.17 |
+  | both (shipped) | 0.19 | 0.17 |
+
+  `back` 2 instead of 3 leaves pattern `$03`'s tie at row 77 (two funk-tempo
+  rows before it) without a hold on both of its plays: whole tune 2.31. With
+  `back` 3 the conversion holds on 129 of those frames against the original's
+  128. `cutoff_sweep` 1.023 -> 0.999, `our_cutoff_travel` 3256832 ->
+  3181056 against 3183104; melody, wave, adsr and every other column are
+  unchanged, and Sigma_Seven is the only corpus file whose bytes move.
+  Only at `-S1` (`multiplier == 1`): the original's hold is a frame without a
+  step, which above `-S1` is `multiplier` calls, and one params row buys one
+  call. Sigma_Seven packs at `-S1`; nothing else is read.
 
 The fourth, **Mr_Meaner, is a DIGI held file and is not worked here.** Its
 filter is a different routine: a global sweep at `$14AD` writes `$F2` to
@@ -13651,7 +13720,7 @@ Human_Race's patterns go past the packed limit.
 `tests/test_note_rise.py` re-reads the sweep off the original's trace and
 re-measures both files' high-byte agreement through gt2reloc.
 
-### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, detected and not emitted
+### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
 Rasputin's player reads bit `$02` a fourth way. It is not the rise, the
 skydive, the alternation or the per-voice two-stage attack. The block is at
@@ -13668,7 +13737,8 @@ LDY voiceofs / STA $D404,Y     ; the stored waveform, gate ON
 
 `detect._find_wave_eor` reads it (`WAVE_EOR_SHAPE`, `det.wave_eor`) as a
 fallback, and only where no other reading of the bit matched. The converter
-logs it as `NOT emitted`. Rasputin is the only corpus file that has it. A
+logs it as `its phase per note (goatwriter.wave_eor)`; until the emission
+below it logged `NOT emitted`. Rasputin is the only corpus file that has it. A
 byte scan for any `AND #$02 / Bxx` followed within 30 bytes by an `EOR #imm`
 finds no other file, and `tests/test_wave_eor.py` re-derives the population.
 
@@ -13690,7 +13760,7 @@ and 117 of 117 on record 4. With the reload at 1 the toggle period is one
 tick, which in our calls is the row's tempo: 4, 5 or 6 across Rasputin's
 `$FE nn` changes.
 
-It is not emitted because every emission measured lower. The static shape was
+It was not emitted at first, because every emission measured lower. The static shape was
 the frame-0 lead, then `wave ^ $18` / `wave` halves of P calls, looping.
 Measured at v0.5.513 plus the uncommitted cycle-5 merge, presets, -t 180:
 
@@ -13712,6 +13782,79 @@ wants a per-note phase split (`arpeggio._note_phase_split` is the machinery)
 with the period taken from each note's tempo. Record 4's static choice is
 already what we emit: 59 of its 128 notes toggle on frame 1, 5 on frame 2 and
 64 never.
+
+#### Emitted, with the event parity as the residue
+
+The decline above was measured under Rasputin's clock drift: the matched
+attack offset crept 8 -> 11 frames against a startup lag of 7. Once the
+`$FE nn` change was read as a gate RESTART (section 7.ddddd, "The change
+restarts the gate, it does not only reload it"), the offset reads 7 in every
+window, and the toggle is emitted (`goatwriter.wave_eor`):
+
+* **The residue is the voice's event parity.** The fetch call runs no effect
+  and the block skips the last tick, so a note of L ticks spends
+  `2 * (L - 1) - 1` effect calls: odd for L >= 2, none for L = 1. Walked over
+  the finished orderlists, with the counter at 0 and every fetching row an
+  event (`wave_eor.note_parities`), the parity names the original's phase on
+  416 of 416 record-10 notes and 128 of 128 record-4 notes of subtune 0 in
+  180 s. The trace's own release byte reads the phase: on an even number of
+  ticks phase 0 ends toggled (`$58`/`$5A`), phase 1 not (`$40`/`$42`).
+* **The period is the note's tick.** That is the mean `CMD_SETTEMPO` over the
+  note's rows, rounded: 4, 5 or 6 of our calls.
+* **The block.** First the frame-0 lead (one frame, `multiplier` calls). On
+  phase 1 it runs the rest of the first tick too. Then halves of `period`
+  calls, `wave ^ $18` first, looping. Where a tick is three frames (R = 2),
+  the restart puts the skipped frame right after the fetch. Row j >= 1
+  fetches on frame 3j - 1 and makes its second call on 3j + 1, so on phase 0
+  the first toggle is two frames in. Traced:
+  `41 41 59 59 59 41 41 41 59 58 58 58`.
+* **Two-tick notes.** On phase 0 a two-tick note toggles once and holds,
+  because its second tick is its last. On phase 1 it never toggles, so it
+  keeps the plain block. Record 4's drum notes are all two ticks. On
+  phase 0 the toggle replaces the drum's noise tick and its gate-off tail
+  (`43 5B 5A 5A`). On phase 1 the record keeps the drum's own block.
+* **The split.** `wave_eor_split_plan` runs `arpeggio._note_phase_split`
+  with the factor None. The record's own block carries the majority residue,
+  and each minority residue gets a clone. Rasputin also has a tempo duty
+  split, which renames its duty arpeggios, so this split runs beside it.
+  Its clones are numbered after that split's, it leaves that split's records
+  alone, and a pattern it copies takes that split's edits too.
+  Rasputin: 8 clones, 10 pattern copies, 288 instrument bytes.
+
+Measured at 862f703 (v0.5.522), presets, -t 180, `--sound`, base ->
+emitted (the A/B first taken at v0.5.516 + cycle 1 read `wave` 0.8237 ->
+0.8730 and the same direction on every column below; re-taken on this tree
+after cycles 4 and 5 moved the base):
+
+| Column | base | emitted |
+|---|---|---|
+| `wave` | 0.8209 | 0.8737 |
+| `aud` | 0.9290 | 0.9335 |
+| `loud` | 0.9756 | 0.9786 |
+| `loud_ratio` | 0.9826 | 0.9982 |
+| onset agreement / frame agreement | 0.800 / 0.875 | 0.900 / 0.975 |
+| our noise frames (orig 5454) | 4992 | 4928 |
+
+The noise loss is record 4's 64 phase-0 notes: there the original sounds `$5B`
+on the frame the drum's noise had. Melody (0.99960), sequence, `adsr`, gate
+and `sound_frames` +-1 are unmoved. Subtune 1 (`-a 1`) has no bit-`$02` note,
+and every column reads the same. The corpus byte-hash moves Rasputin only.
+
+Note-aligned, each paired attack compared from its own frame 0, record 10
+goes from 0.522 to 0.791 (2564 -> 3882 of 4909 frames) and record 4 from
+0.498 to 0.757 (258 -> 392 of 518), over every paired attack on voice 0 /
+voice 1 at 862f703. Against the
+trace, frame by frame over each note except its last tick, the residues'
+programs agree on 0.885 of record 10's frames and 0.944 of record 4's. The
+plain first waveform agrees on 0.563 and 0.519
+(`tests/test_wave_eor_emit.py`).
+
+The weakest residues are the five-call ticks, at 0.84 and 0.83. R = 3, 5 and
+6 give rows of 5.33, 4.8 and 4.67 calls, and where the skip falls moves each
+note's first toggle by a frame. One loop per residue cannot say that.
+
+The note's last tick holds the state with the gate off. A looping block
+toggles once more there, and a block cannot know where its note ends.
 
 ### 7.qqqqqqq The triangle walk in lockstep: a record two voices sweep is stepped by both
 

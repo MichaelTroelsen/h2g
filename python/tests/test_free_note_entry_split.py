@@ -152,17 +152,23 @@ def test_knucklebusters_settles_original_33_on_the_traced_instruments(
     line = _free_line(lines)
     assert line.startswith("Free note (bit 7).......: 45 flagged note row(s) "
                            "on 6 variant(s)"), line
-    # The two left are in $35/$37, entered holding only pulse-only records.
-    assert line.endswith("(2 entered with two instruments; 1 follows another "
+    # Two more were declined "entered with two instruments" until the
+    # boundary tie took the slide events that open $1F/$21 (the rows are
+    # CMD_TONEPORTA now, not free notes, so they are no longer candidates).
+    assert line.endswith("1 kept the full start (1 follows another "
                          "instrument)"), line
     _rows, (tracks, patterns, copies) = seen["split"]
     # Pattern numbers of the families' sources. 0x44/0x45 until `$FD a b` was
     # read as a tempo (Knucklebusters' voice 2 no longer ends at its first
     # `$FD`), which moves their pattern numbers up by 12: the same two
     # families, renumbered (found by running it, not derived). The instrument assertions below are unchanged.
-    assert sorted(set(copies.values())) == [0x21, 0x50, 0x51]
+    # 0x4E/0x4F since the boundary tie took the slide events opening $1F/$21
+    # (the two rows that declined as "entered with two instruments" are ties
+    # now): the same two families, two numbers lower -- found by running it,
+    # not derived.
+    assert sorted(set(copies.values())) == [0x21, 0x4E, 0x4F]
     entry = NP._entry_instruments(tracks, patterns)
-    for source in (0x50, 0x51):
+    for source in (0x4E, 0x4F):
         family = [source] + [c for c, s in copies.items() if s == source]
         assert all(len(entry[p]) == 1 for p in family), \
             {p: entry[p] for p in family}

@@ -145,8 +145,7 @@ def test_cell_entry_reads_the_original_table(index, name, entry):
     assert W._cell_entry(sid, det, index) == entry
 
 
-@pytest.mark.parametrize("name", ["Crazy_Comets.sid", "One_Man_and_his_Droid.sid",
-                                  "Saboteur_II.sid"])
+@pytest.mark.parametrize("name", ["Crazy_Comets.sid", "One_Man_and_his_Droid.sid"])
 def test_a_step_some_note_reaches_inside_the_table_keeps_its_relative_byte(name):
     """These reach indexes 96-104 too, but on records that also play notes
     the relative step serves inside the table: one byte cannot be both, so
@@ -158,11 +157,15 @@ def test_a_step_some_note_reaches_inside_the_table_keeps_its_relative_byte(name)
     assert new.tables[1:] == old.tables[1:] and new.tracks == old.tracks
 
 
-def test_saboteur_is_left_on_the_relative_step_where_contexts_disagree():
+def test_saboteur_copies_the_pattern_played_under_disagreeing_transposes():
     """20 of its overflowing rows are played under two transposes, one
-    inside the table and one past it; a pattern clone would be needed."""
+    inside the table and one past it: the visits that overflow play copies of
+    the pattern (`test_past_table_split.py`); the original rows are kept."""
     out, before, _sid, _det, _final = _convert("Saboteur_II.sid")
-    assert out == before
+    old, new = _song(before), _song(out)
+    assert new.tables[0][:len(old.tables[0])] == old.tables[0]
+    assert new.patterns[:len(old.patterns)] == old.patterns
+    assert len(new.patterns) > len(old.patterns) and new.tracks != old.tracks
 
 
 def test_a_mixed_step_keeps_its_relative_byte_even_where_most_notes_overflow():

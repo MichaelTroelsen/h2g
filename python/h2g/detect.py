@@ -163,8 +163,9 @@ class Detection:
     note_rise: Optional["NoteRise"] = None
     # Bit $02 read a FOURTH way, Rasputin $C35A: the voice's stored waveform
     # EORed with a mask on a free-running per-voice counter -- see
-    # _find_wave_eor(). DETECTED AND NOT EMITTED; the measured reason is at
-    # WAVE_EOR_SHAPE. Consulted only where no other bit-$02 reading matched.
+    # _find_wave_eor(). Emitted with a per-note phase split
+    # (goatwriter.wave_eor; the A/B is at WAVE_EOR_SHAPE). Consulted only
+    # where no other bit-$02 reading matched.
     wave_eor: Optional["WaveEor"] = None
     # Bit $02 read a FIFTH way, Mega_Apocalypse $4DBF: the skydive's falling
     # high byte, started by a per-record frame count on a per-voice counter
@@ -2115,7 +2116,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # it.
     # Bit $02's EOR dialect (Rasputin), after every other reading of the bit
     # because it is a fallback: `_find_wave_eor` declines wherever one of them
-    # matched. Logged and not emitted -- see WAVE_EOR_SHAPE for the A/B.
+    # matched. Emitted by goatwriter.wave_eor -- see WAVE_EOR_SHAPE.
     det.counter_fall = _find_counter_fall(sid, det)
     if det.counter_fall is not None:
         cf = det.counter_fall
@@ -2128,7 +2129,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         we = det.wave_eor
         log(f"Effect bit $02..........: EOR #${we.mask:02X} into the voice's "
             f"waveform every {we.reload + 1} effect calls on a free-running "
-            f"per-voice counter (${we.counter:04X}) -- NOT emitted")
+            f"per-voice counter (${we.counter:04X}), its phase per note "
+            "(goatwriter.wave_eor)")
 
     det.note_alternate = _find_note_alternate(sid, det)
     if det.note_alternate >= 0:
@@ -5269,9 +5271,9 @@ def _find_counter_fall(sid: SidFile, det: Detection) -> Optional[CounterFall]:
 # toggle period is ONE TICK, so in our calls it is the row's tempo -- 4, 5 or
 # 6 across Rasputin's `$FE nn` changes.
 #
-# **NOT EMITTED, and the reason is measured.** A static emission (frame-0
-# lead, then `wave ^ mask` / `wave` halves of P calls, looping), A/B'd under
-# presets at -t 180, P in {4, 5, 6} and both phases: `wave` 0.7675 ->
+# **NOT EMITTED AT FIRST, and the reason was measured.** A static emission
+# (frame-0 lead, then `wave ^ mask` / `wave` halves of P calls, looping),
+# A/B'd under presets at -t 180, P in {4, 5, 6} and both phases: `wave` 0.7675 ->
 # 0.7505 / 0.7637 (P=4 A/B), 0.7522 / 0.7563 (P=5), 0.7582 / 0.7576 (P=6) --
 # all six LOWER; noise (5454 orig / 5134 ours), nrun, melody and gate
 # unmoved on every arm. Even the per-note-correct phase -- each note spliced
@@ -5296,8 +5298,16 @@ def _find_counter_fall(sid: SidFile, det: Detection) -> Optional[CounterFall]:
 # was `$FE nn` restarting the outer gate as well as reloading it
 # (`_find_fe_gate_restart`), which the compensation did not model. With that
 # read, the offset is 7 in every 500-frame window (rasputin-clock-drift,
-# v0.5.516 + the change). The emission A/B has NOT been re-run on that
-# clock, and the decline above stands until it is.
+# v0.5.516 + the change).
+#
+# **EMITTED on that clock** (`goatwriter.wave_eor`, 862f703 / v0.5.522,
+# presets, -t 180, --sound): the residue is the voice's event parity
+# (`note_parities`, 416 of 416 and 128 of 128 notes' phases predicted against
+# the trace), the period the note's mean row tempo, one clone per minority
+# residue. `wave` 0.8209 -> 0.8737, `aud` 0.9290 -> 0.9335, `loud` 0.9756 ->
+# 0.9786; melody, sequence, adsr and gate unmoved; our noise 4992 -> 4928
+# (orig 5454), the 64 record-4 notes whose noise frame the toggle takes.
+# docs/H2G-CONVERSION-METHOD.md section 7.aaaaaaaa has the table.
 WAVE_EOR_SHAPE = ("29 02 F0 ?? BD ?? ?? F0 ?? DE ?? ?? 10 ?? A9 ?? 9D ?? ?? "
                   "BD ?? ?? 49 ?? 9D ?? ?? AC ?? ?? 99 04 D4")
 # Offsets into WAVE_EOR_SHAPE (past the effect-byte load).

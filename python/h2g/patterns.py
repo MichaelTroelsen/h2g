@@ -5275,7 +5275,8 @@ def _apply_boundary_ties(new_track: List[int], moved: dict,
     carried state with its own, and the intra-pattern rule already handles
     everything after that. Row 0 must also carry a note and an empty command
     column, which is the same `cmd1 == 0` condition the intra-pattern tie
-    tests.
+    tests -- or a slide with a hold row after it (`_slide_hold_follows`), the
+    shape of the intra-pattern `cmd1 in (1, 2) and wait >= 1` branch.
 
     **Always into a copy, never in place**, for the reason apply_tempos
     documents: Goattracker's patterns are global and its orderlists are per
@@ -5297,6 +5298,21 @@ def _apply_boundary_ties(new_track: List[int], moved: dict,
             break                       # the pattern table is full
         written += n
     return written
+
+
+def _slide_hold_follows(pattern: List[int]) -> bool:
+    """True where row 0 is a slide event (`CMD_PORTAUP`/`CMD_PORTADOWN`) whose
+    hold row 1 carries the same command: the shape `_build_raw_pattern`
+    ties inside a pattern as "row 0 ties, the HOLD rows carry the slide" (the
+    `cmd1 in (1, 2) and wait >= 1` branch). A pattern entered with the gate
+    open gets the same spelling: Knucklebusters subtune 0 voice 0 enters
+    patterns $1F/$21 (slide-up E-4 events) on the tail of a tied note, and
+    left the row a plain note struck an extra E-4 every 48 frames where the
+    original holds one E-5 for 768. A slide with no hold row after it
+    (`wait` 0) keeps the old reading, as inside the pattern."""
+    return (len(pattern) >= 8 and pattern[2] in (1, 2)
+            and pattern[4] == GT_NO_NOTE and pattern[5] == 0
+            and pattern[6] == pattern[2] and pattern[7] == pattern[3])
 
 
 def _tie_step(new_track: List[int], i: int, patterns: List[List[int]],
@@ -5334,9 +5350,9 @@ def _tie_step(new_track: List[int], i: int, patterns: List[List[int]],
         return 0                        # nothing on row 0 to tie into
     if pattern[2] == CMD_TONEPORTA and pattern[3] == 0:
         return 1                        # already says it
-    if pattern[2] != 0:
-        # An orderlist tempo copy, or a slide the decoder emitted: the
-        # decoder does not tie over a taken command column either.
+    if pattern[2] != 0 and not _slide_hold_follows(pattern):
+        # An orderlist tempo copy, or a slide with no hold row to carry it:
+        # the decoder does not tie over a taken command column either.
         return 0
     if entry not in copies:
         if len(patterns) >= MAX_PATTERNS:
@@ -5345,6 +5361,8 @@ def _tie_step(new_track: List[int], i: int, patterns: List[List[int]],
                     f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
             return -1
         copy = list(pattern)
+        # Row 0 ties; a slide it carried stays on the hold row after it
+        # (`_slide_hold_follows`), where the decoder's own tie puts it.
         copy[2], copy[3] = CMD_TONEPORTA, 0x00
         copies[entry] = len(patterns)
         patterns.append(copy)

@@ -7,12 +7,18 @@ from typing import (List, Optional)
 
 from ..detect import (Detection, FILTER_ENABLE_BIT)
 from ..sidfile import (SidFile)
-from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERPTR, CMD_TONEPORTA,
+from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERCUTOFF,
+                        CMD_SETFILTERPTR, CMD_TONEPORTA, _SONG_MAX_PATTERNS,
                         FILT_MODULATE, FILT_SET_CUTOFF, FILT_SET_PARAMS,
                         FILT_STOP, GT_MAX_FILT, ILV_EMPTY_UNION,
                         ILV_FILTER_ROUTING, ILV_ROUTE_NOTHING,
                         PACKED_PATTERN_LIMIT)
+from ..detect import FILTER_SHAPE
+from ..search import search_file
+from .constants import GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_REST
 from .pulse import (packed_pattern_size, pattern_rows)
+
+
 def _filter_step_per_call(step: int, multiplier: int) -> int:
     """The player's per-FRAME cutoff step as a per-CALL one, signed.
 
@@ -893,6 +899,309 @@ def _free_running_block(passband: int, resctl: int, per_call: int,
     else:
         block.append((FILT_STOP, 0x00))
     return block
+
+
+def free_running_start(tracks: List[List[int]], patterns: List[List[int]],
+                       start: int, log=None):
+    """Seed Goattracker's cutoff with the free-running accumulator's file byte.
+
+    `_free_running_block` has no set-cutoff row, because a row there would
+    reset the sweep on every note; the player's accumulator is initialised
+    once, by the file (`FilterInfo.cutoff`, Sigma_Seven's `$84A1` = $08),
+    and Goattracker's `filtercutoff` powers on at 0. Measured on Sigma_Seven
+    (presets, -t 180): the original's first cutoff write is $0A (the file's
+    $08 + one step), ours was $02, and the whole sweep ran 8 behind the
+    original's for the first 400 frames.
+
+    A `CMD_SETFILTERCUTOFF` on row 0 of each subtune's entry pattern is the
+    once-only spelling: gplay.c runs the filter step BEFORE the channels, so
+    the call that fetches row 0 writes the old 0, the command then sets
+    `start`, and the next call's first sweep step writes `start + step`.
+
+    Row 0 only, never over an occupied command column (the subtune's
+    `CMD_SETTEMPO` owns it, CLAUDE.md) and only on a pattern played once at
+    its position (no repeat prefix). A pattern the song enters elsewhere is
+    CLONED, so the command cannot fire mid-song; past `_SONG_MAX_PATTERNS`
+    the subtune is left unseeded and counted. Returns (patterns, tracks,
+    placed, skipped), new lists.
+    """
+    patterns = [list(p) for p in patterns]
+    tracks = [list(t) for t in tracks]
+    placed = skipped = 0
+    uses = Counter(b for t in tracks for b in _pattern_bytes(t))
+    for s in range(len(tracks) // 3):
+        done = False
+        for v in range(3):
+            tr = tracks[3 * s + v]
+            at = _entry_position(tr)
+            if at is None:
+                continue
+            number = tr[at]
+            if number >= len(patterns) or len(patterns[number]) < 4:
+                continue
+            if patterns[number][2] != 0:
+                continue                      # the tempo's (or another) column
+            if uses[number] > 1:
+                if len(patterns) >= _SONG_MAX_PATTERNS:
+                    continue
+                patterns.append(list(patterns[number]))
+                uses[number] -= 1
+                number = len(patterns) - 1
+                uses[number] = 1
+                tr[at] = number
+            patterns[number][2] = CMD_SETFILTERCUTOFF
+            patterns[number][3] = start & 0xFF
+            placed += 1
+            done = True
+            break
+        if not done:
+            skipped += 1
+    if log and (placed or skipped):
+        log(f"Free-running filter start: cutoff ${start:02X} on {placed} "
+            f"subtune(s) via CMD_SETFILTERCUTOFF"
+            + (f"; {skipped} left unseeded (no free row-0 command column)"
+               if skipped else ""))
+    return patterns, tracks, placed, skipped
+
+
+def _pattern_bytes(track: List[int]):
+    """Pattern numbers an orderlist names (operands of $FF excluded)."""
+    skip = False
+    for b in track:
+        if skip:
+            skip = False
+        elif b == 0xFF:
+            skip = True
+        elif b < 0xD0:
+            yield b
+
+
+def _entry_position(track: List[int]):
+    """Index of the first pattern byte, or None when a repeat prefix ($D1-$DF,
+    which plays it more than once) or a restart comes first."""
+    for i, b in enumerate(track):
+        if b == 0xD0 or 0xE0 <= b < 0xFF:
+            continue                           # no-op repeat / transpose
+        return i if b < 0xD0 else None
+    return None
+
+
+# `STA`-free fetch tail of the classic player: the end of the note-fetch path
+# (instrument byte list exhausted -> advance the track position), whose JMP is
+# the fetch frame's only way out (`tests/test_filter_fetch_hold.py`).
+_FETCH_TAIL = "C9 FF D0 08 A9 00 9D ?? ?? FE ?? ?? 4C ?? ??"
+_FETCH_TAIL_JMP = 12            # offset of the 4C within _FETCH_TAIL
+_FILTER_BLOCK_LEN = 26          # FILTER_SHAPE's length, up to `STA $D417`
+# `INC counter,X / DEX / BMI +3 / JMP loop`: the voice loop counts X DOWN, so
+# voice 0 runs last and its `STA $D416` is the one the chip keeps.
+_VOICE_LOOP_DOWN = "FE ?? ?? CA 30 03 4C ?? ??"
+# How many rows before its event a hold may be written when the event's own
+# command column is taken (a tie's is `CMD_TONEPORTA 00`).
+FETCH_HOLD_BACK = 3
+
+
+def free_running_fetch_hold_voice(sid: SidFile) -> Optional[int]:
+    """The voice whose note FETCH frame skips the free-running filter block,
+    or None when the player is not read that way.
+
+    Sigma_Seven's fetch path ends `JMP $8347` (`$8197`), past the filter
+    block at `$8304-$831E`, so on the frame a voice fetches an event it does
+    not step the cutoff. The voices run X = 2, 1, 0 (`DEX / BMI`), so voice
+    0's `STA $D416` is the one that stays, and voice 0's fetch frames are
+    the cutoff's holds. Read from the bytes: the block, a fetch tail lying
+    before it whose every JMP lands past it, and the descending voice loop
+    after it. Anything else (After_8, Rikky and Mr_Meaner carry no fetch tail
+    of this spelling) returns None and gets no hold.
+    """
+    data = sid.data
+    at = search_file(data, FILTER_SHAPE)
+    if at <= -1:
+        return None
+    end = at + _FILTER_BLOCK_LEN
+    tails, j = [], 0
+    while True:
+        k = search_file(data[j:], _FETCH_TAIL)
+        if k <= -1:
+            break
+        k += j
+        if k >= at:
+            break
+        tails.append(data[k + _FETCH_TAIL_JMP + 1]
+                     | data[k + _FETCH_TAIL_JMP + 2] << 8)
+        j = k + 1
+    if not tails or any(t < sid.to_address(end) for t in tails):
+        return None
+    if search_file(data[end:], _VOICE_LOOP_DOWN) <= -1:
+        return None
+    return 0
+
+
+def _fetch_hold_pattern(pattern: List[int], instr: int, running: int,
+                        ptr_of: dict, back: int) -> tuple:
+    """One pass of one pattern from one entry state: (writes, skips, instr,
+    running). `writes` is the frozenset of (row, filter pointer) wanted, a
+    `CMD_SETFILTERPTR` to the params row of the instrument the event plays;
+    `skips` the (row, reason) owed a hold and not given one.
+
+    An event is a row the player FETCHES: a tie or a KEYOFF. A new note
+    already holds, because its instrument loads the filter pointer and the
+    next call runs the table's params row, which steps nothing
+    (gplay.c:265-275); a tie skips the instrument load (gplay.c:354) and a
+    KEYOFF has none, so neither does. The hold goes on the event's own row
+    where its command column is free, else on the nearest free row within
+    `back` rows before it, never before the previous event (it would be that
+    event's). Row 0 is allowed: the subtune's clock was written before this
+    pass runs and an occupied column is never taken. A one-shot leaves the
+    channel's running command as it was, so only a row entered with no
+    running command takes one."""
+    n = 0
+    while 4 * n + 3 < len(pattern) and pattern[4 * n] != 0xFF:
+        n += 1
+    rows = []
+    for r in range(n):
+        note, named, cmd, data = pattern[4 * r:4 * r + 4]
+        if named:
+            instr = named
+        rows.append((note, cmd, data, running, instr))
+        if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+            running = cmd if cmd <= 4 else 0      # a new note resets it
+        elif cmd <= 4:
+            running = cmd
+    writes, skips = set(), set()
+    last_event = -1
+    for r, (note, cmd, data, _run, eff) in enumerate(rows):
+        tie = (GT_FIRST_NOTE <= note <= GT_LAST_NOTE
+               and cmd == CMD_TONEPORTA and data == 0)
+        if note == GT_KEYOFF or tie:
+            ptr = ptr_of.get(eff, 0)
+            if ptr:
+                for c in range(r, max(r - back, last_event + 1, 0) - 1, -1):
+                    if rows[c][1] == 0 and rows[c][3] == 0:
+                        writes.add((c, ptr))
+                        break
+                else:
+                    skips.add((r, "no free row"))
+        if note != GT_REST:
+            last_event = r
+    return frozenset(writes), frozenset(skips), instr, running
+
+
+def _fetch_hold_plan(tracks: List[List[int]], patterns: List[List[int]],
+                     ptr_of: dict, voice: int, back: int) -> tuple:
+    """(plan, skipped): `plan` maps (track index, orderlist position) to the
+    (row, pointer) writes every visit of that position agrees on, for the
+    tracks of `voice` only; `skipped` counts the (position, row) pairs owed
+    a hold that got none, by reason. Walked as `_rest_reseed_plan` walks
+    (instrument 1 and no running command before any row, transposes
+    skipped, a repeat is that many visits, the restart lapped once)."""
+    plan: dict = {}
+    missed: set = set()
+    for ti, track in enumerate(tracks):
+        if ti % 3 != voice:
+            continue
+        end = track.index(0xFF) if 0xFF in track else len(track)
+        restart = track[end + 1] if end + 1 < len(track) else None
+        laps = [range(0, end)]
+        if restart is not None and restart < end:
+            laps.append(range(restart, end))
+        instr, running = 1, 0
+        for lap in laps:
+            repeat = 1
+            for pos in lap:
+                b = track[pos]
+                if 0xE0 <= b < 0xFF:
+                    continue
+                if 0xD0 <= b < 0xE0:
+                    repeat = b - 0xD0 + 1
+                    continue
+                if b >= len(patterns):
+                    repeat = 1
+                    continue
+                for _ in range(repeat):
+                    want, skips, instr, running = _fetch_hold_pattern(
+                        patterns[b], instr, running, ptr_of, back)
+                    key = (ti, pos)
+                    missed |= {(key, row, why) for row, why in skips}
+                    if key in plan and plan[key] != want:
+                        missed |= {(key, row, "disagree")
+                                   for row, _ in plan[key] ^ want}
+                        want = plan[key] & want
+                    plan[key] = want
+                repeat = 1
+    skipped: dict = {}
+    for _key, _row, why in missed:
+        skipped[why] = skipped.get(why, 0) + 1
+    return plan, skipped
+
+
+def free_running_fetch_holds(tracks: List[List[int]],
+                             patterns: List[List[int]], ptr_of: dict,
+                             voice: int = 0, back: int = FETCH_HOLD_BACK,
+                             log=None) -> tuple:
+    """(patterns, tracks, written): a `CMD_SETFILTERPTR` to the params row of
+    the instrument's own block on every tie and KEYOFF `voice` plays, so the
+    free-running cutoff holds for one call at each of the voice's events.
+
+    The player does not step the accumulator on a fetch frame, and the
+    original's is the only sweep nothing resets: a missed hold is a step
+    the conversion takes that the original does not, 2 on the cutoff for
+    ever (`FilterInfo.free_running`; Sigma_Seven held on 128 of its first
+    3563 frames, the conversion's new notes on 80). `ptr_of` maps an
+    instrument number to its 1-based filter pointer, 0 for none. Changed
+    patterns and tracks are COPIES; a pattern shared with another voice, or
+    wanted differently at another position, is cloned and only the
+    `voice`'s positions repointed (same length, same place). Past
+    `_SONG_MAX_PATTERNS` or `PACKED_PATTERN_LIMIT` a position keeps its old
+    rows, counted."""
+    plan, skipped = _fetch_hold_plan(tracks, patterns, ptr_of, voice, back)
+    occurrences: dict = {}
+    for ti, track in enumerate(tracks):
+        for pos, b in enumerate(track):
+            if b == 0xFF:               # patterns.GT_ORDER_RESTART: operand next
+                break
+            if b < _SONG_MAX_PATTERNS and b < len(patterns):
+                occurrences.setdefault(b, []).append((ti, pos))
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = list(patterns)
+    written = clones = dropped = 0
+    for p, occs in occurrences.items():
+        sigs = {occ: tuple(sorted(plan.get(occ, frozenset()))) for occ in occs}
+        distinct = list(dict.fromkeys(sigs.values()))
+        if distinct == [()]:
+            continue
+        keeper = (() if () in distinct
+                  else Counter(sigs.values()).most_common(1)[0][0])
+        number = {(): p}
+        for sig in distinct:
+            if not sig:
+                continue
+            edited = list(patterns[p])
+            for r, value in sig:
+                edited[4 * r + 2], edited[4 * r + 3] = CMD_SETFILTERPTR, value
+            if packed_pattern_size(pattern_rows(edited)) > PACKED_PATTERN_LIMIT:
+                dropped += len(sig)
+                number[sig] = p
+            elif sig == keeper:
+                new_patterns[p] = edited
+                number[sig] = p
+                written += len(sig)
+            elif len(new_patterns) >= _SONG_MAX_PATTERNS:
+                dropped += len(sig)
+                number[sig] = p
+            else:
+                number[sig] = len(new_patterns)
+                new_patterns.append(edited)
+                clones += 1
+                written += len(sig)
+        for ti, pos in occs:
+            new_tracks[ti][pos] = number[sigs[(ti, pos)]]
+    if log and (written or skipped or dropped):
+        log(f"Filter fetch hold.......: CMD_SETFILTERPTR on {written} "
+            f"row(s), {clones} pattern copy(ies)"
+            + "".join(f", {n} {why}" for why, n in sorted(skipped.items()))
+            + (f", {dropped} DROPPED (pattern table / packed size)"
+               if dropped else ""))
+    return new_patterns, new_tracks, written
 
 
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,

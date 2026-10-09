@@ -5,7 +5,8 @@ import math
 from typing import (List, Optional)
 
 from ..detect import (Detection, TRIANGLE_VIBRATO_GATE,
-                      TRIANGLE_VIBRATO_MAX_SHIFT, TRIANGLE_VIBRATO_PERIOD,
+                      TRIANGLE_VIBRATO_MAX_SHIFT, TRIANGLE_VIBRATO_PEAK,
+                      TRIANGLE_VIBRATO_PERIOD,
                       VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
                       VIBRATO_SHIFT_MASK)
 from ..sidfile import (SidFile)
@@ -918,15 +919,36 @@ def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
           rshift = byte + 1 + log2(multiplier) + log2((PERIOD / 2) / PEAK)
 
       `log2(4/3)` is 0.415, and `round(k + 0.415) == k` for any integer k, so
-      the emitted shift is `byte + 1 + log2(multiplier)` -- coincidentally the
-      classic mapping's expression, reached from different quantities.
+      for a power-of-two multiplier the emitted shift is `byte + 1 +
+      log2(multiplier)` -- coincidentally the classic mapping's expression,
+      reached from different quantities.
 
-    **The residual is a systematic 33% overshoot in depth, and it is the
-    format's, not a slip.** Goattracker's note-relative speed can only be
-    `interval >> k`, a power of two; the player wants three of them. 4/3 is
-    the nearest expressible ratio and it is 1.33x too deep. Correcting it
-    would need the absolute speed form, which does not track pitch the way
-    this player does, so the depth is traded for the pitch-tracking.
+    **That coincidence holds ONLY at 1, 2, 4, 8 ... and the code used to
+      round the wrong quantity** (`game-killer-triangle-depth`, 2026-10-09;
+      figures historical). The shift was `byte + 1 + round(log2(multiplier))`:
+      the 0.415 was dropped before rounding, not after. At `-S9`
+      (Game_Killer, the one corpus file whose multiplier it changes: 1, 2
+      everywhere else) `log2(9) = 3.17` rounded to 3, a division by 8 where
+      the derivation wants 12 (`9 * 4/3`), so the swing was `36/8 = 4.5`
+      depths against the player's 3: **1.50x**. Rounding the whole quantity,
+      `round(log2(multiplier * (PERIOD / 2) / PEAK))` = `round(3.585)` = 4,
+      gives `36/16 = 2.25` depths, **0.75x**, the nearer of the two in log
+      space (0.415 against 0.585). The 1.50x was measured, not only
+      predicted: `fidelity.py --vice` (a per-call trace, which the siddump
+      depth column is not -- it keeps one call in nine at `-S9`) reads
+      Game_Killer's vibrato record 8 at 0.0323 of the pitch against the
+      original's 0.0217, 1.49x. The siddump column read 1.27x for the same
+      record and so under-read the defect.
+
+    **The residual is a systematic error in depth, and it is the format's, not
+    a slip.** Goattracker's note-relative speed can only be `interval >> k`,
+    a power of two; the player wants three of them (times the multiplier).
+    The nearest expressible ratio is at most 2^0.5 off in either direction --
+    4/3 at a power-of-two multiplier, where it is too deep; 3/4 at `-S9`,
+    where it is too shallow. Correcting it would need the absolute speed form,
+    which does not track pitch the way this player does, so the depth is
+    traded for the pitch-tracking. The period is NOT traded: `cmp` keeps the
+    original's rate exactly, as above.
     """
     if not byte or byte >= TRIANGLE_VIBRATO_MAX_SHIFT:
         # The player's own `BEQ past`, and its own way of switching a record
@@ -935,8 +957,18 @@ def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
         return None
     half = TRIANGLE_VIBRATO_PERIOD // 2
     cmp_value = min(0x7F, max(0, half * multiplier - VIBRATO_CMP_BIAS))
-    rshift = min(byte + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    rshift = min(byte + 1 + _triangle_rate_shift(multiplier), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+
+
+def _triangle_rate_shift(multiplier: int = 1) -> int:
+    """Shift that turns `PEAK * (interval >> (byte + 1))` per frame into the
+    entry's `(cmp + 2) * speed` per call: `round(log2(multiplier * (PERIOD / 2)
+    / PEAK))`, the whole ratio rounded once. Equal to `_rate_shift` at 1, 2, 3,
+    4, 6, 7, 8 and 12; one more at 5, 9, 10 and 11."""
+    m = max(1, multiplier)
+    return max(0, round(math.log2(m * (TRIANGLE_VIBRATO_PERIOD // 2)
+                                  / TRIANGLE_VIBRATO_PEAK)))
 
 
 def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
