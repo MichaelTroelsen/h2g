@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.521 presets.py",
+  "generator": "h2g 0.5.522 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -35,7 +35,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 43653,
+      "bytes": 43871,
       "subtunes": 5,
       "rows": 20161,
       "multiplier": 1,
@@ -251,7 +251,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20775,
+      "bytes": 20799,
       "subtunes": 2,
       "rows": 17388,
       "multiplier": 1
@@ -346,7 +346,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 11239,
+      "bytes": 11261,
       "subtunes": 1,
       "rows": 12912,
       "multiplier": 2,
@@ -378,7 +378,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 42957,
+      "bytes": 42994,
       "subtunes": 7,
       "rows": 32302,
       "multiplier": 1,
@@ -406,7 +406,8 @@
       "bytes": 52106,
       "subtunes": 7,
       "rows": 36980,
-      "multiplier": 1
+      "multiplier": 1,
+      "initial_instrument": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -436,7 +437,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23384,
+      "bytes": 23474,
       "subtunes": 1,
       "rows": 10942,
       "multiplier": 1
@@ -519,9 +520,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 43949,
+      "bytes": 53105,
       "subtunes": 3,
-      "rows": 49789,
+      "rows": 62482,
       "multiplier": 3,
       "two_stage": true,
       "max_hard_restart": true
@@ -543,7 +544,7 @@
       "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 12881,
+      "bytes": 12883,
       "subtunes": 16,
       "rows": 6844,
       "multiplier": 4,
@@ -673,7 +674,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 10384,
+      "bytes": 10392,
       "subtunes": 1,
       "rows": 11455,
       "multiplier": 1,
@@ -715,7 +716,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 22194,
+      "bytes": 22230,
       "subtunes": 1,
       "rows": 26519,
       "multiplier": 2
@@ -1015,7 +1016,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 17667,
+      "bytes": 17702,
       "subtunes": 1,
       "rows": 17381,
       "multiplier": 2
@@ -1119,7 +1120,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18956,
+      "bytes": 19072,
       "subtunes": 3,
       "rows": 18099,
       "multiplier": 1,

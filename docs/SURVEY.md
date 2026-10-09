@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.521**
+- Converter: `h2g` **0.5.522**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -104,7 +104,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Kentilla.sid` | Kentilla | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 28 | 161 | - | 38271 | y |  |
 | `Kings_of_the_Beach_ingame.sid` | Kings of the Beach (ingame) | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 7 | 6 | 106 | - | 35541 | y |  |
 | `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 | y | digi channel dropped |
-| `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 186 | - | 54309 | y | 1 subtune(s) too long |
+| `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 189 | - | 55100 | y | 1 subtune(s) too long |
 | `Lakers_vs_Celtics.sid` | Lakers vs Celtics | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 18 | 60 | **6** (sub0 6) | 16488 | y |  |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 | y |  |
 | `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 3 (hdr 17) | 34 | 66 | - | 20877 | y |  |
