@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.516 presets.py",
+  "generator": "h2g 0.5.517 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -618,7 +618,8 @@
       "multiplier": 1,
       "two_stage": true,
       "sfx_drum": true,
-      "wave_program": true
+      "wave_program": true,
+      "pitch_seq": true
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 128,
@@ -828,7 +829,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23922,
+      "bytes": 23912,
       "subtunes": 2,
       "rows": 21593,
       "multiplier": 2
