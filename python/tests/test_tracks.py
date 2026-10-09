@@ -22,7 +22,12 @@ def test_only_the_players_that_test_fd_are_given_the_rule():
     Knucklebusters, Rasputin and Tarzan. The others never mention it, and
     applying Rasputin's reading to all of version 0 rewrote 23 files and broke
     the byte-exact fixture. Anchored on the reader rather than on the file:
-    `CMP #$FD` occurs somewhere in plenty of players."""
+    `CMP #$FD` occurs somewhere in plenty of players.
+
+    Only Rasputin and Tarzan END a voice at it. Knucklebusters' `$FD a b` is a
+    three-byte tempo command that continues the list (`det.track_fd_tempo`,
+    tests/test_knucklebusters_fd_tempo.py): reading it as a terminator stopped
+    subtune 0's voice 2 at frame 18042 of 30000."""
     from h2g.convert import _detect_tables
     from h2g.sidfile import load_sid
 
@@ -37,9 +42,13 @@ def test_only_the_players_that_test_fd_are_given_the_rule():
         # confirms -- exactly three files' bytes move.
         if det.track_fd_ends and det.read_track_version in (0, 1, 3):
             found[path.stem] = det.track_fe_command
-    assert set(found) == {"Knucklebusters", "Rasputin", "Tarzan"}, sorted(found)
+    assert set(found) == {"Rasputin", "Tarzan"}, sorted(found)
     # ...and only Rasputin reads `$FE nn` as a two-byte tempo command.
     assert [n for n, fe in found.items() if fe] == ["Rasputin"]
+    # Knucklebusters tests the same byte and reads it as a tempo command.
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Knucklebusters.sid")),
+                              lambda *a, **k: None)
+    assert det.track_fd_tempo >= 0 and not det.track_fd_ends
 
 
 def test_fd_is_a_pattern_number_unless_the_player_tests_it():

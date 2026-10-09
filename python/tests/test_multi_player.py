@@ -488,12 +488,20 @@ def test_5_title_tunes_subtune_k_plays_what_player_k_converts_to_alone(five):
         view_opts["pulse_phase"] = False
     if "without pulse sweeps" in level:
         view_opts["pulse"] = False
+    # The skydive's carried programs were held to the room the compilation
+    # had left (`convert._convert_with_carry_room`); a view converted alone
+    # is held to the same, or it has the whole table to itself.
+    import contextlib
+    import re
+    room = next((tuple(int(x) for x in re.findall(r"[0-9]+", l.split("held to")[1])[:2])
+                 for l in lines if "carried programs held to" in l), None)
     sid = load_sid(str(CORPUS / FIVE))
     det = D.detect(sid, _quiet)
     m = G._parse_song(merged)
     for k in range(1, 5):
         view = D.player_view(sid, det.players, k, 1)
-        alone = G._parse_song(C.convert(view, log=_quiet, **view_opts))
+        with (G.vibrato_carry(True, room) if room else contextlib.nullcontext()):
+            alone = G._parse_song(C.convert(view, log=_quiet, **view_opts))
         assert len(alone.tracks) == 3
         assert _canon(m, k) == _canon(alone, 0), f"subtune {k}"
 

@@ -16,6 +16,32 @@ from .constants import (FIXED_ARP_PARITY_MASK, FORMAT_GTS5, GT_MAX_VIB_SHIFT,
 from .primitives import (_counter_gate_call, _rate_shift)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
+
+# Classic-vibrato entries whose period is given up for depth, by file:
+# {(PSID title, instrument record index): calls to take off the entry's `cmp`}.
+# User decision 2026-10-09 (`classic-vibrato-balance-rate-and-depth`, task
+# `las-vegas-classic-vibrato-original-depth`): Las_Vegas_Video_Poker keeps the
+# original's DEPTH on `$6B9A` (record 6). Its vibrato byte `$1A` (bound 3,
+# shift 2) is shared with `$0AA0` (record 11), and the shipped entry `($8C, 4)`
+# swings 3.46 depths on `$6B9A` against the original's 2.99. Record 6 alone
+# gets `($8B, 4)`; record 11 keeps `($8C, 4)` byte for byte, because trimming
+# it too reads mixed (voice-0 bend -1.7% -> -11.4% against reversals +29% ->
+# -14%; see "DECIDED" in `_classic_vibrato_entry`). Keyed by name and record,
+# as `stored_wave.HELD` keys by name, so no other file's bytes move and the
+# entry formula is untouched. Pinned in tests/test_lvvp_depth_trim.py.
+CLASSIC_DEPTH_CMP_TRIM = {("Las Vegas Video Poker", 6): 1}
+
+
+def _depth_trimmed(name: str, record: int, entry: Optional[tuple]
+                   ) -> Optional[tuple]:
+    """`entry` with `CLASSIC_DEPTH_CMP_TRIM`'s calls taken off its `cmp`."""
+    trim = CLASSIC_DEPTH_CMP_TRIM.get((name, record), 0)
+    if entry is None or not trim:
+        return entry
+    cmp_value = max(0, (entry[0] & 0x7F) - trim)
+    return (SPEED_NOTE_RELATIVE | cmp_value, entry[1])
+
+
 def _classic_vibrato_entry(byte: int, multiplier: int,
                            row_calls: int = 0,
                            gate_skip: Optional[int] = None,
@@ -227,10 +253,42 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
       110792 shipped, 95104 at cmp 10, original 112719) and voice 2 ($6B9A,
       111040 shipped, 96628 at cmp 10, original 103296) are 2% shallow and 7%
       deep, and no file column moves clearly closer: bend leaves 1.027 for
-      0.888 while travel goes 1.083 -> 0.959. NOT CHANGED. Whether to give up
-      the original's period for its depth is the user's call (opened as
+      0.888 while travel goes 1.083 -> 0.959. Whether to give up the
+      original's period for its depth was the user's call (opened as
       `classic-vibrato-balance-rate-and-depth`). Pinned in
       tests/test_lvvp_vibrato_depth.py.
+
+      **DECIDED (user, 2026-10-09): keep the original's depth, Las_Vegas
+      only** (`las-vegas-classic-vibrato-original-depth`;
+      `CLASSIC_DEPTH_CMP_TRIM`, applied in `_vibrato_layout`; figures
+      historical, v0.5.521 base, 107 s window = the file's own, original at
+      -m1, ours under presets packed at -S4, one sample per frame). The
+      entry formula is NOT touched -- the seven gate-stretch files read it
+      -- so the trade is a per-record `cmp - 1` on record 6, `($8B, 4)`.
+      `$6B9A` and `$0AA0` play on different voices and so are separable;
+      each arm below is a full conversion with the trim on the named
+      record(s):
+
+          arm        $6B9A depths  v2 bend  v2 travel  $0AA0 depths  v0 bend  v0 travel  rev 6B9A  rev 0AA0
+          original   2.99          103296   85900      2.70          112719   73996      854       185
+          neither    3.46          111040   94741      3.18          110792   78371      976       239
+          record 6   2.73          97034    85043      3.18          110792   78371      978       239
+          record 11  3.46          111040   94741      2.88          99900    72027      976       159
+          both       2.73          97034    85043      2.88          99900    72027      978       159
+
+      Record 6 takes its depth from +16% to -9% of the original's, its
+      voice's bend from +7.5% to -6.1% and travel from +10.3% to -1.0%; its
+      reversals do not move (978 against 854). Record 11 is mixed (bend
+      worse; travel, depths and reversals better), so it is left alone and
+      `$0AA0` stays byte-identical -- opened as a question for the user.
+      No integer `cmp` reaches 2.99: $6B9A reads 2.04 / 2.72 / 2.73 / 3.46 /
+      3.46 at cmp 9..13, because the swing is sampled once a frame against
+      four calls a frame. cmp 11 is the nearest and keeps the most period
+      (13 calls, 3.25 frames, against the original's 3.75). The file's row
+      at -t 180 (shipped arm): bend 1.027 -> 0.962, travel 1.083 -> 1.022,
+      reversals 1.057 -> 1.058, depth 1.000 -> 0.999; melody, wave, gate and
+      adsr flat. Corpus byte-hash under presets: the only mover is
+      Las_Vegas_Video_Poker (89 converted, 6 refused, Commando same).
 
     * `multiplier` is in both because Goattracker's counter advances per play
       call and the player's per frame -- the same per-frame/per-call division
@@ -1051,6 +1109,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
             overwritten += 1
             continue
         entry = entry_of(data[base])
+        if engine == "bound/shift":
+            entry = _depth_trimmed(getattr(sid, "name", ""), i, entry)
         if entry is None:
             continue
         if entry not in speed_table:

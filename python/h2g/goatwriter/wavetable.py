@@ -1204,6 +1204,18 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # but the waveform too short to keep it off. 20 of the 23 instruments still
     # reading a frame early after v0.5.218 were on `-S2` files, against 3 on the
     # 45 single-speed ones.
+    # **The noise is emitted on the frame after the attack for every note, and
+    # on an outer-gated player that is the right frame for three notes in
+    # four, not all.** Warhawk $0F0A and Proteus $090A (reload 7, so one play
+    # call in 8 is skipped at a fixed frame residue) traced at -m1 for 180 s:
+    # the original's noise is the frame after the attack on 46/62 and 43/62
+    # notes, a frame later on 8/62 and 9/62 (the skipped frame is the one
+    # after the attack) and held a second frame on 8/62 and 10/62 (the skip
+    # is the one after that). Which a note gets is `attack_frame mod 8` --
+    # perfectly, in both files -- so it is the note's place in the song and not
+    # its record, which one wavetable cannot say (the same finding as
+    # Rasputin's, H2G-CONVERSION-METHOD.md 7.ooooooo). The majority frame is
+    # what is written. tests/test_drum_wave_outer_gate_phase.py.
     lead, lead_r = _first_frame_lead(wave, multiplier, force=True,
                                      written=written)
     noise = _drum_tick_noise(wave, multiplier, written)

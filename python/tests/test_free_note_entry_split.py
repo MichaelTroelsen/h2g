@@ -156,9 +156,13 @@ def test_knucklebusters_settles_original_33_on_the_traced_instruments(
     assert line.endswith("(2 entered with two instruments; 1 follows another "
                          "instrument)"), line
     _rows, (tracks, patterns, copies) = seen["split"]
-    assert sorted(set(copies.values())) == [0x21, 0x44, 0x45]
+    # Pattern numbers of the families' sources. 0x44/0x45 until `$FD a b` was
+    # read as a tempo (Knucklebusters' voice 2 no longer ends at its first
+    # `$FD`), which moves their pattern numbers up by 12: the same two
+    # families, renumbered (found by running it, not derived). The instrument assertions below are unchanged.
+    assert sorted(set(copies.values())) == [0x21, 0x50, 0x51]
     entry = NP._entry_instruments(tracks, patterns)
-    for source in (0x44, 0x45):
+    for source in (0x50, 0x51):
         family = [source] + [c for c, s in copies.items() if s == source]
         assert all(len(entry[p]) == 1 for p in family), \
             {p: entry[p] for p in family}

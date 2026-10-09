@@ -198,7 +198,9 @@ def test_only_rasputin_s_bytes_move():
     presets = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     always = {k: v for k, v in presets["always"].items()
               if k in ("effects", "slides", "status_bit6", "skip_gate")}
-    for name in ("Commando.sid", "Knucklebusters.sid", "Tarzan.sid"):
+    # Knucklebusters is no longer on this list: its `$FD a b` IS a tempo
+    # command, read into the same map (tests/test_knucklebusters_fd_tempo.py).
+    for name in ("Commando.sid", "Tarzan.sid"):
         path = CORPUS / name
         if not path.exists():
             continue

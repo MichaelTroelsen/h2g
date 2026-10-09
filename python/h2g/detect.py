@@ -207,6 +207,12 @@ class Detection:
     # frequency table's own length. Read from each player's reader, never
     # assumed from the version, for the reason `track_fd_ends` records.
     track_fd_transpose: bool = False
+    # `$FD a b` is a THREE-byte tempo command that continues the orderlist
+    # (Knucklebusters `$04B0`): `a` goes to the speed gate's reload and
+    # counter, `b` to the outer gate's. -1 when absent, otherwise the CPU
+    # address of the cell `a` is stored to, which `_orderlist_tempo_terms`
+    # checks against the speed gate it read. See _find_fd_tempo.
+    track_fd_tempo: int = -1
     track_fe_command: bool = False
     # ...and the `$FE nn` operand is stored into the outer gate's COUNTER as
     # well as its reload, so every tempo change restarts the gate's cycle
@@ -2034,6 +2040,14 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     det.track_fd_ends, det.track_fe_command = _find_track_terminators(sid)
     det.track_fe_restarts_gate = (det.track_fe_command
                                   and _find_fe_gate_restart(sid))
+    det.track_fd_tempo = _find_fd_tempo(sid)
+    if det.track_fd_tempo >= 0:
+        # `$FD a b` continues the list (see TRACK_FD_TEMPO): the terminator
+        # probe above matched the `CMP #$FD` and cannot tell the two readings
+        # apart, exactly as for the transpose form below.
+        det.track_fd_ends = False
+        log("Track reader............: $FD a b is a three-byte tempo command "
+            "(speed gate, outer gate) and the list continues")
     if det.track_fd_transpose:
         # `$FD` is a two-byte TRANSPOSE in this reader, not a terminator.
         # `_find_track_terminators` looks for a `CMP #$FD` within reach of the
@@ -6670,6 +6684,41 @@ TRACK_FD_TEST = b"\xc9\xfd"
 # broke the byte-exact fixture.
 TRACK_FE_COMMAND = re.compile(
     rb"\xc9\xfe\xd0(.)\xfe(..)\xc8\xb1(.)\x8d(..)\x8d(..)", re.DOTALL)
+
+
+# Knucklebusters only: `$FD a b` is a three-byte command that CONTINUES the
+# list, where Rasputin's `$FD` is `JSR` / `JMP` (this voice is done):
+#
+#     04B0  CMP #$FD / BNE pattern
+#     04B4  INY / LDA (ptr),Y / STA $0980 / STA $0967     ; a: speed gate
+#     04BD  INY / LDA (ptr),Y / STA $0468 / STA $0981     ; b: outer gate
+#     04C6  INY / TYA / STA index,X / LDA (ptr),Y         ; then the pattern
+#
+# `$0980` is the speed gate's reload and `$0468` the operand of the `LDA #imm`
+# the outer gate reloads itself from (self-modified), so the pair is a row length of
+# `(a + 1) * (b + 1) / b` frames, changed mid-orderlist for every voice. Read
+# as a terminator (the Rasputin reading), subtune 0's voice 2 stopped at its
+# first `$FD` at frame 18042 and the other two voices never saw the tempo
+# change that follows it: 2134 attacks against the original's 3417 at -t 600.
+TRACK_FD_TEMPO = re.compile(
+    rb"\xc9\xfd\xd0.\xc8\xb1(.)\x8d(..)\x8d..\xc8\xb1(.)\x8d..\x8d..\xc8\x98\x9d..\xb1(.)",
+    re.DOTALL)
+
+
+def _find_fd_tempo(sid: SidFile) -> int:
+    """CPU address of `$FD a b`'s first-operand cell, or -1: see TRACK_FD_TEMPO.
+
+    Anchored on the reader like `_find_track_terminators`: only a match inside
+    the bytes after the orderlist reader's `$FF` test (the 48-byte window of
+    `_find_track_terminators` plus the command's own length) counts, because
+    the same bytes could in principle occur anywhere in a player.
+    """
+    for r in TRACK_READER.finditer(sid.data):
+        m = TRACK_FD_TEMPO.search(sid.data, r.start(), r.start() + 48 + 28)
+        # All three loads go through the one pointer the reader tested.
+        if m and m.group(1) == m.group(3) == m.group(4):
+            return m.group(2)[0] | m.group(2)[1] << 8
+    return -1
 
 
 def _find_track_terminators(sid: SidFile) -> tuple:

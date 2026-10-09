@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.522 — 2026-10-09
+
+- runqueue cycle 5: past-table split by note row, skydive carry, Knucklebusters FD tempo, Las_Vegas depth trim
+
 ## 0.5.521 — 2026-10-09
 
 - runqueue cycle 4: startup phase takes gate_off_firstwave, patched-split classic vibrato, Mega counter fall

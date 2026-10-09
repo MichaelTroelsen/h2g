@@ -24,10 +24,27 @@ exactly `$0100`, so step k of the fall is `$100 * k` below the frequency the
 program found -- a speed-table entry `(k, $00)`. The alternating program
 spends two wavetable steps per pair of frames, `F2 k` down and `F1 k` back
 up; a wavetable command runs instead of the voice's vibrato on its frame
-(gplay.c:528-690, player.s mt_execwavecmd), so the vibrato is held where the
-program found it for the length of the fall, which is the approximation this
-makes. The holding program steps `F2 1` on each fall frame and leaves the
+(gplay.c:528-690, player.s mt_execwavecmd), so a program built only from
+those holds the vibrato where the program found it for the length of the
+fall. The holding program steps `F2 1` on each fall frame and leaves the
 frame between to a no-op.
+
+**Where the vibrato can be read, the program carries it** (`SkydiveVibrato`,
+`skydive_targets`). The global-triangle vibrato (detect._find_triangle_
+vibrato, all six files whose record vibrates) is a pure function of the
+play-entry counter -- `note + fold(counter & 7) * (interval >> (byte + 1))`,
+folded 0,1,2,3,3,2,1,0 -- and the counter is the very cell the skydive tests
+(`triangle_counter`). So the frequency the original writes on every frame of
+the window is known in advance: the vibrato on the frames between stores,
+and the same vibrato's low byte under the falling high byte on the stores
+(Hunter_Patrol: stores `67A1 66DA 654C 6413` carry the low bytes of
+`6AA1 69DA 684C 6913`, the vibrato's own). Every frame of the program is then
+one portamento command whose speed is the difference to the frame before, so
+the vibrato is not held off but written into the speeds. A program of that
+kind depends on the note's pitch and on the counter's phase, which a pitch
+-independent held program does not, so a row asking for it is given one only
+where every play of it asks for the same, and only while the wavetable and
+the speed table have room: the held program is the fallback, per program.
 
 Emitted only in GTS5 (the wavetable names speed-table rows, which a GTS2
 file does not store), with no outer gate, and only on a row whose every play
@@ -39,10 +56,15 @@ short by the call the row's tick 0 starts into (`skydive_row_offset`).
 """
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from ..detect import Detection
+from ..detect import (Detection, TRIANGLE_VIBRATO_GATE,
+                      TRIANGLE_VIBRATO_MAX_SHIFT, TRIANGLE_VIBRATO_PERIOD,
+                      TRIANGLE_VIBRATO_SHAPE)
+from ..search import search_file
 from ..sidfile import SidFile, find_freq_table
 from .constants import (CMD_SETWAVEPTR, FORMAT_GTS5, GT_FIRST_NOTE,
                         GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
@@ -72,11 +94,165 @@ SKYDIVE_NOOP = 0x00
 SKYDIVE_NOTE_BASE = 0x00
 
 
+# Goattracker's own frequency table (gplay.c:9-31 `freqtbllo`/`freqtblhi`, the
+# first 96 entries, C-0 .. B-7): what a relative-note-0 wavetable step sets
+# the voice to, and so the frequency every program here is measured from. It
+# is transcribed rather than computed (`primitives._note_freq` floors the
+# formula, which is off by one on most entries and by 1880 on the clamped
+# last one).
+GT_FREQ_TABLE = (
+    0x0117, 0x0127, 0x0139, 0x014B, 0x015F, 0x0174, 0x018A, 0x01A1,
+    0x01BA, 0x01D4, 0x01F0, 0x020E, 0x022D, 0x024E, 0x0271, 0x0296,
+    0x02BE, 0x02E8, 0x0314, 0x0343, 0x0374, 0x03A9, 0x03E1, 0x041C,
+    0x045A, 0x049C, 0x04E2, 0x052D, 0x057C, 0x05CF, 0x0628, 0x0685,
+    0x06E8, 0x0752, 0x07C1, 0x0837, 0x08B4, 0x0939, 0x09C5, 0x0A5A,
+    0x0AF7, 0x0B9E, 0x0C4F, 0x0D0A, 0x0DD1, 0x0EA3, 0x0F82, 0x106E,
+    0x1168, 0x1271, 0x138A, 0x14B3, 0x15EE, 0x173C, 0x189E, 0x1A15,
+    0x1BA2, 0x1D46, 0x1F04, 0x20DC, 0x22D0, 0x24E2, 0x2714, 0x2967,
+    0x2BDD, 0x2E79, 0x313C, 0x3429, 0x3744, 0x3A8D, 0x3E08, 0x41B8,
+    0x45A1, 0x49C5, 0x4E28, 0x52CD, 0x57BA, 0x5CF1, 0x6278, 0x6853,
+    0x6E87, 0x751A, 0x7C10, 0x8371, 0x8B42, 0x9389, 0x9C4F, 0xA59B,
+    0xAF74, 0xB9E2, 0xC4F0, 0xD0A6, 0xDD0E, 0xEA33, 0xF820, 0xFFFF,
+)
+# The folded triangle's peak: `fold(c & 7)` runs 0,1,2,3,3,2,1,0.
+SKYDIVE_VIBRATO_PEAK = 3
+# Whether a window's program may write the vibrato out. A carried program is
+# pitch-specific and so bigger than the held one it replaces, and in a
+# compilation every further player is appended into the SAME 255-row tables:
+# `convert._append_players` runs the conversion again without them, and again
+# with only the room that left, when the carried programs cost it a player.
+CARRY_VIBRATO = True
+# None, or the (wavetable, speed table) rows a plan's carried programs may add
+# to its own held layout -- what the compilation had left over (`vibrato_carry`).
+CARRY_BUDGET: Optional[Tuple[int, int]] = None
+
+
+@contextlib.contextmanager
+def vibrato_carry(on: bool, budget: Optional[Tuple[int, int]] = None):
+    """Run a conversion with the carried-vibrato programs allowed or not,
+    and held to `budget` extra (wavetable, speed table) rows if given."""
+    global CARRY_VIBRATO, CARRY_BUDGET
+    before = CARRY_VIBRATO, CARRY_BUDGET
+    CARRY_VIBRATO, CARRY_BUDGET = on, budget
+    try:
+        yield
+    finally:
+        CARRY_VIBRATO, CARRY_BUDGET = before
+
+
+# A portamento speed at or above `$8000` is note-relative (gplay.c:543-551).
+SKYDIVE_MAX_SPEED = 0x7FFF
+
+
 @dataclass(frozen=True)
 class SkydivePlan:
     """The finished patterns and the program block to append to the wavetable."""
     patterns: List[List[int]]
     entries: List[Tuple[int, int]]
+
+
+@dataclass(frozen=True)
+class SkydiveVibrato:
+    """What a window needs of the original's vibrato to write it out.
+
+    `counter` is the play-entry counter's value (mod 8) on the program's
+    frame 0, `base` the note's frequency in the ORIGINAL's table (what its
+    vibrato oscillates around, so what the program reproduces frame for
+    frame), `step` the oscillator's unit, `interval >> (byte + 1)` off the
+    same table, and `anchor` Goattracker's own frequency for the note --
+    where a relative-note-0 step puts the voice, so where the program starts
+    and ends. It is the base itself where the original's table is not known.
+    """
+    counter: int
+    base: int
+    step: int
+    anchor: Optional[int] = None
+
+    @property
+    def start(self) -> int:
+        return self.base if self.anchor is None else self.anchor
+
+
+def triangle_counter(sid: SidFile) -> Optional[int]:
+    """The address of the global-triangle vibrato's oscillator counter.
+
+    The `LDA abs` in front of the shape's `AND #$07` (One_Man_and_his_Droid
+    $11A0 `AD 1C 15`). None where the file has no such vibrato.
+    """
+    at = search_file(sid.data, TRIANGLE_VIBRATO_SHAPE)
+    if at < 3 or sid.data[at - 3] != 0xAD:
+        return None
+    return sid.data[at - 2] | sid.data[at - 1] << 8
+
+
+def vibrato_phase(counter: int) -> int:
+    """The oscillator's `fold(counter & 7)`: 0,1,2,3,3,2,1,0 (`AND #$07 /
+    CMP #$04 / BCC / EOR #$07`)."""
+    c = counter & 7
+    return c ^ 7 if c >= 4 else c
+
+
+def skydive_vibrato_shifts(sid: SidFile, det: Detection,
+                           records: Dict[int, bool]) -> Dict[int, int]:
+    """{record index: its vibrato shift count} for the records whose
+    vibrato the window can write out.
+
+    Only the global-triangle dialect (the others' oscillators are per
+    instrument), only where its counter is the skydive's own, only where
+    every note that has a window also has the vibrato (`min_length` at least
+    the player's own length gate), and only for a count the player does not
+    shift to nothing (`TRIANGLE_VIBRATO_MAX_SHIFT`: `interval >> (byte + 1)`
+    is zero from 15 on, and a record that stores 188 or 255 there has no
+    vibrato to carry).
+    """
+    sd = det.skydive
+    if (sd is None or det.triangle_vibrato is None
+            or triangle_counter(sid) != sd.counter
+            or sd.min_length < (det.triangle_gate or TRIANGLE_VIBRATO_GATE)):
+        return {}
+    out: Dict[int, int] = {}
+    for i, alternates in records.items():
+        if not alternates:
+            continue
+        at = det.instr_start + i * det.instr_stride + det.triangle_vibrato
+        if at < len(sid.data) and 0 < sid.data[at] < TRIANGLE_VIBRATO_MAX_SHIFT:
+            out[i] = sid.data[at]
+    return out
+
+
+def _orig_freq(sid: SidFile, index: int) -> Optional[int]:
+    table = find_freq_table(sid)
+    if table is None or not 0 <= index < table.length:
+        return None
+    at = sid.to_offset(table.addr) + 2 * index
+    if not 0 <= at or at + 1 >= len(sid.data):
+        return None
+    return sid.data[at] | sid.data[at + 1] << 8
+
+
+def window_vibrato(sid: SidFile, shift: Optional[int], note: int,
+                   counter: int) -> Optional[SkydiveVibrato]:
+    """The vibrato a window on Goattracker note index `note` writes, or None.
+
+    `counter` is the play-entry counter on the program's frame 0. The unit is
+    the original's own: the interval to the next note in ITS table, shifted
+    `shift + 1` times (the depth loop `LSR / ROR / DEC / BPL`, which runs
+    `shift + 1` times), the same index `_high_byte` reads the store from.
+    None where the peak would carry the 16-bit frequency over, or the step
+    is nothing.
+    """
+    if shift is None or not 0 <= note < len(GT_FREQ_TABLE) - 1:
+        return None
+    table = find_freq_table(sid)
+    index = note - (table.shift if table is not None else 0)
+    here, there = _orig_freq(sid, index), _orig_freq(sid, index + 1)
+    if here is None or there is None or there <= here:
+        here, there = GT_FREQ_TABLE[note], GT_FREQ_TABLE[note + 1]
+    step = (there - here) >> (shift + 1)
+    if not step or here + SKYDIVE_VIBRATO_PEAK * step > 0xFFFF:
+        return None
+    return SkydiveVibrato(counter=counter & (TRIANGLE_VIBRATO_PERIOD - 1),
+                          base=here, step=step, anchor=GT_FREQ_TABLE[note])
 
 
 def skydive_records(sid: SidFile, det: Detection,
@@ -146,15 +322,84 @@ def skydive_speed(k: int, multiplier: int = 1) -> Optional[Tuple[int, int]]:
 
 
 def skydive_program(phase: int, writes: int, alternates: bool,
-                    speed_index, multiplier: int = 1) -> List[Tuple[int, int]]:
+                    speed_index, multiplier: int = 1,
+                    vib: Optional[SkydiveVibrato] = None,
+                    speed_row=None) -> List[Tuple[int, int]]:
     """The wavetable steps for one window, from the frame its row starts
     (`skydive_calls`, one entry per call, runs of still calls a delay)."""
     return _compress(skydive_calls(phase, writes, alternates, speed_index,
-                                   multiplier))
+                                   multiplier, vib=vib, speed_row=speed_row))
+
+
+def skydive_targets(phase: int, writes: int, vib: SkydiveVibrato
+                    ) -> List[int]:
+    """The frequency the voice should read on each frame of an alternating
+    window that writes out its vibrato, frame 0 to the one after the last
+    store.
+
+    The original writes `base + fold(counter) * step` every frame (the
+    vibrato), and on a store frame (frame `phase + 2j`) replaces the high
+    byte with the note's own less `j` -- over the vibrato's low byte, which is
+    what it just wrote. Frame 0 and the last are Goattracker's note
+    (`vib.start`, a relative-note-0 step) and not the original's: frame 0
+    because nothing the program knows of the voice before it (the row's own
+    vibrato has been running on a phase of its own), the last because the
+    program ends by putting the voice back where the instrument's vibrato
+    starts from (relative note 0 sets `vibtime` to zero).
+    """
+    last = phase + 2 * (writes - 1)
+    out: List[int] = []
+    for t in range(last + 2):
+        if t == 0 or t == last + 1:
+            out.append(vib.start)
+            continue
+        freq = vib.base + vibrato_phase(vib.counter + t) * vib.step
+        if t >= phase and not (t - phase) & 1:
+            freq = (((vib.base >> 8) - (t - phase) // 2) << 8) | (freq & 0xFF)
+        out.append(freq)
+    return out
+
+
+def skydive_vibrato_calls(phase: int, writes: int, vib: SkydiveVibrato,
+                          speed_row, multiplier: int = 1,
+                          first_calls: Optional[int] = None
+                          ) -> List[Optional[Tuple[int, int]]]:
+    """An alternating window with its vibrato written out, call by call.
+
+    Frame 0 and the last are relative-note-0 steps (`skydive_targets`); every
+    frame between is a portamento command of the difference to the frame
+    before, `F1` up or `F2` down, against the speed-table row
+    `speed_row(magnitude)` names. A command runs instead of the voice's
+    vibrato on its frame (gplay.c:528-690), so nothing the row's own vibrato
+    does can reach the voice while the program runs.
+
+    **A frame is `multiplier` calls** and the frame's movement is shared
+    between them, `magnitude // calls` on each and the remainder one more on
+    that many: only the last call of a frame is sampled, so how the movement
+    divides inside it is unobservable, but it has to add up. A frame that
+    moves nothing is a row of speed 0 -- not speed-table row 0, which the
+    packed player reads off the byte before the table.
+    """
+    m = max(1, multiplier)
+    first = m - skydive_row_offset(m) if first_calls is None else first_calls
+    targets = skydive_targets(phase, writes, vib)
+    calls: List[Optional[Tuple[int, int]]] = []
+    for t, here in enumerate(targets):
+        n = first if t == 0 else m
+        if t == 0 or t == len(targets) - 1:
+            calls += [(SKYDIVE_NOOP, SKYDIVE_NOTE_BASE)] * n
+            continue
+        move = here - targets[t - 1]
+        whole, extra = divmod(abs(move), n)
+        cmd = WAVECMD_PORTAUP if move > 0 else WAVECMD_PORTADOWN
+        for c in range(n):
+            calls.append((cmd, speed_row(whole + (c < extra))))
+    return calls
 
 
 def skydive_calls(phase: int, writes: int, alternates: bool, speed_index,
-                  multiplier: int = 1, first_calls: Optional[int] = None
+                  multiplier: int = 1, first_calls: Optional[int] = None,
+                  vib: Optional[SkydiveVibrato] = None, speed_row=None
                   ) -> List[Optional[Tuple[int, int]]]:
     """The window's program call by call, None where nothing is written.
 
@@ -186,7 +431,15 @@ def skydive_calls(phase: int, writes: int, alternates: bool, speed_index,
     every frame up to store 1 is a relative-note-0 step (`$00 $00`: the
     waveform left alone, the frequency set to the note's, gplay.c:719-725),
     and the pairs that follow move from there.
+
+    **With `vib` (and `speed_row`, `skydive_vibrato_calls`) the vibrato is
+    written into the program instead of held off by it**: every frame is
+    a portamento command of the difference to the frame before, so the frames
+    between stores carry the oscillator the original writes there.
     """
+    if alternates and vib is not None and speed_row is not None:
+        return skydive_vibrato_calls(phase, writes, vib, speed_row,
+                                     multiplier, first_calls)
     frames: List[Optional[Tuple[int, int]]] = []
     last = phase + 2 * (writes - 1)
     for t in range(last + (2 if alternates else 1)):
@@ -339,18 +592,22 @@ def _merge_instrument(instr: List[Optional[Tuple[int, int]]],
 
 def skydive_note_row_program(instr: List[Optional[Tuple[int, int]]],
                              phase: int, writes: int, alternates: bool,
-                             speed_index, multiplier: int = 1
+                             speed_index, multiplier: int = 1,
+                             vib: Optional[SkydiveVibrato] = None,
+                             speed_row=None
                              ) -> Optional[List[Tuple[int, int]]]:
     """The program for a window that opens on the note row, or None
     (`skydive_note_row_calls`, runs of still calls a delay)."""
     merged = skydive_note_row_calls(instr, phase, writes, alternates,
-                                    speed_index, multiplier)
+                                    speed_index, multiplier, vib, speed_row)
     return None if merged is None else _compress(merged)
 
 
 def skydive_note_row_calls(instr: List[Optional[Tuple[int, int]]],
                            phase: int, writes: int, alternates: bool,
-                           speed_index, multiplier: int = 1
+                           speed_index, multiplier: int = 1,
+                           vib: Optional[SkydiveVibrato] = None,
+                           speed_row=None
                            ) -> Optional[List[Optional[Tuple[int, int]]]]:
     """A note-row window's program call by call, the instrument's own
     program merged in (`_merge_instrument`); None where they conflict.
@@ -362,14 +619,20 @@ def skydive_note_row_calls(instr: List[Optional[Tuple[int, int]]],
     it, the init is the last call of the row's frame 0 (`skydive_row_offset`)
     and the program still starts on frame 1, unless the frame has calls left
     after the init (-S3 and up), which are the program's frame 0.
+
+    `vib.counter` is the oscillator's phase on the ROW's frame 0; the
+    program's frame 0 is `frame0` frames later.
     """
     m = max(1, multiplier)
     rest = m - skydive_row_offset(m) - 1
     frame0, first = (0, rest) if rest > 0 else (1, m)
     if phase < frame0:
         return None
+    if vib is not None:
+        vib = dataclasses.replace(
+            vib, counter=(vib.counter + frame0) % TRIANGLE_VIBRATO_PERIOD)
     sky = skydive_calls(phase - frame0, writes, alternates, speed_index, m,
-                        first_calls=first)
+                        first_calls=first, vib=vib, speed_row=speed_row)
     return _merge_instrument(instr, sky, alternates)
 
 
@@ -415,6 +678,28 @@ def _lap_rows(track: List[int], patterns: List[List[int]]):
         repeat = 1
 
 
+def _program_order(key):
+    """Sort key for a (window, vibrato) program key: the vibrato is None or
+    a dataclass, which do not compare."""
+    want, vib = key
+    return (want, vib is not None,
+            (vib.counter, vib.base, vib.step, vib.start) if vib is not None
+            else ())
+
+
+@dataclass
+class _Assembly:
+    """One way of laying the programs out: which are carried, where they
+    start, and the speed table they left behind."""
+    entries: List[Tuple[int, int]]
+    starts: Dict[tuple, int]
+    row_keys: Dict[tuple, tuple]
+    note_starts: Dict[tuple, int]
+    note_keys: Dict[tuple, tuple]
+    note_declined: Dict[str, int]
+    table: List[tuple]
+
+
 def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                  patterns: List[List[int]], lead: int, instr_used: int,
                  fmt: str, multiplier: int, gate_skip: Optional[int],
@@ -438,6 +723,14 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     is a window opening asking for the same program, and its command column
     persists the row before's; a pattern reached under another instrument,
     or on the other parity, keeps its bytes. None where nothing is taken.
+
+    **A window that can write the vibrato out asks for a program of its own
+    pitch and phase** (`window_vibrato`, `skydive_vibrato_calls`), which a
+    row gets only where every play of it asks for the same one; otherwise
+    its held program, which does not depend on either, is the fallback. The
+    programs are laid out held first, and each carried one is added only
+    while the wavetable and the speed table take it without costing a note-row
+    program its place (`assemble`, most-used first).
 
     **A note shorter than `last_ticks` opens its window on the note row
     itself** (`dur - last_ticks + 1 <= 0`: the ticks-left counter is below
@@ -477,6 +770,8 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     if len(tracks) // 3 > max(sid.subtunes, 1):
         return None                      # a split subtune shifted the numbering
     by_number = {i + lead + 1: alt for i, alt in records.items()}
+    by_shift = {i + lead + 1: s for i, s in
+                skydive_vibrato_shifts(sid, det, records).items()}
 
     plays: Dict[tuple, int] = {}
     asks: Dict[tuple, List[tuple]] = {}
@@ -509,14 +804,16 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 continue
             j0 = dur - sd.last_ticks + 1
             lag = 0 if no_test_restart or current in real_firstwave else 1
+            index = note - GT_FIRST_NOTE + transpose
             if j0 <= 0:
                 if wave_entries is None or wave_starts is None:
                     declined["opens on the note row"] += 1
                     continue
                 # Frame 0 is the fetch, which runs no effect; the first
                 # store is on the first odd-counter frame after it.
-                phase = 1 if (base + first + a * frames + 1) & 1 else 2
-                high = _high_byte(sid, note - GT_FIRST_NOTE + transpose)
+                counter = base + first + a * frames
+                phase = 1 if (counter + 1) & 1 else 2
+                high = _high_byte(sid, index)
                 writes = skydive_writes((end - a) * frames, phase, high)
                 if writes < 2:
                     declined["too few stores"] += 1
@@ -527,15 +824,18 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                                 <= GT_LAST_NOTE)
                 note_asks.setdefault((p, r), []).append(
                     (phase + lag, writes, current,
-                     note_row_column_free(cmd, ends_on_note)))
+                     note_row_column_free(cmd, ends_on_note),
+                     window_vibrato(sid, by_shift.get(current), index,
+                                    counter - lag)))
                 if cmd:
                     calls = (end - a) * frames * max(1, multiplier) - 1
                     note_cover[(p, r)] = max(note_cover.get((p, r), 0),
                                              calls)
                 continue
             at = a + j0
-            phase = 0 if (base + first + at * frames) & 1 else 1
-            high = _high_byte(sid, note - GT_FIRST_NOTE + transpose)
+            counter = base + first + at * frames
+            phase = 0 if counter & 1 else 1
+            high = _high_byte(sid, index)
             writes = skydive_writes((end - at) * frames, phase, high)
             if writes < 2:
                 declined["too few stores"] += 1
@@ -551,21 +851,29 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             # converter lines the ATTACK up with the original's and this
             # window is that many frames past it (`lag`, above).
             asks.setdefault((wp, wr), []).append(
-                (phase + lag, writes, by_number[current], safe))
+                (phase + lag, writes, by_number[current], safe,
+                 window_vibrato(sid, by_shift.get(current), index,
+                                counter - lag)
+                 if by_number[current] else None))
 
     def take(table_of_asks):
+        """{row: held program}, {row: the vibrato every play asks for or
+        None}, and how many rows were refused."""
         got: Dict[tuple, tuple] = {}
+        vibs: Dict[tuple, Optional[SkydiveVibrato]] = {}
         bad = 0
         for key, wants in table_of_asks.items():
-            if (len(wants) == plays.get(key, 0) and len(set(wants)) == 1
-                    and wants[0][3]):
+            if (len(wants) == plays.get(key, 0)
+                    and len({w[:4] for w in wants}) == 1 and wants[0][3]):
                 got[key] = wants[0][:3]
+                carried = {w[4] for w in wants}
+                vibs[key] = carried.pop() if len(carried) == 1 else None
             else:
                 bad += 1
-        return got, bad
+        return got, vibs, bad
 
-    taken, mixed = take(asks)
-    note_taken, note_mixed = take(note_asks)
+    taken, row_vib, mixed = take(asks)
+    note_taken, note_vib, note_mixed = take(note_asks)
     if not taken and not note_taken:
         say(f"{sum(len(w) for w in asks.values())} window(s), none taken "
             f"({mixed} row(s) mixed or occupied)"
@@ -574,125 +882,180 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                if note_asks else ""))
         return None
 
-    table = speed_table
-
-    def speed_index(k: int) -> int:
-        entry = skydive_speed(k, multiplier)
-        if entry is None:
-            raise OverflowError
-        if entry not in table:
-            if len(table) >= GT_MAX_TABLELEN:
-                raise OverflowError
-            table.append(entry)
-        return table.index(entry) + 1
-
-    snapshot = list(table)
-    entries: List[Tuple[int, int]] = []
-    starts: Dict[tuple, int] = {}
-    try:
-        for want in sorted(set(taken.values())):
-            starts[want] = wave_used + len(entries) + 1
-            entries += skydive_program(*want, speed_index, multiplier)
-    except OverflowError:
-        table[:] = snapshot
-        say(f"speed table full or a step not a whole per-call rate at "
-            f"-S{multiplier}, not emitted")
-        return None
-    if wave_used + len(entries) > GT_MAX_TABLELEN:
-        table[:] = snapshot
-        say(f"{len(entries)} wavetable step(s) past MAX_TABLELEN, not emitted")
-        return None
-
-    # The note-row windows' programs, each placed where it fits.
-    note_starts: Dict[tuple, int] = {}
-    note_declined = {"instrument program loops": 0,
-                     "instrument program conflicts": 0,
-                     "speed table": 0, "wavetable full": 0}
     instr_of: Dict[int, Optional[list]] = {}
-    shape: Dict[tuple, Optional[list]] = {}
-    for want in sorted(set(note_taken.values())):
-        phase, writes, number = want
+
+    def instrument_program(number: int) -> Optional[list]:
         if number not in instr_of:
             start = (wave_starts[number - 1]
                      if number - 1 < len(wave_starts) else 0)
             instr_of[number] = (instrument_calls(wave_entries, start)
                                 if start else [])
-        if instr_of[number] is None:
-            note_declined["instrument program loops"] += 1
-            shape[want] = None
-            continue
-        # The shape alone first (no speed row is registered for it): which
-        # calls write, and how many the program has.
-        shape[want] = skydive_note_row_calls(instr_of[number], phase, writes,
-                                             by_number[number],
-                                             lambda k: 0, multiplier)
-        if shape[want] is None:
-            note_declined["instrument program conflicts"] += 1
-    uncovered = 0
-    for key in list(note_taken):
-        calls = shape.get(note_taken[key])
-        if calls is None:
-            del note_taken[key]
-        elif key in note_cover and (None in calls
-                                    or len(calls) < note_cover[key]):
-            del note_taken[key]
-            uncovered += 1
-    if uncovered:
-        note_declined["a command the program leaves a call"] = uncovered
-    for want in sorted(set(note_taken.values())):
-        phase, writes, number = want
-        before = list(table)
+        return instr_of[number]
+
+    def assemble(carried: frozenset) -> Tuple[Optional[_Assembly], str]:
+        """The programs laid out with the `carried` ones (program keys
+        `(window, vibrato)`) written out and every other window held, on a
+        copy of the speed table; the assembly or why not."""
+        table = list(speed_table)
+
+        def row_of(entry) -> int:
+            if entry not in table:
+                if len(table) >= GT_MAX_TABLELEN:
+                    raise OverflowError
+                table.append(entry)
+            return table.index(entry) + 1
+
+        def speed_index(k: int) -> int:
+            entry = skydive_speed(k, multiplier)
+            if entry is None:
+                raise OverflowError
+            return row_of(entry)
+
+        def speed_row(magnitude: int) -> int:
+            if not 0 <= magnitude <= SKYDIVE_MAX_SPEED:
+                raise OverflowError
+            return row_of((magnitude >> 8, magnitude & 0xFF))
+
+        def key_of(want, vib):
+            return (want, vib if (want, vib) in carried else None)
+
+        row_keys = {pr: key_of(want, row_vib.get(pr))
+                    for pr, want in taken.items()}
+        entries: List[Tuple[int, int]] = []
+        starts: Dict[tuple, int] = {}
         try:
-            prog = skydive_note_row_program(instr_of[number], phase, writes,
-                                            by_number[number], speed_index,
-                                            multiplier)
+            for key in sorted(set(row_keys.values()), key=_program_order):
+                starts[key] = wave_used + len(entries) + 1
+                entries += skydive_program(*key[0], speed_index, multiplier,
+                                           vib=key[1], speed_row=speed_row)
         except OverflowError:
-            table[:] = before
-            note_declined["speed table"] += 1
-            continue
-        if wave_used + len(entries) + len(prog) > GT_MAX_TABLELEN:
-            table[:] = before
-            note_declined["wavetable full"] += 1
-            continue
-        note_starts[want] = wave_used + len(entries) + 1
-        entries += prog
+            return None, (f"speed table full or a step not a whole per-call "
+                          f"rate at -S{multiplier}")
+        if wave_used + len(entries) > GT_MAX_TABLELEN:
+            return None, f"{len(entries)} wavetable step(s) past MAX_TABLELEN"
+
+        # The note-row windows' programs, each placed where it fits.
+        note_keys = {pr: key_of(want, note_vib.get(pr))
+                     for pr, want in note_taken.items()}
+        note_starts: Dict[tuple, int] = {}
+        note_declined = {"instrument program loops": 0,
+                         "instrument program conflicts": 0,
+                         "speed table": 0, "wavetable full": 0}
+        shape: Dict[tuple, Optional[list]] = {}
+        for key in sorted(set(note_keys.values()), key=_program_order):
+            (phase, writes, number), vib = key
+            instr = instrument_program(number)
+            if instr is None:
+                note_declined["instrument program loops"] += 1
+                shape[key] = None
+                continue
+            # The shape alone first (no speed row is registered for it):
+            # which calls write, and how many the program has.
+            shape[key] = skydive_note_row_calls(
+                instr, phase, writes, by_number[number], lambda k: 0,
+                multiplier, vib, lambda magnitude: 0)
+            if shape[key] is None:
+                note_declined["instrument program conflicts"] += 1
+        uncovered = 0
+        for pr in list(note_keys):
+            calls = shape.get(note_keys[pr])
+            if calls is None:
+                del note_keys[pr]
+            elif pr in note_cover and (None in calls
+                                       or len(calls) < note_cover[pr]):
+                del note_keys[pr]
+                uncovered += 1
+        if uncovered:
+            note_declined["a command the program leaves a call"] = uncovered
+        for key in sorted(set(note_keys.values()), key=_program_order):
+            (phase, writes, number), vib = key
+            before = list(table)
+            try:
+                prog = skydive_note_row_program(
+                    instrument_program(number), phase, writes,
+                    by_number[number], speed_index, multiplier, vib,
+                    speed_row)
+            except OverflowError:
+                table[:] = before
+                note_declined["speed table"] += 1
+                continue
+            if wave_used + len(entries) + len(prog) > GT_MAX_TABLELEN:
+                table[:] = before
+                note_declined["wavetable full"] += 1
+                continue
+            note_starts[key] = wave_used + len(entries) + 1
+            entries += prog
+        return _Assembly(entries, starts, row_keys, note_starts, note_keys,
+                         note_declined, table), ""
+
+    held, reason = assemble(frozenset())
+    if held is None:
+        say(f"{reason}, not emitted")
+        return None
+    # Carry the vibrato wherever it fits, the programs most rows share first,
+    # and never at the cost of a note-row program the held layout placed.
+    use: Dict[tuple, int] = {}
+    for rows_of, vibs in ((taken, row_vib), (note_taken, note_vib)):
+        for pr, want in rows_of.items():
+            if vibs.get(pr) is not None:
+                use[(want, vibs[pr])] = use.get((want, vibs[pr]), 0) + 1
+    best, carried = held, frozenset()
+    for key in (sorted(use, key=lambda k: (-use[k], _program_order(k)))
+                if CARRY_VIBRATO else ()):
+        trial, _ = assemble(carried | {key})
+        if (trial is not None
+                and len(trial.note_starts) >= len(held.note_starts)
+                and (CARRY_BUDGET is None
+                     or (len(trial.entries) - len(held.entries)
+                         <= CARRY_BUDGET[0]
+                         and len(trial.table) - len(held.table)
+                         <= CARRY_BUDGET[1]))):
+            best, carried = trial, carried | {key}
+    entries, starts = best.entries, best.starts
+    note_starts, note_declined = best.note_starts, best.note_declined
 
     out = [list(pat) for pat in patterns]
     edited = 0
-    for (p, r), want in sorted(taken.items()):
+    for pr, key in sorted(best.row_keys.items()):
+        p, r = pr
         trial = list(out[p])
         trial[4 * r + 2] = CMD_SETWAVEPTR
-        trial[4 * r + 3] = starts[want]
+        trial[4 * r + 3] = starts[key]
         if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(trial))
                 > PACKED_PATTERN_LIMIT):
             continue
         out[p] = trial
         edited += 1
     note_edited = 0
-    for (p, r), want in sorted(note_taken.items()):
-        if want not in note_starts:
+    for pr, key in sorted(best.note_keys.items()):
+        p, r = pr
+        if key not in note_starts:
             continue
         trial = list(out[p])
         trial[4 * r + 2] = CMD_SETWAVEPTR
-        trial[4 * r + 3] = note_starts[want]
+        trial[4 * r + 3] = note_starts[key]
         if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(trial))
                 > PACKED_PATTERN_LIMIT):
             continue
         out[p] = trial
         note_edited += 1
     if not edited and not note_edited:
-        table[:] = snapshot
         return None
+    speed_table[:] = best.table
     skipped = ", ".join(f"{n} {why}" for why, n in declined.items() if n)
     note_skipped = ", ".join(f"{n} {why}" for why, n in note_declined.items()
                              if n)
     say(f"{edited} window row(s) on {len(records)} record(s) "
         f"{sorted(records)}, {len(starts)} program(s) "
-        f"{sorted(starts)}, {len(entries)} wavetable step(s)"
+        f"{sorted(k[0] for k in starts)}, {len(entries)} wavetable step(s)"
+        + (f", {len(carried)} carrying the vibrato on "
+           f"{sum(k[1] is not None for k in best.row_keys.values())} row(s) "
+           f"and {sum(k[1] is not None for k in best.note_keys.values())} "
+           f"on the note row" if carried else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + (f"; declined: {skipped}" if skipped else "")
         + (f"; on the note row: {note_edited} row(s), {len(note_starts)} "
-           f"program(s) {sorted(note_starts)}"
+           f"program(s) {sorted(k[0] for k in note_starts)}"
            + (f", {note_mixed} row(s) mixed or occupied"
               if note_mixed else "")
            + (f", declined: {note_skipped}" if note_skipped else "")

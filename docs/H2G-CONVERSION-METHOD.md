@@ -8875,6 +8875,33 @@ movement, measured identically both times, is not.
 
 No preset moved, corpus-wide -- 0 gained, 0 lost.
 
+#### Correction: Knucklebusters is not one of the three
+
+2026-10-09, `knucklebusters-subtune0-underplay`. The title says three players,
+and the fixture-safe gate (`_find_track_terminators`) finds three, but the
+disassembly of Knucklebusters' reader says otherwise:
+
+    04B0  CMP #$FD / BNE pattern
+    04B4  INY / LDA (ptr),Y / STA $0980 / STA $0967     ; a: speed gate
+    04BD  INY / LDA (ptr),Y / STA $0468 / STA $0981     ; b: outer gate
+    04C6  INY / TYA / STA index,X / LDA (ptr),Y         ; then the pattern
+
+`$FD a b` is a **three-byte tempo command that continues the list**; it is
+neither Rasputin's `JSR ... JMP` (this voice is done) nor Tarzan's flag. The
+row becomes `(a + 1) * (b + 1) / b` frames for every voice at once. Read as a
+terminator it cut subtune 0's voice 2 at its first `$FD` (frame 18042 of the
+original's 30000) and left the other two voices on the old clock, which is the
+"2134 attacks against 3417 at -t 600, melody 77%" the task opened on. The "unchanged on its traced
+subtune" line above was true of the traced subtune's first 180 s only: the
+`$FD` pairs of subtunes 0 and 1 sit past that window. Read as a tempo,
+subtune 0 is melody 77% -> 100%, attacks 2134 -> 3439 against 3417, and the
+default subtune's length shortfall (-4.2 s) closes to +0.1 s.
+`Detection.track_fd_tempo` carries it, `tracks._build_track(fd_tempo=)` reads
+the pair into the same `tempos` map `$FE nn` uses, and
+`goatwriter._orderlist_tempo_terms` turns it into a row length -- only when
+the first operand's cell is the speed gate's reload. Only Knucklebusters'
+bytes move under presets.
+
 #### How it was found
 
 Not by looking for it. `hold` (§ 7.uuuu) reported Knucklebusters' `$00F8`
@@ -13069,6 +13096,40 @@ the 6/5 overshoot that had partly hidden that -- a per-subtune value in a
 global structure, carried open rather than fixed here.
 `tests/test_drum_sweep_gate_skip.py`.
 
+**The waveform's frame, at ae5b063.** The task opened on 6 of 40 and 41 notes
+whose waveform "lands a frame late" (`09 41 81`, first-toggle 0). Re-measured
+at 81a766c it was 8 of 62 notes in each file (180 s, presets, ours packed and
+traced at `-m7`): the testbit firstwave frame `$09` showing before the attack.
+`gate_off_firstwave` (`call_phase.GATE_OFF_FIRSTWAVE`) removed it: at ae5b063
+all 62 + 62 notes read `40 41 81 40`, and turning the seam off brings the
+`09 41 81` notes back. What is left is not ours. The original's drum, from
+gate rise `s`, is one of three shapes (waveform bytes from frame `s`):
+
+| shape | Warhawk `$0F0A` | Proteus `$090A` | the skipped frame is |
+|---|---:|---:|---|
+| `41 80 40 40` -- noise the frame after the attack (ours) | 46 | 43 | not `s+1` or `s+2` |
+| `41 41 80 40` -- noise a frame later | 8 | 9 | `s+1` |
+| `41 80 80 40` -- noise held a second frame | 8 | 10 | `s+2` |
+
+The skipped frame is the player's outer gate (`DEC $15AE / BPL`, reload 7,
+Warhawk `$1012`): one play call in 8 does nothing, at one fixed residue for
+the whole tune -- across the three voices, frame residue 7 (Warhawk) and 0
+(Proteus) carry 0 and 9 register changes in 180 s where each other residue
+carries ~3300. The shape is `s mod 8` and nothing else -- 7 residues seen, one shape
+each, in both files, the late shape on the residue just before the skip and
+the held shape on the one before that -- so it is the note's place in the song,
+not its record. A wavetable is per instrument, and our rows are stretched by
+(O+1)/O instead of skipping a call, so there is no skip to land on; no
+per-instrument emission can say it (the same finding as Rasputin's, § 7.ooooooo).
+Ours plays the majority shape on every note, which matches 74% and 69% of the
+original's notes and is a frame early, or a frame short, on the rest. The
+noise's gate bit (`81` against the original's `80`) is `_drum_tick_noise`'s
+measured trade, not this. The sweep's first decrement is the same residue
+story: the original's 3-or-4 (37/25 and 34/28) is the skip falling inside
+frames `s+1..s+3`, and ours has its own one-in-eight 4 (8 and 9 notes, one
+residue of `s mod 8` each) that is not the original's phase. Pinned by
+`tests/test_drum_wave_outer_gate_phase.py`.
+
 ### 7.oooooooo A drum that shares its record with an arpeggio never sweeps -- even at nibble zero
 
 Warhawk's and Proteus's `$0F09` record (record 6, `80 01 41 0F 09 00 40 05`:
@@ -13232,10 +13293,118 @@ The pointer names a program appended to the wavetable:
   one frame later, because the converter lines up the attack.
 
 **What this approximates.** A wavetable command runs instead of the voice's
-vibrato on its frame. So between stores, for the length of the fall, the
-vibrato is held at the note, where the original keeps vibrating. Separately,
+vibrato on its frame. So in the program above, between stores, for the length
+of the fall, the vibrato is held at the note, where the original keeps
+vibrating (the carried programs below do not have this). Separately,
 the restore after the last store lands on the next event's fetch frame. The
 original still holds the store there, so the restore is one frame early.
+
+**The vibrato between the stores is written into the program where the
+wavetable has room** (`SkydiveVibrato`, `skydive_targets`). The held program
+is pitch-independent and cannot carry it: an `F1 k` back up is one command, a
+command skips the row's `4xy`, and so the frames in between read the note. But
+the global-triangle vibrato of all six files whose record vibrates
+(`detect._find_triangle_vibrato`) is a pure function of a counter the block
+already tests:
+
+```
+frequency = note + fold(counter & 7) * (interval >> (byte + 1))     fold = 0,1,2,3,3,2,1,0
+```
+
+and the `LDA ctr / AND #$07` that reads the counter names the very cell the
+skydive's `AND #$01` does (`triangle_counter`; equal in all six). So the
+frequency on every frame of the window is known in advance. Hunter_Patrol
+`$A1B4` writes it every frame and the block overwrites only the high byte on
+the odd ones, which is why the original's stores `67A1 66DA 654C 6413` carry
+the low bytes of the vibrato frames `6AA1 69DA 684C 6913` beside them: the
+fold's `3 2 0 1`.
+
+* Every frame of a carried program is one portamento command (`F1` up, `F2`
+  down) of the difference to the frame before; frame 0 and the last are
+  Goattracker's note (relative note 0). The targets are the ORIGINAL's
+  frequencies, from its own table (`window_vibrato`: the interval to the next
+  note, shifted `byte + 1` times), with the store's high byte one less per
+  store over the low byte of that frame's vibrato (`skydive_targets`). The
+  first stores read `6813 69DA 67A1 6AA1 66DA 6913 654C`, as in the siddump.
+* A frame that moves nothing is a command against a speed row holding `0`.
+  Not a delay, which runs the row's vibrato (gplay.c:699-702), and not row 0,
+  which the packed player reads off the byte before the table.
+* Above -S1 a frame's movement is shared among its `multiplier` calls
+  (`whole` on each, the remainder one more on that many): only the last call
+  of a frame is sampled, so the division is free, but it has to add up.
+* The oscillator's phase on the program's frame 0 is the counter on the row's
+  first original frame, `base + first + at * frames`, less the lag the store
+  already carries; mod 8 it is part of the program, with the note and the
+  window's length.
+
+**That makes the program pitch-specific**, and the held one was not. A pattern
+row played at one pitch and one counter phase gets its own; one that is
+played at two keeps the held program. Hunter_Patrol's 14 window rows are 13
+different (note, phase) programs of 30 steps, and the wavetable has 69 rows
+free. So the plan lays out the held programs first, then adds the carried
+ones the most rows share while both tables take them and no note-row program
+loses its place (`skydive_plan`, `assemble`), and every other row keeps the
+held program. **Coverage is therefore what the free rows allow, not the
+windows the file has**, measured under presets at the bridged base 81a766c
+(2026-10-09):
+
+| file | rows carried | wavetable |
+|---|---|---|
+| Hunter_Patrol | 2 of 14 (one program) | 186 -> 216 -> 246 |
+| 5_Title_Tunes, subtune 1 | 3 of 8 (one of three programs) | within what the other four players leave |
+| Zoids | 1 of 1 window row, 2 of 2 note rows | 252 of 255, unchanged |
+| Gremlins | 0 of 20 alternating rows (11 programs of 26 steps) | 247 of 255 |
+| Master_of_Magic | 0 of 4 (a carried program is 74 steps at -S2) | 189 of 255 |
+| One_Man_and_his_Droid | 0 of 8 (100 steps at -S2) | 208 of 255 |
+
+Where a window IS carried it is frame-exact. Through gt2reloc and siddump
+(lag 7), over a window's frames, our frequency equals the original's:
+
+| window | carried | held |
+|---|---|---|
+| Hunter_Patrol voice 2, frames 300-320 | 21 of 21 | 0 of 21 (high byte 13) |
+| Hunter_Patrol voice 2, frames 516-536 | 21 of 21 | 0 of 21 (high byte 13) |
+| Zoids subtune 2, frames 413-475 (note row) | 63 of 63 | 0 of 63 (within `$40`: 16) |
+
+**A compilation pays for it out of tables every further player shares.**
+5_Title_Tunes carried two of its subtune 1 programs in the first draft, which
+needed 269 wavetable rows and left players 2-4 out ("wave table needs 269
+rows > 255"). `convert` therefore converts a compilation that came out short
+again without them (`skydive.vibrato_carry(False)`) and then once more with
+only the wave and speed rows that left over (`vibrato_carry(True, budget)`),
+and keeps the one with the most subtunes. The wave and speed rows left
+over are not summed over the players: each plan may spend them, and a
+second player doing so is caught by the subtune count. 5_Title_Tunes keeps
+all five.
+
+**What it does to the columns, and one thing it does not do.** The bend
+travel inside the original's windows (the `(+/- xxxx)` deltas siddump prints
+over a window and three frames before it and two after, `bendsplit.py`),
+lag-aligned, -t 180:
+
+| file, voice | original | before | after |
+|---|---|---|---|
+| 5_Title_Tunes s1, voice 1 | 49840 | 24738 | 38798 |
+| 5_Title_Tunes s1, voice 2 | 34609 | 18560 | 25590 |
+| Hunter_Patrol, voice 2 | 19821 | 16546 | 20360 |
+| Hunter_Patrol, voice 1 | 32334 | 30981 | 30981 |
+| Gremlins, voices 1 and 2 | 9306 / 6566 | 7499 / 7131 | unchanged |
+
+(Gremlins' windows are not under-travelled to begin with: ours is already
+above the original's in them, and no program fits.) Carried alone, the same
+change moved 5_Title_Tunes subtune 1's `travel_ratio` from 0.856 to **1.637**
+(re-measured at ae5b063 with `past_table_wave` as it was), and that was not the
+window: `within_note_travel` per voice read 692972 -> 1821752 on voice 0 and
+555648 -> 566518 on voice 1 (original 784099, 675142). Voice 0 plays wavetable
+notes that index past Goattracker's table, and the packed player reads those
+cells out of the orderlists' address bytes, which move with the size of the
+tables laid out before them. The 50 rows this adds shifted them: `$F701`
+became `$8B01` on voice 0 at frames 1050, 1052, 1054 ... in both traces, with
+no window involved. `past_table_wave` now splits that step by note (section
+7.zzzzzzz, `retarget_mixed_steps`), so the cells no longer depend on the
+layout, and with both changes `travel_ratio` is **0.878** (`our_travel`
+1248620 -> 1281230, original 1459241; `bend_ratio` 0.572 -> 0.600,
+`reversal_ratio` 0.836 -> 0.841; -a 1, -t 180, 2026-10-09).
 
 Measured at v0.5.510 with the merged drain applied, under presets, at -t 180,
 with siddump lag-aligned. The count is of frames on which the original's
@@ -14323,9 +14492,56 @@ stand-ins for running state a wavetable cannot follow. Phantoms' six D#7
 notes take the C-7 pin: one step serves both. Afterwards the three layout
 counts are 0, and only those three files move under presets or forced
 `pulse_phase`. A step any note reaches INSIDE the table keeps its relative
-byte (the other twelve files: a variant record would be needed to split it).
-Commando is held (`past_table_wave.HELD`): its fixture would move one byte.
-`tests/test_past_table_wave.py`.
+byte in the table (the other twelve files), but its overflowing NOTES no
+longer play it (below). Commando is held (`past_table_wave.HELD`): its
+fixture would move one byte. `tests/test_past_table_wave.py`.
+
+**Splitting a step by note** (`retarget_mixed_steps`, ae5b063 plus this
+change). Left alone, a mixed step kept its overflowing notes on the
+layout-dependent cell. 5_Title_Tunes' instrument 5 is the octave arpeggio
+`10 +12 / 10 +0 / FF`; on C#7 and D#7 the `+12` reads index 97 and 99, and
+the same conversion sounded `$F701` on those frames at one wavetable size and
+`$8B01` at another (69 siddump rows of voice 0, subtune 1, in the first 40 s) where
+the original sounds `$000E`. A step cannot be both relative and absolute, so
+the NOTE ROW that overflows it points at a pinned copy of the instrument's
+wave program: every run the program can reach, jumps remapped, the one step
+absolute at the original's cell (`$0127`, C#0, here). A row's own
+`CMD_SETWAVEPTR` replaces the instrument's wave pointer on the note's first
+call and touches nothing else, so no instrument is cloned and nothing after
+the row needs restoring. Where the row's command column is taken by
+`CMD_VIBRATO 0` (the vibrato pass's "this note never vibrates") on an
+instrument that does vibrate, the pointer cannot share the column: the row
+names a CLONE of the instrument with the vibrato off and the pinned program,
+and the next row names the original again if it names none (the clone is
+latched until a column says otherwise, `gplay.c:62`). A row left alone is
+counted in the log: its column is busy with anything else, it ends its pattern
+(no row to restore on), its contexts disagree, or the copy does not fit the
+wavetable, the instrument cap (62: 63 is the startup row) or
+`PACKED_PATTERN_LIMIT`. The rows and slots are shared with every further
+player of a compilation: 5_Title_Tunes without `compact_instruments` lost its
+fifth subtune to the two clones, so `_append_players` retries a compilation
+that came out short with the split off (`past_table_wave.mixed_split`) and
+keeps that if it appends more ("mixed wave steps left relative" in the log).
+
+Under presets, nine corpus files move (ae5b063): 5_Title_Tunes (6 rows, 2
+clones, 10 wavetable rows), Crazy_Comets (5 rows by pointer), Formula_1_Simulator
+(2), Gerry_the_Germ (4, 1 clone), Nineteen (1), One_Man_and_his_Droid (8),
+Star_Paws (4), Thing_on_a_Spring (1, 1 clone), Trans-Atlantic_Balloon_Challenge
+(1); the other 80 converted files are byte-identical. At the default window
+(-t 180) no ratio column moves in any of them, only `our_oscillation`
+(Formula_1_Simulator 0.550 -> 0.515, One_Man_and_his_Droid 0.445 -> 0.433, the
+rest by under 0.0003). That is the travel measure's own blind spot, not
+evidence of nothing: a step over 1/8 of the pitch counts as a note change and
+is not travel (`TRAVEL_NOTE_STEP`), `$F701` against the note's `$9389` is such a
+step and `$8B01` against it is not, which is exactly why the layout moved
+`travel_ratio` and the old cell did not; `$0127` is a note change in every
+layout. The pack is the evidence: 5_Title_Tunes subtune 1 voice 0, packed with
+the presets layout and the forced-`pulse_phase` layout, plays the same
+frequency on every frame of 40 s and never `$F701`
+(`tests/test_past_table_split.py`). Two files stay open: Saboteur_II (20
+rows) and Rock_Tells_the_Tale (3) play the same pattern row inside the table
+under one orderlist transpose and past it under another; only a CLONED
+PATTERN with its orderlist entries repointed could say both.
 
 ### 7.bbbbbbbb A record whose waveform has the gate clear closes the gate on its own fetch
 

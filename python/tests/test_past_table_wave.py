@@ -147,10 +147,21 @@ def test_cell_entry_reads_the_original_table(index, name, entry):
 
 @pytest.mark.parametrize("name", ["Crazy_Comets.sid", "One_Man_and_his_Droid.sid",
                                   "Saboteur_II.sid"])
-def test_a_step_some_note_reaches_inside_the_table_is_left_alone(name):
+def test_a_step_some_note_reaches_inside_the_table_keeps_its_relative_byte(name):
     """These reach indexes 96-104 too, but on records that also play notes
-    the relative step serves inside the table: one byte cannot be both."""
+    the relative step serves inside the table: one byte cannot be both, so
+    the original rows are not rewritten (`test_past_table_split.py` covers
+    the rows that now point at a pinned COPY of the program)."""
     out, before, _sid, _det, _final = _convert(name)
+    old, new = _song(before), _song(out)
+    assert new.tables[0][:len(old.tables[0])] == old.tables[0]
+    assert new.tables[1:] == old.tables[1:] and new.tracks == old.tracks
+
+
+def test_saboteur_is_left_on_the_relative_step_where_contexts_disagree():
+    """20 of its overflowing rows are played under two transposes, one
+    inside the table and one past it; a pattern clone would be needed."""
+    out, before, _sid, _det, _final = _convert("Saboteur_II.sid")
     assert out == before
 
 

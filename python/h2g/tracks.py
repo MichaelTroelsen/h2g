@@ -65,8 +65,9 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                  fd_ends: bool = False,
                  fe_command: bool = False,
                  fd_transpose: bool = False,
-                 tempos: Optional[Dict[int, int]] = None,
+                 tempos: Optional[Dict[int, object]] = None,
                  cmd_transposes: Optional[Dict[int, Tuple[int, int]]] = None,
+                 fd_tempo: bool = False,
                  ) -> List[int]:
     """One voice's orderlist. `transposes` records what was clamped away.
 
@@ -270,9 +271,12 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             # its `$85 nn` pattern transpose lifted into the orderlist -- see
             # the `cmd_transposes` paragraph in the docstring. Every marker
             # below is read exactly as version 0 reads it.
-            # **`$FD` ends a voice's list in the three players that test it.**
-            # Rasputin `$C094`, and the same shape in Knucklebusters and
-            # Tarzan:
+            # **`$FD` ends a voice's list in two of the three players that
+            # test it.** Rasputin `$C094`, and Tarzan (`$55AF`: `$FD` stores a
+            # flag and leaves). Knucklebusters tests the byte too but reads
+            # `$FD a b` as a three-byte tempo command that CONTINUES the list
+            # (`fd_tempo`, below): it was grouped with these two until
+            # subtune 0 was traced past frame 18042. Rasputin's shape:
             #
             #     C094  LDY index,X / LDA (ptr),Y / CMP #$FF / BEQ stop
             #     C09D  CMP #$FE / BNE +
@@ -287,7 +291,10 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             # a ten-entry list. Knucklebusters shows the audible end of it --
             # `$00F8` sounds 959 frames over 2 notes where the original sounds
             # 9 over 94, because the voice never reaches a retrigger
-            # (section 7.uuuu, found from the `hold` column).
+            # (section 7.uuuu, found from the `hold` column). (That `$00F8`
+            # reading was taken on the way to the `fd_ends` rule and is NOT
+            # re-derived here: Knucklebusters' `$FD` takes two operands and
+            # carries on, so check any claim about it against `fd_tempo`.)
             #
             # **Gated on the player, not on the version.** `$FE` really is
             # "tune ended" in the other version-0 players -- that is what
@@ -340,6 +347,22 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                     track.append(_transpose_byte(semitones))
                 if transposes is not None:
                     transposes[len(track) - 1] = semitones
+                continue
+            if b1 == 0xFD and fd_tempo:
+                # `$FD a b`: a three-byte TEMPO command that continues the
+                # list (Knucklebusters `$04B0`, `detect.TRACK_FD_TEMPO`). `a`
+                # reloads the speed gate, `b` the outer gate; the pair rides
+                # in `tempos` keyed by the position of the next entry, like
+                # `$FE nn`, and `goatwriter._orderlist_tempo_terms` turns it
+                # into a row length. Neither operand is a pattern number.
+                if addr + i2 + 1 >= len(data):
+                    if log:
+                        log("*** TRACK DATA RUNS PAST END OF FILE, TRUNCATED ***")
+                    track += [0xFF, 0x00]
+                    break
+                if tempos is not None:
+                    tempos[len(track)] = (data[addr + i2], data[addr + i2 + 1])
+                i2 += 2
                 continue
             if b1 == 0xFD and fd_ends:
                 track += [0xFF, 0xFD]
@@ -582,6 +605,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
                                        fd_ends=det.track_fd_ends,
                                        fe_command=det.track_fe_command,
                                        fd_transpose=det.track_fd_transpose,
+                                       fd_tempo=det.track_fd_tempo >= 0,
                                        tempos=smap,
                                        cmd_transposes=cmd_tx))
         built.append(voices)

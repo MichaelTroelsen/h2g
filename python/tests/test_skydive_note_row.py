@@ -118,13 +118,17 @@ def _converted(name, **extra):
 
 
 @needs_corpus
-def test_zoids_points_its_two_untied_short_notes_at_one_program():
+def test_zoids_points_its_two_untied_short_notes_at_one_program(monkeypatch):
     """Pattern $1E row 73 (subtune 0, played twice) and pattern $31 row 9
     (subtune 2): F-6 on GT 9, 23 ticks, `4 09` on the row. Each carries the
     pointer, and both name the one program the original's trace asks for
     (store 0 on row frame 3, 35 stores, alternating), built from GT 9's own
-    wave program. The two tied notes keep their `3 00`."""
+    wave program. The two tied notes keep their `3 00`.
+
+    The HELD program: the vibrato's carried programs (tests/
+    test_skydive_vibrato.py) are pitch-specific and not what this pins."""
     import songview
+    monkeypatch.setattr(S, "CARRY_VIBRATO", False)
     sng, lines = _converted("Zoids")
     song = songview.parse_sng(sng)
     hits, ties = [], []

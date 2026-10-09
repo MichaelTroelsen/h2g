@@ -696,7 +696,7 @@ def orderlist_tempo_calls(sid: SidFile, det: Detection,
         for at, (base, r, mult) in m.items():
             if base is None:
                 base = TEMPO_FASTEST_STEADY
-            row[at] = base * (r + 1) / r * mult
+            row[at] = (base * (r + 1) / r if r else base) * mult
         out.append(row)
     return out
 
@@ -723,7 +723,25 @@ def _orderlist_tempo_terms(sid: SidFile, det: Detection,
         # what the operand *is*, so taking a correction for it out of the file
         # image as well would apply it twice.
         base = None if speeds is None else speeds.frames_for(ti // 3)
-        out.append({at: (base, r, mult) for at, r in m.items() if r})
+        row = {}
+        for at, r in m.items():
+            if isinstance(r, tuple):
+                # `$FD a b` (Knucklebusters, `Detection.track_fd_tempo`): BOTH
+                # gates change, so the row is `(a + 1) * (b + 1) / b` frames
+                # with nothing left over from the subtune's own opening. Read
+                # only where the cell `a` is stored to IS the speed gate's
+                # reload, so a command that writes some other cell declines.
+                # The outer factor is taken only under `skip_gate`, which is
+                # when `effective_frames` puts it into the opening row too;
+                # without it the opening is the bare `A + 1` and so is this.
+                a, b = r
+                if (speeds is None or speeds.reload_addr != det.track_fd_tempo
+                        or not 0 <= a < 0x80 or not 0 < b < 0x80):
+                    continue
+                row[at] = (a + 1, b if skip_gate else None, mult)
+            elif r:
+                row[at] = (base, r, mult)
+        out.append(row)
     return out
 
 
@@ -764,7 +782,8 @@ def orderlist_tempo_clocks(sid: SidFile, det: Detection,
     terms = _orderlist_tempo_terms(sid, det, reloads, tempo, skip_gate)
     if not getattr(det, "track_fe_restarts_gate", False):
         return [{} for _m in terms]
-    return [{at: t for at, t in m.items() if t[0] is not None and t[1] < 0x80}
+    return [{at: t for at, t in m.items()
+             if t[0] is not None and t[1] is not None and t[1] < 0x80}
             for m in terms]
 
 

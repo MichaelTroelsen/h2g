@@ -138,12 +138,18 @@ def _converted(name):
 
 
 @needs_corpus
-def test_hunter_patrol_points_each_long_note_nine_rows_before_its_end():
+def test_hunter_patrol_points_each_long_note_nine_rows_before_its_end(
+        monkeypatch):
     """Fourteen notes on record 4 (GT 5) are 17 or 16 ticks long, seven a
     voice; each gets the pointer on the row 9 ticks before the next event,
     and every pointer names the one program (phase 1, 14 stores,
-    alternating) the original's trace asks for."""
+    alternating) the original's trace asks for.
+
+    The HELD program, which does not depend on the note's pitch: the
+    vibrato's carried programs (tests/test_skydive_vibrato.py) do, and
+    replace it on the rows they fit."""
     import songview
+    monkeypatch.setattr(S, "CARRY_VIBRATO", False)
     sng, lines = _converted("Hunter_Patrol")
     song = songview.parse_sng(sng)
     hits = []

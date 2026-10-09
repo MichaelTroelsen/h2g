@@ -6,6 +6,7 @@ from typing import Callable, List
 
 from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import call_phase as _call_phase
+from .goatwriter import skydive as _gw_skydive
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          TEMPO_FASTEST_STEADY,
                          append_song, build_sng, derived_group_tempos,
@@ -16,7 +17,8 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
-                         HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT)
+                         HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT,
+                         _parse_song, GT_MAX_TABLELEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -30,6 +32,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
+from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes
 from .sidfile import SidFile, load_sid
 from .stored_wave import stored_wave_copies
@@ -442,6 +445,11 @@ def convert(sid_path: str, log: Logger = print,
     `SidFile`, which is how each player's view is converted.
     """
     opts = {k: v for k, v in locals().items() if k not in ("sid_path", "log")}
+    if (_gw_skydive.CARRY_VIBRATO and _gw_skydive.CARRY_BUDGET is None
+            and not isinstance(sid_path, SidFile)):
+        again = _convert_with_carry_room(sid_path, log, opts)
+        if again is not None:
+            return again
     sid = sid_path if isinstance(sid_path, SidFile) else load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
     log(f"SID Name....: '{sid.name}'")
@@ -601,7 +609,7 @@ def convert(sid_path: str, log: Logger = print,
     if step_tempos:
         n = sum(len(m) for m in step_tempos)
         log(f"Orderlist tempo.........: {n} mid-song tempo change(s) from the "
-            "track dialect's $FE nn")
+            "track dialect's $FE nn / $FD a b")
     # Unconditional, and before the restart pass: a voice whose orderlist
     # holds nothing but an end marker makes greloc.c skip its whole subtune,
     # and every subtune past the resulting count is never written to the
@@ -1147,6 +1155,55 @@ def convert(sid_path: str, log: Logger = print,
     return written
 
 
+def _convert_with_carry_room(sid_path: str, log: Logger, opts: dict):
+    """The conversion of a compilation that has skydive windows, with the
+    carried-vibrato programs held to the room the held layout leaves, or None
+    where the file is not one.
+
+    **The skydive's carried programs are paid for out of tables every further
+    player shares.** A window that writes its vibrato out
+    (`goatwriter.skydive`) is a pitch-specific program, bigger than the held
+    one it replaces; on a compilation the players appended after it land in
+    the same 255-row tables, and 5_Title_Tunes' players 2-4 were the first to
+    be left out for it (the wavetable needed 269). So the file is converted
+    once without them, quietly, to see what is left over, and then for real
+    with only that many wave and speed rows to spend on them. Each plan may
+    spend all of it, so a second player doing so is caught by the subtune
+    count: the conversion with fewer subtunes loses, and the held one is kept
+    -- subtune n must stay the original's n.
+
+    Neither pass converts again (`CARRY_VIBRATO` off, `CARRY_BUDGET` set), and
+    a player's view is never asked (it is a loaded `SidFile`).
+    """
+    try:
+        sid, det = _detect_tables(load_sid(sid_path), lambda _m: None,
+                                  opts.get("engine", 0))
+    except (UnsupportedSidError, ConversionAbort, ValueError):
+        return None                      # the real pass says why
+    if (not det.can_convert or det.skydive is None or len(det.players) < 2
+            or isinstance(sid, PlayerView)):
+        return None
+    held_lines: List[str] = []
+    with _gw_skydive.vibrato_carry(False):
+        held = convert(sid_path, log=held_lines.append, **opts)
+    tables = _parse_song(held).tables
+    room = (GT_MAX_TABLELEN - len(tables[0]),
+            GT_MAX_TABLELEN - len(tables[3]) if len(tables) > 3 else 0)
+    if min(room) > 0:
+        log(f"Skydive (bit $02).......: a compilation of {len(det.players)} "
+            f"players; carried programs held to {room[0]} wavetable and "
+            f"{room[1]} speed-table row(s) beyond the held layout")
+        with _gw_skydive.vibrato_carry(True, room):
+            carried = convert(sid_path, log=log, **opts)
+        if carried[HEADER_LEN] >= held[HEADER_LEN]:
+            return carried
+        log("Skydive (bit $02).......: the carried programs left players out "
+            "of the compilation; the held conversion follows")
+    for line in held_lines:
+        log(line)
+    return held
+
+
 def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
                     opts: dict, log: Logger) -> bytes:
     """`sng` with players 1..N-1 of a compilation appended as subtunes.
@@ -1210,15 +1267,29 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
         if levels[-1][1].get(flag):
             levels.append((what, dict(levels[-1][1], **{flag: False})))
     views = {}
-    best = None
-    for what, level_opts in levels:
-        lines: List[str] = []
-        out, appended = _append_level(sng, sid, players, have, multiplier,
-                                      level_opts, views, lines.append)
-        if best is None or appended > best[1]:
-            best = (out, appended, what, lines)
-        if appended == len(players) - 1:
-            break
+
+    def best_level():
+        best = None
+        for what, level_opts in levels:
+            lines: List[str] = []
+            out, appended = _append_level(sng, sid, players, have, multiplier,
+                                          level_opts, views, lines.append)
+            if best is None or appended > best[1]:
+                best = (out, appended, what, lines)
+            if appended == len(players) - 1:
+                break
+        return best
+
+    best = best_level()
+    if best[1] < len(players) - 1 and _past_table_wave.SPLIT_MIXED:
+        # The split of a mixed wave step (past_table_wave) spends wavetable
+        # rows and instrument slots every further player shares: where it
+        # costs a player its place the steps stay relative, as before.
+        with _past_table_wave.mixed_split(False):
+            again = best_level()
+        if again[1] > best[1]:
+            best = (again[0], again[1],
+                    again[2] + ", mixed wave steps left relative", again[3])
     out, appended, what, lines = best
     for line in lines:
         log(line)
