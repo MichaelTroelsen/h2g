@@ -1,5 +1,13 @@
 """Bit $02's chromatic rise under the arpeggio, as a pattern-side stair.
 
+**The same pass writes the FALL** (`detect.EffectFall`, Las_Vegas_Video_Poker
+$537B): the rise's block with `DEC note,X` three times, so the note index drops
+three semitones every fourth counter step. Everything below holds with the sign
+and the step size read off the player (`RiseBlock.step`, `.mask`); the one
+addition is a record with no arpeggio program (`stair_kinds`), whose stair
+steps are TIES (`CMD_TONEPORTA 00`) because it has no note entry for a
+zero-speed toneportamento to be heard through.
+
 A record setting the rise (bit $02) AND the nibble arpeggio (bit $04) runs
 both blocks every working frame, rise first (Warhawk $13A2 then $13CD,
 Spellbound $E2FF then $E326):
@@ -81,10 +89,13 @@ RISE_BLOCK_INCREMENTS = ("FE", "F6")
 
 @dataclass(frozen=True)
 class RiseBlock:
-    """The rise block's file offset and the counter it divides."""
+    """The rise (or fall) block's file offset and the counter it divides."""
     at: int
     counter: int
     zp: bool
+    step: int = 1           # semitones per step, signed: -3 for the fall
+    mask: int = RISE_STEP_MASK
+    arp: bool = True        # the nibble arpeggio divides the SAME counter
 
 
 def rise_block(sid: SidFile, det: Detection) -> Optional[RiseBlock]:
@@ -104,6 +115,15 @@ def rise_block(sid: SidFile, det: Detection) -> Optional[RiseBlock]:
     any_load = "A5 ??" if zp else "AD ?? ??"
     width = 2 if zp else 3
     data = sid.data
+    fall = det.effect_fall
+    if fall is not None:
+        ctr_load = (f"A5 {fall.counter:02X}" if fall.zp
+                    else f"AD {fall.counter & 0xFF:02X} {fall.counter >> 8:02X}")
+        arp = search_file(data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D "
+                          f"?? ?? A0 02 C9 0C F0 02 A0 01 8C ?? ?? "
+                          f"{ctr_load} 29") >= 1
+        return RiseBlock(at=fall.at, counter=fall.counter, zp=fall.zp,
+                         step=-fall.steps, mask=fall.mask, arp=arp)
     for inc in RISE_BLOCK_INCREMENTS:
         at = search_file(data,
                          f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? {inc}")
@@ -162,8 +182,36 @@ def rise_arp_records(sid: SidFile, det: Detection, records: int) -> List[int]:
     return out
 
 
-def stair_steps(counter: int, span: int,
-                fetches: frozenset) -> List[Tuple[int, int]]:
+def stair_kinds(sid: SidFile, det: Detection, records: int,
+                block: RiseBlock) -> Dict[int, Tuple[str, int]]:
+    """{0-based record: ('arp' | 'tie', arpeggio interval)} for every record
+    the stair moves; the interval is 0 for a tie.
+
+    The rise's are the rise+arpeggio records (`rise_arp_records`), all 'arp'.
+    The fall's are every record setting bit $02: 'arp' where the record
+    runs the nibble arpeggio (its next note entry plays the stepped note, so
+    a zero-speed toneportamento is enough), 'tie' where it does not -- the
+    program has no note entry, and a `CMD_TONEPORTA 00` tie is what pulls the
+    frequency to the new note (gplay.c:810). A fixed-up arpeggio (the other
+    dialect) is not a nibble program, so its records are not 'arp'.
+    """
+    if det.effect_fall is None:
+        return {i: ("arp", 0) for i in rise_arp_records(sid, det, records)}
+    out: Dict[int, Tuple[str, int]] = {}
+    for i in range(records):
+        base = det.instr_start + i * det.instr_stride
+        if base + 7 >= len(sid.data):
+            break
+        fx = sid.data[base + 7]
+        if not fx & 0x02:
+            continue
+        nibble = fx & 0x04 and fx >> 4 and block.arp and not det.arp_fixed_up
+        out[i] = ("arp", fx >> 4) if nibble else ("tie", 0)
+    return out
+
+
+def stair_steps(counter: int, span: int, fetches: frozenset,
+                mask: int = RISE_STEP_MASK) -> List[Tuple[int, int]]:
     """[(working frame from the fetch, semitones climbed after it)].
 
     `counter` is what the counter reads on the note's fetch frame, `span`
@@ -174,7 +222,7 @@ def stair_steps(counter: int, span: int,
     out = []
     k = 0
     for w in range(1, span):
-        if (counter + w) & RISE_STEP_MASK or w in fetches:
+        if (counter + w) & mask or w in fetches:
             continue
         k += 1
         out.append((w, k))
@@ -256,21 +304,36 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     repointed -- same orderlist length, so the caller rewrites the bytes in
     place. Everything declined is counted in the log line.
     """
+    falling = det.effect_fall is not None
+    label = "Fall stair (bit $02)....: " if falling else \
+        "Rise stair (bit $02)....: "
+
     def say(msg: str) -> None:
         if log:
-            log(f"Rise stair (bit $02)....: {msg}")
+            log(label + msg)
 
-    if not (det.effect_rise and det.effect_arp) or det.arp_fixed_up:
+    if not falling and (not (det.effect_rise and det.effect_arp)
+                        or det.arp_fixed_up):
         return None
-    rising = set(rise_arp_records(sid, det, det.instr_used))
+    block = rise_block(sid, det)
+    if block is None and falling:
+        return None
+    kinds = (stair_kinds(sid, det, det.instr_used, block)
+             if block is not None else
+             {i: ("arp", 0) for i in rise_arp_records(sid, det,
+                                                    det.instr_used)})
+    if fmt != FORMAT_GTS5:
+        # A GTS2 file stores no speed table: only the ties are spellable.
+        arps = sum(1 for k, _low in kinds.values() if k == "arp")
+        kinds = {r: v for r, v in kinds.items() if v[0] == "tie"}
+        if arps and not kinds:
+            say(f"{arps} record(s), not emitted (GTS2 stores no speed "
+                "table)")
+            return None
+    rising = set(kinds)
     numbers = {g for g, rec in record_of.items() if rec in rising}
     if not numbers:
         return None
-    if fmt != FORMAT_GTS5:
-        say(f"{len(rising)} record(s), not emitted (GTS2 stores no speed "
-            "table)")
-        return None
-    block = rise_block(sid, det)
     base = rise_counter_base(sid, block) if block is not None else None
     first = _gw_arpeggio.fixed_arp_first_fetch(sid, det)
     speeds = _gw_tempo.find_song_speeds(sid, det)
@@ -315,6 +378,8 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 decline("subtune clock not read")
                 continue
             record = record_of[current]
+            kind, low = kinds[record]
+            tie = kind == "tie"
             end = len(rows)
             for e in range(a + 1, len(rows)):
                 ep, er = rows[e][2], rows[e][3]
@@ -330,9 +395,15 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             absolute = note + transpose
             notes += 1
             want: Dict[int, int] = {}
-            for w, k in stair_steps(counter, (end - a) * frames, fetches):
-                if absolute + k > GT_LAST_NOTE:
-                    decline("past the top note")
+            for w, k in stair_steps(counter, (end - a) * frames, fetches,
+                                    block.mask):
+                delta = block.step * k
+                # The arpeggio plays `low` semitones under the stepped note,
+                # and a note under the lowest wraps to the top of the range.
+                if not (GT_FIRST_NOTE <= absolute + delta - low
+                        and absolute + delta <= GT_LAST_NOTE):
+                    decline("past the top note" if delta > 0
+                            else "past the bottom note")
                     break
                 for j in step_rows(w, frames):
                     if not 1 <= j < end - a:
@@ -341,7 +412,8 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     cell = patterns[sp][4 * sr:4 * sr + 4]
                     if cell[0] != GT_REST or any(cell[1:]):
                         continue
-                    if not GT_FIRST_NOTE <= absolute + k - st <= GT_LAST_NOTE:
+                    if not (GT_FIRST_NOTE <= absolute + delta - st
+                            <= GT_LAST_NOTE):
                         continue
                     want[j] = max(want.get(j, 0), k)
                     break
@@ -349,8 +421,8 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     decline("no free row")
             for j, k in want.items():
                 vis, _pos, _sp, sr, st = rows[a + j]
-                wants[vis][sr] = absolute + k - st
-                top = max(top, k)
+                wants[vis][sr] = (absolute + block.step * k - st, tie)
+                top = max(top, k * abs(block.step))
             if want:
                 played.add(current)
         for vis, want in wants.items():
@@ -370,17 +442,20 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             say(f"{notes} note(s), no step row taken{declines()}")
         return None
     snapshot = list(speed_table)
-    index = zero_speed_index(speed_table)
-    if index is None:
-        say("speed table full, not emitted")
-        return None
+    index = None
+    if any(not tie for by_want in groups.values() for w in by_want
+           for _row, (_value, tie) in w):
+        index = zero_speed_index(speed_table)
+        if index is None:
+            say("speed table full, not emitted")
+            return None
 
     def patched(b: int, want: frozenset) -> Optional[List[int]]:
         rows_ = list(patterns[b])
-        for row, value in want:
+        for row, (value, tie) in want:
             rows_[4 * row] = value
             rows_[4 * row + 2] = CMD_TONEPORTA
-            rows_[4 * row + 3] = index
+            rows_[4 * row + 3] = 0 if tie else index
         if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(rows_))
                 > PACKED_PATTERN_LIMIT):
             return None
@@ -423,9 +498,13 @@ def rise_stair_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         speed_table[:] = snapshot
         say(f"{notes} note(s), every step row declined{declines()}")
         return None
+    ties = any(kinds[record_of[g]][0] == "tie" for g in played)
+    cmd = ("CMD_TONEPORTA 00 (tie)" if index is None else
+           f"CMD_TONEPORTA {index:02X} (speed $0000)"
+           + (" and CMD_TONEPORTA 00 (tie)" if ties else ""))
     say(f"{written} step row(s) over {notes} note(s) on instrument(s) "
-        f"{sorted(played)}, up to +{top} semitone(s), {copies} pattern "
-        f"cop(ies), CMD_TONEPORTA {index:02X} (speed $0000){declines()}")
+        f"{sorted(played)}, up to {'-' if falling else '+'}{top} "
+        f"semitone(s), {copies} pattern cop(ies), {cmd}{declines()}")
     return out_patterns, out_tracks
 
 

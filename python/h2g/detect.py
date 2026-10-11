@@ -151,6 +151,11 @@ class Detection:
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
     effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
+    # Bit $02 as the rise's mirror, Las_Vegas_Video_Poker $537B: the same
+    # block with `DEC note,X` repeated, so the voice's note index FALLS a few
+    # semitones every few counter steps -- see _find_effect_fall(). Consulted
+    # only where the rise matched nothing; emitted by goatwriter.rise_stair.
+    effect_fall: Optional["EffectFall"] = None
     # Bit $02's OTHER reading, Hubbard's own "skydive" (Hunter_Patrol
     # $A2C9): a fall of the frequency HIGH byte, one step every other
     # frame, in the last ticks of a long note. Consulted only where the
@@ -2007,6 +2012,12 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
+    if not det.effect_rise:
+        det.effect_fall = _find_effect_fall(sid, det)
+        if det.effect_fall is not None:
+            ef = det.effect_fall
+            log(f"Effect bit $02..........: fall, {ef.steps} semitone(s) "
+                f"every {ef.mask + 1} counter steps")
     if not det.effect_rise:
         # A fallback spelling of bit $02, consulted only where Warhawk's
         # rise matched nothing.
@@ -5162,6 +5173,63 @@ class NoteRise:
     counter: int        # address of the every-other-tick counter
     min_length: int     # a note whose `dur & $1F` is below this has none
     step: int           # +1 where the block INCs savehi, -1 where it DECs
+
+
+@dataclass(frozen=True)
+class EffectFall:
+    """Bit $02's falling note index, read from the block itself."""
+    at: int         # file offset of the block's effect-byte load
+    steps: int      # semitones per step: how many `DEC note,X` the block runs
+    mask: int       # the counter mask: one step every `mask + 1` counter steps
+    counter: int    # the counter's address (zero page when `zp`)
+    zp: bool        # the block is spelled in zero page (`DEC zp,X`, `D6`)
+
+
+# Bit $02 read as the rise's MIRROR. Las_Vegas_Video_Poker $537B, the corpus's
+# only file in this dialect (a corpus scan of `{effect} 29 02 F0 ?? {any}
+# 29 mm D0 ?? DE` finds no other, tests/test_effect_fall.py):
+#
+#     537B  AD F7 54  LDA effect
+#           29 02     AND #$02 / BEQ out
+#           AD F9 54  LDA $54F9      ; the counter the arpeggio divides too
+#           29 03     AND #$03 / BNE out
+#           DE CC 54  DEC note,X     ; x3: THREE semitones a step
+#           DE CC 54
+#           DE CC 54
+#           BD CC 54  LDA note,X / ASL / TAY / LDA $53F9,Y ... STA $D400/1,Y
+#
+# Warhawk's rise (`INC` once) matches the same head; the INC/DEC opcode and
+# the count of DECs are the only things that tell them apart, so both are
+# READ here and the rise's search is not widened. Nothing stops the fall at the
+# bottom: the byte runs through zero and on to $FF, and the table lookup
+# (`ASL`, so index $80 and up wrap) reads whatever follows the note table.
+def _find_effect_fall(sid: SidFile, det: Detection) -> Optional[EffectFall]:
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    any_load = "A5 ??" if zp else "AD ?? ??"
+    width = 2 if zp else 3
+    dec = "D6 ??" if zp else "DE ?? ??"
+    data = sid.data
+    at = search_file(data, f"{load} 29 02 F0 ?? {any_load} 29 ?? D0 ?? {dec}")
+    if at < 1:
+        return None
+    counter_at = at + width + 4 + 1
+    mask = data[at + width + 4 + width + 1]
+    if mask == 0 or mask & (mask + 1):       # 1, 3, 7 ...: a low-bits mask
+        return None
+    counter = (data[counter_at] if zp
+               else data[counter_at] | data[counter_at + 1] << 8)
+    op = at + width + 4 + width + 2 + 2
+    opwidth = 2 if zp else 3
+    first = data[op:op + opwidth]
+    steps = 0
+    while (data[op + steps * opwidth:op + (steps + 1) * opwidth] == first
+           and steps < 12):
+        steps += 1
+    return EffectFall(at=at, steps=steps, mask=mask, counter=counter, zp=zp)
 
 
 def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:

@@ -289,6 +289,10 @@ def test_the_bound_lands_on_the_last_instrument_played_in_several_files(monkeypa
     # pattern names; they are not records, and this test is about records.
     import h2g.goatwriter as gwmod
     monkeypatch.setattr(gwmod.note_passes, "legato_tie_family", lambda sid, det: False)
+    # ... and likewise the funk-gatetimer split's clones (`funk_gatetimers`).
+    import h2g.convert as _convert_mod
+    monkeypatch.setattr(_convert_mod, "split_funk_gatetimers",
+                        lambda blob, *a, **k: blob)
     exact, checked = 0, 0
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))

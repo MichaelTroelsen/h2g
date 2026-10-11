@@ -133,7 +133,13 @@ complete readings; only the classic one moves numbers.
   instrument 1, which a voice opening on rests runs under unnamed -- is bounded
   to gatetimer 1, because a 2-call row's counter never reaches 2
   (`player.s:1090-1098`) and the voice would never fetch its next row. GTS2
-  keeps the 3-call floor (no speed table).
+  keeps the 3-call floor (no speed table). That bound is kept to the records
+  the funk subtune plays: `funk_gatetimers.split_funk_gatetimers` runs last on
+  the finished bytes, raises a record only longer subtunes play to its own
+  rows' gatetimer, and splits one played in both into the original (raised)
+  and a clone with gatetimer 1 that the funk subtune's patterns name
+  (instrument 1, opened on without a pattern, is never split). Gerry_the_Germ,
+  Human_Race and Auf_Wiedersehen_Monty are the files it moves.
 - Where no speed gate is found (the command-table dialect derives its row
   from the duration table instead; Mozart/Ninja/Mega Apocalypse use a
   *prescaler* — run the player v of every v+1 calls — whose jittery rate no
@@ -376,6 +382,13 @@ chromatic rise, 21 the pulse-width variant.
   semitone, on the counter's own schedule, on `CMD_TONEPORTA` naming a
   speed-table row of `$0000` — the note moves and nothing else does
   (`goatwriter/rise_stair.py`; GTS5 only).
+- **Bit `$02`, the fall** — Las_Vegas_Video_Poker `$537B` is the rise block with
+  three `DEC` where Warhawk has one `INC`: the note drops three semitones every
+  fourth counter step (step size and mask are read off the player,
+  `detect.EffectFall`). Only subtunes 8, 9, 10, 14 and 15 play it. Emitted by the
+  same pattern-side stair, downward; a record with no arpeggio (`$11`) takes a
+  tie (`CMD_TONEPORTA 00`) instead of the zero-speed row. The stair stops at the
+  lowest note; the original goes on into table garbage there.
 - **Bit `$04` with a zero interval nibble is silent** in the player, because
   the nibble is written into the operand of an `SBC`. The original substitutes
   a `+12` relative note, inventing an octave-up arpeggio — for **315 of the

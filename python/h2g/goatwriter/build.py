@@ -1367,7 +1367,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # walks, the tie respells, the decoy search -- reads a step as a note,
     # and before the speed table, which gains its zero-speed row here.
     # Gated on `effects` like every read of +7.
-    if effects and det.effect_rise and det.effect_arp:
+    if effects and ((det.effect_rise and det.effect_arp)
+                    or det.effect_fall is not None):
         stair_records = {g: g - lead - 1 for g in range(lead + 1, instr_used + 1)}
         for plan in (duty_split.clones if duty_split is not None else [],
                      phase_split.clones if phase_split is not None else []):

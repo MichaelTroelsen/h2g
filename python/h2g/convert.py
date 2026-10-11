@@ -17,7 +17,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
-                         build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
+                         build_pulse_phase_table, pulse_usage, _instruments_used, find_song_speeds, effective_frames,
                          HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT,
                          _parse_song, GT_MAX_TABLELEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
@@ -33,6 +33,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
+from .funk_gatetimers import split_funk_gatetimers
+from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
 from .sidfile import SidFile, load_sid
@@ -1059,7 +1061,8 @@ def convert(sid_path: str, log: Logger = print,
                     sid, det, _instruments_used(det, None, lead), pulse,
                     multiplier, phases, log, lead,
                     prefer_short=(not isinstance(sid, PlayerView)
-                                  and len(det.players) >= 2))
+                                  and len(det.players) >= 2),
+                    usage=pulse_usage(tracks, new_patterns, lead))
             if plan and table:
                 entries, starts, index = table
                 apply_pulse_phase(new_patterns, tracks, writes, index, log)
@@ -1173,6 +1176,17 @@ def convert(sid_path: str, log: Logger = print,
             # Last, on the finished bytes: every pass that writes or renumbers
             # an instrument column (the clone passes included) has run.
             sng = drop_unnamed_instruments_from(sng, log)
+        if fmt != FORMAT_GTS2 and group_tempos:
+            # After the drop (which renumbers) and the clone passes: a
+            # 2-call subtune's gatetimer bound is charged to the records
+            # that subtune plays, not to every record in the file
+            # (funk_gatetimers). Per-subtune rows are `group_tempos`, the
+            # list `instrument_row_calls` was taken from.
+            sng = split_funk_gatetimers(
+                sng, group_tempos,
+                lambda r: _hard_restart_ticks(
+                    multiplier, r, wide_hard_restart, max_hard_restart,
+                    hard_restart_frames) & 0x3F, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

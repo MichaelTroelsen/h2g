@@ -12885,6 +12885,25 @@ was charged to no subtune whose voice opens on rests. Both were already
 stopping voices at 3- and 4-call rows (Human_Race subtune 2 melody 31.6 ->
 100, Knucklebusters 2 51.4 -> 99.9, with only the attribution fixed).
 
+**The funk bound is per record, split on the finished bytes (task
+file-wide-short-row-costs; figures at 2b64d25, `-t 180`, relative A/B at lag 0,
+not the report's columns).** `instrument_row_calls` charges a record the
+shortest row over the subtunes that play it, so an instrument shared by a
+2-call subtune and a 3-call one kept gatetimer 1 in both, and the clone passes'
+records (which that walk never sees) took the file-wide `short_row_calls` of 2.
+`funk_gatetimers.split_funk_gatetimers` (last in `_assemble`, after the drop)
+raises the second kind to its own rows' gatetimer and splits the first: the
+original record is raised, a clone with the old gatetimer takes the funk
+subtunes' explicit uses, and a pattern a longer subtune plays too is copied.
+Instrument 1 is never split when a funk voice opens on it. `gate` recovers on
+Gerry_the_Germ s0 +1.1, s1 +1.3, s6 +3.1, Human_Race s1 +1.8 and Monty s0
++0.9, with the funk subtunes unmoved; Gerry s4 gate falls 1.8 (47.9 -> 46.1),
+its no-funk value, because that subtune scores higher on the lower gatetimer.
+Left alone on purpose: `_vibrato_layout`'s classic entry also reads the
+file-wide 2 (Monty only), and giving each record its own row there is a
+melody LOSS on Monty s1 (95.2 -> 82.0) -- the funk-attributed gain on s1/s10
+was that over-compensation masking a 15x `bend`, not the funk row.
+
 
 **Sanxion's past-table drum keeps its noise frame.** A `KEYOFF` row carrying an
 instrument is the decoder's past-table rest; `past_table_drum_plan` re-emits it

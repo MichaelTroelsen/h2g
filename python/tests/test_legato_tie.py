@@ -48,6 +48,12 @@ def _convert(name, legato=True):
     # measures the clones alone.
     real = G.legato_tie_family
     real_free = G.note_passes.free_note_skips_two_stage
+    # ... and the funk-gatetimer split off (`funk_gatetimers`, run last on the
+    # finished bytes): its clones are appended after these, and this file
+    # measures the legato clones alone.
+    import h2g.convert as _C
+    real_split = _C.split_funk_gatetimers
+    _C.split_funk_gatetimers = lambda blob, *a, **k: blob
     if not legato:
         G.note_passes.legato_tie_family = lambda sid, det: False
     G.note_passes.free_note_skips_two_stage = lambda sid, det: False
@@ -57,6 +63,7 @@ def _convert(name, legato=True):
     finally:
         G.note_passes.legato_tie_family = real
         G.note_passes.free_note_skips_two_stage = real_free
+        _C.split_funk_gatetimers = real_split
     return sng, lines
 
 

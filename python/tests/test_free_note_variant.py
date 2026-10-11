@@ -47,6 +47,12 @@ def _preset_opts(name):
 
 def _convert(name, free=True):
     real = NP.free_note_skips_two_stage
+    # The funk-gatetimer split (`funk_gatetimers`) runs last on the finished
+    # bytes and appends its clones after the variants; this file measures the
+    # variants alone.
+    import h2g.convert as _C
+    real_split = _C.split_funk_gatetimers
+    _C.split_funk_gatetimers = lambda blob, *a, **k: blob
     if not free:
         NP.free_note_skips_two_stage = lambda sid, det: False
     try:
@@ -54,6 +60,7 @@ def _convert(name, free=True):
         sng = convert(str(CORPUS / name), log=lines.append, **_preset_opts(name))
     finally:
         NP.free_note_skips_two_stage = real
+        _C.split_funk_gatetimers = real_split
     return sng, lines
 
 

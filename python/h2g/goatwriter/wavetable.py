@@ -525,9 +525,14 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         #
         # It DOES improve `gate` broadly (21 files better and nothing else
         # worse -- Commando 42.7 -> 57.6, Crazy_Comets 58.7 -> 77.4, Warhawk
-        # 88.5 -> 95.3), and `nrun` and `wave` move on NOT ONE of the 33. So
-        # the trade is a real gate gain against a real melody loss, and this
-        # repo does not pay melody for register agreement -- the same rule
+        # 88.5 -> 95.3). **RETRACTED:** the claim quoted as "`nrun` and `wave`
+        # move on NOT ONE of the 33" was measured at f0fd20c (v0.5.452), before
+        # the gate-AND landed in 50a6178 (v0.5.483), when `noise_runs` could not
+        # see the gate bit at all. Dropping the bit now moves `nrun` on Rasputin
+        # (0/3 -> 3/3 in the rasputin-nrun-modal-1-vs-2 run record), so the
+        # claim does not hold as stated. So the trade is a real gate gain
+        # against a real melody loss, and this repo does not pay melody for
+        # register agreement -- the same rule
         # `fidelity_better`'s note-keeping guard enforces.
         #
         # **THE OLD REASON FOR REFUSING IT WAS WRONG AND IS RETRACTED.** The

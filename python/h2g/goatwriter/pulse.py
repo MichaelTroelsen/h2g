@@ -1703,7 +1703,9 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                             pulse: bool, multiplier: int,
                             phases: dict, log=None,
                             lead: int = 1,
-                            prefer_short: bool = False) -> tuple | None:
+                            prefer_short: bool = False,
+                            usage: Optional[List[int]] = None
+                            ) -> tuple | None:
     """The whole pulse table with phase entry points, or None if NOTHING
     survives the table budget.
 
@@ -1773,17 +1775,27 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     rows); the 47 rows let players 1-4 append with their sweeps (pulse 248
     of 255) where they appended without any. Nothing else passes it, so
     every other file keeps its bytes.
+
+    **`usage` (`pulse_usage`) weighs the layouts by NOTES SOUNDED.** Every
+    comparison below ranks layouts by (silent, dropped, rows); with `usage`
+    the first two count the note rows of the records concerned, not the
+    records. A record nobody plays costs nothing on pointer 0 or on a static
+    width: Last_V8's 12 pointer-0 records at 8586101 sounded 0 notes between
+    them, and counted as 12 they outweighed a record that sounds. Without
+    `usage` every record weighs 1, the count it always was.
     """
+    ukw = {} if usage is None else {"usage": usage}
     first_log: list = []
     first = _lay_pulse_phase_table(sid, det, instr_used, pulse, multiplier,
-                                   phases, first_log.append, lead, False)
+                                   phases, first_log.append, lead, False,
+                                   **ukw)
     chosen, chosen_log = first, first_log
     if prefer_short and not (first[3] or first[4]):
         short_log: list = []
         short = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                        multiplier, phases, short_log.append,
-                                       lead, True)
-        if (short[3], short[4]) <= (first[3], first[4]) \
+                                       lead, True, **ukw)
+        if _cost(short) <= _cost(first) \
                 and len(short[0]) < len(first[0]):
             chosen, chosen_log = short, short_log
             short_log.insert(0, (
@@ -1795,10 +1807,10 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         shared_log: list = []
         shared = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                         multiplier, phases, shared_log.append,
-                                        lead, True)
+                                        lead, True, **ukw)
         # `dropped` counts every degraded record and `silent` the subset
         # that reached pointer 0, so the pair compares in that order.
-        if (shared[3], shared[4]) < (first[3], first[4]):
+        if _cost(shared) < _cost(first):
             chosen, chosen_log = shared, shared_log
             shared_log.insert(0, (
                 f"Pulse phase.............: shared ramps -- {len(shared[0])} "
@@ -1816,11 +1828,11 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
             trial = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                            multiplier, phases,
                                            trial_log.append, lead, share,
-                                           reserve=True)
-            trials.append(((trial[4], trial[3], len(trial[0])), share,
-                           trial, trial_log))
+                                           reserve=True, **ukw)
+            trials.append(((_cost(trial)[1], _cost(trial)[0], len(trial[0])),
+                           share, trial, trial_log))
         (rank, share, trial, trial_log) = min(trials, key=lambda t: t[:2])
-        if rank[0] < chosen[4]:
+        if rank[0] < _cost(chosen)[1]:
             trial_log.insert(0, (
                 f"Pulse phase.............: statics reserved -- "
                 f"{'shared ramps, ' if share else ''}{len(trial[0])} table "
@@ -1832,7 +1844,7 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     if log:
         for line in chosen_log:
             log(line)
-    entries, starts, index, _, _, attempted, placed = chosen
+    entries, starts, index, _, _, attempted, placed = chosen[:7]
     if attempted and not placed:
         # Nothing survived: every record that had a phase plan degraded to a
         # static width. Let the caller revert the whole expansion, as before
@@ -1861,12 +1873,20 @@ def _union_groups(sid: SidFile, det: Detection, instr_used: int,
     return {k: v for k, v in groups.items() if len(v) > 1}
 
 
+def _cost(t: tuple) -> tuple:
+    """(dropped, silent) of a layout as the comparisons weigh them: note rows
+    sounded where the pass was given `usage`, records otherwise (an older
+    seven-field layout carries only the counts)."""
+    return (t[7], t[8]) if len(t) > 7 else (t[3], t[4])
+
+
 def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            pulse: bool, multiplier: int, phases: dict, log,
                            lead: int, share: bool,
-                           reserve: bool = False) -> tuple:
+                           reserve: bool = False,
+                           usage: Optional[List[int]] = None) -> tuple:
     """One layout of `build_pulse_phase_table`: (entries, starts, index,
-    dropped, silent, attempted, placed). `share` picks `_phase_block`'s
+    dropped, silent, attempted, placed, dropped_notes, silent_notes). `share` picks `_phase_block`'s
     shared-ramp layout for every phase-tracked record, and may lay ONE
     block over the union of the phase sets of records sharing a sweep
     (`_union_groups`, `_lay_pulse_phase_pass`'s `unions`).
@@ -1884,17 +1904,19 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     pointer 0 is counted first: no union is taken that silences a record
     the layout without it did not. With no group adopted the pass is the
     per-record shared layout, byte for byte. `reserve` is passed to every
-    pass (`_lay_pulse_phase_pass`)."""
+    pass (`_lay_pulse_phase_pass`). "Better" counts the notes the records
+    sound where `usage` is given (`_cost`)."""
     if not share:
         return _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
-                                     phases, log, lead, False, {}, reserve)
+                                     phases, log, lead, False, {}, reserve,
+                                     usage)
 
     def score(t: tuple) -> tuple:
-        return t[4], t[3], len(t[0])
+        return _cost(t)[1], _cost(t)[0], len(t[0])
     best_log: list = []
     best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                  phases, best_log.append, lead, True, {},
-                                 reserve)
+                                 reserve, usage)
     chosen: dict = {}
     for key, members in _union_groups(sid, det, instr_used, multiplier,
                                       phases, lead).items():
@@ -1903,7 +1925,7 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         trial_log: list = []
         trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                       phases, trial_log.append, lead, True,
-                                      trial_unions, reserve)
+                                      trial_unions, reserve, usage)
         if score(trial) < score(best):
             best, best_log, chosen = trial, trial_log, trial_unions
     if log:
@@ -1950,9 +1972,12 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                           pulse: bool, multiplier: int, phases: dict, log,
                           lead: int, share: bool, unions: dict,
-                          reserve: bool = False) -> tuple:
+                          reserve: bool = False,
+                          usage: Optional[List[int]] = None) -> tuple:
     """One layout pass: (entries, starts, index, dropped, silent, attempted,
-    placed). `unions` is the subset of `_union_groups` laid as one block
+    placed, dropped_notes, silent_notes). The last two weigh each degraded
+    record by the note rows it sounds (`usage`, `pulse_usage`; 1 a record
+    without it). `unions` is the subset of `_union_groups` laid as one block
     each (see `group_left` below); empty, every phase-tracked record lays
     its own. `reserve` holds back every later record's static width first
     (`held_back` below)."""
@@ -1960,7 +1985,13 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
     starts = [1] * lead
     index: dict = {}
     dropped = silent = 0
+    dropped_w = silent_w = 0
     attempted = placed = 0
+
+    def weight(i: int) -> int:
+        if usage is None:
+            return 1
+        return usage[i] if i < len(usage) else 0
     # Under `share`, a non-phase block that names no row of its own -- no
     # loop, and no jump but `FF 00`, the stop -- plays the same from any
     # copy, so a second record with the same rows takes the first one's
@@ -2053,6 +2084,7 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                 # Out of table: keep the instrument, lose only its movement.
                 program, loop = _pulse_program(sid, det, i, False, multiplier)
                 dropped += 1
+                dropped_w += weight(i)
                 if reuse(program, loop):
                     continue
                 start = len(entries) + 1
@@ -2060,6 +2092,7 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
             if len(entries) + len(block) > _gw_constants.GT_MAX_TABLELEN:
                 starts.append(0)
                 silent += 1
+                silent_w += weight(i)
                 continue
             remember(program, loop, start)
             starts.append(start)
@@ -2111,6 +2144,7 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                     f"INSTRUMENT {num}, FALLING BACK TO A STATIC WIDTH ***")
             program, loop = _pulse_program(sid, det, i, False, multiplier)
             dropped += 1
+            dropped_w += weight(i)
             if reuse(program, loop):
                 continue
             start = len(entries) + 1
@@ -2118,6 +2152,7 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
             if len(entries) + len(block) > _gw_constants.GT_MAX_TABLELEN:
                 starts.append(0)
                 silent += 1
+                silent_w += weight(i)
                 continue
             remember(program, loop, start)
             starts.append(start)
@@ -2133,7 +2168,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
         log(f"*** PULSE TABLE FULL UNDER --pulse-phase -- {dropped} "
             f"INSTRUMENT(S) LOSE THEIR PHASE ENTRIES"
             + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
-    return entries, starts, index, dropped, silent, attempted, placed
+    return (entries, starts, index, dropped, silent, attempted, placed,
+            dropped_w, silent_w)
 
 
 def packed_pattern_size(rows) -> int:
