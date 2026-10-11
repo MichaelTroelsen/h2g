@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import call_phase as _call_phase
@@ -185,6 +185,28 @@ def regrid_deficits(speeds, values: List[int], skip_gate: bool,
         else:
             deficits.append(max(0.0, float(exact) - float(eff)))
     return deficits
+
+
+def _drum_start_group(sid: SidFile, group_tempos, unit_tempos) -> Optional[int]:
+    """The subtune whose rows size the drum sweep, or None to keep the shortest.
+
+    The start subtune (`tracks.start_subtune_row_calls`) -- unless its tempo
+    is not the player's own gate unit. `_drum_duration_steps` counts a note's
+    rows as the duration counter's units, which holds where the row IS the
+    gate's unit and fails where an opening step tempo (`$FE`) made it
+    something else: Rasputin's gate is 2 frames (`[4, 4]` calls at `-S2`) and
+    its subtune opens `$FE 02`, rows of 3 frames (`[6, 5]`), and the original's
+    sweep reads `$0300` on every record where the formula gives `$0400` on
+    the shortest row and `$0500` on the start subtune's. Declined there: the
+    shortest row stays, and the file's bytes are unchanged.
+    """
+    g = max(0, sid.start_song - 1)
+    if not group_tempos or g >= len(group_tempos):
+        return None
+    if unit_tempos is not None and (g >= len(unit_tempos)
+                                    or unit_tempos[g] != group_tempos[g]):
+        return None
+    return g
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -669,6 +691,12 @@ def convert(sid_path: str, log: Logger = print,
     # runs at twice its rate under -S2; only the auto path knows the factor.
     multiplier = 1
     group_tempos = None
+    # What the player's own speed gate makes a row, per subtune: `group_tempos`
+    # before an opening step tempo (`$FE`) rewrites it. The two differ on
+    # Rasputin ([4, 4] against [6, 5]); where they do, a row is not the
+    # duration counter's unit and the drum sweep's length is not sized by it.
+    # See `tracks.start_subtune_row_calls`.
+    unit_tempos = None
     # The row length in play calls, for build_speed_table's lost-call
     # compensation. The largest one the file writes, because a pattern shared
     # between two subtunes at different tempos has no single right answer and
@@ -716,6 +744,7 @@ def convert(sid_path: str, log: Logger = print,
                                                   skip_gate,
                                                   funk=fmt != FORMAT_GTS2)
         multiplier = mult
+        unit_tempos = list(values)
         # A tempo command at orderlist position 0 *is* that subtune's opening
         # tempo -- the player's init loads the counter from its own table and
         # the voice's first step overwrites it before a row is played. Both
@@ -740,6 +769,7 @@ def convert(sid_path: str, log: Logger = print,
             # A split subtune shifted the numbering, so per-subtune
             # attribution is unsafe; every group gets subtune 0's timebase.
             values = [values[0]] * groups
+            unit_tempos = [unit_tempos[0]] * groups
         # Per subtune in one call, because the values have to be compared with
         # each other: a pattern two subtunes play can carry only one tempo, and
         # writing them one at a time made the later subtune's value the earlier
@@ -1076,7 +1106,11 @@ def convert(sid_path: str, log: Logger = print,
                          # never sound in it. Returns {} wherever the attribution
                          # is unsafe, and then the file-wide bound stands.
                          instr_row_calls=instrument_row_calls(
-                             tracks, new_patterns, group_tempos or []),
+                             tracks, new_patterns, group_tempos or [],
+                             # ... and, beside it, the row the START subtune
+                             # plays each at: the drum sweep's length.
+                             start_group=_drum_start_group(
+                                 sid, group_tempos, unit_tempos)),
                          gate_skip=gate_skip,
                          sfx_drum=sfx_drum,
                          wave_program=wave_program,

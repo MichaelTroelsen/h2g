@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.525 — 2026-10-11
+
+- runqueue cycle 8: Rasputin outer-gate pulse rate by sounding time, Bump_Set_Spike drum sweep sized by the start subtune's row; 4 pin tests
+
 ## 0.5.524 — 2026-10-09
 
 - runqueue cycle 7 at 7d02efe -- 7 subtasks, 6 worktree patches merged (note-rise rows of three, $40-only fixed attack pitch, init-instrument entry walk, --sfx-drum-bandpass off by default, two pin tests); --adsr-prime held; 4 converted files move under presets, exactly the union the agents reported

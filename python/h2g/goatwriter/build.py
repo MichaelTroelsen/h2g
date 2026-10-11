@@ -700,9 +700,15 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # lead, so the starts line up with the records exactly as below.
         pulse_entries, pulse_starts = pulse_plan
     else:
+        # A triangle sweep's speed is divided by our calls per original tick,
+        # which a track-set outer gate (Rasputin's `$FE nn`) moves mid-song:
+        # each record gets the clock it sounds at (`track_set_tick_ratios`).
         pulse_entries, pulse_starts = _pulse_layout(
             sid, det, instr_used, pulse, multiplier, log, lead=lead,
-            usage=_gw_pulse.pulse_usage(tracks, patterns, lead))
+            usage=_gw_pulse.pulse_usage(tracks, patterns, lead),
+            tick_ratios=(_gw_pulse.track_set_tick_ratios(
+                sid, det, tracks, patterns, lead, multiplier, log)
+                if pulse else None))
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,

@@ -419,6 +419,20 @@ def _octave_verdict(a: int, b: int,
     many times the oracle read it -- Last_V8's top-of-slide `$FFFD`/`$FFFC`,
     which siddump also prints `FFFD`/`FFFC`, kept 17 frames blind at -t 45
     (be0aeb1).
+
+    **What stays blind after that, and why no oracle can name it** (0d18fce,
+    -t 45, shipped `-S2` conversions): Last_V8 and Last_V8_C128_version voice 0
+    frame 2035, Monty_on_the_Run voice 1 frames 1763 and 1771 -- `$FFEE`
+    against `$0F6E`. The conversion slides down `$80` a play call, two calls a
+    frame, and siddump at `-m2` prints the registers after the LAST call of a
+    frame, so it holds `$0F6E`, `$0E6E`, ... and never the other call's
+    `$0FEE`. It is not a stale low byte: one call per row
+    (`run_siddump(..., calls=1)` over twice the seconds) reads `$0FEE`, a
+    slide step and no octave. The pair stays None because `$0F6E >> 3` is
+    `$01ED` and a `$01EE` is one unit off it, inside the k = 3 tolerance
+    above; the slide's later steps (`$0E6E`...) do not share that coincidence
+    and are refuted. A per-frame oracle cannot close it. Pinned by
+    tests/test_osplit_unseen_call_residue.py.
     """
     ea = sign_extended(a) and a not in whole
     eb = sign_extended(b) and b not in whole

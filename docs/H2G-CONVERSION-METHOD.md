@@ -13103,7 +13103,14 @@ Warhawk's tick now lands on the original's frame 2 rather than frame 1.
 Kentilla 4/86 -> 52/86: **the other 34 are its wavetable budget** -- records
 6, 12, 13 and 14 are laid out in a 5-entry budget in a full table, the phased
 shape takes 9 (6 at best with delay-carried notes), and the unphased loop that
-starts the alternation at the attack stands. Not applied where the gate shape
+starts the alternation at the attack stands. **Resolved at 0d18fce (v0.5.524,
+re-measured 2026-10-11):** v0.5.520's "a nibble-dialect arp record with nibble 0
+overwrites the drum sweep" freed the table (Kentilla's records 6, 12, 13 and 14
+are laid out at budgets 76, 66, 62 and 58 and take the 9-entry phased shape;
+5248ee2 still has budget 5), and all 86 one-step and 108 octave notes are
+frame-exact against the original (subtune 0, 120 s, gated; 189 one-step
+and 129 octave over 240 s) -- `tests/test_kentilla_gate_records.py`, which on
+86ac533 reads 52 exact and 34 differing. Not applied where the gate shape
 already lays the original's frames (F1, LVVP), where `h` is not whole, where
 the record's firstwave writes frame 0 (`--no-test-restart`), or where the gate
 is not the play routine's entry (`entry_gate`, the precondition that anchors
@@ -13181,6 +13188,32 @@ subtunes while the start subtune plays it at 18, and the gated rate removed
 the 6/5 overshoot that had partly hidden that -- a per-subtune value in a
 global structure, carried open rather than fixed here.
 `tests/test_drum_sweep_gate_skip.py`.
+
+**The sweep's row is the start subtune's (figures at v0.5.524 + this change).** The Bump_Set_Spike
+regression above is closed, and not by cloning. Re-measured at v0.5.524 the
+rows are 10 calls in subtune 0 (the tune) and 8 in subtune 1, and the shortest
+(8) gave `$0F0C` 13 steps against the 17 the tune's rows leave room for:
+`$3DC`, original `$500`. `tracks.InstrumentRowCalls.start_rows` carries the row
+each instrument is played at in the start subtune beside the shortest-row dict
+the gatetimer reads (that one is a safety bound and stays the minimum), and
+`wavetable._record_row_calls` prefers it. After: `$50C` in subtune 0 (78 notes),
+and subtune 1, which pays in principle, came out closer too (`$600` original,
+`$3DC` -> `$50C`). A clone per row length would be exact and has no room: the
+file's wavetable is 255 of 255, and the three clones `nibble_gate_phase_split`
+wants already go without. The cost is the same table: the tune's record grows
+by 4 entries and the last records give back what they had (instrument 21 loses
+its tick hold), net `travel_ratio` 0.748 -> 0.802 and `aud` 0.9046 -> 0.9058
+on the file, `loud_ratio` 0.871 -> 0.868.
+
+**Declined where the start row is not the gate's unit
+(`convert._drum_start_group`).** Rasputin's gate is 2 frames (`[4, 4]` calls at
+`-S2`) and its subtune opens `$FE 02`, rows of 3 frames (`[6, 5]`); the
+original's sweep reads `$0300` on every record and the formula's premise (a row
+IS the counter's unit) fails. The start row would give `$0500` where the
+shortest gives `$0400`, so Rasputin keeps the shortest and its bytes do not
+move. Sizing it by the gate's 4 reads `$0300` exactly but moved its tie columns
+the wrong way (`tie_ratio` 0.96 -> 0.85), left open.
+`tests/test_drum_start_subtune_rows.py`.
 
 **The waveform's frame, at ae5b063.** The task opened on 6 of 40 and 41 notes
 whose waveform "lands a frame late" (`09 41 81`, first-toggle 0). Re-measured

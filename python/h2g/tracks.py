@@ -1203,9 +1203,97 @@ def instrument_voices(tracks: List[List[int]],
     return out
 
 
+class InstrumentRowCalls(dict):
+    """`instrument_row_calls`' result, carrying a second answer beside it.
+
+    The dict is the SAFETY answer: {instrument: the shortest row it is ever
+    played at}. `start_rows` is the APPROXIMATION's: {instrument: the row it
+    is played at in the subtune the file starts on}, for the instruments that
+    subtune plays. They are different questions and `goatwriter` asks each
+    where it belongs -- the gatetimer bound takes the dict, the drum sweep's
+    length (`wavetable._drum_duration_steps`) takes `start_rows` first.
+
+    A subclass rather than a second argument because the dict is threaded
+    through a dozen signatures that only ever read it, and the attribute
+    cannot be lost by any of them (`patterns.PatternList.note_bit7` does the
+    same). A reader that copies the dict gets the safety answer and nothing
+    else, which is the conservative failure.
+    """
+    start_rows: Dict[int, int]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_rows = {}
+
+
+def start_subtune_row_calls(tracks: List[List[int]],
+                            patterns: List[List[int]],
+                            group_tempos: List[int],
+                            start_group: int) -> Dict[int, int]:
+    """{Goattracker instrument: the row it is played at in the start subtune}.
+
+    The same walk as `instrument_row_calls`, restricted to the three tracks of
+    `start_group` -- the subtune the PSID header selects when nobody selects
+    one, which is the tune (`fidelity.resolve_subtune`; `goatwriter.wavetable.
+    _noise_tick_frames` reads the start subtune's gate for the same reason).
+    Instrument 1 is counted for a voice whose first row names none, exactly
+    as `instrument_row_calls` does.
+
+    **Why this exists.** A drum record's sweep is sized in play calls from the
+    row it is played at, and one wavetable serves every subtune. Bump_Set_Spike
+    plays `$0F0C` at 10 calls a row in subtune 0 and at 8 in subtune 1, and the
+    shortest-row bound (right for the gatetimer, where a too-large value stops
+    the song) cut the start subtune's sweep to 13 steps against the 17 its
+    rows leave the player room for: `$3DC` against the original's `$500`
+    (figures at v0.5.524).
+    The sweep is not a safety bound -- a longer one runs on by up to
+    `(note_rows - 2) * (the rows' difference)` calls, which is 4 against the
+    note's final unit of 8 here, so it still ends inside the note -- and the
+    start subtune's row is the better approximation. The other subtunes'
+    sweeps are what pays (Bump_Set_Spike's subtune 1 came out closer to its
+    original as well: `$50C` against `$600`, where the shortest row gave
+    `$3DC`). The exact fix is one clone of the record
+    per row length; Bump_Set_Spike's wavetable is full (255 of 255) and a
+    clone has no room (`gate phase split: 3 clone(s) the wavetable has no
+    room for`).
+
+    Returns {} where the numbering does not line up with the tempo list, as
+    `instrument_row_calls` does: a wrong attribution here is a wrong depth, and
+    the caller then keeps the shortest-row bound.
+    """
+    if not group_tempos or not (0 <= start_group < len(group_tempos)):
+        return {}
+    if len(tracks) != 3 * len(group_tempos):
+        return {}
+    rows = group_tempos[start_group]
+    out: Dict[int, int] = {}
+    for ti in range(3 * start_group, 3 * start_group + 3):
+        operand = False
+        first = True
+        for entry in tracks[ti]:
+            if operand:                 # $FF's restart position, not a pattern
+                operand = False
+            elif entry == GT_ORDER_RESTART:
+                operand = True
+            elif entry < MAX_PATTERNS:
+                if entry >= len(patterns):
+                    first = False
+                    continue
+                pat = patterns[entry]
+                if first and (len(pat) < 2 or not pat[1]):
+                    out[1] = rows
+                first = False
+                for k in range(1, len(pat), 4):
+                    if pat[k]:
+                        out[pat[k]] = rows
+    return out
+
+
 def instrument_row_calls(tracks: List[List[int]],
                          patterns: List[List[int]],
-                         group_tempos: List[int]) -> Dict[int, int]:
+                         group_tempos: List[int],
+                         start_group: Optional[int] = None
+                         ) -> InstrumentRowCalls:
     """{Goattracker instrument: the shortest row it is ever played at}.
 
     `convert` derives one `short_row_calls` for the whole file -- the minimum
@@ -1245,9 +1333,13 @@ def instrument_row_calls(tracks: List[List[int]],
     Gerry_the_Germ subtune 2's voice 1 (instrument 1 named only in 3-call
     subtunes) and Auf_Wiedersehen_Monty subtune 12's voice 2 played nothing.
     So such a voice's subtune is charged to instrument 1 as well.
+
+    With `start_group` the result also carries `start_rows`
+    (`start_subtune_row_calls`): the SAME instruments at the start subtune's
+    row, which is the drum sweep's length and not a safety bound.
     """
     if not group_tempos:
-        return {}
+        return InstrumentRowCalls()
     plays: Dict[int, set] = {}
     implicit: set = set()
     for ti, track in enumerate(tracks):
@@ -1255,7 +1347,7 @@ def instrument_row_calls(tracks: List[List[int]],
         if group >= len(group_tempos):
             # The numbering no longer lines up with the tempo list; refuse
             # rather than attribute this track's patterns to the wrong clock.
-            return {}
+            return InstrumentRowCalls()
         operand = False
         first = True
         for entry in track:
@@ -1270,7 +1362,10 @@ def instrument_row_calls(tracks: List[List[int]],
                     if len(rows) < 2 or not rows[1]:
                         implicit.add(group)
                 first = False
-    out: Dict[int, int] = {}
+    out = InstrumentRowCalls()
+    if start_group is not None:
+        out.start_rows = start_subtune_row_calls(tracks, patterns,
+                                                 group_tempos, start_group)
     if implicit:
         out[1] = min(group_tempos[g] for g in implicit)
     for pattern, groups in plays.items():

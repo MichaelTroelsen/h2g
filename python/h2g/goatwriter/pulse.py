@@ -2,18 +2,20 @@
 from __future__ import annotations
 
 import re
+from bisect import (bisect_right)
 from dataclasses import (dataclass)
 from fractions import (Fraction)
-from typing import (List, Optional, Set, Tuple)
+from typing import (Dict, List, Mapping, Optional, Set, Tuple)
 
 from ..detect import (Detection, pulse_tri_offset, _TRI_COUNTER, _TRI_DIR,
                       _TRI_IDX)
 from ..search import (search_file)
 from ..sidfile import (SidFile)
-from .constants import (GT_FIRST_NOTE, GT_LAST_NOTE, GT_MAX_PULSE_SPEED,
+from .constants import (CMD_SETTEMPO, GT_FIRST_NOTE, GT_LAST_NOTE, GT_MAX_PULSE_SPEED,
                         GT_MAX_PULSE_TICKS, GT_REST, _PACK_FIRSTNOTE, _PACK_FX,
                         _PACK_FXONLY, PACKED_PATTERN_LIMIT, PULSE_RESEED_GATE,
-                        SPEED_GATE, SPEED_GATE_IMM, _TRI_INSTR_CELL)
+                        SPEED_GATE, SPEED_GATE_IMM, TEMPO_FASTEST_STEADY,
+                        _TRI_INSTR_CELL)
 from .instruments import (_table_length_byte)
 from .tempo import (outer_gate_skip, SongSpeeds)
 from . import constants as _gw_constants
@@ -227,7 +229,9 @@ def _pulse_triangle_wrapped(width: int, low: int, high: int,
 
 
 def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
-                   multiplier: int) -> tuple[List[tuple], int | None]:
+                   multiplier: int,
+                   tick_ratios: Optional[Mapping[int, Fraction]] = None,
+                   ) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
 
     Without `pulse`, or where the player has no sweep, this is what H2G has
@@ -271,7 +275,9 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
             if program is not None:
                 return program
         if det.pulse_tri_hi >= 0:
-            program = _pulse_tri_program(sid, det, i, multiplier)
+            program = _pulse_tri_program(
+                sid, det, i, multiplier,
+                tick_ratio=(tick_ratios or {}).get(i))
             if program is not None:
                 return program
         return static, None
@@ -346,7 +352,9 @@ def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
 
 
 def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
-                       multiplier: int) -> tuple[List[tuple], int] | None:
+                       multiplier: int,
+                       tick_ratio: Optional[Fraction] = None,
+                       ) -> tuple[List[tuple], int] | None:
     """The triangle engine's entries, or None if this record does not sweep.
 
     The third pulse engine (`_find_pulse_tri`), and the one Commando's lead
@@ -432,14 +440,16 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     step, delay = _tri_step_delay(det, data[rec + 6])
     if step == 0:                    # rate 0, or a rate that is delay-only
         return None
-    speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid))
+    speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid),
+                       tick_ratio)
     width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
     return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
                            step)
 
 
 def _tri_speed(step: int, delay: int, multiplier: int,
-               gate_skip: Optional[int]) -> int:
+               gate_skip: Optional[int],
+               tick_ratio: Optional[Fraction] = None) -> int:
     """The GT pulse speed (per CALL) of a triangle sweep stepping `step`
     every `delay` of the original's TICKS -- shared by `_pulse_tri_program`
     and `_phase_sweep_params`, so a note with no CMD_SETPULSEPTR sweeps at
@@ -476,9 +486,20 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     on the player's lattice (`_tri_turns`; table 8E4..E22, 61 ticks of 22):
     measured packed at 6e467ff + that change, 120 s, Game_Killer 7.34 ->
     6.81 frames a leg (original 6.62), Ninja 16 -> 15 (14.66), One_Man 6.6
-    -> 6.0 (6.1), Human_Race 24 -> 22 (22). Rasputin's gate is not read at all: its R comes from
-    the track's `$FE nn` (`outer_gate_skip` returns None), so it keeps
-    `multiplier` -- shipped 128 a frame against the original's 101.
+    -> 6.0 (6.1), Human_Race 24 -> 22 (22).
+
+    **A gate the TRACK reloads (Rasputin's `$FE nn`) is `tick_ratio`.**
+    `outer_gate_skip` returns None for it -- R is 2, 3, 5, 10, 60, 120, 6, 2
+    along one lap of subtune 0 -- and a pulse program is one per RECORD, so
+    the sweep cannot follow R. The original's rate does: 128 * R / (R + 1) a
+    frame, measured per section at 310 s on voice 0 (all sweep frames, holds
+    counted) 85.3, 96.0, 105.1, 114.6, 125.7, 127.5 for R 2, 3, 5, 10, 60,
+    120. `track_set_tick_ratios` gives each record the clock it sounds at,
+    averaged over the time it sounds: record 0 x1.057, speed 64 -> 61, packed
+    ramp 128.0 -> 122.0 a frame against the 121.0 the original's per-section
+    rates weigh to (record 0 sounds 3.1, 2.8, 12.3, 10.6, 14.0 and 58.1 s
+    under those R). **Per-section error is NOT fixed**: one speed runs 43%
+    fast at R = 2 and 4% slow at R = 120.
 
     **So the `pul` COUNT overshoots by (O+1)/O by construction, and that is
     not a pulse defect.** The gate skips the WHOLE play routine one frame in
@@ -502,6 +523,10 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     per-frame travel instead. `tests/test_pulse_tri_gate_hold.py` pins it.
     """
     if not gate_skip:
+        if tick_ratio is not None:
+            calls = max(1, multiplier) * tick_ratio
+            return min(GT_MAX_PULSE_SPEED,
+                       max(1, round(step / (delay * calls))))
         return min(GT_MAX_PULSE_SPEED,
                    max(1, round(step / (delay * max(1, multiplier)))))
     calls = Fraction(max(1, multiplier) * (gate_skip + 1), gate_skip)
@@ -683,10 +708,155 @@ def pulse_usage(tracks: List[List[int]], patterns: List[List[int]],
     return [counts.get(i, 0) for i in range(n)]
 
 
+def track_set_tick_ratios(sid: SidFile, det: Detection,
+                          tracks: List[List[int]],
+                          patterns: List[List[int]], lead: int,
+                          multiplier: int, log=None) -> Dict[int, Fraction]:
+    """{record index: our calls per original TICK / `multiplier`} for a player
+    whose outer gate reloads from the TRACK (`det.track_fe_command`: Rasputin's
+    `$FE nn`), or {} where `outer_gate_skip` already answers.
+
+    `_tri_speed` divides a triangle sweep's per-tick step by our calls per
+    tick, `multiplier * (O + 1) / O` under an outer gate of reload O. Here O is
+    not one number: `$FE nn` moves it mid-song (Rasputin subtune 0 runs 2, 3,
+    5, 10, 60, 120, 6, 2) and a pulse program is one per RECORD, so the
+    nearest a record can come is the clock it SOUNDS at, averaged over the
+    time it sounds. The original's sweep covers 128 * R / (R + 1) width a
+    frame in a section of reload R, so the one speed that matches the mean
+    travel per frame sounded is step / (delay * c), `c` being the calls per
+    tick summed over the record's notes -- `sum(calls) / sum(ticks)`, a
+    time-weighted harmonic mean of the per-section clocks.
+
+    The calls are read off the FINISHED patterns, the way
+    `tempo_duty_split_plan` reads them but through every `CMD_SETTEMPO`, not
+    only row 0's: `patterns._compensate_fractional_rows` spends what the
+    rounded change dropped in tempo commands further down, and summing them
+    gives each section its exact mean (Rasputin's 5.995, 5.328, 4.799,
+    4.398, 4.065, 4.032, 4.665 and 5.984 calls a row at `-S2`, which are
+    2 * 2 * (R + 1) / R for its R); a row's own T alone reads R = 10, 60 and
+    120 as the same 4. A note is weighted by the rows it is held (to the
+    voice's next note), and a row of `frames` working calls is `frames`
+    ticks.
+
+    One subtune's clock, the one the packed file's `-S` factor serves
+    (`pack_subtune`); the other subtunes' notes only where that one never
+    sounds the record. No entry for a record the walk never meets, for a row
+    clock that cannot be read, or where `frames * multiplier` is under the
+    tempo floor (`TEMPO_FASTEST_STEADY` clamps T up there, which would read as
+    a gate). The phase table (`_phase_sweep_params`, `--pulse-phase`) is not
+    given it: Rasputin does not ship that option.
+    """
+    if (not getattr(det, "track_fe_command", False)
+            or outer_gate_skip(sid) is not None or multiplier < 1):
+        return {}
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    groups = len(tracks) // 3
+    if speeds is None or not 0 < groups <= max(sid.subtunes, 1):
+        return {}
+    per_group: List[Dict[int, List[int]]] = []
+    for g in range(groups):
+        frames = speeds.frames_for(g)
+        acc: Dict[int, List[int]] = {}
+        per_group.append(acc)
+        if not frames or frames * multiplier < TEMPO_FASTEST_STEADY:
+            continue
+        plays = []                       # per voice: ([(pattern, row)], rows)
+        events = []                      # (row, voice, T): every CMD_SETTEMPO
+        for v in range(3):
+            row, repeat, operand = 0, 1, False
+            voice = []
+            for b in tracks[3 * g + v]:
+                if operand:              # $FF's restart position
+                    operand = False
+                    continue
+                if b == 0xFF:            # patterns.GT_ORDER_RESTART
+                    operand = True
+                    continue
+                if 0xE0 <= b < 0xFF:     # a transpose, no row of its own
+                    continue
+                if 0xD0 <= b < 0xE0:     # patterns.GT_REPEAT: the NEXT entry
+                    repeat = b - 0xD0 + 1
+                    continue
+                if b >= len(patterns):
+                    continue
+                pat = patterns[b]
+                n = 0
+                while 4 * n < len(pat) and pat[4 * n] != 0xFF:
+                    n += 1
+                for _ in range(repeat):
+                    for k in range(n):
+                        if (pat[4 * k + 2] == CMD_SETTEMPO
+                                and TEMPO_FASTEST_STEADY <= pat[4 * k + 3]
+                                < 0x80):
+                            events.append((row + k, v, pat[4 * k + 3]))
+                    voice.append((b, row))
+                    row += n
+                repeat = 1
+            plays.append((voice, row))
+        # The row clock: a tempo command sets the length of its own row and
+        # every later one, the voice serviced last winning a shared row. Rows
+        # before the first command run the subtune's opening length.
+        events.sort()
+        rows_at = [e[0] for e in events]
+        clock = [e[2] for e in events]
+        opening = frames * multiplier
+        starts = [0]                     # calls up to each event's row
+        for k in range(1, len(events)):
+            before = clock[k - 1] if k else opening
+            starts.append(starts[-1] + (rows_at[k] - rows_at[k - 1]) * before)
+
+        def calls_to(row: int) -> int:
+            k = bisect_right(rows_at, row) - 1
+            if k < 0:
+                return row * opening
+            return (starts[k] + (row - rows_at[k]) * clock[k]
+                    + rows_at[0] * opening)
+
+        for v in range(3):
+            voice, total = plays[v]
+            notes = []                   # (row, record)
+            current = 1
+            for b, row0 in voice:
+                pat = patterns[b]
+                for k in range(len(pat) // 4):
+                    r = 4 * k
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+                    if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                        notes.append((row0 + k, current - lead - 1))
+            for n, (at, rec) in enumerate(notes):
+                end = notes[n + 1][0] if n + 1 < len(notes) else total
+                end = max(end, at + 1)
+                slot = acc.setdefault(rec, [0, 0])
+                slot[0] += calls_to(end) - calls_to(at)
+                slot[1] += (end - at) * frames
+    pack = _gw_tempo.pack_subtune(speeds, sid.start_song)
+    out: Dict[int, Fraction] = {}
+    recs = {r for acc in per_group for r in acc if r >= 0}
+    for rec in sorted(recs):
+        slots = ([per_group[pack].get(rec)] if pack < groups else [])
+        if not slots or slots[0] is None:
+            slots = [acc[rec] for acc in per_group if rec in acc]
+        calls = sum(s[0] for s in slots)
+        ticks = sum(s[1] for s in slots)
+        if ticks:
+            out[rec] = max(Fraction(1), Fraction(calls, ticks * multiplier))
+    if log and out:
+        log("Pulse sweep clock......: "
+            + ", ".join(f"record {r} x{float(x):.3f}"
+                        for r, x in sorted(out.items()))
+            + f" of -S{multiplier}'s calls a tick (outer gate reloaded by "
+            "the track)")
+    return out
+
+
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                   pulse: bool, multiplier: int,
                   log=None, lead: int = 1,
-                  usage: Optional[List[int]] = None
+                  usage: Optional[List[int]] = None,
+                  tick_ratios: Optional[Mapping[int, Fraction]] = None
                   ) -> tuple[List[tuple], List[int]]:
     """The whole pulse table, plus each instrument's 1-based start entry.
 
@@ -721,7 +891,7 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     two index-order passes stand exactly as they were.
     """
     nrec = max(instr_used - lead, 0)
-    programs = [_pulse_program(sid, det, i, pulse, multiplier)
+    programs = [_pulse_program(sid, det, i, pulse, multiplier, tick_ratios)
                 for i in range(nrec)]
     statics = [_pulse_program(sid, det, i, False, multiplier)[0]
                for i in range(nrec)]

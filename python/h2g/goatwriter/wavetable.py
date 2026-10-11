@@ -1028,8 +1028,23 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
       Formula_1_Simulator -2.4pp, Bump_Set_Spike -1.8, Warhawk -1.4,
       Proteus -1.4, Last_V8 -1.1, Rasputin -0.9. Kentilla (-S10) loses
       71 of its 271 voice-2 attacks, and `melody` drops 95.2 -> 90.7.
-      Its frame 0 already reads the noise at HEAD (`12 12 81 81 14`, with no
-      lead frame), so clearing the gate leaves no frame where it reads set.
+      Its frame 0 read the noise at that HEAD (`12 12 81 81 14`, with no
+      lead frame), so clearing the gate left no frame where it reads set.
+      **That does not reproduce at 0d18fce (v0.5.524)** (task
+      `kentilla-s10-drum-lead-trim`, presets, -t 180, `--sound`): the lead is
+      NOT trimmed on Kentilla -- its six drum records get budgets of 54 to
+      123 against the 6 the full shape needs above -S1 -- and frame 0 reads
+      the record's waveform (`12 15 81 81 14`). Gate cleared everywhere on
+      Kentilla: 828 attacks and `melody` 0.9822 on both arms, `gate` 0.594
+      -> 0.621, but `loud` 0.929 -> 0.922 (`aud` -0.04pp; `loud_ratio`
+      1.092 -> 1.019). The gate-on span at -S10 is 343 lines, inside the 520
+      of the ADSR delay below, so the loss of level is the same mechanism as
+      at -S2. The lead is trimmed on exactly two corpus files, Chain_Reaction
+      (-S3) and W_A_R (-S4), at the floor of 5 (`tests/
+      test_drum_lead_budget.py`); neither loses a tick placement to it. What
+      Kentilla still differs on is the gate bit and the outer gate's skipped
+      call (`gate_skip` 10), 115 of 826 paired attacks. Not bisected: which
+      commit between be0aeb1 and 0d18fce removed the old reading.
       Rasputin rendered with voice 2 solo for 60 s
       (sidplayfp): original 68.88 dB, gated tick 69.05, gate-off tick
       67.49. So the cleared gate costs 1.4 dB of the drum voice. This repo
@@ -1250,8 +1265,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     #
     # The noise's gate bit is `_drum_tick_noise`'s question: cleared at -S1,
     # as the player clears it, and kept above -S1, where clearing it was
-    # measured to cost loudness and, at -S10, attacks. Its docstring has both
-    # A/Bs. (It was kept everywhere because the noise used to be entry 0,
+    # measured to cost loudness (and, at an older HEAD, Kentilla's attacks --
+    # no longer, see the docstring). Its docstring has the A/Bs. (It was kept everywhere because the noise used to be entry 0,
     # straight after the $09 firstwave: Commando GT 13 counted 0 onsets
     # against the original's 14 with $80, and 14 with $81. The lead below
     # now sits between them.)
@@ -1456,6 +1471,38 @@ def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
     return max(0, (note_rows - 2) * row_calls
                - _gate_calls(max(1, multiplier), gate_skip))
 
+
+
+def _record_row_calls(instr_row_calls: Optional[dict], gt_number: int,
+                      default: int) -> int:
+    """The row, in play calls, `_drum_duration_steps` sizes record `gt_number` by.
+
+    The row of the START subtune where it plays the record
+    (`tracks.InstrumentRowCalls.start_rows`), else the shortest row over the
+    subtunes that do (the dict itself), else `default`, the file's.
+
+    **A per-subtune value in a global structure is read by every subtune**, and
+    this is the one place the drum's wavetable cannot be made per subtune: the
+    record is one block and the sweep one length. Bump_Set_Spike's `$0F0C` is
+    played at 10 calls a row in subtune 0 and 8 in subtune 1; the shortest
+    (8) gave the start subtune 13 steps where its own rows leave room for 17,
+    `$3DC` against the original's `$500` (figures at v0.5.524). The shortest row is the right bound
+    for the gatetimer, where a value too large stops the song
+    (`tracks.instrument_row_calls`), and the wrong one here, where a sweep too
+    long runs on by `(note_rows - 2) * (the rows' difference)` calls -- 4
+    against a final unit of 8 on Bump_Set_Spike, so inside its note -- and a
+    sweep too short ends early in every note of the tune. The tune is the
+    start subtune (`_noise_tick_frames`, for the same choice about the same
+    table); the other subtunes' sweeps are what pays.
+
+    Cloning the record per row length would be exact and Bump_Set_Spike has no
+    room for it: its wavetable is 255 of 255, and `nibble_gate_phase_split`
+    already reports its three clones without a place.
+    """
+    start = getattr(instr_row_calls, "start_rows", None)
+    if start and gt_number in start:
+        return start[gt_number]
+    return (instr_row_calls or {}).get(gt_number, default)
 
 
 def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
@@ -1901,15 +1948,14 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                   pitch_seq=pitch_seq,
                                   note_rows=note_rows,
                                   # The drum's duration bound, its only
-                                  # reader: the shortest row THIS record is
-                                  # played at (`tracks.instrument_row_calls`,
-                                  # the gatetimer's rule), not the file's.
+                                  # reader: the row THIS record is played at
+                                  # (`_record_row_calls`), not the file's.
                                   # Warhawk's `$0F0A` plays only in 16-call
                                   # subtunes and was charged the 8-call row
                                   # of its one-frame sound effects: 9 steps,
                                   # `$0144`, where the original falls `$0300`.
-                                  row_calls=(instr_row_calls or {}).get(
-                                      gt_number, row_calls),
+                                  row_calls=_record_row_calls(
+                                      instr_row_calls, gt_number, row_calls),
                                   no_test_restart=instrument_written,
                                   voice_two_stage=voice_two_stage,
                                   voice=_record_voice(instr_voices,
