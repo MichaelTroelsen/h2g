@@ -112,7 +112,10 @@ def test_a_restore_whose_own_column_is_taken_runs_on_the_next_free_row():
     tracks = [[0, 0xFF, 0], [1, 0xFF, 0], [2, 0xFF, 0]]
     plan, stats = _walk(patterns, _groups(patterns, tracks), "restore",
                         _restore())
-    assert plan == {(0, 0): {1: (CMD_SETFILTERPTR, _BASE)}}, plan
+    # The note's own empty row-0 cell now also takes the `B` of its union
+    # (tests/test_ilv_row0_restore.py); the copy still waits for row 1.
+    assert plan == {(0, 0): {0: (CMD_SETFILTERCTRL, 0x41),
+                             1: (CMD_SETFILTERPTR, _BASE)}}, plan
     assert (stats["restore_unplaceable"], stats["late_restores"],
             stats["passband_late"]) == (1, 1, 1), stats
 
@@ -151,12 +154,13 @@ def _sun():
 @needs_corpus
 def test_sun_takes_the_restore_spelling_and_stops_lagging():
     """Figures at the staged base of the cycle this was written in: "params",
-    130 lagged, 130 rows late. Now: 0 lagged, 10 rows late (the changes with
-    no free column), one restore placed a row after the song's first note
+    130 lagged, 130 rows late. Then 0 lagged, 10 rows late (all on pattern
+    row 0, which the walk refused); now 0 rows late (an empty row-0 cell is
+    taken, tests/test_ilv_row0_restore.py). One restore placed a row after the song's first note
     (row 0, which also carries the tempo), one row on the wrong passband."""
     _song_, line = _sun()
     assert line.startswith("ILV filter routing......: restore,"), line
-    assert " 0 lagged," in line and " 10 row(s) late," in line, line
+    assert " 0 lagged," in line and " 0 row(s) late," in line, line
     assert "1 passband restore(s), 1 late," in line, line
     assert "1 row(s) on the wrong passband" in line, line
 

@@ -11,7 +11,8 @@ decremented -- with no stop at zero. Record 16 (GT 17, `$0CFC`, threshold
 note and the 288 after the next, measured on the original: 0 of 671 and 0
 of 287 frames differ from the model, 165 and 71 stores. Record 9 (GT 10,
 `$09F9`, threshold 31, vibrato byte `$2D`) alternates the fall with the
-vibrato: 0 of 114 store frames differ, and it is counted, not emitted.
+vibrato: 0 of 114 store frames differ (it is emitted as wavetable loops of
+a few dip sizes, `test_counter_fall_alternation.py`).
 """
 import json
 import pathlib

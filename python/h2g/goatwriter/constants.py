@@ -1260,7 +1260,11 @@ ILV_FILTER_ROUTING = 0x07
 #       with the fewest late rows of either kind.
 #
 # Never on pattern row 0 (CLAUDE.md: row 0's command column belongs to the
-# subtune's clock), never over an occupied command column. A change that
+# subtune's clock) -- except in "restore", which takes a row-0 cell that is
+# EMPTY when the plan runs: the tempo is written before it (convert.py
+# apply_tempos), so an empty cell is one no clock needs; Sun_Never_Shines'
+# last 10 late rows were all row-0 changes (10 -> 0). Never over an
+# occupied command column. A change that
 # finds no free column waits for the next row that has one (`unplaceable`),
 # and the rows spent wrong are counted (`late_rows`) rather than hidden. A
 # pattern played at several orderlist positions wanting different commands

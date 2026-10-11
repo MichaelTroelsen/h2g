@@ -449,7 +449,11 @@ def test_the_routing_written_is_the_voices_the_original_routes(stem):
     assert nibbles and nibbles <= ILV_MOVERS[stem], (stem, nibbles)
     if stem != "Sun_Never_Shines":
         assert params <= ILV_MOVERS[stem], (stem, params)
-    assert not row0, (stem, row0)
+    # Never on row 0 -- except "restore" (Sun_Never_Shines), which takes an
+    # EMPTY row-0 cell (tempo is written before the plan, so a subtune's
+    # clock is never one); tests/test_ilv_row0_restore.py pins that.
+    if stem != "Sun_Never_Shines":
+        assert not row0, (stem, row0)
     assert all(packed_pattern_size(pattern_rows(p)) <= PACKED_PATTERN_LIMIT
                for p in song.patterns)
     logged = [m for m in lines if m.startswith("ILV filter routing")]

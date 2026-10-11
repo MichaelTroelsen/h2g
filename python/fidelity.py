@@ -4557,6 +4557,14 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     485 (7533 frames), pairs 2 of 2 shared instruments and reads
     `noise_run_agreement` == 1.0 -- a 9-frame difference where the
     gate-blind reduction found nothing comparable at all.
+
+    **A gated-player original's run length includes the frames its outer gate
+    skips.** When the outer gate skips the player's next call, the skipped
+    frame stays inside the run, so a gated-noise run under an outer gate
+    cannot be shorter than the skipped frame allows. Dated evidence, measured
+    at 3b1c66d and not re-measured here: on Rasputin, 158 of the original's 601
+    gated-noise runs are 2 frames long only because the outer gate skips the
+    next frame (siddump -z cycles == 43).
     """
     a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
     shared = paired_keys(a, b)

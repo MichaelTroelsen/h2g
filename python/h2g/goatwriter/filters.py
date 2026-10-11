@@ -516,7 +516,11 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     if cell is None:
                         continue
                     _, key, r, first, cmd, dat, mine = cell
-                    if first and r and not cmd and not dat and mine is None:
+                    # "restore" also takes a pattern's row 0 where its command
+                    # column is empty: the tempo is written before this plan,
+                    # so an empty cell is one no subtune's clock needs.
+                    if (first and (r or mode == "restore") and not cmd
+                            and not dat and mine is None):
                         plan.setdefault(key, {})[r] = (CMD_SETFILTERCTRL,
                                                        value)
                         have = value

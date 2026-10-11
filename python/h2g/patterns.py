@@ -3651,10 +3651,13 @@ def _regrid_spots(pattern: List[int], n: int, rows: int):
         # answering it per position is the per-copy cost this schedule is
         # pattern-global to avoid.
         moved = False
-        if work[row] or work[nxt]:
+        if (work[row] or work[nxt]
+                or _inherits_continuous_effect(work, r)):
             # The column is spoken for, and an existing command is never
             # overwritten -- move to the nearest clean pair instead, see
-            # `_shifted_regrid_spot`.
+            # `_shifted_regrid_spot`. An EMPTY pair directly behind a
+            # 1XY-4XY (a tie's 3XY included) is spoken for too: the running
+            # effect would carry the CMD_SETTEMPO through two more rows.
             r2 = _shifted_regrid_spot(work, r, rows)
             if r2 is None:
                 skipped += 1             # no clean free pair in the pattern

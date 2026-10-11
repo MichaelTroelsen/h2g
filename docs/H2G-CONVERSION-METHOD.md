@@ -13088,7 +13088,12 @@ with the majority's params row -- the `A` runs after the note's pointer load,
 so the copy is what runs. On Sun_Never_Shines it took the file from "params"
 with 130 lagged rows to 0 lagged and 10 rows late (the changes with no free
 column), with one restore, a row after the song's first note (staged base of
-8586101 plus the uncommitted merge of the previous drain cycle). Never on row 0, never over an occupied command
+8586101 plus the uncommitted merge of the previous drain cycle). The 10 that
+remained were all changes landing on a pattern's row 0, which the walk refused;
+"restore" now takes a row-0 cell that is empty when the plan runs (the tempo is
+written before it, so an empty cell is one no clock needs): 10 -> 0 rows late at
+0d0f6ec, Sun_Never_Shines the only file whose bytes move. "shared" and "params" still
+never use row 0, and no spelling writes over an occupied command
 column; late rows, rows on the wrong passband and dropped patterns are
 counted, not hidden.
 
@@ -14113,9 +14118,12 @@ the band, and record 2's ($080, down) plays $080, $040, $000, $FC0.)
 * Monty_on_the_Run subtune 2 loses its 88 the same way, against 388 gained on
   subtune 0.
 
-Capacity is spent in subtune order, and that is where this gets fixed. On
-Ninja most commanded phases are read 2-4 steps along, because the attack
-lands calls after the set row. That has not been traced.
+Capacity is spent in subtune order, and that is where this gets fixed.
+RETRACTED (task ninja-phase-attack-after-set-row, § 7.gggggggg): "On Ninja
+most commanded phases are read 2-4 steps along, because the attack lands
+calls after the set row. That has not been traced." The traced cause is the
+reading, not the output: the pulse set lands ONE call after the gate and the
+attack is named from the previous note's frequency.
 
 ### 7.rrrrrrr A bit-7 note skips the two-stage attack and the pulse reseed: the free-note variant
 
@@ -15148,20 +15156,82 @@ the plan switched off the conversion is byte-identical to before (3d8e9b92c7e9).
 - The .sng grows by 977 bytes: 924 of pattern rows (7 pattern copies), 12 of
   orderlist (two unrolled), 14 wavetable steps, 3 speed rows.
 
-**What is not emitted: the alternating record.** Record 9 (and record 12,
-381 notes across the subtunes, 1659 stores) alternates the fall with the
-vibrato on every frame. The log counts it (`Counter fall (bit $02)..: ...
-alternating note(s) ... not emitted`). Each store has to be undone on the
-frame after it -- the vibrato is back on the NOTE, not on the fallen byte --
-and the step is a different size every time, which a loop cannot count; so
-the 114 stores of the 288-frame note are about 228 wavetable steps (or, with
-the sizes quantised, a handful of loops, the vibrato given up for them). The
-wavetable holds 247 of 255 entries after this change (233 before; the
-expanding vibrato's loops are about 110 of them), and the rows that would
-carry the program are the swell's `4xy`/`8xx` commands. Open: free the
-wavetable (the loops' entries are two each and differ only in the speed row
-they name), then emit the alternation with the vibrato kept on the frames
-between. `tests/test_counter_fall.py`.
+**The alternating record, emitted as loops of a few dip sizes.** Record `$0B`
+(GT 10, `$09F9`, threshold 31, vibrato byte `$2D`; the task title's "record
+$0B" is the instrument name `0B:2D-00-22`) and record `$0E` (GT 13,
+threshold 12) alternate the fall with the vibrato: from the threshold every
+odd frame puts the voice `n * $100` under its note (`n` the store's own count,
+the first store moving nothing) and the vibrato block puts it back on the next
+frame. The 288-frame note at frame 3745 has 227 reversals in the original. The
+exact schedule is two wavetable steps a store -- 228 for that note, against 8
+free -- so what is emitted is the schedule at a handful of SIZES
+(`counter_fall.alternation_*`, `ALTERNATION_LEVELS` 8):
+
+- A size is a three-row loop: `F2 size` (the dip), `F3 00` (the step back, a
+  tone portamento at speed 0, a tie to the channel's note: gplay.c:574-583,
+  player.s `mt_effect_3`) and a jump to the first row. The step back is `F3
+  00` and not `F1 size` because the swell's `4xy` has left an offset on the
+  voice at the moment the loop takes over (`-$0103` on the first trace), and
+  an `F1` keeps it for the rest of the note: the restored frames read `4D25`
+  where the note is `4E28`.
+- A wavetable command skips the pattern's continuous effect on its tick
+  (gplay.c:714-715 goes to PULSEEXEC), so the loop replaces the swell's
+  vibrato from the first dip on. The original keeps the vibrato on the even
+  frames; from the second or third store the dips are the larger swing.
+- Every row from the first dip on whose command column holds the swell's `4xy`
+  (or is empty) is pointed: at the loop's first row where it opens on a dip,
+  at its second where it opens on the step back, the entry row (the first dip
+  is inside it) at a delay and a jump. Pointing every row, not only the entry,
+  is what keeps `_expanding_vibrato_loops` off them -- it converts every `4xy`
+  row of a hold -- and what lets the size follow the note's own count. A size
+  changes only on a row after one that ended on the step back: a size changed
+  under a dip would step back by another amount than it fell. With three ticks
+  a row, rows alternate dip-first and step-back-first.
+- Sizes are the optimal clustering in log space of the counts the rows are at
+  (`quantize_levels`: 1, 2, 8, 15, 30, 54, 90 on Mega). Eight is the most the
+  swell's own loops leave: 10 fill the table to 254 of 255 with every swell
+  loop in, 12 lose 105 swell rows to "table full".
+- The counter's first lap only (the stores of `j < 256`). The counter is a
+  byte; the original sits dipped and still until the counter is back at the
+  threshold, and starts again at 287. Ours runs on at the last size to the
+  next note. A note with a fetch frame on a store is declined (none is, in the
+  corpus: GT 10's fetches are at multiples of 96).
+
+**What moved.** Measured at 0d0f6ec plus this change, `-t 180`, presets, with
+`--sound` (historical).
+
+- Corpus byte-hash under presets: 95 files, 89 converted, 6 refused (the same
+  in both arms), 89 compared, 1 moved: Mega_Apocalypse `3dd7d6f19319` ->
+  `2ce01d593ac3`. Commando is unchanged. 54 notes are emitted (4 of GT 10, 50
+  of GT 13), 420 rows, 7 sizes; the .sng grows 19876 -> 20652 bytes (patterns
+  76 -> 80, wavetable 247 -> 248, speed table 54 -> 47: the swell's loops
+  that are no longer built name fewer speed rows).
+- The 288-frame note's reversals 52 -> 232 (original 227), packed through
+  gt2reloc and siddump (`tests/test_counter_fall_alternation.py`). Its cycle
+  swing (swing over centre) has a median 1.03 against the original's 0.93
+  over 230 and 225 cycles.
+- File level: reversals 3940 -> 4120 (original 4459), `reversal_ratio` 0.8836
+  -> 0.9240; `aud` 0.8838 -> 0.8853, `loud` 0.8401 -> 0.8402;
+  `bend_ratio` 1.947 -> 1.677 and `travel_ratio` 1.187 -> 1.171, both toward
+  1; `tie_agreement` 0.6282 -> 0.6357 and `tie_ratio` 0.8868 -> 0.9035;
+  `$09F9`'s `vib` census ratio 0.572 -> 0.738. `melody`, `sequence`, `wave`,
+  `adsr`, `gate` and `pitch` unchanged.
+- **`depth_ratio` moves away, 1.009 -> 0.674, and it is not this note.** The
+  `$09F9` pool is by ADSR, and its cycles are dominated by a third record's
+  12-frame notes (GT 3, effect `$01`): 356 cycles of swing 1.57-1.76 in the
+  original and 178 in ours. With ours at 178 of 392 cycles in that cluster
+  the median sat in it by luck (1.581 against the original's 1.567) and the
+  230 cycles the long notes now contribute, correctly, tip it below; the
+  original's 356 of 539 keep its median in the cluster. The note's own swing
+  is on the original's (above). Open: why ours has half the original's
+  cycles on the 12-frame `$01` notes.
+
+**Not done.** The gap and the lap after it (the original holds its dipped
+pitch still for 31 frames, then resumes at the stores' own count); the vibrato
+on the even frames; record 12's notes of 1-2 dips are emitted too (`aud` is
+0.8853 with them, 0.8844 with only the 4 notes of 32 dips or more, 0.8825 with
+6 or more -- the opposite of what the short notes' small dips suggested).
+`tests/test_counter_fall.py`, `tests/test_counter_fall_alternation.py`.
 
 ### 7.NEW Effect bit `$40` alone: the fixed attack pitch on a record with no `$04`
 
@@ -15230,3 +15300,79 @@ only); Lightforce's vibrato gate is a duration gate (3), and no short record-6
 note was looked for -- the 16 measured onsets all agree on frames 1-4. The shape of the vibrato after the pitch (the original
 steps down first, `04D1`; ours up) is the vibrato's, not this block's.
 `tests/test_fixed_attack_only.py`.
+
+### 7.gggggggg The pulse set lands the call after the gate: Ninja's "wrong width at the attack" was the reading
+
+From task `ninja-phase-attack-after-set-row`, opened by § 7.qqqqqqq. Figures are
+historical, taken at 0d0f6ec under presets with `pulse_phase` forced, 180 s, -S1,
+group 0 traced as subtune 0; `tests/test_ninja_phase_attack.py` re-derives them.
+
+**The symptom.** `reach` found 20 of 223 Ninja phases showing their planned width
+at the packed attack (v0 11/93, v1 9/28, v2 0/102), though the plan matches the
+original's 223/223. The "got" widths were not near the plan: `B20-` planned,
+`A60` read; `G-1` planned `920+`, `A40` read.
+
+**The cause, from the trace** (Ninja v2, original at left, ours at right, five
+frames of startup lag removed):
+
+```
+orig  3634 pul A40  wf 41  frq 04E2  adsr 0B00   ATTACK
+ours  3639          wf 41  frq 0EA3  adsr 0B00   ATTACK     <- frq is the PREVIOUS note's
+ours  3640 pul A40         frq 04E2
+```
+
+Ninja carries `--no-test-restart`, so every finished instrument's firstwave is the
+record's own waveform (`$11`, `$21`, `$41`; none is `$09`). The packed player's first
+call on a note runs the new-note init and `jmp mt_loadregswaveonly` (player.s
+~909-911): it writes the gate, the waveform and AD/SR and returns. The wavetable
+entry 0 (the frequency) and the pulse table (the set entry the note's
+`CMD_SETPULSEPTR` points at) run on the next call. Tick-0 effects set the pulse
+POINTER (`mt_tick0_9`) and never the register, so no spelling puts the width on the
+gate's frame. Two consequences:
+
+* the width at the attack frame is the PREVIOUS note's last width, never the planned
+  one (the "2-4 steps along" of § 7.qqqqqqq was that stale value, stepped);
+* siddump names an attack from the frequency it sees on that frame, which is the
+  previous note's, so `reach`'s same-name pairing aligned each finished note with
+  the next note's attack. Read at the gate frame, the pairing was wrong as well as
+  the frame: either half alone is no better (9/93 0/28 9/102 with only the frame
+  wrong, 0/93 0/28 0/102 with only the name wrong).
+
+**Measured, same output, four readings** (reached / paired planned notes that carry
+a command, v0 v1 v2):
+
+| firstwave | read at | attack named by | v0 | v1 | v2 |
+|---|---|---|---|---|---|
+| real waveform (preset) | T | its own frequency | 11/93 | 9/28 | 0/102 |
+| real waveform | T | the next attack's | 9/93 | 0/28 | 9/102 |
+| real waveform | T + 1 | its own frequency | 0/93 | 0/28 | 0/102 |
+| real waveform | T + 1 | the next attack's | **66/93** | **28/28** | **102/102** |
+| test bit `$09` (`--no-test-restart` off) | T | its own frequency | 66/93 | 28/28 | 102/102 |
+
+With the test bit the first call writes `$09`, which siddump does not take for a
+key-on (siddump.c:434-437); the attack is the wavetable's first entry, on the same
+call as the frequency and the pulse, and the old reading is exact. That is the A/B
+that fixes the cause.
+
+**There is no converter fix**, and the reason is measured: the only way to put the
+set on the gate's frame is the test-bit first frame, which is the option
+`--no-test-restart` removes on purpose (docs/OPTIONS.md; melody 79.6% -> 63.9% over
+the corpus, Ninja carrying it by measurement). A file that wants a real waveform on
+frame 0 gets its pulse a frame behind the gate, exactly as it gets its pitch. No
+shipped preset carries both flags (`test_no_shipped_preset_carries_both_flags`), so
+only a forced `pulse_phase` meets it, and the audible cost is the previous note's
+width for the 20 ms the gate is already on.
+
+**The 27 that are not exact are a different defect.** Of v0's 93, 27 carry no
+`CMD_SETPULSEPTR` at all: every one is record 13, and the log says
+`*** PULSE TABLE FULL UNDER --pulse-phase -- 1 INSTRUMENT(S) LOSE THEIR PHASE
+ENTRIES ***`. Capacity, not timing (task `pulse-phase-capacity-in-subtune-order`).
+
+**The rule.** A reading of a packed pulse at an attack is only meaningful when it
+says which call the register is written on: for a firstwave below `$10` that is the
+attack, for a real waveform it is the attack plus one call, and the attack's name
+is the next attack's. `_reach` in `tests/test_triangle_lockstep.py` is right for the
+files it lists (Chimera, Thing_on_a_Spring and Human_Race all carry the test bit);
+reuse it on a `--no-test-restart` file and it misreads. Mutations that make
+`tests/test_ninja_phase_attack.py` fail: the convert ignoring `no_test_restart`
+(3 failed), a set row whose high byte is one too high (3 failed).
