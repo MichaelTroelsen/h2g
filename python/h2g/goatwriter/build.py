@@ -1142,7 +1142,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             # The record's own waveform with the gate where the record's is
             # the test bit: the original re-stores its waveform at the
             # landing and resets no oscillator. In the classic restart
-            # family, where the block's first entry writes the waveform, 0
+            # family, and in the `note_flag` family (`legato`: Trans-Atlantic
+            # voice 2 played $41 on the old pitch $7C10 at frame 6494 where
+            # the original moves waveform and pitch together), where the
+            # clone's first wavetable entry writes the waveform, 0
             # instead -- "no change" (gplay.c:355 `if (iptr->firstwave)`,
             # player.s `beq mt_skipwave`): the init call writes no pitch
             # (player.s `jmp mt_loadregswaveonly`), so a gate an effect had
@@ -1159,7 +1162,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 return fw
             if start is None:
                 start = out[instr_at + 1 + (g - 1) * 25 + 2]
-            if (restart_kind and 0 < start <= len(wave_entries)
+            if ((restart_kind or legato) and 0 < start <= len(wave_entries)
                     and GT_WAVE_LAST_DELAY < wave_entries[start - 1][0]
                     < GT_WAVE_FIRST_CMD):
                 return 0

@@ -162,7 +162,11 @@ def test_a_legato_tie_clone_keeps_its_gated_firstwave(name):
               if a.gatetimer & 0x40 and a.firstwave != FIRSTWAVE_TESTBIT]
     assert clones, f"{name}: no legato clone to check"
     for a, b in clones:
-        assert b.firstwave == a.firstwave and b.firstwave & 0x01, (
+        # Firstwave 0 ("no change", tests/test_legato_clone_firstwave.py) is
+        # the other byte that writes no gate-off: a clone whose wavetable
+        # opens on a waveform entry leaves the waveform to that entry.
+        assert (b.firstwave == a.firstwave
+                and (b.firstwave == 0 or b.firstwave & 0x01)), (
             name, hex(a.firstwave), hex(b.firstwave))
 
 

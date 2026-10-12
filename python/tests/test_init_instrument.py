@@ -39,8 +39,9 @@ import pytest
 
 from corpus import CORPUS, needs_corpus
 from h2g.convert import convert
-from h2g.detect import (Detection, INSTRUMENT_INDEX_SHAPE, _find_init_instrument,
-                        _windowed_search, detect)
+from h2g.detect import (Detection, INSTRUMENT_INDEX_SHAPE,
+                        INSTRUMENT_INDEX_SHAPE_ASL4, _find_init_instrument,
+                        _search_all, detect)
 from h2g.goatwriter import note_passes as NP
 from h2g.sidfile import load_sid
 from h2g.tracks import _initial_for, convert_tracks
@@ -60,8 +61,8 @@ INIT = {
     "International_Karate.sid": 20, "Kings_of_the_Beach_ingame.sid": 2,
     "Knucklebusters.sid": 27, "Lightforce.sid": 21,
     "Nemesis_the_Warlock.sid": 15, "Nineteen.sid": 27,
-    "One_on_One_Jordan_vs_Bird.sid": 4, "Pandora.sid": 10,
-    "Powerplay_Hockey_USA_vs_USSR.sid": 11, "Ricochet.sid": 15,
+    "One_on_One_Jordan_vs_Bird.sid": 15, "Pandora.sid": 10,
+    "Powerplay_Hockey_USA_vs_USSR.sid": 15, "Ricochet.sid": 15,
     "Saboteur_II.sid": 17, "Sanxion.sid": 27, "Shockway_Rider.sid": 12,
     "Sigma_Seven.sid": 7, "Skate_or_Die_intro.sid": 7, "Star_Paws.sid": 19,
     "Tarzan.sid": 18, "Thanatos.sid": 4, "Thundercats.sid": 27,
@@ -69,10 +70,12 @@ INIT = {
     "W_A_R_Preview.sid": 27, "Wiz.sid": 27, "Zoolook.sid": 27,
 }
 # Subtune 0 whose init never reaches the loop: its frame-0 slots are the
-# file image (One_on_One's and Powerplay's init branch round the music init
-# on `A = 0`).
-IMAGE_AT_SUBTUNE_0 = {"One_on_One_Jordan_vs_Bird.sid",
-                      "Powerplay_Hockey_USA_vs_USSR.sid"}
+# file image. EMPTY since `_reconcile_instrument_index`: the two names that used
+# to be here (One_on_One, Powerplay) were an artefact of reading ANOTHER
+# player's array -- 4 and 11 against `3F 42 88` / `00 01 01` -- and the tune
+# player's own array holds `0F 0F 0F` at frame 0 of subtune 0 in both
+# (tests/test_instrument_index_reconcile.py).
+IMAGE_AT_SUBTUNE_0: set = set()
 
 
 # --- the signature ---------------------------------------------------------
@@ -152,14 +155,27 @@ def test_the_file_image_is_not_the_init_value():
     assert delta.init_instrument == 0x05
 
 
+def _tune_array(sid, det):
+    """The per-voice array of the player whose instrument table `detect`
+    found: the first match, in either spelling, whose second `LDA` names that
+    table. (The shape's FIRST match is not always the tune player's.)"""
+    data = sid.data
+    table = sid.to_address(det.instr_start)
+    for shape, op in ((INSTRUMENT_INDEX_SHAPE, 11),
+                      (INSTRUMENT_INDEX_SHAPE_ASL4, 12)):
+        for i in _search_all(data, shape):
+            if (data[i + op] | data[i + op + 1] << 8) - 2 == table:
+                return data[i + 1] | data[i + 2] << 8
+    raise AssertionError("no index load names the instrument table")
+
+
 def _slots_at_frame_zero(name, subtune=0):
     from fidelity import SIDDUMP
     if not pathlib.Path(SIDDUMP).exists():
         pytest.skip("siddump-rt is not built")
     sid = load_sid(str(CORPUS / name))
     data = sid.data
-    i = _windowed_search(data, 0, len(data))(INSTRUMENT_INDEX_SHAPE)
-    array = data[i + 1] | data[i + 2] << 8
+    array = _tune_array(sid, detect(sid, log=lambda m: None))
     out = subprocess.run(
         [SIDDUMP, str(CORPUS / name), f"-a{subtune}", "-t1", "-v1",
          f"-w{array:04x},{array + 1:04x},{array + 2:04x}"],

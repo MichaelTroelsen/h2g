@@ -221,6 +221,9 @@ def test_a_shared_block_lays_the_plain_loop_for_an_off_bound_phase():
     from test_pulse_phase import _play_pulse_table
     want = {(0x800, +1), (0x880, +1), (0x900, -1), (0xA00, +1),
             (0x080, -1)}
+    # Deliberately stepless: omitting `step` pins the clamp fallback (the old
+    # edges, `_leg_ramps` with step=None). With step 0x40 this same record
+    # reads "chained", so the premise below holds only on the fallback.
     params = (0x800, 0x40, 0x800, 0xE00, False)
     assert PU._union_kind(want, *params[1:]) is None
     per, per_idx = PU._phase_block(0, 2, want, *params, share=False)

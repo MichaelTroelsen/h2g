@@ -212,6 +212,11 @@ def test_every_pattern_of_a_split_song_is_played(name):
     from songview import parse_sng
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     opts = fidelity._preset_opts(doc, name + ".sid")
+    # Skate_or_Die_intro's size search took max_rows 94 -> 128 and dedup
+    # true -> false at v0.5.528 (after this split shipped), and that build
+    # does not split its swell; the subject here is the split's repointing,
+    # so pin the build that splits (Mega and BMX_Kidz already ship it).
+    opts["max_rows"], opts["dedup"] = 94, True
     logs = []
     song = parse_sng(convert(str(CORPUS / (name + ".sid")), logs.append, **opts))
     assert any(m.startswith("Swell pattern split.") for m in logs), logs[-5:]

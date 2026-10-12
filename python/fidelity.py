@@ -10930,6 +10930,16 @@ def _run(p, args, workdir: Path) -> int:
         if args.pace:
             for sid in sids:
                 opts = _preset_opts(doc, sid.name)
+                # The same forcing the row and diagnose paths apply: without
+                # it `--pace --regrid` times the unforced shipped preset.
+                if args.slides:
+                    opts["slides"] = True
+                if args.effects:
+                    opts["effects"] = True
+                if args.fold_transpose:
+                    opts["fold_transpose"] = True
+                if args.regrid:
+                    opts["regrid"] = True
                 mult = _preset_multiplier(doc, sid.name)
                 if getattr(args, "skip_gate", False):
                     opts["skip_gate"] = True

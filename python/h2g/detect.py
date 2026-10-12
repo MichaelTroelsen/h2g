@@ -619,18 +619,78 @@ def _find_instrument_index(sid: SidFile, det: Detection, log: Logger,
     i = (search or _windowed_search(data, 0, len(data)))(INSTRUMENT_INDEX_SHAPE)
     if i <= -1:
         return -1
-    array = _addr16(data, i + 1, i + 2)
+    _read_instrument_array(sid, det, log, _addr16(data, i + 1, i + 2))
+    return i
+
+
+def _read_instrument_array(sid: SidFile, det: Detection, log: Logger,
+                           array: int) -> None:
+    """Fill `det.init_instrument` and `det.initial_instruments` from the
+    per-voice instrument array at C64 address `array`."""
+    data = sid.data
     det.init_instrument = _find_init_instrument(data, array)
     off = sid.to_offset(array)
     if off < 0 or off + 3 > len(data):
-        return i
+        return
     det.initial_instruments = tuple(data[off:off + 3])
     log("Initial instruments.....: "
         + " ".join(f"${b:02X}" for b in det.initial_instruments))
     if det.init_instrument is not None:
         log(f"Init instrument.........: ${det.init_instrument:02X} on every "
             "voice (the player's init writes it, not the file image above)")
-    return i
+
+
+# The same load as `INSTRUMENT_INDEX_SHAPE` with the record multiply spelled
+# as FOUR shifts: the stride-16 players (After_8, One_on_One, Powerplay, ...)
+# have 16-byte records, so `ASL x4`, and the 3-shift shape cannot match them.
+# One byte longer, so the table operand sits at +12/+13 instead of +11/+12.
+# Consulted ONLY by `_reconcile_instrument_index`, never as a first reading:
+# 7 corpus players match it alone and read no array today, and giving them one
+# would move files this shape was never meant to touch.
+INSTRUMENT_INDEX_SHAPE_ASL4 = "BD ?? ?? 8E ?? ?? 0A 0A 0A 0A AA BD ?? ??"
+
+
+def _reconcile_instrument_index(sid: SidFile, det: Detection, log: Logger,
+                                idx: int) -> None:
+    """Check that the array `_find_instrument_index` read belongs to the
+    player whose instrument table was found, and re-read it if not.
+
+    The shape is found by a first-match search, but a file can carry several
+    players: One_on_One holds four, and its first 3-shift match sits in a
+    stride-8 copy at $894F whose array ($3689, image `3F 42 88`, init `$04`)
+    is not the tune player's. The tune player is stride 16, spells the
+    multiply `ASL x4`, reads its instrument table at $1228 through the array
+    at $1199 and starts every voice on `$0F` (siddump, subtune 0, frame 0:
+    `0F 0F 0F`; `$3689` shows `3F 42 88`). Powerplay_Hockey is the same:
+    the cue engine's $3B0E (`00 01 01`, init `$0B`) against the tune
+    engine's $4971 (`0F 0F 0F`).
+
+    The test is the one the shape already makes testable: the second `LDA`
+    names the instrument table (operand - 2), and that must be the table
+    `detect` located. Where it is, nothing changes -- 75 of the 77 corpus
+    files with a match agree and are not touched. Where it is not, the first
+    match whose table agrees (either spelling) supplies the array; and if none
+    does, the reading is dropped, since it is evidence about another player.
+    """
+    if idx < 0 or det.instr_start < 0:
+        return
+    data = sid.data
+    table = sid.to_address(det.instr_start)
+    if _addr16(data, idx + 11, idx + 12) - 2 == table:
+        return
+    for shape, op in ((INSTRUMENT_INDEX_SHAPE, 11),
+                      (INSTRUMENT_INDEX_SHAPE_ASL4, 12)):
+        for i in _search_all(data, shape, limit=16):
+            if _addr16(data, i + op, i + op + 1) - 2 == table:
+                array = _addr16(data, i + 1, i + 2)
+                det.initial_instruments, det.init_instrument = (), None
+                log(f"Instrument index array..: ${array:X} (the first match "
+                    f"names another player's table; ${table:X} is this one's)")
+                _read_instrument_array(sid, det, log, array)
+                return
+    det.initial_instruments, det.init_instrument = (), None
+    log("Instrument index array..: dropped (the only match names a table "
+        f"other than ${table:X})")
 
 
 def _find_init_instrument(data: bytes, array: int) -> Optional[int]:
@@ -1542,6 +1602,7 @@ def _locate_tables(sid: SidFile, det: Detection, log: Logger,
         if det.instr_start >= 0:
             _span_warn("INSTRUMENT", det.instr_start,
                        instr_used * det.instr_stride, len(data), log)
+        _reconcile_instrument_index(sid, det, log, idx)
 
     # --- Tracks / subsongs ----------------------------------------------
     if digi:

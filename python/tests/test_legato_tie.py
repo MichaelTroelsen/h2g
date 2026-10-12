@@ -267,8 +267,16 @@ def test_clones_are_their_record_with_the_legato_bit_and_real_wave(name, replace
             rec.vib_ptr, rec.vib_delay)
         if rec.firstwave == G.FIRSTWAVE_TESTBIT:
             at = det.instr_start + (base - lead - 1) * det.instr_stride + 2
-            assert clone.firstwave == sid.data[at] | 0x01
-            assert clone.firstwave >= 0x10      # a waveform, no test bit
+            # A clone whose wavetable opens with a waveform entry takes
+            # firstwave 0 (tests/test_legato_clone_firstwave.py: the init
+            # call would write the waveform on the OLD pitch); otherwise the
+            # record's own waveform with the gate.
+            first = new.tables["WTBL"][clone.wave_ptr - 1][0]
+            if G.GT_WAVE_LAST_DELAY < first < G.GT_WAVE_FIRST_CMD:
+                assert clone.firstwave == 0
+            else:
+                assert clone.firstwave == sid.data[at] | 0x01
+                assert clone.firstwave >= 0x10      # a waveform, no test bit
             real += 1
         else:
             assert clone.firstwave == rec.firstwave
