@@ -6,6 +6,7 @@ testing. This runs them through the hook's stdin instead, which is how the hook
 is actually invoked.
 """
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -50,15 +51,34 @@ CASES = [
     (0, 'python survey.py /c -o s.md --legal-restart --gt2reloc && grep -o x y'),
 ]
 
-bad = 0
-for want, cmd in CASES:
-    p = subprocess.run([sys.executable, HOOK],
-                       input=json.dumps({"tool_name": "Bash",
-                                         "tool_input": {"command": cmd}}),
-                       capture_output=True, text=True)
-    ok = p.returncode == want
-    bad += not ok
-    print("  %s want=%d got=%d  %s"
-          % ("ok  " if ok else "FAIL", want, p.returncode, cmd[:62]))
-print("\n%d case(s), %d failure(s)" % (len(CASES), bad))
-sys.exit(1 if bad else 0)
+def run_cases() -> int:
+    # The --sound rule reads build/fidelity.json under CLAUDE_PROJECT_DIR. A
+    # fixture artefact carrying `aud` makes the rule live, so the verdict does
+    # not depend on whether this checkout happens to have a built build/.
+    import tempfile
+    root = tempfile.mkdtemp(prefix="flag_guard_fixture_")
+    os.makedirs(os.path.join(root, "build"), exist_ok=True)
+    with open(os.path.join(root, "build", "fidelity.json"), "w",
+              encoding="utf-8") as f:
+        json.dump([{"name": "x", "aud": 1.0}], f)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
+    bad = 0
+    for want, cmd in CASES:
+        p = subprocess.run([sys.executable, HOOK],
+                           input=json.dumps({"tool_name": "Bash",
+                                             "tool_input": {"command": cmd}}),
+                           capture_output=True, text=True, env=env)
+        ok = p.returncode == want
+        bad += not ok
+        print("  %s want=%d got=%d  %s"
+              % ("ok  " if ok else "FAIL", want, p.returncode, cmd[:62]))
+    print("\n%d case(s), %d failure(s)" % (len(CASES), bad))
+    return bad
+
+
+def test_flag_guard_cases() -> None:
+    assert run_cases() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(1 if run_cases() else 0)

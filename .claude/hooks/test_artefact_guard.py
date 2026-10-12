@@ -148,6 +148,12 @@ def matrix():
     return total, bad
 
 
+def test_artefact_guard_matrix() -> None:
+    total, bad = matrix()
+    print("\n%d case(s), %d failure(s)" % (total, bad))
+    assert bad == 0
+
+
 if __name__ == "__main__":
     total, bad = matrix()
     print("\n%d case(s), %d failure(s)" % (total, bad))

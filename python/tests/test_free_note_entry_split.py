@@ -195,22 +195,6 @@ def test_flash_gordon_settles_pattern_64(monkeypatch):
 
 
 @needs_corpus
-def test_delta_is_not_split_and_says_why_its_rows_decline(monkeypatch):
-    """Its two-entry patterns are entered holding only records with no
-    attack (records 0, 1, 11 -- the original holds the same, by trace), so
-    nothing is copied for them. All three take pulse-only variants, so the
-    11 rows decline for the entry."""
-    lines, seen = _preset_convert("Delta.sid", monkeypatch)
-    line = _free_line(lines)
-    assert line.endswith("11 kept the full start (11 entered with two "
-                         "instruments)"), line
-    assert not any(ln.startswith("Entry instrument split") for ln in lines), \
-        [ln for ln in lines if ln.startswith("Entry")]
-    _rows, (_t, _p, copies) = seen["split"]
-    assert copies == {}
-
-
-@needs_corpus
 @pytest.mark.parametrize("name", ["Delta.sid", "Knucklebusters.sid",
                                   "Flash_Gordon.sid", "Shockway_Rider.sid"])
 def test_every_free_start_is_a_record_with_an_attack(name, monkeypatch):

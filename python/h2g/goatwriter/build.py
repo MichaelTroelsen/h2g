@@ -666,8 +666,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # skip (`free_note_split_rows`): any other declines regardless.
         if (legato and two_stage and effects
                 and _gw_note_passes.free_note_skips_two_stage(sid, det)):
+            # A record with no attack takes a pulse-only variant where the
+            # player's counter is read only behind the attack bits, so its
+            # rows are worth a split too (entry settled -> held == base).
+            pulse_ok = (_gw_note_passes.free_note_attack_bits(sid, det)
+                        is not None)
             skippable = {g for g in range(lead + 1, instr_used + 1)
-                         if _gw_note_passes.free_note_record_has_attack(
+                         if pulse_ok
+                         or _gw_note_passes.free_note_record_has_attack(
                              sid, det, g - lead - 1)}
             split_rows = split_rows | _gw_note_passes.free_note_split_rows(
                 patterns, _gw_note_passes.free_note_rows(patterns, early_bit7),
