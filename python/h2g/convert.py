@@ -263,7 +263,8 @@ def convert(sid_path: str, log: Logger = print,
             sfx_drum_bandpass: bool = False,
             regrid_full_debt: bool = False,
             regrid_per_play: bool = False,
-            regrid_prepay: int = 0) -> bytes:
+            regrid_prepay: int = 0,
+            regrid_park: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -471,6 +472,14 @@ def convert(sid_path: str, log: Logger = print,
     integrate the surplus. Implies `regrid_per_play`'s walk. Needs `regrid`.
     Off by default, per song, with a size that is measured against that
     song's own ledger (patterns `_regrid_per_play`).
+
+    regrid_park pays the whole calls of the debt through ANOTHER VOICE: a
+    voice that loops one pattern forever (Star_Paws' voice 1) gets compensating
+    pairs in a clone of that pattern, which fire once per loop, evenly, while
+    voice 0's schedule pays only the remainder (patterns `_regrid_park`).
+    Star_Paws' -12/+1 frame trough goes to -1/+1. Needs `regrid`; inert on a
+    song with no such voice (it reaches Star_Paws among the 21 files regrid
+    reaches, plus Ricochet). Off by default, per song.
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -789,7 +798,8 @@ def convert(sid_path: str, log: Logger = print,
                 regrid_tempos(new_patterns, tracks, values, deficits,
                               multiplier, log, full_debt=regrid_full_debt,
                               per_play=regrid_per_play,
-                              prepay=regrid_prepay)
+                              prepay=regrid_prepay,
+                              park=regrid_park)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "

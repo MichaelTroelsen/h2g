@@ -318,7 +318,13 @@ def test_the_packed_note_row_window_follows_the_originals_frequency(
         tmp_path, monkeypatch):
     """Zoids subtune 2, 15 s: the one window (35 stores from frame 413, on
     the note row, GT 9's own wave program merged in) is the original's
-    frequency on all 63 frames of it; held, on none."""
+    frequency on all 63 frames of it; held, on none.
+
+    With Zoids' tie windows off: the layout that places them holds this
+    program (the table has room for one carried program beside the held one
+    they jump into, tests/test_skydive_tie_window.py), and this pins the
+    carried program itself."""
+    monkeypatch.setattr(S, "SKYDIVE_TIE_NEXT_COMMANDS", frozenset())
     carried, held, total = _window_frames("Zoids", 2, 15, tmp_path,
                                           monkeypatch)
     assert total[0] == 63, total
@@ -372,7 +378,11 @@ def test_carrying_never_costs_a_note_row_program_its_place(monkeypatch):
     note-row windows fit exactly. A carried program four rows longer than the
     held one still fits as a row program, but then the note-row program does
     not -- and a carried program that costs another its place is refused, so
-    the layout keeps both note rows."""
+    the layout keeps both note rows.
+
+    With Zoids' tie windows off (they hold the note-row program, see
+    tests/test_skydive_tie_window.py)."""
+    monkeypatch.setattr(S, "SKYDIVE_TIE_NEXT_COMMANDS", frozenset())
     real = S.skydive_program
 
     def padded(phase, writes, alt, speed_index, multiplier=1, vib=None,

@@ -2737,6 +2737,53 @@ windowed form is what the table measures. Off by default; the corpus byte-hash m
 forced (the refactor is byte for byte at `CALLS` 0), and exactly the 21 reached
 files when prepay is forced. `tests/test_regrid_prepay.py` pins it.
 
+**`--regrid-park` (`regrid_park`) pays the trough through another voice.**
+`CMD_SETTEMPO` under `$80` lengthens a row for all three channels, so a pair
+written in *any* voice's pattern pays voice 0's debt. `--regrid` writes only
+into voice 0's exclusive patterns because that is where the debt is raised, but
+it is not the only place that can pay it. A voice whose orderlist is one
+pattern looped forever fires every pair in it once per loop, evenly, whatever
+voice 0 is playing, so it pays a steady `n / L` calls a row and has no trough
+to dive into. Star_Paws' voice 1 is exactly that: orderlist `$F0 00 $FF 00`,
+pattern 0, 65 rows. Voice 0 owes 0.0315 calls a row at `-S2`, which is 2.047
+calls over the loop, and two pairs in the loop deliver 2. The option clones
+the pattern for that track (subtune 2's voice 1 plays pattern 0 too, on its
+own clock), writes the largest `n` that does not exceed the debt, and hands
+`--regrid`'s budget what is left: 0.0007 calls a row, 3.4 calls a pass, which
+voice 0's free command pairs pay without a run of plays to find. Of two
+looping voices the one that takes more pairs wins. Star_Paws, `regrid` forced,
+`-t 180`, measured at 5c5e0c0:
+
+| | none | per-play | prepay 1 | park + per-play | park alone |
+|---|---|---|---|---|---|
+| index-paired attack offset, frames | | -12 / +1 | -7 / +3 | -1 / +1 | -1 / 0 |
+| `drift` per 1000 | -7.81 | -0.31 | 0.00 | 0.00 | 0.00 |
+| `melody` | 99.62 | 99.96 | 99.96 | 99.96 | 99.96 |
+| `wave` | 66.7 | 71.6 | 78.6 | 78.9 | 76.0 |
+| `adsr` | 74.9 | 88.8 | 93.8 | 95.1 | 94.7 |
+| `gate` | 27.0 | 37.9 | 47.5 | 60.4 | 58.2 |
+| `tie_agreement` | 52.1 | 57.9 | 64.9 | 68.0 | 64.9 |
+| `otime` | 19.5 | 19.1 | 41.6 | 42.4 | 31.5 |
+| `hold`, instruments matched | 0 of 11 | 10 of 11 | 8 of 11 | 7 of 11 | 8 of 11 |
+
+(The `none` column is the shipped preset, no `regrid`; its offset was not
+taken, the song having drifted 70 frames by the end.) The residual -10 frames
+the trough left are paid, not halved: the offset is within a frame of zero,
+which is `startup_lag`'s own resolution. `hold` is the one column that goes the wrong way,
+10 of 11 instruments to 7, the same cost `--regrid-prepay` pays (8): two or
+three instruments' modal hold lands a frame off at the new phase. That is why
+the option is **per song and never a default**, and why it composes with
+`--regrid-per-play` or stands alone, the remainder being small either way.
+
+It acts on exactly the files with such a loop long enough to take one whole
+call: of the 21 files `--regrid` reaches, Star_Paws and Ricochet (a held DIGI
+file, so not measured further). One_on_One's voice 2 loops 17 rows, which owes
+0.5 calls, and is left alone. Off by default; the corpus byte-hash moves 0 of
+89 under presets, 0 of 89 with `regrid` forced and 0 of 89 with `regrid` and
+`--regrid-per-play` forced. `tests/test_regrid_park.py` pins it. Adopting it
+for Star_Paws (`regrid`, `regrid_park`, with or without `regrid_per_play`) is a
+`presets.json` decision, like `regrid` itself.
+
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
 perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is

@@ -20,6 +20,7 @@ from .arpeggio import (apply_tempo_duty_edits, fixed_arp_phase_split_plan,
                        nibble_gate_phases, tempo_duty_split_plan)
 from .pulse import (_pulse_layout, _write_pulsetable)
 from .filters import (_classic_clearing_instruments, _filter_entries,
+                      classic_sweep_calls,
                       _highest_instrument_referenced,
                       _ilv_clearing_instruments, _ilv_filter_entries,
                       free_running_start, ilv_filter_routing_plan,
@@ -703,11 +704,21 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # instrument's pulse program is longer than a static one's, so that start
     # position is not a stride either.
     classic_clearing: set = set()
+    sweep_lengths: dict = {}
     if filters:
         classic_clearing = _classic_clearing_instruments(
             sid, det, tracks, patterns, 1 if compact_instruments else 2)
         filter_entries, filter_ptrs = _filter_entries(
             sid, det, instr_used, lead, multiplier, classic_clearing)
+        if filter_ptrs:
+            # The classic sweep lasts the voice's note, not $7F calls: sized
+            # from the orderlists once the records that filter are known.
+            sweep_lengths = classic_sweep_calls(
+                tracks, patterns, set(filter_ptrs), lead + 1,
+                row_calls, instr_row_calls)
+            filter_entries, filter_ptrs = _filter_entries(
+                sid, det, instr_used, lead, multiplier, classic_clearing,
+                sweep_calls=sweep_lengths)
         if not filter_entries and ilv_routing is not None:
             # The routing rides in the patterns; the table carries only the
             # sweeps (and, "shared", the one passband block).
@@ -928,7 +939,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if blips:
             rebuilt, rebuilt_ptrs = _filter_entries(
                 sid, det, instr_used, lead, multiplier, classic_clearing,
-                sfx_blips=blips)
+                sfx_blips=blips, sweep_calls=sweep_lengths)
             if set(rebuilt_ptrs) == set(filter_ptrs):
                 if log:
                     log(f"Sfx drum bandpass.......: {len(blips)} drum "

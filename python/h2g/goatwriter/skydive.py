@@ -46,6 +46,17 @@ kind depends on the note's pitch and on the counter's phase, which a pitch
 where every play of it asks for the same, and only while the wavetable and
 the speed table have room: the held program is the fallback, per program.
 
+**A TIED note's window opens on the row after the tie** (`tie_window_phase`,
+`share_program_tail`). A tie (`CMD_TONEPORTA 00`) sets the ticks-left counter
+like any fetch but skips the frequency and `savehi` (Zoids $10D5 `BVS
+$1116`), and its command column is already taken, so the pointer goes on the
+NEXT row, which a tie leaves free (the converter repeats the persistent
+command on each row; one row of the pointer costs that command's tick 0,
+which the program never lets run because it writes on every call). Those
+programs are the tail of one another -- the pairs `F2 k / F1 k` do not depend
+on the note -- so a tie window is a short lead and a wavetable jump into the
+pairs of a program already placed, not another 70 rows.
+
 Emitted only in GTS5 (the wavetable names speed-table rows, which a GTS2
 file does not store), with no outer gate, and only on a row whose every play
 asks for the same program and whose command column can be taken without
@@ -67,7 +78,7 @@ from ..detect import (Detection, TRIANGLE_VIBRATO_GATE,
 from ..search import search_file
 from ..sidfile import SidFile, find_freq_table
 from .constants import (CMD_FUNKTEMPO, CMD_SETTEMPO, CMD_SETWAVEPTR,
-                        FORMAT_GTS5, GT_FIRST_NOTE,
+                        CMD_TONEPORTA, FORMAT_GTS5, GT_FIRST_NOTE,
                         GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
                         GT_WAVE_FIRST_CMD, GT_WAVE_LAST_DELAY,
                         GT_WAVE_NO_NOTE, PACKED_PATTERN_LIMIT,
@@ -86,6 +97,11 @@ SKYDIVE_PERSISTENT_COMMANDS = frozenset({0, 1, 2, 4})
 # down, vibrato. Toneporta is not one -- on a note row it skips the note
 # init the program needs (gplay.c:354, player.s `cmp #TONEPORTA`).
 SKYDIVE_NOTE_ROW_STATE_COMMANDS = frozenset({1, 2, 4})
+# The commands the row AFTER a tie may be holding when the pointer takes its
+# column: none, or one that only sets the continuous effect for the row. The
+# tie's own toneporta then runs in its place for that one row, and the
+# program writes on every call of it, so it never shows.
+SKYDIVE_TIE_NEXT_COMMANDS = frozenset({0, 1, 2, 4})
 # A Hubbard note's duration is the low five bits of its note byte.
 SKYDIVE_MAX_DURATION = 0x1F
 # Wavetable left side `$00`: "leave waveform unchanged" (readme.txt:787), a
@@ -796,6 +812,71 @@ def rows_off_the_frame_grid(rows, patterns: List[List[int]],
     return False
 
 
+def tie_window_phase(phase: int, lag: int, frames: int) -> int:
+    """The frame of store 0 counted from the row AFTER a tie (the pointer's
+    row): `phase + lag` is its frame counted from the tie row's own first
+    call (the note-row formula), and the next row starts `frames` later."""
+    return phase + lag - frames
+
+
+def _run_from(rows: Dict[int, Tuple[int, int]], at: int
+              ) -> Optional[List[Tuple[int, int]]]:
+    """The entries the wavetable executes from row `at` to its stop, following
+    jumps, as the placed `rows` hold them; None where it leaves them, loops,
+    or starts on a jump."""
+    out: List[Tuple[int, int]] = []
+    seen = set()
+    while True:
+        if at not in rows or at in seen:
+            return None
+        seen.add(at)
+        left, right = rows[at]
+        if left == GT_WAVE_JUMP:
+            if right == 0:
+                return out or None
+            at = right
+            continue
+        out.append((left, right))
+        at += 1
+
+
+def share_program_tail(prog: List[Tuple[int, int]],
+                       rows: Dict[int, Tuple[int, int]],
+                       min_saving: int = 2
+                       ) -> Tuple[List[Tuple[int, int]], Optional[int]]:
+    """`prog` with its tail left to a program already placed: (rows still to
+    place, the row to point at instead of the program's own first, or None).
+
+    `rows` is every wavetable row the plan has placed so far. A step is
+    stateless -- the portamento pairs name a speed-table row and nothing
+    else -- so a program whose last entries before the stop are what row `c`
+    executes to ITS stop plays the same from there on, and can end in a
+    wavetable jump to `c` (a jump takes no call of its own, gplay.c:707-712,
+    player.s `mt_nowavejump`). Where the whole program is what `c` executes,
+    it needs no row at all and the pointer names `c`. The longest such run
+    wins; a jump has to save at least `min_saving` rows (it costs one).
+    Returns `(prog, None)` where nothing does.
+    """
+    stop = (GT_WAVE_JUMP, 0x00)
+    if not prog or prog[-1] != stop:
+        return prog, None
+    body = prog[:-1]
+    best_len, best_at = 0, 0
+    for at in sorted(rows):
+        run = _run_from(rows, at)
+        if (run is None or len(run) > len(body) or len(run) <= best_len
+                or body[len(body) - len(run):] != run):
+            continue
+        best_len, best_at = len(run), at
+    if not best_len:
+        return prog, None
+    if best_len == len(body):
+        return [], best_at
+    if best_len - 1 < min_saving:
+        return prog, None
+    return body[:len(body) - best_len] + [(GT_WAVE_JUMP, best_at)], None
+
+
 def note_row_column_free(cmd: int, ends_on_note: bool) -> bool:
     """Whether a note row's command column may take the pointer.
 
@@ -869,6 +950,19 @@ class _Assembly:
     note_keys: Dict[tuple, tuple]
     note_declined: Dict[str, int]
     table: List[tuple]
+    tie_starts: Dict[tuple, int] = dataclasses.field(default_factory=dict)
+    tie_keys: Dict[tuple, tuple] = dataclasses.field(default_factory=dict)
+    tie_declined: Dict[str, int] = dataclasses.field(default_factory=dict)
+    tie_shared: int = 0
+
+    @property
+    def placed(self) -> int:
+        """How many note-row programs and tie ROWS this layout got in. The
+        tie windows are counted by row: a program carrying the vibrato is
+        one row's and a held one is shared by every row that asks for it, so
+        carrying one must not look like keeping both."""
+        return len(self.note_starts) + sum(
+            key in self.tie_starts for key in self.tie_keys.values())
 
 
 def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -950,6 +1044,9 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     asks: Dict[tuple, List[tuple]] = {}
     note_asks: Dict[tuple, List[tuple]] = {}
     note_cover: Dict[tuple, int] = {}
+    tie_asks: Dict[tuple, List[tuple]] = {}
+    tie_declined = {"holding program leaves a call": 0,
+                    "stores before the next row": 0}
     off_grid = 0
     declined = {"opens on the note row": 0, "too few stores": 0,
                 "orderlist(s) with rows that are not whole frames": 0}
@@ -992,6 +1089,34 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             j0 = dur - sd.last_ticks + 1
             lag = 0 if no_test_restart or current in real_firstwave else 1
             index = note - GT_FIRST_NOTE + transpose
+            if (j0 <= 0 and wave_entries is not None
+                    and wave_starts is not None
+                    and patterns[p][4 * r + 2] == CMD_TONEPORTA
+                    and patterns[p][4 * r + 3] == 0):
+                # A tie: the window opens on the row after it.
+                counter = base + first + a * frames
+                phase = 1 if (counter + 1) & 1 else 2
+                high = _high_byte(sid, index)
+                writes = skydive_writes((end - a) * frames, phase, high)
+                if writes < 2:
+                    declined["too few stores"] += 1
+                    continue
+                start = tie_window_phase(phase, lag, frames)
+                alternates = by_number[current]
+                wp, wr, _ = rows[(a + 1) % len(rows)]
+                free = patterns[wp][4 * wr + 2] in SKYDIVE_TIE_NEXT_COMMANDS
+                if start < -1:
+                    tie_declined["stores before the next row"] += 1
+                    continue
+                if not alternates:
+                    tie_declined["holding program leaves a call"] += 1
+                    continue
+                at = a + 1
+                tie_asks.setdefault((wp, wr), []).append(
+                    (start, writes, alternates, free,
+                     window_vibrato(sid, by_shift.get(current), index,
+                                    base + first + at * frames - lag)))
+                continue
             if j0 <= 0:
                 if wave_entries is None or wave_starts is None:
                     declined["opens on the note row"] += 1
@@ -1061,7 +1186,8 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
 
     taken, row_vib, mixed = take(asks)
     note_taken, note_vib, note_mixed = take(note_asks)
-    if not taken and not note_taken:
+    tie_taken, tie_vib, tie_mixed = take(tie_asks)
+    if not taken and not note_taken and not tie_taken:
         say(f"{sum(len(w) for w in asks.values())} window(s), none taken "
             f"({mixed} row(s) mixed or occupied)"
             + (f"; {sum(len(w) for w in note_asks.values())} on the note "
@@ -1129,15 +1255,21 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     for pr, want in taken.items()}
         entries: List[Tuple[int, int]] = []
         starts: Dict[tuple, int] = {}
+        # Every row placed, by number: the tie windows' programs end in a
+        # jump into the tail of one of these, or are one.
+        placed_rows: Dict[int, Tuple[int, int]] = {}
         try:
             for key in sorted(set(row_keys.values()), key=_program_order):
                 starts[key] = wave_used + len(entries) + 1
                 squeeze = (compact and key[0][2] and key[1] is None
                            and multiplier > 1)
-                entries += skydive_program(
+                prog = skydive_program(
                     *key[0], speed_frame if squeeze else speed_index,
                     multiplier, vib=key[1], speed_row=speed_row,
                     **({"compact": True} if squeeze else {}))
+                placed_rows.update(
+                    {starts[key] + i: e for i, e in enumerate(prog)})
+                entries += prog
         except OverflowError:
             return None, (f"speed table full or a step not a whole per-call "
                           f"rate at -S{multiplier}")
@@ -1194,9 +1326,42 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 note_declined["wavetable full"] += 1
                 continue
             note_starts[key] = wave_used + len(entries) + 1
+            placed_rows.update(
+                {note_starts[key] + i: e for i, e in enumerate(prog)})
+            entries += prog
+
+        # The tie windows' programs, each placed where it fits and sharing
+        # the tail of a program already placed (`share_program_tail`).
+        tie_keys = {pr: key_of(want, tie_vib.get(pr))
+                    for pr, want in tie_taken.items()}
+        tie_starts: Dict[tuple, int] = {}
+        tie_declined_now = {"speed table": 0, "wavetable full": 0}
+        tie_shared = 0
+        for key in sorted(set(tie_keys.values()), key=_program_order):
+            before = list(table)
+            try:
+                prog = skydive_program(*key[0], speed_index, multiplier,
+                                       vib=key[1], speed_row=speed_row)
+            except OverflowError:
+                table[:] = before
+                tie_declined_now["speed table"] += 1
+                continue
+            full = len(prog)
+            prog, point_at = share_program_tail(prog, placed_rows)
+            if wave_used + len(entries) + len(prog) > GT_MAX_TABLELEN:
+                table[:] = before
+                tie_declined_now["wavetable full"] += 1
+                continue
+            tie_shared += full - len(prog)
+            tie_starts[key] = (point_at if point_at is not None
+                               else wave_used + len(entries) + 1)
+            placed_rows.update(
+                {wave_used + len(entries) + 1 + i: e
+                 for i, e in enumerate(prog)})
             entries += prog
         return _Assembly(entries, starts, row_keys, note_starts, note_keys,
-                         note_declined, table), ""
+                         note_declined, table, tie_starts, tie_keys,
+                         tie_declined_now, tie_shared), ""
 
     # The layouts to try, the first that fits taken: as before, then the
     # held alternating programs in a third of the rows (above -S1), then the
@@ -1229,7 +1394,8 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # Carry the vibrato wherever it fits, the programs most rows share first,
     # and never at the cost of a note-row program the held layout placed.
     use: Dict[tuple, int] = {}
-    for rows_of, vibs in ((taken, row_vib), (note_taken, note_vib)):
+    for rows_of, vibs in ((taken, row_vib), (note_taken, note_vib),
+                          (tie_taken, tie_vib)):
         for pr, want in rows_of.items():
             if vibs.get(pr) is not None:
                 use[(want, vibs[pr])] = use.get((want, vibs[pr]), 0) + 1
@@ -1238,7 +1404,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 if CARRY_VIBRATO else ()):
         trial, _ = assemble(carried | {key}, compact, shared)
         if (trial is not None
-                and len(trial.note_starts) >= len(held.note_starts)
+                and trial.placed >= held.placed
                 and (CARRY_BUDGET is None
                      or (len(trial.entries) - len(held.entries)
                          <= CARRY_BUDGET[0]
@@ -1273,12 +1439,28 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             continue
         out[p] = trial
         note_edited += 1
-    if not edited and not note_edited:
+    tie_edited = 0
+    for pr, key in sorted(best.tie_keys.items()):
+        p, r = pr
+        if key not in best.tie_starts:
+            continue
+        trial = list(out[p])
+        trial[4 * r + 2] = CMD_SETWAVEPTR
+        trial[4 * r + 3] = best.tie_starts[key]
+        if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(trial))
+                > PACKED_PATTERN_LIMIT):
+            continue
+        out[p] = trial
+        tie_edited += 1
+    if not edited and not note_edited and not tie_edited:
         return None
     speed_table[:] = best.table
     skipped = ", ".join(f"{n} {why}" for why, n in declined.items() if n)
     note_skipped = ", ".join(f"{n} {why}" for why, n in note_declined.items()
                              if n)
+    tie_skipped = ", ".join(
+        f"{n} {why}" for why, n in {**tie_declined,
+                                    **best.tie_declined}.items() if n)
     say(f"{edited} window row(s) on {len(records)} record(s) "
         f"{sorted(records)}, {len(starts)} program(s) "
         f"{sorted(k[0] for k in starts)}, {len(entries)} wavetable step(s)"
@@ -1296,7 +1478,13 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
            + (f", {note_mixed} row(s) mixed or occupied"
               if note_mixed else "")
            + (f", declined: {note_skipped}" if note_skipped else "")
-           if note_asks else ""))
+           if note_asks else "")
+        + (f"; after a tie: {tie_edited} row(s), {len(best.tie_starts)} "
+           f"program(s), {best.tie_shared} row(s) saved by jumping into a "
+           f"placed program's tail"
+           + (f", {tie_mixed} row(s) mixed or occupied" if tie_mixed else "")
+           + (f", declined: {tie_skipped}" if tie_skipped else "")
+           if tie_asks else ""))
     return SkydivePlan(patterns=out, entries=entries,
                        base=shared[0] if shared else None,
                        starts=shared[1] if shared else None)

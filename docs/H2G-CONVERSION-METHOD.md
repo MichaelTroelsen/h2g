@@ -13853,7 +13853,10 @@ read one high byte up whatever the encoding.
 Some cases are logged and not emitted:
 
 * Programs that do not fit the wavetable, after both rescues above.
-* Windows on a tied note (`3 00` on the note row), below.
+* Windows on a tied note whose row after the tie holds anything but the
+  continuous effects, or whose record holds the note between stores instead of
+  alternating, or that open before the row after the tie (see "A tied note's
+  window", below).
 
 **A note shorter than LAST opens its window on the note row itself.** With
 `dur < LAST` the ticks-left counter is below LAST from the fetch on, so
@@ -13881,9 +13884,10 @@ learned to take the note row's own command column:
   effect). That second case also needs the program to write on every call of
   the note, so the effect never runs, and the next event to be a note, whose
   init resets it. Zoids' are `4 09`.
-* Toneporta is never taken. On a note row it is the tie, and it skips the
-  note init the program replaces. Zoids' two windows on tied notes (frames
-  10371 and 10587, `3 00`) are logged as occupied.
+* Toneporta is never taken on the note row. On a note row it is the tie, and
+  it skips the note init the program replaces. Zoids' two windows on tied
+  notes (frames 10371 and 10587, `3 00`) open on the row AFTER the tie
+  instead, below.
 * These programs go after the row windows' programs, each only if it fits.
   The row windows stay all or nothing, as before. Zoids' wavetable reaches
   252 of 255 entries.
@@ -13897,7 +13901,7 @@ high byte agrees:
 | subtune 0, frame 8475 (-t 240) | 1/35 -> 35/35 |
 | subtune 0, frame 9243 (-t 240) | 1/35 -> 35/35 |
 | subtune 2, frame 411 (-t 60) | 1/35 -> 35/35 |
-| subtune 0, frames 10371 and 10587 (tied) | 1/35 -> 1/35 each |
+| subtune 0, frames 10371 and 10587 (tied) | 1/35 -> 1/35 each (35/35 once they open on the row after the tie, below) |
 
 Across all frames of the two new subtune-0 windows, agreement goes from 7/70
 to 43/70. The frames between stores are where the program holds the note and
@@ -13912,8 +13916,66 @@ On subtune 2 at -t 60, `tie_agreement` goes 0.729 -> 0.813 and
 `reversal_ratio` 0.836 -> 0.977. Zoids is the only file in the corpus whose
 bytes move.
 
+**A tied note's window opens on the row after the tie** (Zoids' two windows
+at frames 10371 and 10587; `tie_window_phase`, `share_program_tail`). The tie
+(`CMD_TONEPORTA 00`) reloads the ticks-left counter like any fetch (`$10C0 STA
+$144D,X`) but jumps past the frequency and `savehi` (`$10D5 BIT $145D / BVS
+$1116`), so the fall carries on from the note's own high byte: siddump of
+the original, voice 1, stores `37B8 36E6 3542 ...` on 10371, 10373 ... 10439,
+35 of them from `$37`, the vibrato again on 10440. The tie's command column is
+the tie itself and the instrument's program is not restarted (no note init),
+so:
+
+* The pointer goes on the next row of the note. Its command is the converter's
+  repeated continuous one (Zoids' `4 09`); `SKYDIVE_TIE_NEXT_COMMANDS` is
+  none, portamento up and down, and vibrato. Taking the column leaves the
+  tie's toneporta as the row's command for that one row, and the program
+  writes on every call of it (an alternating program has no still call), so it
+  never runs; the row after sets its own command as before.
+* Store 0 is on the tie row's frame `phase + lag` (the note-row formula) and
+  the next row starts `frames` later, so the program's store 0 is on call
+  `phase + lag - frames`: Zoids, 2 + 1 - 3 = 0, the pointer row's first call.
+  A program that would have stored before its row (`< -1`) is declined, and
+  so is a record that holds instead of alternating (its still calls would
+  let the toneporta run).
+* The wavetable was at 252 of 255 rows and a whole program is 71 rows with its stop. The pairs `F2 k /
+  F1 k` do not depend on the note, so a tie window is only its lead and a
+  wavetable jump into the pairs of a program already placed (a jump takes no
+  call, gplay.c:707-712): `[00 00, FF 183]` here, 2 rows for both windows, or
+  no row at all where the whole program is what a placed row executes. The
+  lead of the held note-row program (`41 00` x3, `00 00`) ends on the one
+  `00 00` the tie program starts with. Both end on `F1 34` because both have
+  35 stores; a program with a different store count shares nothing. The
+  layouts are chosen by windows PLACED (note-row programs, and tie windows
+  by row), so a carried-vibrato program is kept only when the tie windows
+  still fit: Zoids now carries the vibrato on its one row window and holds
+  the note-row program that the ties jump into.
+
+Measured at 5c5e0c0 under presets, siddump lag-aligned (lag 7), subtune 0,
+-t 240; the count is the original's store frames per window on which our high
+byte agrees, base -> after:
+
+| Zoids window | stores | all 70 frames |
+|---|---|---|
+| frame 10371 (tied) | 1/35 -> 35/35 | 10 -> 44 |
+| frame 10587 (tied) | 1/35 -> 35/35 | 7 -> 43 |
+| frames 8475 and 9243 (note row, now held) | 35/35 -> 35/35 | 69 -> 43 each |
+
+The note-row program loses its carried vibrato (73 rows carried, 73 held)
+because the tie windows can only jump into a held program and the table has
+room for one carried program beside it. Column changes, subtune 0 at -t 240:
+`tie_agreement` 0.782 -> 0.793, `tie_same_frame` 7441 -> 7546, `reversal_ratio`
+0.941 -> 0.961, `travel_ratio` 0.950 -> 0.958, `depth_ratio` 1.339 -> 1.254,
+and `bend_ratio` 0.971 -> 0.899, which falls for the same reason as the
+others in this section: the held program freezes the vibrato between stores
+where the original plays it. Subtune 2 at -t 60 (one note-row window, now
+held): `tie_agreement` 0.825 -> 0.822, `reversal_ratio` 0.969 -> 0.967,
+`bend_ratio` 0.988 -> 0.903. Zoids is the only file in the corpus whose bytes
+move.
+
 Formula_1_Simulator and Proteus have no record that sets the bit. See
-`tests/test_skydive.py` and `tests/test_skydive_note_row.py`.
+`tests/test_skydive.py`, `tests/test_skydive_note_row.py` and
+`tests/test_skydive_tie_window.py`.
 
 ### 7.cccccccc The skydive without its window: Game_Killer's rising high byte
 
@@ -15777,3 +15839,111 @@ planned width, which this task did not chase). Totals: reached 7909 to 7970, no
 command 3502 to 3438, **commanded but wrong 618 to 621** (178 to 173 without
 5_Title_Tunes). The lattice legs are a leg-shape change, so a reading at the attack
 is the wrong instrument for them; the turn census above is the one that measures.
+
+### 7.jjjjjjjj A rest's silencing `CMD_SETSR $00` keeps its place when the tempo takes row 0: Mega_Apocalypse's "travel under ADSR $0000"
+
+**What the number was.** `bendsplit.py` keys within-note frequency travel by the
+ADSR sounding. On Mega_Apocalypse (`-t 180`, presets) the original travels
+192,939 under `$0000` and ours 0 (voice 0 137,387; voice 2 55,552). Every one of
+those frames has the control register at `$00`: the voice is **silent** and its
+frequency register keeps moving.
+
+**The source.** The player's bit-6 rest, `$4B91`:
+
+    4B91  DEC $DC,X            ; gate mask $FF -> $FE
+    4B93  LDY $F3
+    4B95  LDA #$00
+    4B97  STA $D406,Y          ; SR := 0
+    4B9A  STA $D405,Y          ; AD := 0
+    4B9D  JMP $4BF7            ; STA $C6,X (stored waveform := 0)
+
+`$4E63 LDA $C6,X / AND $DC,X / STA $D404,Y` then writes control `$00` and
+`$4E6C..$4E73` keep writing the frequency every frame from the previous
+instrument's per-frame effect (the counter fall, `counter_fall.py`, and the
+vibrato). So a rest here is not a release: AD, SR and the waveform go to zero
+at once and the voice stays dark while its pitch slides (voice 2, frames
+385-960: `08C4` down to `00C4` in steps of `$0100` every third frame, wf `$00`,
+ADSR `$0000`). The reading `_find_rest_silence_envelope` already makes of this
+branch (`rest_silence_kind` is `"envelope"`, `rest_silence_envelope` True) is
+right; the option that emits it, `rest_envelope_silence`, is simply not in
+Mega_Apocalypse's presets entry.
+
+**What ours did instead.** KEYOFF only: the waveform latched (`$14`, triangle
+with ring) and the release of the record's `$0CFC` (3 s) played out under the
+same sliding pitch. The same 55,552 of voice-2 travel is in ours, keyed under
+`$0CFC` with a ring/sync waveform and audible. Not a keying artefact.
+
+**Two causes, one fixed here.**
+1. `rest_envelope_silence` is off for the file (presets entry; a `[main]` item,
+   see below). With it on, `adsr` 0.8549 -> 0.9088, `adsr_gated_off_audible`
+   2676 -> 1111, `wave` 0.857 -> 0.875, `aud` 0.8838 -> 0.8827.
+2. **Row 0.** 16 of the file's 73 KEYOFF rests are the first row of a pattern
+   copy of the entry pattern, where the subtune's `CMD_SETTEMPO` takes the
+   command column and, being in `TEMPO_OVERWRITABLE`, overwrote the `CMD_SETSR`
+   -- the audible half -- and left the bare `CMD_SETAD $00` on row 1. Those
+   rests read `$00FC` (the 55,552 above, plus `$00F9` 17,820). `apply_tempo` and
+   `apply_tempos` now call `_move_rest_silence_off_row0`: the tempo keeps row 0,
+   the SETSR takes hold row 1 in the AD half's place, and the AD half goes to
+   row 2 where that is empty (it is inaudible, so it is dropped before it
+   displaces anything). Inert on any row 0 that is not exactly KEYOFF + SETSR $00
+   with a SETAD $00 hold row beneath it.
+
+With both (option on + this change), Mega_Apocalypse at `-t 180`: `adsr`
+0.8549 -> 0.9494, `adsr_gated_off_audible` 2676 -> 67, `wave` 0.857 -> 0.889,
+`depth_ratio` 0.726 -> 1.009, `aud` 0.8838 -> 0.8854, melody/retrig unchanged
+(93% / 0.96); `tie_ratio_audible` 0.831 -> 0.797 is the figure that moves the
+wrong way. Travel under `$0000`: 192,939 / 0 -> 192,939 / 227,445 (1.18x).
+
+**Under presets today** the change reaches only files that already carry
+`rest_envelope_silence`: 4 corpus files move, Commando does not (`-t 180`,
+`--sound`, base 5c5e0c0 vs this tree):
+
+| file | adsr | adsr_gated_off_audible | aud |
+|---|---|---|---|
+| Thundercats | 0.9487 -> 0.9742 | 797 -> 229 | 0.9159 -> 0.9162 |
+| BMX_Kidz (held DIGI, measured with the corpus) | 0.8192 -> 0.8479 | 1012 -> 472 | 0.7669 -> 0.7678 |
+| Shockway_Rider | 0.9740 -> 0.9746 | 38 -> 21 | 0.9444 -> 0.9444 |
+| Auf_Wiedersehen_Monty | 0.9747 -> 0.9743 | unchanged | 0.9334 -> 0.9320 |
+
+Monty is the one that gives a little back (`adsr` -0.0004, `aud` -0.0014): a
+rest whose SETSR now lands one row late. `melody`, `retrig`, `gate` unmoved on
+all four. `tests/test_rest_silence_tempo_row0.py`.
+
+### 7.kkkkkkkk The classic filter sweep lasts the voice's note, not one $7F-call row
+
+From task `classic-filter-modulation-keeps-sweeping`, opened by
+`filter-absent-on-four-files` (Tarzan's cutoff travel 1.23x and notes that outlast
+127 calls). Figures taken at 5c5e0c0 plus this change, presets, `-t 180`.
+
+**The defect.** `_filter_entries` wrote `[params, set-cutoff, (7F, step), STOP]` for
+every classic record. The player adds its step every frame the voice's record is
+current, 8 bits wide, so a $7F-call row is too long where the voice's next note comes
+soon (Sanxion: the original sweeps 6 frames, ours 127, `cutoff_sweep` 1.909) and too
+short where it does not (Tarzan at frame 3495: the original wraps and runs on, ours
+held $79 for 65 frames).
+
+**The length** (`goatwriter.filters.classic_sweep_calls`, `_best_sweep_length`,
+`_sweep_rows`) is read off the orderlists. For each filtered record the gap, in rows
+times the record's row length in calls (the START subtune's, as the drum sweep takes
+it, else the shortest), from each note that strikes it to the voice's next note. A tie
+strikes nothing. The next note restarts the program when its record is the same
+(`filt.cutoff` is reloaded on every fetch) and replaces it when it is another filtered
+record's, so running past such a gap is no error; an unfiltered record leaves the cutoff
+where it stood, which Goattracker's one global program cannot do, so running past THAT
+gap is. The length that minimises undershoot over all gaps plus overshoot over the
+stopping ones is a knot of that piecewise-linear sum (the smaller on a tie), split into
+$7F rows. A table the sized rows overflow (Star_Paws, 52 of 64) is built again at one
+row a record, which is the table every earlier version wrote.
+
+**Measured** (`cutoff_sweep`, ours/original travel, base to this change): Sanxion
+1.909 to 1.100 (cutoff range 64512 to 43008, the original's 43008), Food_Feud 1.208 to
+1.101, Tarzan 1.231 to 1.203, Knucklebusters 1.275 to 1.272, Lightforce 1.158 to
+1.147, ACE_II 0.957 to 1.023; away from 1: Deep_Strike 1.026 to 0.893 (its hold levels
+come closer, $4A against the original's $46/$49, where the base held $89),
+Nemesis_the_Warlock 1.942 to 0.500 (cutoff range 65024 to 24576) and Thundercats 1.038
+to 1.085. 20 files' bytes move, no other column does.
+
+**Still open.** Nemesis_the_Warlock's original sweeps $22 to $DE (94 frames) and holds
+for 99 more between two strikes 193 frames apart, so the gap between notes is not the
+sweep's length there (the cause was not traced; the reset at $E0D1 is per fetch, and
+what ends the sweep early is not read here).

@@ -3678,11 +3678,82 @@ def _regrid_spots(pattern: List[int], n: int, rows: int):
     return placed, skipped
 
 
+def _loop_pattern(track: List[int]) -> int | None:
+    """The one pattern an orderlist plays forever, or None.
+
+    The shape is `[transposes / a repeat] p $FF x` with the restart position
+    `x` at or before `p`'s own entry, so `p` (all its repeats) is the whole
+    loop and nothing else in the track ever plays.
+    """
+    if len(track) < 3 or track[-2] != GT_ORDER_RESTART:
+        return None
+    body = track[:-2]
+    refs = [i for i, b in enumerate(body) if b < GT_COMMAND_FLOOR]
+    if len(refs) != 1:
+        return None
+    i = refs[0]
+    # `$D0+n, p` is p played n+1 times: the restart may not land between them.
+    start = i - 1 if i and GT_REPEAT <= body[i - 1] < GT_TRANSPOSE_DOWN else i
+    if track[-1] > start:
+        return None
+    return body[i]
+
+
+def _regrid_park(patterns: List[List[int]], tracks: List[List[int]], k: int,
+                 base: int, d: float, multiplier: int) -> tuple:
+    """Pay the whole-call part of subtune `k`'s debt through ANOTHER VOICE.
+
+    `CMD_SETTEMPO` under `$80` lengthens a row for all three channels, so a
+    pair written into any voice's pattern pays voice 0's debt. A voice that
+    loops ONE pattern forever (Star_Paws' voice 1: `$F0 00 $FF 00`, 65 rows)
+    fires every pair in it once per loop, evenly, with no dependence on what
+    voice 0 is playing. `n` pairs in an `L`-row loop deliver `n / L` calls a
+    row, and the largest `n` that does not exceed the debt (`d * multiplier`
+    calls a row) leaves a remainder the voice-0 schedule pays as before.
+    The ledger then stays within `n` calls of zero instead of diving 15-24 calls
+    behind a run of patterns with no free command pair.
+
+    The pattern is CLONED for this track: another subtune may play the
+    original and carries its own clock (Star_Paws' subtune 2 plays pattern 0
+    too), so a pair written in place would be that subtune's tempo. Returns
+    `(remaining d, rows written)`; `d` unchanged and 0 when no voice has a
+    loop that takes a pair.
+    """
+    rate = d * multiplier
+    best = None
+    for v in (1, 2):
+        ti = 3 * k + v
+        if ti >= len(tracks):
+            continue
+        p = _loop_pattern(tracks[ti])
+        if p is None or p >= len(patterns):
+            continue
+        rows = len(patterns[p]) // 4
+        n = int(rate * rows + 1e-9)
+        if n < 1:
+            continue
+        spots = _regrid_spots(patterns[p], n, rows)[0]
+        if spots and (best is None or len(spots) > len(best[3])):
+            best = (ti, p, rows, spots)
+    if best is None or len(patterns) >= MAX_PATTERNS:
+        return d, 0
+    ti, p, rows, spots = best
+    clone = list(patterns[p])
+    for r, _moved in spots:
+        row, nxt = r * 4 + 2, (r + 1) * 4 + 2
+        clone[row], clone[row + 1] = CMD_SETTEMPO, base + 1
+        clone[nxt], clone[nxt + 1] = CMD_SETTEMPO, base
+    patterns.append(clone)
+    track = tracks[ti]
+    track[[i for i, b in enumerate(track[:-2]) if b == p][0]] = len(patterns) - 1
+    return d - len(spots) / rows / multiplier, len(spots)
+
+
 def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                   bases: List[int], deficits: List[float],
                   multiplier: int = 1, log=None,
                   full_debt: bool = False, per_play: bool = False,
-                  prepay: int = 0) -> int:
+                  prepay: int = 0, park: bool = False) -> int:
     """Spend the fractional part of a row the tempo cannot express.
 
     A Goattracker row is a whole number of play calls, so a player whose row
@@ -3911,6 +3982,15 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     discriminator is the collapsed-surplus DIRECTION below, which needs a
     trace. docs/OPTIONS.md § `--regrid` carries the whole account, including why no
     trace-free proxy exists.
+
+    **`park` PAYS THE WHOLE CALLS THROUGH A LOOPING VOICE** (convert's
+    `regrid_park`; off, every byte above is unchanged). A voice whose orderlist
+    is one pattern looped forever fires a pair in it once per loop, so it pays
+    a steady `n / L` calls a row whatever voice 0 is playing; `_regrid_park`
+    clones the pattern for that track and the budget above sees only what is
+    left. Star_Paws (voice 1, 65 rows, 2 pairs): 2.047 of 2.047 calls owed per
+    loop, the voice-0 remainder is 3.4 calls a pass, and the index-paired
+    attack offset goes -12/+1 -> -1/+1 frames (measured at 5c5e0c0).
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):
@@ -3987,11 +4067,20 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     # other direction. An exclusive pattern is the only one whose deliveries
     # a single subtune's debt can account for.
     plan: dict = {}
+    parked = 0
     for k in range(groups):
         d = deficits[k]
         base = bases[k]
         if d <= 0:
             continue
+        if park:
+            # The whole calls a looping voice can carry, before voice 0 is
+            # asked for any; see `_regrid_park`.
+            d, n_parked = _regrid_park(patterns, tracks, k, base, d,
+                                       multiplier)
+            parked += n_parked
+            if d <= 0:
+                continue
         # ONE VOICE ONLY. `CMD_SETTEMPO` under $80 sets all three channels
         # (gplay.c:494), so a compensating row placed in each of the three
         # voices' patterns lengthens the same row three times -- measured, a
@@ -4087,7 +4176,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         for pat, n in want.items():
             plan[pat] = (base, n)
 
-    written = skipped = shifted = 0
+    written, skipped, shifted = parked, 0, 0
     for pat, (base, n) in plan.items():
         rows = len(patterns[pat]) // 4
         spots, skips = _regrid_spots(patterns[pat], n, rows)
@@ -4101,6 +4190,8 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     if log:
         log(f"Re-grid.................: {written} compensating row(s) in "
             f"{len(plan)} pattern(s) for a fractional row"
+            + (f", {parked} of them in a looping voice's own pattern"
+               if parked else "")
             + (f", {shifted} shifted off an occupied command column"
                if shifted else "")
             + (f", {skipped} skipped (command column in use)" if skipped else ""))
@@ -4454,6 +4545,37 @@ def _slide_covered_regrid_spot(pattern: List[int], want: int,
     return None
 
 
+def _move_rest_silence_off_row0(pattern: List[int]) -> None:
+    """Keep a rest's `CMD_SETSR $00` when row 0's command column goes to the
+    subtune's tempo.
+
+    `decode_entry` spells a hard-silencing rest (`rest_envelope_silence`) as
+    a KEYOFF row carrying `CMD_SETSR $00` -- the audible half -- with
+    `CMD_SETAD $00`, the inaudible half, on its first hold row. A pattern that
+    OPENS on such a rest has the SETSR on row 0, which `CMD_SETTEMPO` outranks
+    (`TEMPO_OVERWRITABLE`), so the write that silences the voice was the one
+    thrown away and the AD half survived: Mega_Apocalypse's bit-6 rest
+    (`$4B91`: AD, SR and the stored waveform all zeroed) came out as
+    `$00FC` -- AD cut, the release nibble still `C` (3 s) -- on the 16 pattern
+    copies of its entry pattern, and a note the original silences at once
+    rang out through its release.
+
+    The tempo keeps row 0. The SETSR moves to hold row 1, in the AD half's
+    place, and the AD half to row 2 where that row is empty (it is inaudible,
+    so it is dropped rather than displacing anything). A row 1 that is not
+    exactly that pair is left alone, and so is every pattern whose row 0 is
+    not a KEYOFF + SETSR, so the move is inert on anything but this spelling.
+    """
+    if (len(pattern) < 8 or pattern[0] != GT_KEYOFF
+            or pattern[2] != CMD_SETSR or pattern[3] != 0):
+        return
+    if pattern[4:8] != [GT_NO_NOTE, 0, CMD_SETAD, 0]:
+        return
+    pattern[6], pattern[7] = CMD_SETSR, 0
+    if len(pattern) >= 12 and pattern[8:12] == [GT_NO_NOTE, 0, 0, 0]:
+        pattern[10], pattern[11] = CMD_SETAD, 0
+
+
 def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
                  values: List[int], log=None) -> int:
     """`apply_tempo` for a song whose subtunes want *different* tempos.
@@ -4515,6 +4637,7 @@ def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
             continue
         if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
+        _move_rest_silence_off_row0(pattern)
         pattern[2], pattern[3] = CMD_SETTEMPO, values[k]
         written += 1
     if log and (cloned or dropped):
@@ -4600,6 +4723,7 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
             continue
         if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
+        _move_rest_silence_off_row0(pattern)
         pattern[2], pattern[3] = CMD_SETTEMPO, value
         written += 1
     if log and written:

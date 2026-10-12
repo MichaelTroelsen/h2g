@@ -371,6 +371,12 @@ EXCLUDED_FROM_ALWAYS = {
     # Implies `regrid_per_play`'s walk. Inert without `regrid`, and 0 changes
     # no byte anywhere.
     "regrid_prepay",
+    # Pays the whole calls of `regrid`'s debt through a voice that loops one
+    # pattern forever (convert's `regrid_park`). A toggle, but per song: it is
+    # inert wherever no voice loops a single pattern long enough to take a pair
+    # (it reaches Star_Paws and Ricochet), and where it acts it moves the whole
+    # song's clock. Inert without `regrid`.
+    "regrid_park",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own

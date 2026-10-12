@@ -888,6 +888,93 @@ def _clamped_block(passband: int, resctl: int, start: int, step: int,
     return block
 
 
+def _sweep_rows(per_call: int, calls: Optional[int]) -> List[tuple]:
+    """The classic sweep's modulation rows and the `FILT_STOP` that ends them.
+
+    **THE PLAYER ADDS ITS STEP EVERY FRAME THE VOICE'S RECORD IS CURRENT, AND
+    A $7F-CALL ROW IS NOT THAT LONG.** The accumulator is 8 bits and wraps, so
+    a note longer than 127 calls keeps sweeping (Tarzan's record at frame
+    3495: the original runs $22..$99, wraps, and runs on; ours held $79 for 65
+    frames after its one row ran out). `calls` is `classic_sweep_calls`'
+    length for the record, split into $7F rows exactly as `_clamped_block`
+    splits a clamp; None is the single row every earlier version wrote.
+    """
+    if not calls:
+        return [(FILT_MODULATE, per_call), (FILT_STOP, 0x00)]
+    rows: List[tuple] = []
+    while calls > 0:
+        n = min(calls, FILT_MODULATE)
+        rows.append((n, per_call))
+        calls -= n
+    rows.append((FILT_STOP, 0x00))
+    return rows
+
+
+def _best_sweep_length(gaps: List[tuple]) -> Optional[int]:
+    """The length in calls that errs least over a record's occurrences.
+
+    `gaps` is (calls to the voice's next note, whether that note's record
+    leaves the filter alone). Running short of a gap holds the cutoff where
+    the player kept sweeping; running past it is an error only where the next
+    note does not restart or replace the program -- an unfiltered record, or
+    the end of the orderlist. The sum of both errors is convex and piecewise
+    linear with its knots at the gaps, so the minimum is at one of them
+    (the smaller on a tie)."""
+    best = None
+    for length in sorted({g for g, _ in gaps}):
+        cost = sum(max(g - length, 0) + (max(length - g, 0) if stop else 0)
+                   for g, stop in gaps)
+        if best is None or cost < best[0]:
+            best = (cost, length)
+    return best[1] if best else None
+
+
+def classic_sweep_calls(tracks: List[List[int]], patterns: List[List[int]],
+                        filtered: set, instr_base: int, row_calls: int,
+                        instr_row_calls: Optional[dict] = None) -> dict:
+    """{record: calls its sweep should run} from the orderlists' own notes.
+
+    A record's sweep lasts from the note that strikes it to the next note on
+    the same voice, whatever that note is: the same record restarts it
+    (`filt.cutoff` is loaded at every fetch), another filtered record's
+    program replaces it, and an unfiltered record leaves the cutoff where it
+    stood -- which Goattracker's single global program cannot do, so the
+    length is a compromise (`_best_sweep_length`). A tie (`CMD_TONEPORTA`)
+    strikes nothing. A voice's last note in the pass has no next note and is
+    left out, as is a record no row names (it keeps the one $7F row).
+
+    The gap is in rows, times the record's row length in calls: the START
+    subtune's (`InstrumentRowCalls.start_rows`, the drum sweep's choice and for
+    the same reason -- one table serves every subtune), else the shortest it
+    is ever played at, else the file's `row_calls`. `filtered` is the records
+    `_filter_entries` gave a pointer.
+    """
+    from ..patterns import GT_FIRSTNOTE, GT_LASTNOTE
+    per_record: dict = {}
+    start = getattr(instr_row_calls, "start_rows", None) or {}
+    for track in tracks:
+        live = 1                    # player.s: every voice starts on instr 1
+        events: List[tuple] = []    # (row index, record or None, calls/row)
+        for t, (_pos, _n, p, r) in enumerate(_ilv_voice_rows(track, patterns)):
+            note, ins, cmd, _dat = patterns[p][4 * r:4 * r + 4]
+            if ins:
+                live = ins
+            if GT_FIRSTNOTE <= note <= GT_LASTNOTE and cmd != CMD_TONEPORTA:
+                rc = (start.get(live) or (instr_row_calls or {}).get(live)
+                      or row_calls or 1)
+                events.append((t, live - instr_base, rc))
+        for (t0, rec, rc), (t1, nxt, _rc) in zip(events, events[1:]):
+            if rec in filtered:
+                per_record.setdefault(rec, []).append(
+                    ((t1 - t0) * rc, nxt not in filtered))
+    out = {}
+    for rec, gaps in per_record.items():
+        length = _best_sweep_length(gaps)
+        if length:
+            out[rec] = length
+    return out
+
+
 def _free_running_block(passband: int, resctl: int, per_call: int,
                         at: int) -> List[tuple]:
     """Set params, then modulate forever; no set-cutoff row at all.
@@ -1367,8 +1454,30 @@ def free_running_fetch_holds(tracks: List[List[int]],
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
                     lead: int = 1, multiplier: int = 1,
                     clearing_instruments: set | None = None,
-                    sfx_blips: dict | None = None):
+                    sfx_blips: dict | None = None,
+                    sweep_calls: dict | None = None):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
+
+    `sweep_calls` (`classic_sweep_calls`) sizes the classic sweep: see
+    `_sweep_rows`. A table too small for the sized sweeps is built again
+    without them, which is the table every earlier version wrote.
+    """
+    entries, pointers, overflowed = _filter_entries_once(
+        sid, det, instr_used, lead, multiplier, clearing_instruments,
+        sfx_blips, sweep_calls)
+    if overflowed and sweep_calls:
+        entries, pointers, _ = _filter_entries_once(
+            sid, det, instr_used, lead, multiplier, clearing_instruments,
+            sfx_blips, None)
+    return entries, pointers
+
+
+def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
+                         lead: int, multiplier: int,
+                         clearing_instruments: set | None,
+                         sfx_blips: dict | None,
+                         sweep_calls: dict | None):
+    """(entries, pointers, overflowed): `_filter_entries`' one build.
 
     `sfx_blips` (`sfx_bandpass_plan`) names the drum records whose program
     carries the drum's one-frame bandpass; the others are written as ever.
@@ -1385,10 +1494,11 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
     """
     filt = det.filter
     if filt is None:
-        return [], {}
+        return [], {}, False
     data = sid.data
     entries: List[tuple] = []
     pointers: dict = {}
+    overflowed = False
     for i in range(max(instr_used - 1, 0)):
         base = filt.offset + i * det.instr_stride
         if base + 1 >= len(data):
@@ -1431,13 +1541,15 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
             block = [(FILT_SET_PARAMS | filt.passband, resctl),
                      (FILT_SET_CUTOFF, filt.cutoff)]
             if per_call:
-                block.append((FILT_MODULATE, per_call))
-            block.append((FILT_STOP, 0x00))
+                block += _sweep_rows(per_call, (sweep_calls or {}).get(i))
+            else:
+                block.append((FILT_STOP, 0x00))
         if len(entries) + len(block) > GT_MAX_FILT:
+            overflowed = True
             break
         pointers[i] = len(entries) + 1  # table steps are 1-based
         entries += block
-    return entries, pointers
+    return entries, pointers, overflowed
 
 
 def _write_filtertable(out: bytearray, entries: List[tuple]) -> None:

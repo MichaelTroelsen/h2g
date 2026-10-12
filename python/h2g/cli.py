@@ -132,6 +132,13 @@ def main(argv=None) -> int:
              "partly paid in the patterns before it. The pass as a whole "
              "never over-delivers. 0 = never ahead. Per song")
     parser.add_argument(
+        "--regrid-park", action="store_true",
+        help="with --regrid, pay the whole calls of the debt through a voice "
+             "that loops one pattern forever (compensating pairs in a clone "
+             "of that pattern), leaving voice 0 only the remainder. Star "
+             "Paws' voice 1 does; a song with no such voice is unchanged. "
+             "Per song. Off by default")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -633,6 +640,7 @@ def main(argv=None) -> int:
                           ("--regrid", "regrid"),
                           ("--regrid-full-debt", "regrid_full_debt"),
                           ("--regrid-per-play", "regrid_per_play"),
+                          ("--regrid-park", "regrid_park"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -728,6 +736,7 @@ def main(argv=None) -> int:
                       regrid_full_debt=args.regrid_full_debt,
                       regrid_per_play=args.regrid_per_play,
                       regrid_prepay=args.regrid_prepay,
+                      regrid_park=args.regrid_park,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

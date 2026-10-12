@@ -140,7 +140,9 @@ def test_zoids_points_its_two_untied_short_notes_at_one_program(monkeypatch):
                 current = i
             if not GT_FIRST_NOTE <= n <= GT_LAST_NOTE:
                 continue
-            if cmd == CMD_SETWAVEPTR and current in (9, 11):
+            # GT 11's rows after the two ties carry a pointer of their own
+            # (tests/test_skydive_tie_window.py); this pins GT 9's.
+            if cmd == CMD_SETWAVEPTR and current == 9:
                 hits.append((vi, p, r, current, dat))
             if cmd == 3 and current == 11 and (p, r) in ((0x26, 64),
                                                          (0x27, 9)):

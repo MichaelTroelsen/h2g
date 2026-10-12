@@ -391,7 +391,10 @@ def test_only_the_drum_records_programs_change(stem):
                            **{**opts, "sfx_drum_bandpass": True}))
     assert on.tables["WTBL"] == off.tables["WTBL"]
     assert on.tables["PTBL"] == off.tables["PTBL"]
-    assert len(on.tables["FTBL"]) > len(off.tables["FTBL"])
+    # Not `len(on) > len(off)` since the classic sweeps are sized to the note
+    # (test_classic_sweep_length): a drum record's plain sweep can now be
+    # longer than its blip block (Thundercats 40 rows off, 37 on).
+    assert on.tables["FTBL"] != off.tables["FTBL"]
     assert len(on.tables["FTBL"]) <= GT_MAX_FILT
     assert any(l == FILT_STOP and r for l, r in on.tables["FTBL"])
 
