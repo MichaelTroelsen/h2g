@@ -575,8 +575,10 @@ def test_build_sng_hands_the_orderlists_to_the_vibrato_pass():
     """The carry is inert unless build_sng passes `tracks`; a behaviour test
     would need a triangle-dialect file, so this pins the call's keyword."""
     import inspect
-    import h2g.goatwriter as gw
-    src = inspect.getsource(gw.build_sng)
+    from h2g.goatwriter import build
+    # `build_sng` is a retry wrapper since tie-restart-split-only-heard; the
+    # pass is called from the body it wraps.
+    src = inspect.getsource(build._build_sng)
     at = src.index("vib_ptrs = _vibrato_command_pass(")
     call = src[at:src.index(")", at) + 1]
     assert "tracks=tracks" in call, call

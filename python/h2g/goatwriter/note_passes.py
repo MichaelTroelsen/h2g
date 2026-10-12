@@ -326,10 +326,15 @@ def legato_tie_family(sid: SidFile, det: Detection) -> bool:
     byte's bit 7 and by nothing else: `LDA flag / BMI / LDA pulse,X / STA
     $D402,Y`, with `flag` the cell the note store (`INY / LDA (patt),Y / STA
     flag / AND #$7F`) wrote. Both spellings of `detect`'s `note_flag` start
-    with that store. A file whose decoder does not read the flag
-    (Mega_Apocalypse stores it to zero page) is out: its ties' bit 7 is
-    unknown, and the old spelling stands."""
-    if det.pattern_dialect != "classic" or not det.note_flag:
+    with that store. Mega_Apocalypse's store is the same `INY / LDA (patt),Y
+    / STA $5001 / AND #$7F` (its NOTE goes on to zero page, `$4B80 STA
+    $B9,X`, which is what `note_flag`'s spellings do not allow for) and its
+    `$4BB0 LDA $5001 / BMI $4BF2` skips the pulse, AD, SR and per-voice
+    sweep seeds: the decoder reads the bit there under `counter_fall`
+    (`patterns._build_raw_pattern`'s `legato_bit7`), so that player is in
+    the family on the same two shapes."""
+    if det.pattern_dialect != "classic" or not (
+            det.note_flag or det.counter_fall is not None):
         return False
     data = sid.data
     gate = search_file(data, LEGATO_TIE_GATE_SHAPE)
@@ -576,7 +581,8 @@ def _first_named_row(pat: List[int]) -> int:
 
 def entry_instrument_split(tracks: List[List[int]],
                            patterns: List[List[int]], rows: set,
-                           limit: int = _SONG_MAX_PATTERNS, log=None):
+                           limit: int = _SONG_MAX_PATTERNS, log=None,
+                           only=None):
     """Copy each pattern a clone respell (`_respell_on_clones`) would decline
     as "entered with two instruments" once per instrument it is entered
     with, and repoint every orderlist position at the copy for the
@@ -601,6 +607,7 @@ def entry_instrument_split(tracks: List[List[int]],
     copy to point at and stays on the source, still unsettled; where none
     does, the instrument met first (by track, then position) keeps the
     source number.
+    `only`, where given, restricts the patterns copied (`build._heard_splits`).
     The copies are numbered past the table; a pattern whose copies would
     take it past `limit` (gcommon.h MAX_PATT) is left whole."""
     entry = _entry_instruments(tracks, patterns)
@@ -626,6 +633,8 @@ def entry_instrument_split(tracks: List[List[int]],
                         None)
             if note is not None and note < first:
                 want.add(q)
+    if only is not None:
+        want &= set(only)
     if not want:
         return tracks, patterns, {}
     at = _position_entries(tracks, patterns)

@@ -90,8 +90,8 @@ def _tie_rows(song):
     ("Auf_Wiedersehen_Monty.sid", True),   # read: $E569 LDA $EB2D / BMI
     ("Delta.sid", True),                   # $BF31, the same block
     ("Commando.sid", False),               # no bit-7 flag at all
-    ("Mega_Apocalypse.sid", False),        # the block, but a zero-page store
-])                                         # the decoder does not read
+    ("Mega_Apocalypse.sid", True),         # $4BB0 LDA $5001 / BMI: read under
+])                                         # counter_fall (test_tie_restart_mega)
 def test_the_family_is_the_bit7_gated_instrument_start(name, want):
     sid = load_sid(str(CORPUS / name))
     det = detect(sid, lambda *a, **k: None)
@@ -109,7 +109,8 @@ def test_the_gate_must_test_the_flag_the_note_store_wrote():
     assert not G.legato_tie_family(SimpleNamespace(data=pad + store + pad + other), det)
     assert not G.legato_tie_family(
         SimpleNamespace(data=pad + store + pad + gate),
-        SimpleNamespace(pattern_dialect="classic", note_flag=False))
+        SimpleNamespace(pattern_dialect="classic", note_flag=False,
+                        counter_fall=None))
 
 
 def test_a_bit7_landing_keeps_toneporta_and_an_unknown_pattern_keeps_it_all():

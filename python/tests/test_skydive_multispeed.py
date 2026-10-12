@@ -13,8 +13,9 @@ original's gated high byte sits below its note's (tests/test_skydive.py's
 `_store_frames`), our high byte agreeing, before -> after:
 Master_of_Magic voice 0 0/264 -> 264/264; One_Man_and_his_Droid voice 0
 14/308 -> 266/308 (the 42 left are the one row the log calls mixed or
-occupied), voice 1 12/264 -> 264/264. Both Last_V8s are declined (the program
-needs 124 / 122 wavetable steps with 38 free) and do not move.
+occupied), voice 1 12/264 -> 264/264. Both Last_V8s were declined here (the
+program needs 124 / 122 wavetable steps with 38 free); tests/
+test_skydive_compact.py has them since.
 """
 import json
 import pathlib
@@ -94,7 +95,7 @@ def _sky(lines):
 @needs_corpus
 @pytest.mark.parametrize("name,rows,program", [
     ("Master_of_Magic", 4, (1, 18, True)),
-    ("One_Man_and_his_Droid", 8, (2, 24, True)),
+    ("One_Man_and_his_Droid", 9, (2, 24, True)),  # 8 before the lap wrap,
 ])
 def test_the_s2_files_get_their_program_at_two_calls_a_frame(
         name, rows, program):
@@ -118,11 +119,12 @@ def test_the_s2_files_get_their_program_at_two_calls_a_frame(
 
 @needs_corpus
 @pytest.mark.parametrize("name", ["Last_V8", "Last_V8_C128_version"])
-def test_last_v8_is_declined_on_the_wavetable_not_the_multiplier(name):
+def test_last_v8_is_no_longer_declined_on_the_wavetable(name):
+    """It was ("124 / 122 wavetable step(s) past MAX_TABLELEN, not emitted");
+    tests/test_skydive_compact.py pins how it fits now."""
     _sng, lines = _converted(name)
     (msg,) = _sky(lines)
-    assert "past MAX_TABLELEN, not emitted" in msg, msg
-    assert "-S2" not in msg, msg
+    assert "not emitted" not in msg and "window row(s)" in msg, msg
 
 
 def _store_frames(trace, nframes):

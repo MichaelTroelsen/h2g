@@ -65,6 +65,22 @@ def _arp_block(source: List[tuple], offsets: List[int],
         return (WAVE_NOTE_BASE + offsets[frame % len(offsets)]) & 0xFF
 
     hold = max(1, multiplier)
+    # **A call is charged to frame `(call + hold) // hold`, because the frame
+    # the sample first sees it in depends on the ROW and this is the shift that
+    # is right for every row.** The packed player's tick 0 is play call
+    # `1 + row_calls * r`, a note's wavetable starts on the call after it, and
+    # the sample is a frame's LAST call -- so which wavetable calls are sampled
+    # is set by the row's residue `o` (`skydive.skydive_row_offset`, 1, for rows
+    # of whole frames; Lion_Heart's rows are 8 calls at -S3 and walk it through
+    # 1, 0, 2). The earlier `(call + 1) // hold` is right for a sample call only
+    # at -S1 and at one residue in `hold` above it (enumerated in
+    # tests/test_arp_row_offset.py); `hold - 1` more is right for every
+    # residue, and is 0 at -S1, so no -S1 file moves. Measured per call (-m1)
+    # on Lion_Heart, the only file with `$83` arpeggios above -S1: its 2-step
+    # arpeggios raised on attack-relative frame 3 where the original raises on
+    # frame 2 (`0 0 0 4 0 4 ...` against `0 0 4 0 4 0 ...`), and read the
+    # original's shape exactly with this shift.
+    shift = hold - 1
     left: List[int] = []
     right: List[int] = []
     call = 0
@@ -74,7 +90,8 @@ def _arp_block(source: List[tuple], offsets: List[int],
         # `ARP_HEAD_FRAMES` of step 0 before the cycle advances -- the
         # head the originals have, measured. Clamping at 0 repeats
         # step 0 rather than wrapping backwards into the cycle.
-        right.append(note(max(0, (last + 1) // hold - ARP_HEAD_FRAMES)))
+        right.append(note(max(0, (last + 1 + shift) // hold
+                              - ARP_HEAD_FRAMES)))
         call = last + 1
 
     # The sustained waveform: the last real waveform the program reaches. A
@@ -86,7 +103,7 @@ def _arp_block(source: List[tuple], offsets: List[int],
     tail = start + len(left)
     for _ in range(len(offsets) * hold):
         left.append(held)
-        right.append(note((call + 1) // hold))
+        right.append(note((call + 1 + shift) // hold))
         call += 1
     left.append(WAVE_JUMP)
     right.append(tail & 0xFF)

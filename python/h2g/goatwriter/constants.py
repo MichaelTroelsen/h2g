@@ -727,8 +727,26 @@ GATETIMER_LEGATO = 0x40          # gplay.c:930, greloc.c:347
 # (C:/t/motr-family-tie-reruns-note-start/flowcheck.py, 6e467ff): no branch
 # leaves it or jumps into it, and the one that skips it -- in 15 files -- is
 # `LDA flag / BPL` on the cell the voice loop sets to $FF while the music
-# owns the voice (Commando $539C STY / $53A7 STA). Mega_Apocalypse and
-# Phantoms_of_the_Asteroid carry no such block and are not read here.
+# owns the voice (Commando $539C STY / $53A7 STA). Neither of the two files
+# with no matching block lacks the behaviour (read at ca85ac7):
+#
+# * Mega_Apocalypse is a LEGATO-MARKER player the `note_flag` detector does
+#   not spell (the note store is zero page): `$4B46 LDA #$FF / STA $DC,X`
+#   reloads the gate mask every event, the waveform is stored at `$4BF2` on
+#   every event, and `$4BB0 LDA $5001 / BMI $4BF2` skips pulse, AD, SR and
+#   the per-voice sweep seeds on a note with bit 7. Status bit 5 is read
+#   only at the note's end (`$4C10`). So a tie landing with bit 7 clear
+#   restarts the instrument, and `legato_tie_family` now holds it (3 of the
+#   601 events in its patterns carry bit 7, all on a tied landing).
+# * Phantoms_of_the_Asteroid IS this family with its SID writes behind
+#   one-register stubs (`$E10C AND $E439 / JSR $F05E`, a `STA $D404,Y`
+#   stub; `$E09D LDA #$FF / STA $E439` reload, `$E0A2 LDA ($E8),Y` fetch,
+#   `AND #$20` only at `$E150`, the sweep writing back into the record at
+#   `$E208`: dialect "record"). Spelling it as a clone moves 36 of its 98
+#   tie rows onto 3 legato clones and changes NO register the harness
+#   scores (siddump -m2 -t180 text identical; every `fidelity.py` row key
+#   equal but `aud` +0.00009, `loud` +0.00004), so the stub spelling is
+#   not read: a byte change nothing can see.
 #
 # Two dialects of the block, and they differ in what the pulse write MEANS:
 #

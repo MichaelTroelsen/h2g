@@ -21,6 +21,7 @@ column: GT starts every channel on instrument 1 (record 0, audible under
 voice of the emitted song does that.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -76,13 +77,19 @@ def test_no_pattern_names_record_17_so_it_is_dropped():
     blob, _ = _convert(drop_unnamed_instruments=False)
     named = named_instruments(blob)
     # GT instrument n is record n-1 under compact_instruments: record 17 is
-    # GT 18, and no pattern column holds anything above 17.
-    assert max(named) == 17, sorted(named)
+    # GT 18, and no pattern column holds anything above 17 among the
+    # player's own 21 records. The legato clones the tied landings are
+    # respelled onto (`legato_tie_family` reads Mega since ca85ac7's
+    # tie-restart-mega-phantoms-note-start) are numbered AFTER them.
+    own = {n for n in named if n <= 21}
+    assert max(own) == 17, sorted(named)
     assert 18 not in named
     blob, logs = _convert()
     assert any("Dropped 4 instrument(s) no pattern names: $12, $13, $14, $15"
                in line for line in logs), logs
-    assert len(songview.parse_sng(blob).instruments) == 17
+    clones = sum(int(m.group(1)) for line in logs
+                 for m in [re.search(r"on (\d+) legato clone", line)] if m)
+    assert len(songview.parse_sng(blob).instruments) == 17 + clones
 
 
 def test_every_voice_names_an_instrument_before_its_first_note():

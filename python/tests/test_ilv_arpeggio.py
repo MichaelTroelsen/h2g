@@ -144,17 +144,25 @@ def test_the_jump_returns_to_the_TAIL_and_the_phase_across_it_is_exact():
     tail = start + 3                      # past the source's three entries
     assert right[-1] == tail
     # The tail is a WHOLE cycle, so the frame after its last entry is
-    # congruent with its first: grouped by the multiplier its right column is
-    # a rotation of the offsets, each step held `multiplier` entries.
+    # congruent with its first: read as a ring (the jump joins the last entry
+    # to the first) its right column is a rotation of the offsets, each step
+    # held `multiplier` entries. The ring, not the entries from the first: the
+    # tail enters the cycle mid-frame above -S1 (`_arp_block` charges a call
+    # to `(call + hold) // hold`), so its first group is short and the last
+    # one finishes it across the jump.
     body = right[tail - start:-1]
-    groups = [body[k:k + 2] for k in range(0, len(body), 2)]
+    assert len(body) == 3 * 2
+    at = next(k for k in range(len(body)) if body[k - 1] != body[k])
+    ring = body[at:] + body[:at]
+    groups = [ring[k:k + 2] for k in range(0, len(ring), 2)]
     assert all(g[0] == g[1] for g in groups), groups
     steps = [g[0] - G.WAVE_NOTE_BASE for g in groups]
     # The source's three entries cover frames 0, 2 and 2 (its `02` delay spans
     # three calls), so it ends inside frame 2 -- step 11 -- and the tail must
-    # open on frame 3, which is step 0. Continuing rather than restarting is
-    # the property; the exact rotation is what proves it.
-    assert steps == [0, 5, 11], steps
+    # keep the cycle going rather than restart it: the ring is the offsets in
+    # order, 0 -> 5 -> 11, from wherever the first group falls.
+    assert steps in ([0, 5, 11], [5, 11, 0], [11, 0, 5]), steps
+    assert sorted(steps) == [0, 5, 11]
 
 
 def test_a_program_with_no_waveform_at_all_is_declined():

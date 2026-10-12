@@ -303,6 +303,9 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     split had left on their `4xy` a neighbour's loop)."""
     import hashlib
     import h2g.goatwriter.build as B
+    # Mega's tied landings are legato clones since ca85ac7's
+    # tie-restart-mega-phantoms-note-start; this pin is the arm without them.
+    monkeypatch.setattr(B._gw_note_passes, "legato_tie_family", lambda sid, det: False)
     monkeypatch.setattr(B._gw_counter_fall, "counter_fall_plan",
                         lambda *a, **k: None)
     monkeypatch.setattr(B._gw_counter_fall, "unroll_fall_repeats",

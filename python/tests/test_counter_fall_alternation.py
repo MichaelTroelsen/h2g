@@ -292,6 +292,10 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     sha and nothing else: with the split off too it is 3dd7d6f19319 again
     (`test_with_the_split_and_the_alternation_off_mega_converts_as_it_did`)."""
     import hashlib
+    import h2g.goatwriter.note_passes as NP
+    # Mega's tied landings are legato clones since ca85ac7's
+    # tie-restart-mega-phantoms-note-start; this pin is the arm without them.
+    monkeypatch.setattr(NP, "legato_tie_family", lambda sid, det: False)
     monkeypatch.setattr(C, "ALTERNATION_MIN_DIPS", 10 ** 6)
     sng, lines = _converted()
     assert hashlib.sha1(sng).hexdigest()[:12] == "f5958c98a448"

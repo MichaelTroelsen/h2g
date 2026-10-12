@@ -1,6 +1,7 @@
 """build_sng: assembling the final .sng (split out of goatwriter.py, text moved unchanged)."""
 from __future__ import annotations
 
+import copy
 from typing import (List, Optional)
 
 from ..detect import (Detection)
@@ -331,6 +332,33 @@ def _pulse_sweeps(entries: List[tuple], start: int) -> bool:
     return False
 
 
+class _RetrySplit(Exception):
+    """`_build_sng`: some `entry_instrument_split` copy settles only rows
+    whose restart is silent; rebuild splitting just `.args[0]`."""
+
+
+def _heard_splits(heard: set, split_rows: set, copies: dict,
+                  tracks: List[List[int]], patterns: List[List[int]]) -> set:
+    """The source patterns of `entry_instrument_split`'s `copies` worth their
+    copy under the classic restart family: those holding a `_restart_heard`
+    row among the rows the split was made for (`split_rows`, before the
+    first named instrument), or whose predecessor ends on a heard row (the
+    successor case). A copy whose rows are all quiet buys nothing -- they
+    keep CMD_TONEPORTA with or without it -- and costs a pattern."""
+    sources = set(copies.values())
+    succ = _gw_note_passes._pattern_successors(tracks, len(patterns))
+    keep: set = set()
+    for pn, r in heard:
+        sp = copies.get(pn, pn)
+        if (sp, r) not in split_rows:
+            continue
+        if sp in sources and r < _gw_note_passes._first_named_row(patterns[pn]):
+            keep.add(sp)
+        if 4 * r + 4 >= len(patterns[pn]) or patterns[pn][4 * r + 4] == 0xFF:
+            keep |= {copies.get(q, q) for q in succ.get(pn, ())} & sources
+    return keep
+
+
 def _restart_heard(rows: set, tracks: List[List[int]],
                    patterns: List[List[int]], record_of: dict, out,
                    instr_at: int, wave_entries: List[tuple],
@@ -373,7 +401,7 @@ def _restart_heard(rows: set, tracks: List[List[int]],
     return heard
 
 
-def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
+def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
               speed_table: List[tuple] | None = None,
@@ -409,7 +437,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               gate_off_firstwave_instruments: tuple = (),
               tie_restart: bool = False,
               wave_reserve: int = 0,
-              sfx_drum_bandpass: bool = False) -> bytes:
+              sfx_drum_bandpass: bool = False,
+              _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -615,6 +644,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # The candidate rows are the ones the respells below are handed, under
     # the same gates; a copy's bit-7 rows are its source's (`bit7_rows`).
     split_copies: dict = {}
+    split_rows: set = set()
     if ((legato or restart_kind) and duty_split is None
             and phase_split is None):
         early_bit7 = (note_bit7_rows(patterns, known_bit7, decoded, ghosts)
@@ -641,7 +671,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 tracks, skippable)
         tracks, patterns, split_copies = (
             _gw_note_passes.entry_instrument_split(
-                tracks, patterns, split_rows, log=log))
+                tracks, patterns, split_rows, log=log, only=_split_only))
 
     def bit7_rows(pats: List[List[int]]) -> dict:
         return _gw_note_passes.split_bit7_rows(
@@ -972,9 +1002,23 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                        no_test_restart,
                                        tuple(real_firstwave_instruments),
                                        log=log, wave_entries=wave_entries,
-                                       wave_starts=wave_starts)
+                                       wave_starts=wave_starts,
+                                       wave_pointers=[
+                                           r for r in (
+                                               list(arp_starts)
+                                               + clone_starts
+                                               + phase_clone_starts
+                                               + tie_block_starts
+                                               + attack_hold_starts
+                                               + drum_starts) if r])
         if sky is not None:
             patterns = sky.patterns
+            if sky.base is not None:
+                # The plan shared the identical programs at the table's end
+                # to make room (`compact_wave_tail`): the instruments' starts
+                # moved with them.
+                wave_entries = sky.base
+                wave_starts[:] = sky.starts
             wave_entries = wave_entries + sky.entries
     # The same block without its window (`note_rise_plan`): a store on every
     # other tick of the whole note, one or two a row of two or three ticks,
@@ -1175,6 +1219,11 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             heard = _restart_heard(still, tracks, patterns, record_of, out,
                                    instr_at, wave_entries, pulse_entries,
                                    clone_firstwave, restart_kind)
+            if _split_only is None and split_copies:
+                keep = _heard_splits(heard, split_rows, split_copies,
+                                     tracks, patterns)
+                if keep != set(split_copies.values()):
+                    raise _RetrySplit(frozenset(keep))
             quiet = still - heard
             if log and quiet:
                 log(f"Legato tie..............: {len(quiet)} tie row(s) kept "
@@ -1445,3 +1494,24 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out += bytes(pattern)
 
     return bytes(out)
+
+
+def build_sng(sid, det, tracks, patterns, *args, **kw):
+    """`_build_sng`; under `tie_restart` a build whose entry-instrument split
+    copied a pattern only for quiet restarts (`_heard_splits`) is redone
+    without those copies."""
+    if not kw.get("tie_restart") or args:
+        return _build_sng(sid, det, tracks, patterns, *args, **kw)
+    log = kw.get("log")
+    spare = (copy.deepcopy(tracks), copy.deepcopy(patterns))
+    lines: list = []
+    first = dict(kw, log=lines.append)
+    try:
+        out = _build_sng(sid, det, tracks, patterns, **first)
+    except _RetrySplit as retry:
+        second = dict(kw, _split_only=retry.args[0])
+        return _build_sng(sid, det, spare[0], spare[1], **second)
+    if log is not None:
+        for line in lines:
+            log(line)
+    return out

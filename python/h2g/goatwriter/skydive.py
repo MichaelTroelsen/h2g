@@ -66,7 +66,8 @@ from ..detect import (Detection, TRIANGLE_VIBRATO_GATE,
                       TRIANGLE_VIBRATO_SHAPE)
 from ..search import search_file
 from ..sidfile import SidFile, find_freq_table
-from .constants import (CMD_SETWAVEPTR, FORMAT_GTS5, GT_FIRST_NOTE,
+from .constants import (CMD_FUNKTEMPO, CMD_SETTEMPO, CMD_SETWAVEPTR,
+                        FORMAT_GTS5, GT_FIRST_NOTE,
                         GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
                         GT_WAVE_FIRST_CMD, GT_WAVE_LAST_DELAY,
                         GT_WAVE_NO_NOTE, PACKED_PATTERN_LIMIT,
@@ -146,9 +147,68 @@ SKYDIVE_MAX_SPEED = 0x7FFF
 
 @dataclass(frozen=True)
 class SkydivePlan:
-    """The finished patterns and the program block to append to the wavetable."""
+    """The finished patterns and the program block to append to the wavetable.
+
+    `base` and `starts` are set only when the plan made room by sharing the
+    identical programs at the end of the table (`compact_wave_tail`): the
+    wavetable to append `entries` to is then `base`, not the one the plan was
+    given, and `starts` is the instrument starts to write over `wave_starts`.
+    """
     patterns: List[List[int]]
     entries: List[Tuple[int, int]]
+    base: Optional[List[Tuple[int, int]]] = None
+    starts: Optional[List[int]] = None
+
+
+def compact_wave_tail(wave_entries: List[Tuple[int, int]],
+                      wave_starts: List[int],
+                      pointers: List[int]
+                      ) -> Optional[Tuple[List[Tuple[int, int]], List[int]]]:
+    """The wavetable with the identical programs at its end shared, or None.
+
+    Every record's program is its own block, and many records have the same
+    one (Last_V8: thirteen drum records are `00 00 / 00 00 / 01 00 / FF 00 /
+    FF 00`, 65 rows). A program is stateless, so two records may point at
+    one copy: the tail from some record's start on is rebuilt with each
+    distinct block once, in order of first appearance, and `wave_starts` is
+    repointed. Returns (entries, starts) for the smallest tail that can be
+    rebuilt, None where nothing is saved.
+
+    A tail can be rebuilt only if nothing else names a row in it, because
+    rows move: no entry of `pointers` (every other row anything points at --
+    arpeggio, clone, drum, attack-hold, tie starts and the
+    `CMD_SETWAVEPTR` operands of the patterns) at or past its first row, no
+    jump from before it into it, and no jump inside it to a row but 0 (a
+    jump to 0 is a stop and does not care where it stands).
+    """
+    starts = sorted({s for s in wave_starts if s})
+    size = len(wave_entries)
+    for cut in starts:
+        if any(p >= cut for p in pointers):
+            continue
+        head = wave_entries[:cut - 1]
+        if any(left == GT_WAVE_JUMP and right >= cut for left, right in head):
+            continue
+        tail = wave_entries[cut - 1:]
+        edges = [s for s in starts if s >= cut] + [size + 1]
+        blocks = {s: tuple(wave_entries[s - 1:e - 1])
+                  for s, e in zip(edges, edges[1:])}
+        if any(left == GT_WAVE_JUMP and right
+               for block in blocks.values() for left, right in block):
+            continue
+        if sum(len(b) for b in blocks.values()) != len(tail):
+            continue
+        placed: Dict[tuple, int] = {}
+        entries = list(head)
+        for s in sorted(blocks):
+            if blocks[s] not in placed:
+                placed[blocks[s]] = len(entries) + 1
+                entries += list(blocks[s])
+        if len(entries) >= size:
+            continue
+        return entries, [placed[blocks[s]] if s >= cut else s
+                         for s in wave_starts]
+    return None
 
 
 @dataclass(frozen=True)
@@ -324,11 +384,65 @@ def skydive_speed(k: int, multiplier: int = 1) -> Optional[Tuple[int, int]]:
 def skydive_program(phase: int, writes: int, alternates: bool,
                     speed_index, multiplier: int = 1,
                     vib: Optional[SkydiveVibrato] = None,
-                    speed_row=None) -> List[Tuple[int, int]]:
+                    speed_row=None,
+                    compact: bool = False) -> List[Tuple[int, int]]:
     """The wavetable steps for one window, from the frame its row starts
-    (`skydive_calls`, one entry per call, runs of still calls a delay)."""
+    (`skydive_calls`, one entry per call, runs of still calls a delay).
+
+    `compact` is the held alternating program at a third of the rows
+    (`skydive_compact_calls`); `speed_index` then names the FRAME's step
+    (`skydive_speed(k)`, not divided by the multiplier)."""
+    if compact and alternates and vib is None and multiplier > 1:
+        return _compress(skydive_compact_calls(phase, writes, speed_index,
+                                               multiplier),
+                         fold_apply=True)
     return _compress(skydive_calls(phase, writes, alternates, speed_index,
                                    multiplier, vib=vib, speed_row=speed_row))
+
+
+def skydive_compact_calls(phase: int, writes: int, speed_index,
+                          multiplier: int,
+                          first_calls: Optional[int] = None
+                          ) -> List[Optional[Tuple[int, int]]]:
+    """The alternating program above -S1 in 3 rows a pair of frames, not 4.
+
+    The program of `skydive_calls` spends a call on every call of every
+    frame: a fall frame is `multiplier` `F2` steps of a share of the
+    movement, a note frame `multiplier` relative-note-0 steps. The table
+    space is the cost (Last_V8, -S2: 124 rows for 30 stores, with 38 free),
+    and a frame's calls do not need a step each:
+
+    * a fall frame is ONE `F2` of the frame's whole movement, on its first
+      call (`skydive_speed(k)`, the -S1 rate), and the rest of its calls are
+      still -- they run the instrument's vibrato, one tick each;
+    * a note frame is a relative-note-0 step on its first and last call and
+      still calls between, which fold into one delay entry with the last
+      step (`_compress`, `fold_apply`).
+
+    At -S2 that is `F2 k`, `(1, $00)`, `($00, $00)`: the voice is on the
+    fall for the frame's two calls and on the note for the next two, and the
+    last call of each frame -- the one siddump samples -- is on the fall
+    after its one vibrato tick (the original's low byte there is the
+    vibrato's own) and exactly on the note. The vibrato is therefore not
+    held off for the fall's calls as `skydive_calls` holds it, but runs one
+    tick a fall frame: a tick moves the frequency by the instrument's
+    vibrato speed, far from a store's $0100.
+    """
+    m = max(1, multiplier)
+    first = m - skydive_row_offset(m) if first_calls is None else first_calls
+    last = phase + 2 * (writes - 1)
+    calls: List[Optional[Tuple[int, int]]] = []
+    note = (SKYDIVE_NOOP, SKYDIVE_NOTE_BASE)
+    for t in range(last + 2):
+        n = first if t == 0 else m
+        k, odd = divmod(t - phase, 2)
+        if t >= phase + 2 and not odd:
+            calls += [(WAVECMD_PORTADOWN, speed_index(k))] + [None] * (n - 1)
+        elif t >= phase + 2:
+            calls += [note] + [None] * max(n - 2, 0) + ([note] if n > 1 else [])
+        else:
+            calls += [note] * n
+    return calls
 
 
 def skydive_targets(phase: int, writes: int, vib: SkydiveVibrato
@@ -461,15 +575,33 @@ def skydive_calls(phase: int, writes: int, alternates: bool, speed_index,
     return calls
 
 
-def _compress(calls: List[Optional[Tuple[int, int]]]) -> List[Tuple[int, int]]:
+def _compress(calls: List[Optional[Tuple[int, int]]],
+              fold_apply: bool = False) -> List[Tuple[int, int]]:
     """Per-call steps as wavetable entries: each run of calls on which
     nothing is written is one delay entry per `WAVE_MAX_DELAY + 1` calls
-    (`value + 1` calls, gplay.c:697-704), and the program stops."""
+    (`value + 1` calls, gplay.c:697-704), and the program stops.
+
+    **With `fold_apply`, a run of still calls that ends on a relative-note-0
+    step is ONE entry** (`skydive_compact_calls`): a delay `$0n` is n calls
+    that run the continuous effects and a last one that applies the right
+    side (gplay.c:697-704), so `(n, $00)` is n still calls then the
+    note step -- the same calls the two entries `(n - 1, $80)` and `($00,
+    $00)` make, one row smaller. It is not applied by default: a program laid
+    out before this must keep its bytes.
+    """
     out: List[Tuple[int, int]] = []
     run = 0
     for step in calls + [()]:
         if step is None:
             run += 1
+            continue
+        if fold_apply and run and step == (SKYDIVE_NOOP, SKYDIVE_NOTE_BASE):
+            while run > WAVE_MAX_DELAY:
+                n = min(run - WAVE_MAX_DELAY, WAVE_MAX_DELAY + 1)
+                out.append((SKYDIVE_NOOP + n - 1, GT_WAVE_NO_NOTE))
+                run -= n
+            out.append((SKYDIVE_NOOP + run, SKYDIVE_NOTE_BASE))
+            run = 0
             continue
         while run:
             n = min(run, WAVE_MAX_DELAY + 1)
@@ -636,6 +768,34 @@ def skydive_note_row_calls(instr: List[Optional[Tuple[int, int]]],
     return _merge_instrument(instr, sky, alternates)
 
 
+def rows_off_the_frame_grid(rows, patterns: List[List[int]],
+                            multiplier: int) -> bool:
+    """Whether some row of a lap is not a whole number of frames long.
+
+    `skydive_row_offset` is the residue of a row's tick 0 in its frame for a
+    song whose every row is `frames * multiplier` calls: tick 0 of row r is
+    call `1 + row_calls * r`, so it moves by `row_calls mod multiplier` a row
+    and the program of a row after a row of 3 calls at -S2 starts on the OTHER
+    call of its frame. A program counted call by call (every one here) is
+    right for one residue only, so a lap that carries a tempo command which is
+    not a multiple of the multiplier (`CMD_SETTEMPO`, which the fractional-row
+    pass, the orderlist step tempos and the regrid compensation all write) or
+    a 2-call funk row (`CMD_FUNKTEMPO`) is declined, as is every play of a
+    row shared with it. None of the corpus files that emit the program above
+    -S1 (Master_of_Magic, One_Man_and_his_Droid: every row `CMD_SETTEMPO 4`
+    at -S2) has one; at -S1 the residue is 0 whatever the rows, so this is
+    asked only above it.
+    """
+    if multiplier <= 1:
+        return False
+    for p, r, _t in rows:
+        cmd, data = patterns[p][4 * r + 2], patterns[p][4 * r + 3]
+        if cmd == CMD_FUNKTEMPO or (cmd == CMD_SETTEMPO
+                                    and (data & 0x7F) % multiplier):
+            return True
+    return False
+
+
 def note_row_column_free(cmd: int, ends_on_note: bool) -> bool:
     """Whether a note row's command column may take the pointer.
 
@@ -678,6 +838,17 @@ def _lap_rows(track: List[int], patterns: List[List[int]]):
         repeat = 1
 
 
+def _lap_restart(track: List[int]) -> Optional[int]:
+    """The restart position `$FF n` names, None where the track has none."""
+    operand = False
+    for b in track:
+        if operand:
+            return b
+        if b == 0xFF:
+            operand = True
+    return None
+
+
 def _program_order(key):
     """Sort key for a (window, vibrato) program key: the vibrato is None or
     a dataclass, which do not compare."""
@@ -707,7 +878,8 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                  no_test_restart: bool = False,
                  real_firstwave: tuple = (),
                  log=None, wave_entries: Optional[List[tuple]] = None,
-                 wave_starts: Optional[List[int]] = None
+                 wave_starts: Optional[List[int]] = None,
+                 wave_pointers: Optional[List[int]] = None
                  ) -> Optional[SkydivePlan]:
     """The rows that open a skydive window, pointed at their programs.
 
@@ -748,6 +920,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     sd = det.skydive
     if sd is None:
         return None
+    wave_used_before = wave_used
 
     def say(msg: str) -> None:
         if log:
@@ -777,14 +950,21 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     asks: Dict[tuple, List[tuple]] = {}
     note_asks: Dict[tuple, List[tuple]] = {}
     note_cover: Dict[tuple, int] = {}
-    declined = {"opens on the note row": 0, "too few stores": 0}
+    off_grid = 0
+    declined = {"opens on the note row": 0, "too few stores": 0,
+                "orderlist(s) with rows that are not whole frames": 0}
     for ti, track in enumerate(tracks):
         frames = speeds.frames_for(ti // 3)
         if frames is None:
             continue
         rows = list(_lap_rows(track, patterns))
+        restart = _lap_restart(track)
         for p, r, _t in rows:
             plays[(p, r)] = plays.get((p, r), 0) + 1
+        if rows_off_the_frame_grid(rows, patterns, multiplier):
+            off_grid += 1
+            declined["orderlist(s) with rows that are not whole frames"] += 1
+            continue
         current = 0
         for a, (p, r, transpose) in enumerate(rows):
             note, instr = patterns[p][4 * r], patterns[p][4 * r + 1]
@@ -797,6 +977,13 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             end = next((e for e in range(a + 1, len(rows))
                         if patterns[rows[e][0]][4 * rows[e][1]] != GT_REST
                         or patterns[rows[e][0]][4 * rows[e][1] + 1]), None)
+            if end is None and restart == 0:
+                # The lap plays again from its first row, so a note running
+                # off the end lasts until that lap's first event.
+                end = len(rows) + next(
+                    (e for e in range(a + 1)
+                     if patterns[rows[e][0]][4 * rows[e][1]] != GT_REST
+                     or patterns[rows[e][0]][4 * rows[e][1] + 1]), a)
             if end is None:
                 continue
             dur = end - a - 1
@@ -820,7 +1007,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     continue
                 cmd = patterns[p][4 * r + 2]
                 ends_on_note = (GT_FIRST_NOTE
-                                <= patterns[rows[end][0]][4 * rows[end][1]]
+                                <= patterns[rows[end % len(rows)][0]][4 * rows[end % len(rows)][1]]
                                 <= GT_LAST_NOTE)
                 note_asks.setdefault((p, r), []).append(
                     (phase + lag, writes, current,
@@ -879,24 +1066,36 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             f"({mixed} row(s) mixed or occupied)"
             + (f"; {sum(len(w) for w in note_asks.values())} on the note "
                f"row, none taken ({note_mixed} row(s) mixed or occupied)"
-               if note_asks else ""))
+               if note_asks else "")
+            + (f"; declined: {off_grid} orderlist(s) with rows that are "
+               f"not whole frames" if off_grid else ""))
         return None
 
-    instr_of: Dict[int, Optional[list]] = {}
+    instr_of: Dict[tuple, Optional[list]] = {}
 
-    def instrument_program(number: int) -> Optional[list]:
-        if number not in instr_of:
-            start = (wave_starts[number - 1]
-                     if number - 1 < len(wave_starts) else 0)
-            instr_of[number] = (instrument_calls(wave_entries, start)
-                                if start else [])
-        return instr_of[number]
-
-    def assemble(carried: frozenset) -> Tuple[Optional[_Assembly], str]:
+    def assemble(carried: frozenset, compact: bool = False,
+                 shared: Optional[tuple] = None
+                 ) -> Tuple[Optional[_Assembly], str]:
         """The programs laid out with the `carried` ones (program keys
         `(window, vibrato)`) written out and every other window held, on a
-        copy of the speed table; the assembly or why not."""
+        copy of the speed table; the assembly or why not.
+
+        `compact` lays the held alternating programs out in a third of the
+        rows (`skydive_compact_calls`). `shared` is `(entries, starts)` of
+        the wavetable with its identical tail programs shared
+        (`compact_wave_tail`), the table the programs are laid out after."""
         table = list(speed_table)
+        base, base_starts = shared or (wave_entries, wave_starts)
+        wave_used = len(base) if shared else wave_used_before
+
+        def instrument_program(number: int) -> Optional[list]:
+            key = (shared is not None, number)
+            if key not in instr_of:
+                start = (base_starts[number - 1]
+                         if number - 1 < len(base_starts) else 0)
+                instr_of[key] = (instrument_calls(base, start)
+                                 if start else [])
+            return instr_of[key]
 
         def row_of(entry) -> int:
             if entry not in table:
@@ -907,6 +1106,13 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
 
         def speed_index(k: int) -> int:
             entry = skydive_speed(k, multiplier)
+            if entry is None:
+                raise OverflowError
+            return row_of(entry)
+
+        def speed_frame(k: int) -> int:
+            # The compact program's one step a frame: the -S1 rate.
+            entry = skydive_speed(k)
             if entry is None:
                 raise OverflowError
             return row_of(entry)
@@ -926,8 +1132,12 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         try:
             for key in sorted(set(row_keys.values()), key=_program_order):
                 starts[key] = wave_used + len(entries) + 1
-                entries += skydive_program(*key[0], speed_index, multiplier,
-                                           vib=key[1], speed_row=speed_row)
+                squeeze = (compact and key[0][2] and key[1] is None
+                           and multiplier > 1)
+                entries += skydive_program(
+                    *key[0], speed_frame if squeeze else speed_index,
+                    multiplier, vib=key[1], speed_row=speed_row,
+                    **({"compact": True} if squeeze else {}))
         except OverflowError:
             return None, (f"speed table full or a step not a whole per-call "
                           f"rate at -S{multiplier}")
@@ -988,7 +1198,31 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         return _Assembly(entries, starts, row_keys, note_starts, note_keys,
                          note_declined, table), ""
 
-    held, reason = assemble(frozenset())
+    # The layouts to try, the first that fits taken: as before, then the
+    # held alternating programs in a third of the rows (above -S1), then the
+    # identical programs at the table's end shared, then both. Everything
+    # after the first is a rescue for a file that otherwise gets nothing, so
+    # a file the first layout fits is untouched.
+    sharing = None
+    if wave_entries and wave_starts:
+        pointers = list(wave_pointers or ())
+        pointers += [pat[4 * r + 3] for pat in patterns
+                     for r in range(len(pat) // 4)
+                     if pat[4 * r + 2] == CMD_SETWAVEPTR]
+        sharing = compact_wave_tail(wave_entries, wave_starts, pointers)
+    layouts = [(False, None)]
+    if multiplier > 1:
+        layouts.append((True, None))
+    if sharing is not None:
+        layouts.append((False, sharing))
+        if multiplier > 1:
+            layouts.append((True, sharing))
+    held, reason = None, ""
+    for compact, shared in layouts:
+        held, why_not = assemble(frozenset(), compact, shared)
+        if held is not None:
+            break
+        reason = reason or why_not
     if held is None:
         say(f"{reason}, not emitted")
         return None
@@ -1002,7 +1236,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     best, carried = held, frozenset()
     for key in (sorted(use, key=lambda k: (-use[k], _program_order(k)))
                 if CARRY_VIBRATO else ()):
-        trial, _ = assemble(carried | {key})
+        trial, _ = assemble(carried | {key}, compact, shared)
         if (trial is not None
                 and len(trial.note_starts) >= len(held.note_starts)
                 and (CARRY_BUDGET is None
@@ -1052,6 +1286,9 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
            f"{sum(k[1] is not None for k in best.row_keys.values())} row(s) "
            f"and {sum(k[1] is not None for k in best.note_keys.values())} "
            f"on the note row" if carried else "")
+        + (f", compact (3 rows a pair of frames)" if compact else "")
+        + (f", {len(wave_entries) - len(shared[0])} row(s) made by sharing "
+           f"identical programs at the end of the table" if shared else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + (f"; declined: {skipped}" if skipped else "")
         + (f"; on the note row: {note_edited} row(s), {len(note_starts)} "
@@ -1060,4 +1297,6 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
               if note_mixed else "")
            + (f", declined: {note_skipped}" if note_skipped else "")
            if note_asks else ""))
-    return SkydivePlan(patterns=out, entries=entries)
+    return SkydivePlan(patterns=out, entries=entries,
+                       base=shared[0] if shared else None,
+                       starts=shared[1] if shared else None)

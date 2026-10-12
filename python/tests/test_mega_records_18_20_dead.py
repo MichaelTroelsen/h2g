@@ -132,7 +132,12 @@ def test_the_voice_pointer_tables_do_not_touch_gate_cells_of_records_18_20():
     assert min(touched) - GATE == 20 * 8 + 3
 
 
-def test_no_pattern_names_records_17_to_20_and_they_are_dropped():
+def test_no_pattern_names_records_17_to_20_and_they_are_dropped(monkeypatch):
+    # The legato clones for Mega's tied landings are numbered after the
+    # player's 21 records (tie-restart-mega-phantoms-note-start); this test
+    # counts the records alone.
+    import h2g.goatwriter.note_passes as NP
+    monkeypatch.setattr(NP, "legato_tie_family", lambda sid, det: False)
     blob, _ = _convert(drop_unnamed_instruments=False)
     count = len(songview.parse_sng(blob).instruments)
     assert count == RECORDS            # GT n is record n-1: 1..21

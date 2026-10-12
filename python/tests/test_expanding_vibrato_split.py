@@ -331,6 +331,9 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     import h2g.goatwriter.build as B
     import h2g.goatwriter.counter_fall as CF
     monkeypatch.setattr(CF, "ALTERNATION_MIN_DIPS", 10 ** 6)
+    # Mega's tied landings are legato clones since ca85ac7's
+    # tie-restart-mega-phantoms-note-start; this pin is the arm without them.
+    monkeypatch.setattr(B._gw_note_passes, "legato_tie_family", lambda sid, det: False)
     monkeypatch.setattr(B._gw_note_passes, "expanding_vibrato_split",
                         lambda sid, det, tracks, patterns, *a, **k:
                         (tracks, patterns, {}))

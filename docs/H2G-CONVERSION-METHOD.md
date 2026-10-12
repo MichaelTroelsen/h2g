@@ -13182,6 +13182,11 @@ with 0 kept (was 18: 16 two-instrument rows in pattern `$34`, 2 last-row ties
 into it; 192 counts the copy's 16), Flash_Gordon 22 -> 24, 0 kept (was 1),
 Knucklebusters 16 -> 20, 0 kept (was 2) (`tests/test_entry_instrument_split.py`).
 The free-note variants' own two-instrument declines are not split for here.
+Under `tie_restart` (the classic restart family) a copy is kept only where
+one of its rows is a restart `_restart_heard` would respell: the build is
+redone without a copy whose rows all end as quiet restarts, which keep
+`CMD_TONEPORTA` with or without it (`_heard_splits`; Action_Biker at
+`--max-rows 94` lost its one copy, 21 bytes; `tests/test_tie_restart_split_heard.py`).
 
 **A legato clone of a bit-$10 record restarts a program the original's phase
 cell never restarts** (open; `star-paws-legato-vibrato-travel`; figures are
@@ -13772,16 +13777,82 @@ counts move the way they did at -S1. Master_of_Magic `tie_same_frame` goes
 (1.07 -> 0.86 and 0.98 -> 0.79), and One_Man_and_his_Droid's
 `depth_ratio` goes 0.33 -> 1.17.
 
-Last_V8 and its C128 version are still not emitted, but now on the
+**The row offset is a property of the ROW, so a program counted call by call
+is placed only on rows of whole frames (multispeed-setwaveptr-row-offset-
+audit, v0.5.529 base).** `skydive_row_offset` is the residue of a row's tick 0
+in its frame. Tick 0 of row r is call `1 + row_calls * r`, so it is `1 mod
+multiplier` on every row only while `row_calls` is a multiple of the
+multiplier. A row of 3 calls at -S2, a 2-call `CMD_FUNKTEMPO` row, or a
+regrid compensation moves the residue, and the program of a later row is then
+a call early or late. `skydive_plan` now reads every row of an orderlist's lap
+(`rows_off_the_frame_grid`: a `CMD_SETTEMPO` whose value is not a multiple of
+the multiplier, or a `CMD_FUNKTEMPO`) and declines the plays of an orderlist
+that has one; at -S1 the residue is 0 whatever the rows, so it is asked only
+above it. No corpus file moves: Master_of_Magic and One_Man_and_his_Droid are
+`CMD_SETTEMPO 4` throughout.
+
+**The `$83` arpeggio block (`drums._arp_block`) cannot be placed per row, so
+it is charged to the one frame that is right for every residue.** It copies
+the instrument's wave program and writes only the note column, so what it has
+to get right is which frame the sample (a frame's LAST call) first sees a
+wavetable call in. Charged to `(call + 1) // multiplier` that is right only at
+-S1 and on one residue in `multiplier` above it. Lion_Heart (-S3, rows of 8
+calls, so the residue walks 1, 0, 2) is the only file with `$83` arpeggios
+above -S1: per call (siddump -m1) the first raised step of its 2-step
+arpeggios was on attack-relative frame 3 where the original's is on frame 2
+(`0 0 0 4 0 4 ...` against `0 0 4 0 4 0 ...`). `(call + multiplier) //
+multiplier` reads the right frame on every residue of every multiplier from 1
+to 10 (`tests/test_arp_row_offset.py` enumerates them) and is the old
+arithmetic at -S1. Lion_Heart at -t 180 under presets: `tie_agreement` 0.682
+-> 0.704, `tie_same_frame` 4573 -> 4688, `tie_orig_only` 1901 -> 1786, the
+per-offset-from-attack semitone profile agrees on 18198 of 22272 frames ->
+18970; the corpus byte-hash moves that one file.
+
+Last_V8 and its C128 version were not emitted at that point, on the
 wavetable rather than on the multiplier. A 31-tick note's 30-tick window is a
 124-step program at -S2 (122 in the C128 version, whose phase is 1, not 2).
 It would be 63 and 62 steps even at -S1. Both files have 217 of 255 entries
-in use when the skydive is placed.
+in use when the skydive is placed. They are emitted now, by two rescues that
+are tried only when the layout before them did not fit (so Master_of_Magic and
+One_Man_and_his_Droid keep their bytes):
+
+* **The held alternating program in 3 rows a pair of frames, not 4**
+  (`skydive_compact_calls`). A fall frame is ONE `F2` of the frame's whole
+  movement (the -S1 rate) on its first call, with its other calls still; a
+  note frame is a relative-note-0 step on its first and last call with the
+  calls between a delay. A delay `$0n` is n calls that run the continuous
+  effects and a last one that applies the right side (gplay.c:697-704), so a
+  still run followed by the note step is ONE entry `($0n, $00)`
+  (`_compress(..., fold_apply=True)`): `F2 k`, `($01, $00)`, `($00, $00)` at
+  -S2. At the end of every frame, which is what siddump samples, the voice
+  is where the 4-row program leaves it: `$100 * k` below the note on a store,
+  exactly the note between (`tests/test_skydive_compact.py` replays both
+  call by call). What differs is the inside of a frame: the fall is a jump on
+  the frame's first call instead of two half steps, and the fall frame's
+  second call is one vibrato tick, where the 4-row program held the vibrato
+  off. 124 rows become 95 (C128: 93).
+* **Identical programs at the end of the table are one copy**
+  (`compact_wave_tail`). Thirteen of Last_V8's drum records are the same five
+  rows (`00 00 / 00 00 / 01 00 / FF 00 / FF 00`), 60 rows in all, and the
+  song as written holds 18 of its 33 records (`prune`), so those rows are
+  dead as well as duplicated. The tail is rebuilt only when nothing else
+  names a row in it: no arpeggio, clone, drum, attack-hold or tie start, no
+  `CMD_SETWAVEPTR` operand, no jump from before it into it, no jump inside it
+  to a row but 0. `build_sng` takes the shortened table and the repointed
+  `wave_starts` from the plan.
+
+Measured at v0.5.529 under presets, -t 180, lag-aligned (the count above):
+Last_V8 voice 0 74/238 -> 184/238, every store of the four 28-store windows
+(frames 3527, 3783, 4039 and 4295 on). The 54 left are 13 in a 39-frame drop
+at frame 3017 whose steps are $70 a frame (not a store), 6 each at 5089 and
+5601 (missed without the program too), and 29 at frame 6407, where ours plays
+a note an octave and more above the original's with or without the program. Last_V8_C128_version 72/238 -> 128/238: its note table
+is tuned a hair differently from Goattracker's, so its windows on some notes
+read one high byte up whatever the encoding.
 
 Some cases are logged and not emitted:
 
-* Programs that do not fit the wavetable: Last_V8 and its C128 version, as
-  above.
+* Programs that do not fit the wavetable, after both rescues above.
 * Windows on a tied note (`3 00` on the note row), below.
 
 **A note shorter than LAST opens its window on the note row itself.** With
