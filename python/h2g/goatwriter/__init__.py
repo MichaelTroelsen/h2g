@@ -228,8 +228,10 @@ from .notes import (_drum_steps_safe, _phase_note, _pitch_seq_entries,
                     _pitch_seq_note_byte, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries,
                     _pitch_seq_steps)  # noqa: F401
-from .wave_program import (_gated_slide_chain,
-                           _hold_wave_program_entry, _wave_program_entries,
+from .wave_program import (SLIDE_SEMITONE_MAX_CENTS, SLIDE_SEMITONE_SHARE,
+                           _gated_slide_chain,
+                           _hold_wave_program_entry, _slide_goals,
+                           _slide_semitones, _wave_program_entries,
                            _wave_program_hold_travels,
                            _wave_program_record_vibrates,
                            _wave_program_travel_entry, _wave_program_travels)  # noqa: F401

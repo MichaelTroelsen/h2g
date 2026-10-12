@@ -1,17 +1,31 @@
 """Wave program entries and travel (split out of goatwriter.py, text moved unchanged)."""
 from __future__ import annotations
 
-from typing import (List, Optional)
+import math
+from typing import (Dict, List, Optional)
 
 from ..detect import (decode_wave_program, Detection,
                       wave_program_set_stores_wave)
 from ..sidfile import (SidFile)
 from .constants import (FORMAT_GTS5, WAVE_NOTE_BASE,
                         WAVE_NOTE_KEEP, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
-from .primitives import (_first_frame_lead, _sfx_note_byte, _speed_index,
-                         _wave_byte, _wave_hold_byte)
+from .primitives import (_first_frame_lead, _note_freq, _sfx_note_byte,
+                         _speed_index, _wave_byte, _wave_hold_byte)
 from .vibrato import (_classic_vibrato_entry, _table_vibrato_entry,
                       _triangle_vibrato_entry)
+# How far the one semitone count a slide frame carries may sit from the pitch
+# the original sounds, for at least SLIDE_SEMITONE_SHARE of the instrument's
+# plays, before it is not worth writing. A single pitch is within a
+# quarter-tone (50 cents) by construction; a semitone is the widest spread one
+# count still stands for. The share is a quarter short of all of them because
+# the distribution it is read from over-attributes (a sticky instrument
+# column), and half was measured too few: Nemesis `$08F8`, 49% of its plays
+# on the lower pitch, took a count right for those and 390 cents wrong at the
+# high pitch it actually sounds at (mean error over its notes 31 -> 244).
+SLIDE_SEMITONE_MAX_CENTS = 100
+SLIDE_SEMITONE_SHARE = 0.75
+
+
 def _hold_wave_program_entry(left: List[int], right: List[int],
                              wave: int, multiplier: int) -> None:
     """Extend the entry just appended to cover a whole frame at `-S{m}`.
@@ -106,6 +120,94 @@ def _wave_program_hold_travels(fmt: str, running: int) -> bool:
     `_wave_program_record_vibrates`.
     """
     return fmt == FORMAT_GTS5 and bool(running & 0xFFFF)
+
+
+def _slide_semitones(pitches: Optional[Dict[int, int]], total: int) -> int:
+    """The whole-semitone offset that best stands for a slide's summed travel.
+
+    At `-S1` a `< $80` opcode is ONE wavetable entry and there is no spare
+    call for a portamento beside it (`_wave_program_travels`), so the frame
+    sounded the bare note where the player sounds `note - sum`. A wavetable's
+    right side can still say a *note*, relative to the pattern's, and a
+    semitone count is the one amount of travel it can carry in the same call.
+    Mega_Apocalypse `$09F9`'s slide frames 2-3 read `-$0200` / `-$05C0` in
+    the original and `0` / `0` here; its five other `$0797`-family files
+    open the same way.
+
+    **A linear offset is a different number of semitones at each pitch**
+    (`$0200` below `$14AF` is -1.8 st, below `$0600` it is -12), so the one
+    byte a block can carry is a choice against the instrument's notes. It is
+    the one minimising the play-weighted error in pitch -- the L1 reduction
+    `median_played_durations` argues for, in log-frequency -- over
+    `pitches`, `{note index: plays}` from `patterns.played_note_weights`.
+    For an instrument that plays one pitch (all 294 of `$09F9`'s notes) it
+    is that pitch's nearest semitone, within a quarter-tone; for one played
+    over a wide range it can be the zero it already was.
+
+    Returns 0, today's `WAVE_NOTE_BASE`, whenever the shift is not a clear
+    improvement: no distribution, a total of zero, a note the offset would
+    take to or below zero frequency (the player's `LDA freqhi,X / BEQ`
+    freezes there, a case a semitone cannot say), a candidate leaving the
+    note table, or a best shift that is still more than
+    `SLIDE_SEMITONE_MAX_CENTS` off for `SLIDE_SEMITONE_SHARE` of its plays --
+    an instrument played across octaves has no one semitone count, and a
+    compromise that is wrong by several semitones at a quarter of its notes
+    is not the original's slide.
+    Ties go to the smaller shift.
+    """
+    notes = _slide_goals(pitches, total)
+    if not notes:
+        return 0
+
+    def errors(k: int) -> Optional[List[tuple]]:
+        if any(not 0 <= n + k <= 95 for n, _, _ in notes):
+            return None
+        return [(abs(math.log2(_note_freq(n + k) / goal)), w)
+                for n, w, goal in notes]
+
+    def cost(k: int) -> float:
+        errs = errors(k)
+        return math.inf if errs is None else sum(e * w for e, w in errs)
+    best, best_cost = 0, cost(0)
+    for k in sorted(range(-48, 49), key=abs):
+        if k and cost(k) < best_cost:
+            best, best_cost = k, cost(k)
+    if not best:
+        return 0
+    # The weighted QUANTILE error, in cents: an instrument with one dominant
+    # pitch and a few strays still has one semitone count, the few strays
+    # being wrong by whatever they are.
+    seen = 0
+    need = sum(w for _, w, _ in notes) * SLIDE_SEMITONE_SHARE
+    for e, w in sorted(errors(best)):
+        seen += w
+        if seen >= need:
+            return best if e * 1200 <= SLIDE_SEMITONE_MAX_CENTS else 0
+    return 0
+
+
+def _slide_goals(pitches: Optional[Dict[int, int]],
+                 total: int) -> List[tuple]:
+    """`(note, plays, target frequency)` for each pitch `total` is applied to.
+
+    The target is the player's: the note's frequency minus the slides'
+    summed operands (modular 16-bit, so a sum at or above `$8000` is a net
+    rise). Empty where nothing can be said -- no distribution, a zero total,
+    or any note the offset would take to zero.
+    """
+    s = total & 0xFFFF
+    if not pitches or not s:
+        return []
+    delta = -s if s < 0x8000 else 0x10000 - s
+    notes = []
+    for n, plays in pitches.items():
+        if n < 0 or n > 95 or plays <= 0:
+            continue
+        target = _note_freq(n) + delta
+        if target <= 0:
+            return []
+        notes.append((n, plays, target))
+    return notes
 
 
 def _wave_program_record_vibrates(sid: SidFile, det: Detection,
@@ -294,7 +396,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           speed_table: List[tuple], fmt: str,
                           multiplier: int, budget: int,
                           written: bool = False,
-                          hold_travel: bool = False) -> Optional[tuple]:
+                          hold_travel: bool = False,
+                          pitches: Optional[Dict[int, int]] = None
+                          ) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
     The interpreter `detect.find_wave_program` reads, in 29 corpus files -- the
@@ -361,7 +465,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     (Auf_Wiedersehen_Monty, Pygmies_Revenge, held Arcade_Classics): melody
     0.9876 -> 0.6868, 0.9741 -> 0.7828, 0.9205 -> 0.5102, and identical on
     both trees when every attack is named one frame in -- the whole loss is
-    that frame. Above `-S1` the travel is emitted as it always was.
+    that frame. Above `-S1` the travel is emitted as it always was,
+    except on a record the player vibrates, which gets no closing travel
+    at any `-S` (Kings_of_the_Beach_intro records 13 and 16 at `-S5`).
     """
     if fmt != FORMAT_GTS5:
         return None
@@ -434,6 +540,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # existed. See the slide branch: it decides between re-anchoring on the
     # note and stepping on from where the last one left off.
     carried = False
+    # Whether the frequency Goattracker is holding right now is a slide frame's
+    # quantised pitch (`_slide_semitones`): the last entry was a slide that
+    # wrote one, with no absolute `set` since.
+    quantised = False
     # What the block after the loop needs: the restore entry, the stop, and
     # the portamento that puts the restore on the accumulator's pitch. Above
     # `-S1` that third entry is reserved whatever this opcode does, because the
@@ -441,10 +551,12 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # the last opcode a full budget admits. At `-S1` it is reserved from the
     # first opcode that leaves the sum non-zero (`_wave_program_hold_travels`),
     # so a program with no travel to close keeps every opcode it had.
-    closing = hold_travel and not _wave_program_record_vibrates(sid, det, i)
+    vibrates = _wave_program_record_vibrates(sid, det, i)
+    closing = hold_travel and not vibrates
 
     def tail(r: int) -> int:
-        return 2 + (1 if (_wave_program_travels(multiplier, fmt, 1)
+        return 2 + (1 if ((not vibrates
+                           and _wave_program_travels(multiplier, fmt, 1))
                           or (closing and _wave_program_hold_travels(fmt, r)))
                     else 0)
     for kind, wave, arg in decode_wave_program(data, at):
@@ -457,6 +569,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             right.append(_sfx_note_byte(arg))
             _hold_wave_program_entry(left, right, wave, multiplier)
             carried = False     # an absolute pitch, not the accumulator
+            quantised = False
             if set_stores:
                 persist = wave  # this player's `set` writes the stored cell
             continue
@@ -533,7 +646,22 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         if len(left) + cost + tail(running + arg) > budget:
             break
         left.append(_wave_byte(wave))
-        right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
+        # **At `-S1`, where no portamento fits beside this entry, the note it
+        # lands on is the quantised `note - sum`** (`_slide_semitones`) --
+        # `WAVE_NOTE_BASE` plus a relative note, `adc mt_chnnote / and #$7f`.
+        shift = 0 if travel else _slide_semitones(pitches, running + arg)
+        if carried:
+            right.append(WAVE_NOTE_KEEP)
+        elif shift:
+            right.append((WAVE_NOTE_BASE + shift) & 0x7F)
+            quantised = True
+        elif quantised and not travel and (running + arg) & 0xFFFF:
+            # A deeper frame whose own count was declined: stay where the
+            # last one put the voice rather than bounce up to the note.
+            right.append(WAVE_NOTE_KEEP)
+        else:
+            right.append(WAVE_NOTE_BASE)
+            quantised = False
         # `moved` rather than `travel`: a full speed table refuses the index,
         # and the hold has to cover the call the portamento did not take.
         moved = int(_wave_program_travel_entry(left, right, delta, speed_table,
@@ -608,13 +736,34 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # so the bit set in the table still falls with the pattern's note end.
     # Where the stored waveform has no gate bit (a program ending `slide
     # $00`, or `set $80` under `set_stores`) the restore has none either.
+    # **At `-S1`, the restore lands where the last slide frame already is**
+    # (`_slide_semitones`) instead of jumping back to the note for a frame:
+    # that jump up and the travel's jump down were two reversals a note
+    # where the original, which goes straight from its last slide to the
+    # hold, has none. Nemesis `0CC8` read 5 reversals in the original, 5 here
+    # before the slide frames were written and 331 with them. The tail then
+    # stands within a quarter-tone of the accumulator rather than on it, and
+    # no portamento is spent on the difference: the small step it makes is
+    # a slide to the trace (I_Ball, Bangkok and IK+ read 0 in the original
+    # and 24067, 6474 and 6547 of `bend` with it).
+    on_slide = closing and multiplier == 1 and not carried
+    shift = _slide_semitones(pitches, running) if on_slide else 0
+    if shift:
+        right_byte = (WAVE_NOTE_BASE + shift) & 0x7F
+    elif on_slide and quantised and running & 0xFFFF:
+        right_byte = WAVE_NOTE_KEEP     # the last frame's pitch stands
+    else:
+        right_byte = WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE
     left.append(_wave_byte(persist))
-    right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
+    right.append(right_byte)
     # **At `-S1` too, where `closing` says so** (`hold_travel`,
     # `_wave_program_hold_travels`): there the restore writes the note on
     # the hold's frame and this entry moves it onto the accumulator on the
     # next, which then stands for the rest of the note.
-    if not carried:
+    # **A record the player vibrates gets no closing travel at any `-S`**
+    # (`_wave_program_record_vibrates`): the vibrato rewrites the pitch from
+    # the note, so its tail is centred on the note, not the accumulator.
+    if not carried and not vibrates and right_byte == WAVE_NOTE_BASE:
         _wave_program_travel_entry(left, right, running, speed_table,
                                    fmt, multiplier, closing=closing)
     left.append(0xFF)

@@ -338,4 +338,7 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
                         lambda sid, det, tracks, patterns, *a, **k:
                         (tracks, patterns, {}))
     _fid, sng = _mega(lambda m: None)
-    assert hashlib.sha1(sng).hexdigest()[:12] == "3dd7d6f19319"
+    # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
+    # Mega's $09F9/$07E7 slide frames are now semitone counts; with
+    # note_pitches=None in convert() the old sha comes back.
+    assert hashlib.sha1(sng).hexdigest()[:12] == "f869f55046f6"

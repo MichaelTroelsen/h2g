@@ -428,6 +428,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               voice_two_stage: bool = False,
               instr_voices: Optional[dict] = None,
               instr_row_calls: Optional[dict] = None,
+              note_pitches: Optional[dict] = None,
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
               max_hard_restart: bool = False,
@@ -561,7 +562,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     instr_row_calls=instr_row_calls,
                     hold_travel=not (no_test_restart
                                      or real_firstwave_instruments
-                                     or gate_off_firstwave_instruments))
+                                     or gate_off_firstwave_instruments),
+                    note_pitches=note_pitches)
                 failed = {(rec, res) for (rec, _c, res), at
                           in zip(phase_split.clones, dry_starts) if not at}
                 if not failed:
@@ -924,7 +926,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # tail's pitch the next note's init call inherits is never heard.
         hold_travel=not (no_test_restart or real_firstwave_instruments
                          or gate_off_firstwave_instruments),
-        eor_phases=eor_phases)
+        eor_phases=eor_phases, note_pitches=note_pitches)
     # The sfx drum's one-frame bandpass, written into the filter programs of the
     # drum records. After the wavetable layout, because where the noise lands
     # is read off the laid-out block (`sfx_drum_hit_lattice`); the table is

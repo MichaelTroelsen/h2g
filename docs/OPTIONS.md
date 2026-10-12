@@ -1540,6 +1540,17 @@ record the player vibrates (its vibrato re-centres on the note) and in a song
 where any instrument opens on a real or gate-off firstwave (the next note's
 init call would open at the tail's pitch). See H2G-CONVERSION-METHOD.md §7.fff.
 
+**At `-S1` the slide frames are a note, not a portamento.** A `slide` opcode is
+one wavetable entry there, with no spare call for a travel beside it, so its
+frame writes the whole-semitone count that best stands for `note - sum` as a
+note relative to the pattern's, chosen against the pitches the instrument is
+played at and declined where one count does not stand for 75% of them. Where
+the closing hold applies the restore takes the last slide's count and no
+travel follows, so the tail is within a quarter-tone of the accumulator and not
+on it. Above `-S1` nothing changes. Mega_Apocalypse `$09F9`/`$07E7` and the
+`$0797` drums of I_Ball, Bangkok_Knights and Nineteen are the records it moves;
+see H2G-CONVERSION-METHOD.md §7.fff for the figures and the two losses.
+
 **One opcode is one frame, and one frame is `multiplier` play calls**, so every
 opcode takes a hold entry after it and the program runs at the player's rate at
 every `-S`. Until v0.5.235 the emitter refused a multiplier above 1 outright,

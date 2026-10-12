@@ -298,7 +298,10 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     monkeypatch.setattr(NP, "legato_tie_family", lambda sid, det: False)
     monkeypatch.setattr(C, "ALTERNATION_MIN_DIPS", 10 ** 6)
     sng, lines = _converted()
-    assert hashlib.sha1(sng).hexdigest()[:12] == "f5958c98a448"
+    # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
+    # Mega's $09F9/$07E7 slide frames are now semitone counts; with
+    # note_pitches=None in convert() the old sha comes back.
+    assert hashlib.sha1(sng).hexdigest()[:12] == "5c80923f655a"
     assert any("not emitted" in m for m in lines), lines
 
 

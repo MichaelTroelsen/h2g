@@ -90,4 +90,8 @@ def test_mega_ties_with_bit7_clear_become_legato_clones():
     assert any("legato clone" in l for l in legato), legato
     # The expanding-vibrato loops are not dropped for the clones' room.
     loops = next(l for l in lines if l.startswith("Expanding vibrato loops"))
-    assert " on 42 wavetable loop(s)" in loops, loops
+    # At least the 42 it kept before: a change that frees wavetable rows
+    # (the -S1 slide frames drop Mega's two closing travels) lets a
+    # 43rd fit, and what this pins is that none is dropped.
+    import re
+    assert int(re.search(r" on (\d+) wavetable loop", loops).group(1)) >= 42, loops

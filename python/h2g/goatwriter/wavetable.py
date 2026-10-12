@@ -64,7 +64,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        wave_alternate: bool = False,
                        log=None,
                        arp_gate_phase: Optional[int] = None,
-                       hold_travel: bool = False) -> tuple:
+                       hold_travel: bool = False,
+                       pitches: Optional[dict] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -190,7 +191,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         prog = _wave_program_entries(sid, det, i, speed_table, fmt,
                                      multiplier, budget,
                                      written=no_test_restart,
-                                     hold_travel=hold_travel)
+                                     hold_travel=hold_travel,
+                                     pitches=pitches)
         if prog is not None:
             return prog
 
@@ -1862,7 +1864,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       log=None,
                       instr_row_calls: Optional[dict] = None,
                       hold_travel: bool = False,
-                      eor_phases: Optional[dict] = None) -> tuple:
+                      eor_phases: Optional[dict] = None,
+                      note_pitches: Optional[dict] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1986,7 +1989,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                       else None if arp_gate_phases is None
                                       or phase is not None
                                       else arp_gate_phases.get(gt_number)),
-                                  hold_travel=hold_travel)
+                                  hold_travel=hold_travel,
+                                  pitches=(None if note_pitches is None
+                                           else note_pitches.get(gt_number)))
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is

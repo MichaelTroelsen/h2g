@@ -25,7 +25,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
                        cmdtable_frames_per_row,
-                       min_played_notes, median_played_durations,
+                       min_played_notes, median_played_durations, played_note_weights,
                        pattern_references, drop_unplayed_patterns,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
@@ -1135,6 +1135,7 @@ def convert(sid_path: str, log: Logger = print,
                          filters=filters, vibrato=vibrato,
                          min_notes=min_played_notes(tracks, new_patterns),
                          note_rows=median_played_durations(tracks, new_patterns),
+                         note_pitches=played_note_weights(tracks, new_patterns),
                          row_calls=short_row_calls,
                          compact_instruments=compact_instruments,
                          real_firstwave_instruments=real_firstwave_instruments,
@@ -1345,6 +1346,15 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
     every player fits is kept; where none does, the one that appends the
     most. Subtune 0 is never degraded: it is the tune the file starts on,
     and nothing appended after it moves its bytes.
+
+    **The instrument cap is the other one**, and none of those levels frees a
+    slot: it is checked on the merged file BEFORE `drop_unnamed_instruments`
+    runs, so records no pattern names count against 63 until the end
+    (5_Title_Tunes: 63 of 63 with 24 dead, 39 once dropped). Where every
+    level above left a player out and the option is on, the whole ladder runs
+    again with each player's unnamed records dropped before the merge
+    (`_append_level(drop_unnamed=True)`). Only then, so a file that appends
+    everything keeps its bytes.
     """
     players = det.players
     if isinstance(sid, PlayerView) or len(players) < 2:
@@ -1372,12 +1382,13 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
             levels.append((what, dict(levels[-1][1], **{flag: False})))
     views = {}
 
-    def best_level():
+    def best_level(drop=False):
         best = None
         for what, level_opts in levels:
             lines: List[str] = []
             out, appended = _append_level(sng, sid, players, have, multiplier,
-                                          level_opts, views, lines.append)
+                                          level_opts, views, lines.append,
+                                          drop_unnamed=drop)
             if best is None or appended > best[1]:
                 best = (out, appended, what, lines)
             if appended == len(players) - 1:
@@ -1394,6 +1405,28 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
         if again[1] > best[1]:
             best = (again[0], again[1],
                     again[2] + ", mixed wave steps left relative", again[3])
+    if best[1] < len(players) - 1 and opts.get("drop_unnamed_instruments"):
+        # The last rung, and the only one that frees instrument slots (and the
+        # wave and pulse rows only they reach): a view's own unnamed records
+        # are dropped before the merge instead of after it. The finished file
+        # drops them anyway (`drop_unnamed_instruments`, which is why this is
+        # gated on that option), so nothing audible is given up -- but the
+        # cap is checked BEFORE that drop, and a player that fits only
+        # once its dead records are gone was refused for them. Tried only
+        # after every other level has left a player out, so a file that
+        # appends everything today keeps its bytes. 5_Title_Tunes' players
+        # carry 63 of 63 slots with 24 of them dead.
+        again = best_level(drop=True)
+        if again[1] < len(players) - 1 and _past_table_wave.SPLIT_MIXED:
+            with _past_table_wave.mixed_split(False):
+                relative = best_level(drop=True)
+            if relative[1] > again[1]:
+                again = (relative[0], relative[1], relative[2]
+                         + ", mixed wave steps left relative", relative[3])
+        if again[1] > best[1]:
+            best = (again[0], again[1],
+                    again[2] + ", unnamed instruments dropped from the "
+                    "appended players", again[3])
     out, appended, what, lines = best
     for line in lines:
         log(line)
@@ -1407,8 +1440,12 @@ def _append_players(sng: bytes, sid: SidFile, det: Detection, multiplier: int,
 
 def _append_level(sng: bytes, sid: SidFile, players, have: int,
                   multiplier: int, view_opts: dict, views: dict,
-                  log: Logger):
-    """(song, players appended) for one set of the appended players' options."""
+                  log: Logger, drop_unnamed: bool = False):
+    """(song, players appended) for one set of the appended players' options.
+
+    `drop_unnamed` removes each player's instrument records that none of its
+    patterns names (`instrument_drop.drop_unnamed_instruments`) before it is
+    merged, which also leaves the table rows only they reached behind."""
     out = sng
     for k in range(1, len(players)):
         p = players[k]
@@ -1433,6 +1470,8 @@ def _append_level(sng: bytes, sid: SidFile, players, have: int,
             try:
                 extra = convert(view, log=lambda m, k=k: log(f"[player {k}] {m}"),
                                 **view_opts)
+                if drop_unnamed:
+                    extra = drop_unnamed_instruments_from(extra)
             except (UnsupportedSidError, ConversionAbort, ValueError) as exc:
                 stop = f"does not convert ({exc})"
         if stop is None:

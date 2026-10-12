@@ -311,7 +311,10 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     monkeypatch.setattr(B._gw_counter_fall, "unroll_fall_repeats",
                         lambda sid, det, tracks, *a, **k: tracks)
     sng, _ = _converted()
-    assert hashlib.sha1(sng).hexdigest()[:12] == "6aa0447e2cf5"
+    # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
+    # Mega's $09F9/$07E7 slide frames are now semitone counts; with
+    # note_pitches=None in convert() the old sha comes back.
+    assert hashlib.sha1(sng).hexdigest()[:12] == "76c21db5a76a"
 
 
 @needs_corpus

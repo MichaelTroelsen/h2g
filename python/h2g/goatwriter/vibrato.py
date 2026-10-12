@@ -971,7 +971,8 @@ def _triangle_rate_shift(multiplier: int = 1) -> int:
                                   / TRIANGLE_VIBRATO_PEAK)))
 
 
-def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
+def _table_vibrato_entry(byte: int, tv, multiplier: int,
+                         row_calls: int = 0) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the LFO-table format.
 
     The command-table engine's vibrato is a table walked one entry per frame,
@@ -1009,6 +1010,10 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
     the fastest oscillation Goattracker has -- 4 calls -- and exactly what the
     shortest of the four tables asks for.
 
+    `row_calls` >= 2 scales the half-period by `(row_calls - 1) / row_calls`
+    for the packed player's tick-0 effect skip, exactly as
+    `_classic_vibrato_entry` does; 0 and 1 leave the entry unchanged.
+
     One approximation the classic mapping has and this does not: the player
     takes the interval *above* the note here (`freq(note+1) - freq(note)`),
     which is the one Goattracker computes. What remains is the shape: the
@@ -1028,7 +1033,15 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
     length, peak = tv.shapes[index]
     if not length or not peak:
         return None
-    half = max(1, round(length * multiplier / 2.0))
+    half = length * multiplier / 2.0
+    if row_calls >= 2:
+        # The packed player runs no continuous effect on tick 0 of a row
+        # (REALTIMEOPTIMIZATION, see _classic_vibrato_entry), so the counter
+        # steps on `row_calls - 1` calls in `row_calls`. Same correction,
+        # same 0/1 = "do not compensate" convention. The excursion needs no
+        # separate term: `ratio` below reads the cmp actually emitted.
+        half = half * (row_calls - 1) / row_calls
+    half = max(1, round(half))
     cmp_value = min(0x7F, max(0, half - VIBRATO_CMP_BIAS))
     ratio = ((cmp_value + VIBRATO_CMP_BIAS) * (1 << tv.unit_shift)
              / (2.0 * peak * count))
@@ -1086,12 +1099,11 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     at the same place -- a note-relative speed-table entry and a vibdelay --
     and the derivation of each is in its own function.
 
-    `row_calls` is passed only to the classic engine. The packed player's
-    tick-0 effect skip (see _classic_vibrato_entry) applies to *every* vibrato
-    it runs, so the LFO-table and global-triangle entries carry the same error
-    -- they are left uncorrected because neither was measured, not because
-    they are exempt, and both are a two-line change once a population to
-    measure them on is chosen.
+    `row_calls` is passed to the classic and the LFO-table engines. The packed
+    player's tick-0 effect skip (see _classic_vibrato_entry) applies to
+    *every* vibrato it runs; the global-triangle entry is still uncorrected
+    (global-triangle-vibrato-tick0, not merged: it splits 5_Title_Tunes'
+    shared instrument records past the 63 cap).
 
     GTS5 only. A GTS2 file stores no speed table -- its loader packs the
     vibrato into a single instrument byte and calls makespeedtable itself
@@ -1110,7 +1122,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         engine = "bound/shift"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset
-        entry_of = lambda b: _table_vibrato_entry(b, det.table_vibrato, mult)
+        entry_of = lambda b: _table_vibrato_entry(
+            b, det.table_vibrato, mult, row_calls)
         engine = "LFO table"
     elif det.triangle_vibrato is not None:
         offset = det.triangle_vibrato

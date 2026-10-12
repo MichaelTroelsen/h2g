@@ -3061,6 +3061,64 @@ Pygmies_Revenge and held Arcade_Classics melody fell 0.9876 -> 0.6868, 0.9741 ->
 the note -- with those two frames taken from the original the two ADSRs read
 915 and 1034 against 621 and 860 (originals 1086 and 1034).
 
+**The `-S1` slide frames sound the original's offsets** (task
+wave-program-slide-frames-0797-family; figures are d29fbb5 -> this tree,
+`-t 180`, presets, siddump, and historical). At `-S1` a `< $80` opcode is one
+wavetable entry and a portamento beside it would double the program
+(`_wave_program_travels`), so frames 2-3 of Mega_Apocalypse `$09F9` (`slide
+$0200`, `slide $03C0`) sounded the bare note where the original reads `note -
+$0200` and `note - $05C0`. The right column cannot carry that amount but it can
+carry a *note*: the entry is now `WAVE_NOTE_BASE` plus the whole-semitone count
+that best stands for `note - sum` (`_slide_semitones`; `$09F9` writes `10/7E
+40/7A`, -2 and -6, `$07E7` `41/79 40/6D`). A linear offset is a different
+number of semitones at each pitch, so the count is chosen against the notes the
+instrument is played at (`patterns.played_note_weights`: the orderlist
+transposes, repeats and the sticky instrument column applied, as
+`min_played_notes` does): the one with least play-weighted error in
+log-frequency, declined (the old `$00`) unless it is within 100 cents for 75% of
+the plays -- half was too few, see below. A frame whose own count is declined
+after an accepted one writes `KEEP` rather than bouncing up to the note, and a
+zero sum, a note the sum would take to zero, and every call rate above `-S1`
+(where the portamento rides beside the opcode) are unchanged.
+
+**The restore takes the same count and the closing travel goes.** The restore
+the previous task left on the note, followed by the exact travel, was a one-frame
+jump up and a jump down that the original, which goes straight from its last
+slide to the hold, does not make: Nemesis `$0CC8` read 5 reversals in the
+original, 5 here before the slide frames and 331 after them. At `-S1`, where the
+closing hold applies (`hold_travel`, no vibrating record), the restore is now the
+last slide's count and nothing follows it. The tail stands within a quarter-tone
+of the accumulator rather than on it (Mega `$07E7`: `-3145` against `-3136`). The
+exact remainder was built and measured: a portamento by what the count leaves
+is a small step the trace calls a slide, and I_Ball, Bangkok_Knights and IK+,
+whose originals read 0 `bend`, read 24067, 6474 and 6547. A record the player
+vibrates, and a song with any real or gate-off firstwave, still restore to the
+note.
+
+Measured base -> new. Reversals per ADSR (original in brackets): Mega `$09F9`
+801 -> 1095 (1086), `$07E7` 860 -> 1034 (1034); the sum over every ADSR of
+|ours - original| falls on 10 of the 12 moved files (Nineteen 1153 -> 236,
+BMX_Kidz 736 -> 80, Mega 674 -> 224, Pandora 542 -> 323, Bangkok_Knights 2733 ->
+2296, I_Ball 3692 -> 3167) and rises on IK+ (3971 -> 4428: the short notes of `$08D8`/`$09F8` now make the
+original's one reversal each, and the surplus is on the long ones, where ours
+plays the program's later `set` opcodes and the original's trace of `$09F8`
+shows only the first two -- not explained here) and Nemesis (1198 -> 1208). Mean per-frame pitch error (cents, attack and last frame
+skipped): Mega `$07E7` 455 -> 23, `$09F9` 147 -> 76; I_Ball `$0797` 375 -> 31;
+Bangkok `$0797` 242 -> 39; Nineteen `$0797` 458 -> 28; Pandora `$0C99` 771 ->
+265; Nemesis `$0CC8` 506 -> 94. Columns moved: tie_agreement up on all twelve
+(Mega 0.630 -> 0.678, Pandora 0.241 -> 0.287, Nemesis 0.570 -> 0.652), depth_ratio
+Mega 0.726 -> 1.009. **Two losses.** Auf_Wiedersehen_Monty melody 0.9876 ->
+0.9830 and sequence 0.9684 -> 0.9633: a real-firstwave song, whose next note's
+init call opens at the previous tail's pitch (above), and nine short notes are
+cut mid-slide, so their attack frame names the shifted pitch where the original
+names the note -- identical named one frame in. And Nemesis `$08F8`, 31 -> 244
+cents over the 140 frames the start subtune plays it: its count is right for the
+lower pitch most of the file's subtunes use and 390 cents wrong at the higher one
+the start subtune does. Mega_Apocalypse's table, which was near full, goes from
+253 to 254 rows: the two closing travels it no longer spends let a 43rd swell loop
+fit (42 before; `Expanding vibrato loops` 18 nearest-fit loops with 14 swings
+merged at mean 5% off in size -> 17 with 13 at 2%), and none is dropped.
+
 **A vibrating record's slides, at `-S1`, as a portamento chain** (task
 nemesis-counter-gate-age-1-move). Nemesis `$0B09`/`$0C0A`/`$0C5A` moved at
 frame 4 against the original's frame 1, although the vibrato's counter gate
@@ -15947,3 +16005,18 @@ to 1.085. 20 files' bytes move, no other column does.
 for 99 more between two strikes 193 frames apart, so the gap between notes is not the
 sweep's length there (the cause was not traced; the reset at $E0D1 is per fetch, and
 what ends the sweep early is not read here).
+
+### 7.llllllll A legato-tie clone that opens on a waveform takes firstwave 0
+
+From task `note-flag-legato-clone-firstwave-gate` (merged at v0.5.529). A clone of a
+`FIRSTWAVE_TESTBIT` record in the `legato_tie_family` (the note_flag dialect) used to take
+firstwave = the record's waveform | 1. Goattracker's init call writes only that byte, and
+the pitch arrives one call later (`player.s` `mt_loadregswaveonly`), so a voice whose
+waveform register an effect had moved took the record's waveform and gate on the OLD pitch
+one frame early. The player writes the waveform, gate mask and frequency in the same frame
+(Monty `$E5A3`/`$E7F7`). `goatwriter/build.py` `clone_firstwave` now gives a legato clone
+whose first wavetable entry writes a waveform firstwave 0 ("no waveform yet"), as it already
+did for the restart kinds. 17 files move; Trans-Atlantic_Balloon_Challenge subtune 0
+voice 2 changes waveform and pitch together on frames 6494, 6592, 6883 and 6981. Above
+-S1 the clone's init call is the frame's last sampled call and neither spelling reproduces
+the original's single-frame change (Shockway_Rider, 26 frames); that is still open.

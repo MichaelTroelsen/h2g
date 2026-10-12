@@ -4992,6 +4992,68 @@ def min_played_notes(tracks: List[List[int]],
     return out
 
 
+def played_note_weights(tracks: List[List[int]],
+                        patterns: List[List[int]]) -> dict:
+    """`{goattracker instrument number: {note index: plays}}`.
+
+    The distribution `min_played_notes` takes the lowest member of: every
+    pitch an instrument is actually sounded at, weighted by how often the
+    orderlists play it. Wanted by an emitter whose answer is a *semitone*
+    count (`goatwriter.wave_program._slide_semitones`) and so depends on the
+    pitch the same linear frequency offset is applied to.
+
+    The same two attributions as `min_played_notes`, and for the same
+    reasons: the orderlist transpose is added to the note (gplay.c:927,
+    :977-981), and the instrument column is sticky across rows and patterns
+    (`_entry_instruments`). A pattern is counted once per (transpose, repeat)
+    it is played under, and a row reachable on two instruments counts for
+    both. Rows before any instrument has been named are unattributable and
+    are left out -- this is a distribution to minimise an error against, not
+    a bound that has to be safe, so dropping them is the neutral choice.
+
+    Indices are relative to `GT_FIRSTNOTE` and can be negative under a
+    transpose, exactly as `min_played_notes`'.
+    """
+    plays: dict = {}                     # {(pattern, transpose): times}
+    for track in tracks:
+        trans, repeat, operand = 0, 1, False
+        for b in track:
+            if operand:
+                operand = False
+            elif b == GT_ORDER_RESTART:
+                operand = True
+            elif GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+                trans = b - GT_TRANSPOSE_UP
+            elif GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+                repeat = b - GT_REPEAT + 1
+            elif b < len(patterns):
+                plays[(b, trans)] = plays.get((b, trans), 0) + repeat
+                repeat = 1
+
+    entry = _entry_instruments(tracks, patterns)
+    out: dict = {}
+    for (index, shift), times in plays.items():
+        pattern = patterns[index]
+        # Who each note row belongs to, over every state the pattern can be
+        # entered in: a row reachable on two instruments counts for both,
+        # once each, and not once per path (`median_played_durations`).
+        owners: dict = {}
+        for opener in (entry.get(index) or {None}):
+            current = opener
+            for row in range(len(pattern) // 4):
+                note, instr = pattern[4 * row], pattern[4 * row + 1]
+                if instr:
+                    current = instr
+                if current is not None and GT_FIRSTNOTE <= note <= GT_LASTNOTE:
+                    owners.setdefault(row, set()).add(current)
+        for row, who in owners.items():
+            n = pattern[4 * row] - GT_FIRSTNOTE + shift
+            for instr in who:
+                counts = out.setdefault(instr, {})
+                counts[n] = counts.get(n, 0) + times
+    return out
+
+
 def _apply_orderlist_tempos(new_track: List[int], moved: dict,
                             tempos: dict, patterns: List[List[int]],
                             copies: dict, log=None) -> int:

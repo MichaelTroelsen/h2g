@@ -17,6 +17,7 @@ note's init call opens at the tail's pitch (melody 0.99 -> 0.69 on
 Auf_Wiedersehen_Monty, identical named one frame in).
 """
 import json
+import math
 import pathlib
 import sys
 
@@ -111,13 +112,15 @@ def _mega(**extra):
 
 
 def _ins03_block(sng):
-    """Record 2's program -- `81/C2 10/00 40/00`, its set and two slides,
+    """Record 2's program -- `81/C2 10/xx 40/xx`, its set and two slides
+    (the right sides are the slide frames' own, test_wave_program_slide_frames),
     whatever lead the firstwave gives it -- up to its stop."""
     from songview import parse_sng
     song = parse_sng(sng)
     wt = song.tables["WTBL"]
     for p in range(len(wt) - 2):
-        if wt[p:p + 3] == [(0x81, 0xC2), (0x10, 0x00), (0x40, 0x00)]:
+        if (wt[p] == (0x81, 0xC2) and wt[p + 1][0] == 0x10
+                and wt[p + 2][0] == 0x40):
             k = p
             while wt[k][0] != JUMP:
                 k += 1
@@ -127,13 +130,18 @@ def _ins03_block(sng):
 
 @needs_corpus
 def test_the_conversion_carries_it_only_under_the_test_bit():
-    block, st = _ins03_block(_mega()[2])
-    assert block[-2][0] == PORTADOWN and st[block[-2][1] - 1] == (0x05, 0xC0)
+    # At -S1 the closing hold is the restore entry itself on the slides'
+    # semitone count (`$7A` = -6, the same byte as slide frame 3) rather
+    # than the note followed by a portamento: it stands within a quarter-tone
+    # of the accumulator for the rest of the note.
+    block, _st = _ins03_block(_mega()[2])
+    assert block[-2] == (0x40, 0x7A), block
+    assert block[-1] == (JUMP, 0x00)
     for extra in ({"no_test_restart": True},
                   {"real_firstwave_instruments": (3,)},
                   {"gate_off_firstwave_instruments": (3,)}):
         block, _st = _ins03_block(_mega(**extra)[2])
-        assert block[-2][0] not in (PORTADOWN, PORTAUP), extra
+        assert block[-2] == (0x40, NOTE_BASE), extra
         assert block[-1] == (JUMP, 0x00)
 
 
@@ -142,10 +150,11 @@ def test_the_conversion_carries_it_only_under_the_test_bit():
     __import__("fidelity").SIDDUMP).exists(), reason="no siddump")
 def test_mega_tails_hold_the_accumulator(tmp_path):
     """siddump of the packed conversion, 40 s. `$07E7` (record 6, slides
-    `$0600 + $0640`) holds `note - $0C40` (-3136) from frame 10 to the next
-    note, as the original does from frame 9; frame 9 is the restore's one
-    call on the note, which is where the travel's frame goes. Before, the
-    whole tail sat on the note."""
+    `$0600 + $0640`) holds `note - $0C40` (-3136) from the restore on frame 9
+    to the next note, as the original does from frame 9. The restore is the
+    slides' semitone count, so the tail is within 100 cents of the
+    accumulator (here -3145 against -3136) and not on it; before, the whole
+    tail sat on the note, and before the slide frames, one frame later."""
     fidelity, _opts, sng = _mega()
     sng, _ = fidelity.legalise_restarts(bytes(sng))
     packed = fidelity.pack_sid(sng, tmp_path, fidelity.GT2RELOC, 1)
@@ -162,8 +171,10 @@ def test_mega_tails_hold_the_accumulator(tmp_path):
             if ad[f0] != 0x07E7 or end - f0 < 12:
                 continue
             notes += 1
-            assert fq[f0 + 9] == fq[f0], (f0, fq[f0:end])
-            tail = [fq[f] - fq[f0] for f in range(f0 + 10, end - 1)]
-            assert tail and set(tail) == {-0x0C40}, (f0, tail)
+            tail = [fq[f] for f in range(f0 + 9, end - 1)]
+            assert tail and len(set(tail)) == 1, (f0, fq[f0:end])
+            note, goal = fq[f0], fq[f0] - 0x0C40
+            assert goal > 0 and abs(math.log2(tail[0] / goal)) * 1200 < 100, (
+                f0, hex(note), hex(tail[0]), hex(goal))
             held += len(tail)
     assert notes >= 20, notes
