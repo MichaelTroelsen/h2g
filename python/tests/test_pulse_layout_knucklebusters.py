@@ -7,7 +7,13 @@ in subtune 2) was the one played record to lose its sweep -- its full block was
 eight entries and seven were left, so it kept its set `$81 $40` at pointer 249
 and nothing more. Its loop body is GT14's entry for entry, so a jump into
 GT14's loop costs the 3-entry prefix plus one jump, four entries, not eight,
-and `_lay_out_pulse` now writes that. The table is still 255 of 255.
+and `_lay_out_pulse` now writes that. The table was 255 of 255.
+
+Since the bounds engine turns on the player's lattice (`_pulse_program`
+passes the record's rate as the step) the table is 245 of 255: ten rows of
+room, so this no longer FILLS the table and the test guards the weaker
+property (every played record keeps its whole program, GT26 included) rather
+than surviving an overflow. The overflow cases are test_pulse.py's.
 """
 import json
 import sys
@@ -61,7 +67,7 @@ def test_every_record_keeps_its_whole_program_and_gt26_jumps_into_gt14s_loop(
     out, usage, programs, statics, lead = _convert_capturing(monkeypatch)
     song = songview.parse_sng(out)
     ptbl = song.tables["PTBL"]
-    assert len(ptbl) == 255, "the premise: Knucklebusters fills the table"
+    assert len(ptbl) == 245, "the premise: the lattice-turn programs, 245 of 255"
     by_number = {ins.number: ins for ins in song.instruments}
     assert 25 in [i for i, u in enumerate(usage) if u] and usage[25] == 8,         "the premise: GT26 is record 25 and sounds 8 notes"
     short = []

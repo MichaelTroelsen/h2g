@@ -2522,6 +2522,19 @@ as a corpus-wide side effect) goes 0.00 -> +0.13. Bangkok, IK_plus and I_Ball do
 build's gate scores 0.70 at lag 7, above the old build's best of 0.66 at
 lag 4.
 
+**A pair no clean row can take goes inside a run of identical 1XY/2XY**
+(`patterns._slide_covered_regrid_spot`, tried only after the shift finds
+nothing). `CMD_SETTEMPO` is one-shot (player.s `mt_tick0_f` never writes
+`mt_chnfx`), so over a repeated slide cell it leaves the slide running exactly
+as the cell would have set it; rows r-1, r and r+1 must carry the same command
+and parameter. Ties (3XY) are excluded: the cell decides whether its note is
+retriggered. Of the 7 pairs declined at f75cc7f (Arcade 2, Monty 1, Nineteen 1, Trans-Atlantic 3), the blocking cells are: Nineteen 1
+(`1XY` on every row 7-55, so this rule takes it); Trans-Atlantic 3 (a `3 00`
+tie on every second row, so no two adjacent rows are free); Monty 1 and Arcade
+2 (tie cells; Arcade's free rows sit right behind a tie). Measured on
+the 95-file corpus under presets: only Nineteen moves. Its ledger -5.6 -> -4.6
+calls, `drift` per 1000 at `-t 180` -1.61 -> -1.46. The tie cases stay open.
+
 **It reaches 17 corpus files and is adopted on 13.** Measured by corpus
 byte-hash at f0fd20c: every file converted on its shipped preset with `regrid`
 forced False and then True, 89 of 89 converting in both arms, exactly 17 moved.

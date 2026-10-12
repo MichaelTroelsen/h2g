@@ -87,6 +87,12 @@ def test_a_band_whose_top_is_below_its_bottom_crosses_fff():
     three voices climbing $080, $104, ... $FF8 (30 frames of +132) before the
     next note reseeds it. This branch froze it at $080: 1 pulse change per
     voice against the original's 342, pspan 0.00. After: 394 and 1.00.
+
+    The turn is on the first width of the step lattice inside the bound's
+    nibble, not on the last one before the wrap: from $080 the climb passes
+    $FF8 (the 30th step, where a note is seen to end) and turns on the 31st,
+    $07C. RETRACTED: "ascent == 90, top == 0xFF8" -- one step short of the
+    player's turn.
     """
     sid = _sid([_record(0x80, 0x00, rate=0x84)], [0x02])   # low 2, high 0
     entries, loop = _pulse_program(sid, _det(1), 0, True, 3)
@@ -94,24 +100,29 @@ def test_a_band_whose_top_is_below_its_bottom_crosses_fff():
     speed = round(0x84 / 3)                                # 44: 132 a frame
     assert entries[1][1] == speed
     ascent = sum(t for t, sp in entries[1:loop] if sp == speed)
-    assert ascent == ((0 - 0x80) & 0xFFF) // speed == 90, "up through the wrap"
+    assert ascent == ((0x07C - 0x80) & 0xFFF) // speed == 93, "up through the wrap"
     top = (0x80 + ascent * speed) & 0xFFF
-    assert top == 0xFF8, "where the original's climb is seen to end"
+    assert top == 0x07C, "the first lattice width in nibble 0, past the wrap"
     down = entries[loop:]
     assert down[0][1] == (0x100 - speed) & 0xFF, "the loop lands on the descent"
     descent = sum(t for t, sp in down if sp == (0x100 - speed) & 0xFF)
-    assert descent == ((top - 0x200) & 0xFFF) // speed, "back down to the low nibble"
+    assert descent == ((top - 0x290) & 0xFFF) // speed == 81, \
+        "back down to the first lattice width in the low nibble, $290"
     assert sum(t for t, sp in down if sp == speed) == descent
 
 
 def test_a_band_of_one_nibble_jitters_one_step_each_way():
     """high == low: the player reaches the nibble and then alternates one step
     down, one step up, forever (`CMP` equal on both branches). The modular
-    descent distance is ~0 and `max(1, ...)` gives exactly that."""
+    descent distance is ~0 and `max(1, ...)` gives exactly that.
+
+    From the seed $800 the player's first step is UP ($840, still nibble 8, so
+    it turns), and the jitter is $800 / $840 from then on. RETRACTED:
+    `[(0x88, 0), (1, 0xC0), (1, 0x40)]`, which jittered $7C0 / $800."""
     sid = _sid([_record(0x00, 0x08, rate=0x40)], [0x88])   # seed $800, band 8..8
     entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
-    assert entries == [(0x88, 0x00), (1, 0xC0), (1, 0x40)]
-    assert loop == 1
+    assert entries == [(0x88, 0x00), (1, 0x40), (1, 0xC0), (1, 0x40)]
+    assert loop == 2
 
 
 def test_the_unwrapped_path_is_untouched_by_the_wrapped_one():
@@ -141,8 +152,9 @@ def test_kings_of_the_beach_ingame_instrument_4_is_the_measured_wrapped_case():
     assert (sid.data[base + 1] & 0x0F, sid.data[base]) == (0x00, 0x80)
     entries, loop = _pulse_program(sid, det, 4, True, 3)
     assert entries[0] == (0x80, 0x80)
-    assert sum(t for t, s in entries[1:loop] if s == 44) == 90
-    assert loop == 2, "set, then one 90-call ascent (under the 7F tick byte)"
+    assert sum(t for t, s in entries[1:loop] if s == 44) == 93, \
+        "31 frames of +132: $080 ... $FF8 and the turn on $07C"
+    assert loop == 2, "set, then one 93-call ascent (under the 7F tick byte)"
 
 
 def test_a_sweep_opens_at_the_records_own_width_not_at_a_bound():
@@ -180,14 +192,18 @@ def test_a_width_below_the_low_bound_is_kept_and_swept_up_from():
     assert entries[1][0] == ((8 << 8) - 0x100) // 0x40
 
 
-def test_a_width_above_the_high_bound_is_clamped_down_to_it():
-    """The other direction *is* clamped: a width past the top has nowhere to
-    ascend, and the descent is measured from where the ascent stopped."""
+def test_a_width_above_the_high_bound_runs_on_through_the_wrap_to_it():
+    """RETRACTED: "the other direction *is* clamped" -- opening on the bound
+    ($800), no first ascent. The player compares nibbles for EQUALITY after
+    the step and never clamps, so a width past the top climbs through $FFF
+    and turns on the first lattice width in nibble 8 ($FFF + $40k: $83F, 33
+    steps on), as `PulseBoundsSim` does (Saboteur_II, frame for frame)."""
     sid = _sid([_record(0xFF, 0x0F, rate=0x40)], [0x82])
     entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
     opened = ((entries[0][0] & 0x0F) << 8) | entries[0][1]
-    assert opened == (8 << 8)
-    assert loop == 1, "no first ascent from the top"
+    assert opened == 0xFFF, "the record's own width"
+    assert entries[1] == (33, 0x40), "up through the wrap to $83F"
+    assert loop == 2, "the first top is the cycle's: $2FF / $83F from then on"
 
 
 def test_the_flag_off_is_the_inherited_static_encoding():
@@ -220,14 +236,15 @@ def test_the_span_is_recomputed_from_the_speed_actually_emitted():
     the right band, so ticks come from the rounded speed rather than the rate."""
     sid = _sid([_record(0x00, 0x09, rate=0x0B)], [0x91])  # width $900 = the top
     entries, loop = _pulse_program(sid, _det(1), 0, True, 2)
-    speed = 0x100 - entries[loop][1]
+    speed = entries[1][1]
     assert speed == round(0x0B / 2)
-    # Opening at the high bound means no first ascent, so `loop` is 1 and the
-    # descent covers the whole band -- computed from the speed emitted, not the
-    # rate, which is the point of the test.
-    assert loop == 1
-    assert sum(t for t, sp in entries[1:]
-               if sp == (0x100 - speed) & 0xFF) == ((9 - 1) << 8) // speed
+    # The player opens on the top nibble, steps up to $90B (still nibble 9)
+    # and turns, descends 11 a frame to $1FF, and climbs back to $900 -- so
+    # the first descent is 1804 wide and is laid in ticks of the speed
+    # EMITTED (6), nearest-rounded: 301 ticks, not 1804 / 5.5.
+    down = (0x100 - speed) & 0xFF
+    first_descent = sum(t for t, sp in entries[1:loop + 1] if sp == down)
+    assert first_descent == round((0x90B - 0x1FF) / speed) == 301
 
 
 def test_speed_is_capped_below_the_byte_that_would_read_as_negative():
@@ -255,8 +272,11 @@ def test_a_leg_longer_than_a_tick_byte_becomes_consecutive_steps():
     ups = [e for e in entries[loop:] if e[1] == 0x01]
     downs = [e for e in entries[loop:] if e[1] == 0xFF]
     assert len(ups) == len(downs) > 1
-    assert sum(t for t, _ in ups) == (15 << 8)
-    assert loop == 1, "opening at the high bound needs no first ascent"
+    # $0FF to $F00: the cycle's legs run between the first widths in the two
+    # bounds' nibbles ($F01 is the first top, once; $F00 every later one).
+    assert sum(t for t, _ in ups) == 0xF00 - 0x0FF
+    assert sum(t for t, _ in downs) == 0xF00 - 0x0FF
+    assert loop > 1, "opening on the top nibble steps up and turns first"
 
 
 # --- the table as a whole --------------------------------------------------
@@ -270,7 +290,11 @@ def test_start_positions_follow_the_programs_rather_than_a_stride():
     assert starts[0] == 1, "Clear Voice keeps entry 1"
     assert starts[1] == 3
     assert starts[2] == 5              # after the first static program
-    assert starts[3] == 5 + 4          # after set + up + down + jump
+    # After the swept program: set, the first step up (the record opens on
+    # the top nibble, so the player steps up and turns), the first descent,
+    # the cycle's two legs and the jump. Four entries before the bounds
+    # engine turned on the player's lattice.
+    assert starts[3] == 5 + _cost(sid, _det(3), 1) == 5 + 6
     for start in starts:
         assert 1 <= start <= len(entries)
 
@@ -315,8 +339,10 @@ def test_identical_programs_are_not_shared_while_every_block_fits():
     (and the fixture) encodes."""
     sid = _sid([_record(rate=0x40)] * 3, [0x82] * 3)
     entries, starts = _pulse_layout(sid, _det(3), 4, True, 1)
-    assert starts == [1, 3, 7, 11], "three copies of the four-entry block"
-    assert len(entries) == 2 + 3 * 4
+    block = _cost(sid, _det(3), 0)
+    assert block == 6, "set, first step up, first descent, two legs, jump"
+    assert starts == [1, 3, 3 + block, 3 + 2 * block], "three copies of the block"
+    assert len(entries) == 2 + 3 * block
 
 
 def test_an_overflowing_table_shares_identical_programs_at_one_start():
@@ -387,8 +413,18 @@ SWEEP = {64: 0x89, 60: 0x8A, 56: 0x8B, 52: 0x8C, 48: 0x8D, 44: 0x8E, 40: 0x8F,
 
 
 def _sweeps(costs):
-    """(records, bounds) for sweeps costing `costs` entries each."""
-    return [_record(pulse_lo=0, rate=1) for _ in costs], [SWEEP[c] for c in costs]
+    """(records, bounds) for sweeps NOMINALLY costing `costs` entries each.
+
+    The keys are the costs the sweeps had before the bounds engine turned on
+    the player's lattice; the realized costs are lower (`_cost` reads them),
+    and the scenarios below that depend on a sum assert it from `_cost`.
+
+    The record opens one step below the top nibble ($7FF, so its first step
+    lands on $800 and turns), which keeps the first top the cycle's own. The
+    jitter band 8..8 opens ON the nibble ($800) instead."""
+    recs = [_record(pulse_lo=0x00 if c == 4 else 0xFF,
+                    pulse_hi=0x08 if c == 4 else 0x07, rate=1) for c in costs]
+    return recs, [SWEEP[c] for c in costs]
 
 
 def _cost(sid, det, i):
@@ -461,14 +497,23 @@ def test_a_record_that_sounds_keeps_at_least_its_width():
 def test_a_record_that_sounds_nothing_is_the_one_that_goes_without():
     """A record no note ever sounds under never has its pulse pointer loaded
     (gplay.c:375), so whatever it points at is inaudible. It is allocated
-    last and, here, gets nothing -- while the six played records after it in
+    last and, here, gets nothing -- while the five played records after it in
     the instrument table all keep their sweeps. Index order gave the unplayed
     record the first block and silenced the last played one."""
-    n = 7
-    recs, bounds = _sweeps([48, 64, 60, 56, 52, 16, 4])
+    # Five played sweeps of 65 + 61 + 57 + 37 + 33 = 253 entries (bounds
+    # $88 $89 $8A $8F $80, opening on $7FF) and the 2 of the clear voice
+    # fill 255 exactly, leaving no room for the unplayed record's static
+    # pair. (Six played ones, 252, before the legs turned on the lattice:
+    # a sweep's cost now steps by 4 from 5, so six distinct ones cannot sum
+    # to 252 or 253.)
+    n = 6
+    recs = [_record(pulse_lo=0xFF, pulse_hi=0x07, rate=1) for _ in range(n)]
+    bounds = [0x8D, 0x88, 0x89, 0x8A, 0x8F, 0x80]
     sid = _sid(recs, bounds)
     det = _det(n)
-    usage = [0] + [10] * 6
+    assert [_cost(sid, det, i) for i in range(1, n)] == [65, 61, 57, 37, 33]
+    assert 2 + sum(_cost(sid, det, i) for i in range(1, n)) == GT_MAX_TABLELEN
+    usage = [0] + [10] * 5
     entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)
     assert starts[1] == 0, "the unplayed record is the one with no width"
     for i in range(1, n):

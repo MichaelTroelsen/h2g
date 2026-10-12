@@ -27,8 +27,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_pulse_phase import (_OVERFLOWING, _forced_pulse_phase_logs,  # noqa: E402
-                              _forced_table_args, _play_pulse_table)
+from test_pulse_phase import (_OVERFLOWING, _bound_to_bound,  # noqa: E402
+                              _forced_pulse_phase_logs, _forced_table_args,
+                              _play_pulse_table)
 
 _CALLS = 3200
 _LAST_V8 = {"Last_V8.sid": 223, "Last_V8_C128_version.sid": 224}
@@ -46,11 +47,16 @@ def _unlimited(args: tuple):
         G.constants.GT_MAX_TABLELEN = limit
 
 
-def test_last_v8_sets_every_records_width_under_forced_pulse_phase():
+def test_last_v8_sets_every_records_width_under_forced_pulse_phase(monkeypatch):
     """0 records on pointer 0 where 12 were; the one degraded record is
     instrument 9, and the figures that keep it out are printed: its shared
-    block against the rows left after the 223 laid."""
+    block against the rows left after the 223 laid.
+
+    Laid on the bound-to-bound loops (`_bound_to_bound`) this was measured
+    on: on the sweep's lattice Last_V8 fits whole and the reserve is not
+    consulted (`test_last_v8_fits_on_the_lattice_legs`)."""
     import h2g.goatwriter as G
+    _bound_to_bound(monkeypatch)
     from h2g.goatwriter import _phase_block, _phase_sweep_params
     for name, rows in _LAST_V8.items():
         args, table = _forced_table_args(name)
@@ -73,11 +79,13 @@ def test_last_v8_sets_every_records_width_under_forced_pulse_phase():
                    for l in lines), lines
 
 
-def test_reserved_layout_plays_what_the_unlimited_table_plays():
+def test_reserved_layout_plays_what_the_unlimited_table_plays(monkeypatch):
     """Every CMD_SETPULSEPTR target and every record pointer plays, call for
     call over 3200 calls, what the same one plays from the per-phase layout
     with no table limit -- except instrument 9, which plays its own record
-    width and holds it (the static fallback)."""
+    width and holds it (the static fallback). On the bound-to-bound loops
+    (`_bound_to_bound`), the regime where Last_V8 reaches the reserve."""
+    _bound_to_bound(monkeypatch)
     for name in _LAST_V8:
         args, (entries, starts, index) = _forced_table_args(name)
         lead = args[7]

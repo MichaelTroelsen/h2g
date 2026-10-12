@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.528 — 2026-10-12
+
+- runqueue cycle 11: 7 subtasks merged, 52 files move under presets
+
 ## 0.5.527 — 2026-10-12
 
 - runqueue cycle 10: Mega counter-fall alternation, regrid first choice behind a continuous effect, Sun_Never_Shines late filter rows, Ninja phase attack; mega-pattern-15 and pulse-phase-capacity held

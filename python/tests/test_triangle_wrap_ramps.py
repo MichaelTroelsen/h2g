@@ -19,6 +19,13 @@ HOLDS $F00 through them -- two voices stepping one record in opposite
 directions. The wrap ramp now climbs where the table used to descend; the
 attack frame agrees either way and the frames after it agree in neither,
 57 of 588 before and after. The per-voice phase cannot say "hold".
+
+RETRACTED: "The per-voice phase cannot say 'hold'" -- a phase whose direction
+is `goatwriter.hold_direction(k)` does (`patterns._triangle_hold`,
+tests/test_triangle_hold.py): the two voices now open on the original's
+width and hold what it holds, and the paragraph's 57 of 588 is 623 of 624.
+The planned phases ($F00 up on v0, $F00 down on v1) are the holds' $F00 and
+$E80 now.
 """
 from __future__ import annotations
 
@@ -111,7 +118,12 @@ def test_a_lap_on_a_bound_does_not_chain_and_still_lands():
     1+10+11; tests/test_pulse_phase_union.py)."""
     from h2g.goatwriter.pulse import _chained_phases, _union_kind
     want = {(0x800, +1), (0x900, +1), (0xA00, -1), (0x800, -1), (0xE00, +1)}
-    assert _chained_phases(want, 0x40, LO, HI, False, 0x80) == {(0x800, +1), (0x900, +1),
+    # The loop turns on the sweep's lattice -- $880..$E00 at step $80
+    # (`_phase_cycle`), not on the bounds -- so the chained legs run
+    # between those, and ($800, up) lies below the leg that starts at $880
+    # (it was chained when the legs ran $800..$E00; it climbs to $E00 on its
+    # own piece now). Re-pinned at the phase blocks' lattice legs.
+    assert _chained_phases(want, 0x40, LO, HI, False, 0x80) == {(0x900, +1),
                                                                 (0xA00, -1)}
     assert _union_kind(want, 0x40, LO, HI, False, 0x80) == "chained"
     # the clamp's reading of the same set, kept for a hand-built tuple
@@ -129,12 +141,17 @@ def test_the_shipped_tables_open_the_named_phases_the_sweeps_way():
     """In the tables convert.py ships (presets, `pulse_phase` forced), the
     out-of-band entries named by the opening task now move the way the
     original's sweep does on their first calls. Before: Human_Race $080
-    $0C0 $100, Devils_Galop $F00 $EE0 and $E00 $DE0, Commando $800 $87F."""
+    $0C0 $100, Devils_Galop $F00 $EE0 and $E00 $DE0, Commando $800 $87F.
+    (Devils_Galop's two have since become holds.)"""
+    from h2g.goatwriter import hold_direction
     cases = {
         "Human_Race.sid": {(2, 0x080, -1): [0x080, 0x040, 0x000, 0xFC0, 0xF80]},
-        "Devils_Galop.sid": {(10, 0xF00, +1): [0xF00, 0xF20, 0xF40, 0xF60, 0xF80],
-                             (10, 0xE00, +1): [0xE00, 0xE20, 0xE40, 0xE60, 0xE80,
-                                               0xE60, 0xE40, 0xE20, 0xE00, 0xDE0]},
+        # Devils_Galop's $F00 up and $E00 up are no longer planned: voices 0
+        # and 1 hold that record (tests/test_triangle_hold.py), so the keys
+        # are its holds -- voice 0's $F00 and voice 1's $E80, the width it
+        # opens off by a step.
+        "Devils_Galop.sid": {(10, 0xF00, hold_direction(0)): [0xF00] * 4,
+                             (10, 0xF00, hold_direction(-1)): [0xE80] * 4},
         "Commando.sid": {(7, 0x800, -1): [0x800, 0x781, 0x702, 0x683]},
     }
     for name, want in cases.items():

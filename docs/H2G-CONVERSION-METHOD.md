@@ -12479,6 +12479,66 @@ BMX_Kidz bend 0.29 -> 0.49, depth 1.08 -> 1.23. At -S2 the loop's turns
 land between a frame's two calls (Skate_or_Die_intro `$0AD9` amplitude 0.95
 -> 0.73 when it ran there), hence -S1 only.
 
+**A pattern the swell is wanted on by some positions and not others is
+copied per set of rows wanted** (`expanding_vibrato_split`, before the `4xy`
+pass and again before the loop step). Patterns are global and orderlists are
+per subtune, and both passes write a row only where every orderlist position
+reaching it wants the same entry -- a `4xy` or a wavetable loop shakes
+whatever instrument is sounding. Mega_Apocalypse pattern `$0F` is 64 rows of
+notes and rests, none naming an instrument: voice 1 enters it holding
+slot 4 (`$09B7`, a swell), voice 3 holding slot 1 or 2 (plain). The positions
+disagreed on every hold row, so slot 4's long low notes kept the instrument's
+own shallow level and swung 28 units (a 54-frame note) against the original's
+1634. The split reads each position's want set off the pass's own walk
+(`_expanding_vibrato_wants(visits=)`), gives positions that want the same rows
+one copy, leaves the source to the positions that want nothing (else the
+largest group), and repoints the others -- same-length orderlists, so the
+bytes already written are written over, and the copies registered in
+`split_copies` for the bit-7 attribution. A pattern whose copies would pass
+`MAX_PATT` is left whole and counted. The walk is one lap, as the passes'
+are: a position the restart re-enters on another instrument is not asked
+(Arcade_Classics and Ricochet read 32 rows differently lapped; Mega_Apocalypse
+and BMX_Kidz none), and walking the lap in the split alone gave Mega_Apocalypse
+two more copies (14 + 1) and the same written-row counts.
+
+**The split's extra loops do not fit Mega_Apocalypse's wavetable, so the
+loops that differ least share** (`_expanding_vibrato_loop_share`). A swing
+loop is `F4 idx / FF -> F4` behind the row's remainder, two entries and the
+remainder, one per distinct (remainder, speed entry). With pattern `$0F`
+split the loop step wants 56 of them, 126 entries, for the 99 the wavetable
+has left (156 are taken before it, the counter fall's alternation among
+them): the first attempt, beside the alternation, dropped 39 rows to their
+`4xy` for a full table. While the blocks do not fit, the loop whose rows
+lose least -- the log-space distance between the swing they were given and
+the neighbour's, taken on the notes the entry was chosen on, per entry freed
+-- gives its rows to another loop with the SAME remainder; where everything
+fits nothing is touched (the song without the split, Mega_Apocalypse without
+it: 248 of 255, byte-identical). Mega_Apocalypse: 14 loops merged, 18 rows
+moved, mean 5% off in size, 42 loops, every one of 1278 rows keeps a loop and
+none is dropped for a full table. With the alternation switched off the
+build is 22267 bytes (`f5958c98a448`, before the sharing 22281,
+`425fd3fbd1c1`, with 14 rows past the table's end); with the split off as
+well it is `3dd7d6f19319` again, so that sha moved for the split alone.
+
+Measured (siddump, -t 180, presets, v0.5.527 + this change; `fidelity.py`
+row, `pernote` probe): Mega_Apocalypse 12 + 1 pattern copies (.sng 20652 ->
+22388 bytes, wavetable 255 of 255); the pass writes 1066 -> 1343 `4xy` rows,
+the loop step 1034 -> 1278 on 39 -> 42 loops. `$09B7`: peak-to-peak of the
+54-frame notes 28 -> 1020 (original 1634; the 60-frame notes already read 1104
+against 1766 before this change), 12-frame notes 227 -> 293 (288); reversals 211 -> 214 (258);
+gross travel 133273 -> 170494 (original 956947, one 102-frame note). Not
+better: the file's `bend` ratio 1.677 -> 1.703 and `travel` ratio 1.171 ->
+1.200 (slides 1380 -> 1254, original 880) -- the split newly commands the
+hold rows of the other two `$09F9` instruments, slots 10 and 13, which the
+original's arpeggio and fall program travels less than ours; not isolated
+here. `$09B7` still swings
+under the original (the 54-frame notes 1020 against 1634): the cause is not
+isolated here. Held side effects, measured only: Arcade_Classics 50 -> 70 patterns, depth ratio
+0.782 -> 0.928, bend 0.686 -> 0.942, melody 0.9205 -> 0.9187 (the attack-frame
+naming artefact above); BMX_Kidz 13 -> 16 patterns, bend 0.490 -> 0.389, travel
+0.653 -> 0.714 (slides 1092 -> 949); Ricochet 33 -> 40 patterns, depth 0.680 -> 0.689; Skate_or_Die_intro
+moves by 4 ties and 4 slides (10038 -> 10042, 789 -> 785). Commando is unchanged.
+
 ### 7.gggggg The classic vibrato is gated on a per-note frame counter, and the emitter bends from frame 1
 
 Found by refuting a lead. Food Feud's instrument transpose (§ 6, version 11's
@@ -12815,6 +12875,81 @@ Still behind `pitch_seq`, which the shipped preset does not carry for this
 file -- a one-song `presets.py --fidelity` search at 180 s selects it on both
 trees.
 
+**The classic outer-gated players' undivided phase is a clock too** (task
+pitch-seq-flat-clock-other-files; figures historical, taken at f75cc7f plus
+this change). Of the 36 corpus files that detect the bit-`$10` block, the
+modal rotation served 34. `_pitch_seq_outer_flat_clock` now reads 24 of them
+from the player, with `_pitch_seq_flat_clock` dispatching between it and
+Mega_Apocalypse's zero-page reader (`_pitch_seq_zp_flat_clock`). The shape is
+Bangkok_Knights `$8059`: the outer `JMP` gate with the speed gate directly
+behind it, the voice loop on EVERY call (the outer gate withholds only the
+fetch: `LDA outer / BEQ nofetch`, `LDA inner / CMP speed / BNE`), the loop's
+exit `DEX / BMI +3 / JMP loop` followed by the phase `DEC / BPL / LDA #2 / STA`
+(W_A_R's is a tail routine the exit `JMP`s to), and the new-song call `JMP`ing
+straight to it. So the phase steps once per call, the new-song call steps it
+and nothing else, and the cells' first values are the file's bytes. Required
+in full, plus: no writer of the outer, speed-counter or phase cell but the
+gate's own (Dragons_Lair_Part_II and Kings_of_the_Beach_ingame prime the outer
+cell in their init, Knucklebusters stores both from a song event: declined),
+and a PSID init that does not itself `JSR` the player entry
+(`_init_runs_player_entry`: Delta_Mix-E-Load_loader's `JSR $C012` runs the
+new-song call before frame 0, so frame 0 is an ordinary call and the phase
+reads 1 where the clock reads 2 -- declined; the scan stops at the init's
+first `JMP`/`RTS`, because After_8's wrapper keeps its IRQ handler's `JSR
+$1012` behind the `JMP $100C`). Six files (Go_Go_Dash, Lakers_vs_Celtics,
+Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) never write the phase
+cell: it is a constant, there is no clock to read, and none of them ships
+`pitch_seq`. Measured, `siddump -w<outer>,<inner>,<speed>,<phase>` over 60 s on
+every subtune of every file read whose gate runs (a stopped subtune never moves
+the outer cell; a tune that ends freezes it): the simulated phase equals the
+dumped one on every frame and the simulated fetches are exactly the frames
+where `outer != 0 and inner == speed`, 0 mismatches
+(`tests/test_pitch_seq_flat_clock_outer.py` re-measures eight of them at 30 s).
+
+**The phased block's plain lead is `multiplier` calls, not `multiplier - 1`,
+and a run of `multiplier` calls is one delay entry.** A frame is sampled at its
+last call and the attack is named from the frame holding call 1, which is not
+the frame holding call 0 when call 0 is that frame's last call. At
+`multiplier - 1` such a note sampled the first phase on its attack frame: with
+the new clocks read and the old lead, Chain_Reaction's melody fell 1.0000 ->
+0.8477 (Zoolook 0.8399, Shockway_Rider 0.9013, Saboteur_II 0.9347, Lightforce
+0.9868) -- every shipped `pitch_seq` file at -S2 and up. At `multiplier` calls
+the attack frame is plain wherever call 0 falls and frame `f` samples group
+`f - 1` of the body (modelled in
+`test_the_phased_block_is_plain_on_the_attack_frame_wherever_call_0_falls`; the
+original's attack frame is plain in these players too: Chain_Reaction voice 1
+frame 1037 plays `295E 295E 1BA1 20DC 295E` under cell readings `0 2 1 0`
+after each call). Spelled as one entry per call the block was `m + period * m`
+entries (13 at -S3 on a 3-step cell); as `(m - 1, note)` delays, which apply
+their right side on the last of `m` calls, it is `1 + period` (5). The long
+form left Saboteur_II's past-table split 4 rows on cells that depend on the
+packed layout, for want of wavetable room.
+
+**No per-note clones for these clocks.** `pitch_seq_phase_split_plan` returns
+None for them. Measured with the clones on (long and delay forms alike): 12
+existing tests fail on six shipped files -- Star_Paws loses its entry-
+instrument split, Saboteur_II leaves rows past the table, Lightforce's and
+Shockway_Rider's free-note passes move, the last-row tie counts of Nineteen and
+Trans-Atlantic change -- because the clones take the instrument slots, pattern
+copies and wavetable room those passes need; and Chain_Reaction's 19 clones all
+log "has no block of its own". With them off (and the delay form), 135 of 135
+in those seven test files pass again. What the clones bought: Trans-Atlantic's
+melody 0.9768 -> 0.9996 and pitch_jaccard 0.857 -> 1.0 (gone without them).
+Per-note phases for these players want a room-aware plan.
+
+Measured -t 180, base -> this change, 21 files whose bytes move with
+`pitch_seq` forced (15 of them under the shipped presets, which already carry
+it; melody unchanged on all 15). Reversal ratio nearer 1 on 5 of the 15
+(Trans-Atlantic 0.9306 -> 0.9955, Chain_Reaction 0.9893 -> 0.9964, Flash_Gordon,
+Nineteen, W_A_R), further on 8 (Mr_Meaner 0.8759 -> 0.8349, Saboteur_II 0.9806
+-> 0.9632, ...), same on 2; tie agreement up on 6, down on 7, all but
+Mr_Meaner/W_A_R/W_A_R_Preview within 0.01. Forced on the five files whose preset
+has `pitch_seq` off: Bangkok_Knights, I_Ball, Pygmies_Revenge nearer 1,
+IK_plus further; Pygmies_Revenge melody 0.9186 -> 0.8340. The change is not an
+improvement on balance at -t 180; it is the player's clock, read and checked,
+with an emission that no longer loses melody, and whether any song's preset
+should change is a `presets.py --fidelity` question.
+
 **`$68` reads a stored waveform, not a note.** In ten players one instruction,
 `STA cell,X`, writes the voice's current waveform byte into the cell a `$68`
 fetch lands on, after the frequency lookup and in voice order 2,1,0 -- so the
@@ -12975,9 +13110,31 @@ speed, measured from where the previous leg actually stopped, so the error is
 at most half a speed and never accumulates; it is zero wherever the speed
 divides the step. Census under presets at 6e467ff: 0 of 111 triangle records
 turned on the player's widths before, 68 exactly and 111 within half a speed
-after. The per-record-bounds engine (`_pulse_program`) turns on the same
-equality but was not measured, and keeps the bound edges; so does the
-phase-entry table (`_phase_block`).
+after. The phase-entry table (`_phase_block`) kept the bound edges until
+section 7.iiiiiiii, which turns its loop and legs on the same lattice.
+
+**The per-record-bounds engine turns on the same lattice** (`_pulse_program`,
+`_pulse_triangle_wrapped`). Its sweep (`PulseBoundsSim`, Saboteur_II
+`$F297-$F2F0`) is the same add, 12-bit mask and equality test with the record's
+rate byte as the whole step and no delay, so `_pulse_program` hands the rate to
+`_pulse_triangle` / `_pulse_triangle_wrapped` as the lattice step and both lay
+`_lattice_legs`. Saboteur_II's record 10 (seed `$160`, rate `$40`, bounds `$9F`)
+ran `$901..EFE` (1533) where the player runs `$9E0..F20` (1344). Three things
+the old edges got wrong follow from the equality and are now the player's: a
+record opening ON the top nibble steps up once and turns (`$800`, rate `$40`,
+band 8..8 jitters `$800` / `$840`, not `$7C0` / `$800`); a width ABOVE the
+top is not clamped but climbs through `$FFF` to the first lattice width in the
+top nibble; and a wrapped band's first ascent ends on the first lattice width
+past the wrap (Kings_of_the_Beach_ingame's record 4, rate `$84`, seed `$080`,
+bounds `$02`: the climb is seen to end at `$FF8` only because notes reseed, the
+player turns on `$07C` and then cycles `$290`..`$07C`). Census under presets at
+f75cc7f: 484 records on 42 files, 0 turning on exactly the player's widths
+before and 360 after; span within half a GT speed for 13 before and 450 after,
+within one speed for all 484 (the rest are speeds that do not divide the rate,
+e.g. rate `$0B` at `-S2` is 6 a call against 5.5).
+Cost: a swept program now opens with the player's first step up as an entry of
+its own (one more row), while the legs themselves are shorter than the
+bound-to-bound ones; net, Knucklebusters' table went 255 -> 245 of 255.
 
 **A tie that lands on a note restarting its instrument becomes a legato clone**
 (`legato_tie_rows`, `legato_tie_clones`, `goatwriter/note_passes.py`). In the
@@ -13054,9 +13211,10 @@ file `vib` 1.0965 -> 1.0412 and `cut` 1.0816 -> 1.0131 move toward 1, but
 `travel` goes to 1.2075 and `aud`/`loud` fall 0.8973 -> 0.8957 and
 0.9594 -> 0.9572. The fix is a clone whose block is rotated to the cell's
 reading at the landing, which needs the cell's clock for this player (an
-undivided phase behind an outer gate; `_pitch_seq_flat_clock` declines on the
+undivided phase behind an outer gate; `_pitch_seq_flat_clock` declined on the
 gate and `_pitch_seq_clock` on the missing divider, and the shape matches 27
-corpus files) and, per landing, one tuple: a 16-row pattern of 2-frame rows is
+corpus files -- the gate is read since task pitch-seq-flat-clock-other-files,
+Star_Paws's clock among the 24, and the lead of 2 calls became `multiplier`) and, per landing, one tuple: a 16-row pattern of 2-frame rows is
 32 frames, 2 mod 3, so a pattern replayed in sequence lands each play on
 another phase and needs the repeat unrolling `_phase_divergent_repeats` does
 for attacks. A scratch prototype (clock, per-row tuple, one block per tuple, a
@@ -14479,7 +14637,9 @@ frame agrees, in either layout. Monty_on_the_Run v0's two notes go from 4/24 to
 2/24, on its instrument 10 with the same two-voice shape.
 
 A per-voice phase (w, d) cannot say "hold". This is the limit the reached count
-hides, and it is left open.
+hides, and it is left open. (RETRACTED by section 7.hhhhhhhh: "A per-voice phase
+(w, d) cannot say 'hold'" -- a direction that names the width held does; those 57
+notes now agree on 623 of 624 frames on v0 and 533 of 624 on v1.)
 
 ### 7.vvvvvvv A tie in the classic players without the legato marker re-runs the instrument start
 
@@ -15376,3 +15536,173 @@ files it lists (Chimera, Thing_on_a_Spring and Human_Race all carry the test bit
 reuse it on a `--no-test-restart` file and it misreads. Mutations that make
 `tests/test_ninja_phase_attack.py` fail: the convert ignoring `no_test_restart`
 (3 failed), a set row whose high byte is one too high (3 failed).
+
+### 7.hhhhhhhh A record two voices step in opposite directions is held, not swept
+
+Opened by 7.ttttttt (task `devils-galop-two-voice-triangle-hold`). The triangle
+engine's width is per RECORD and its direction per VOICE (7.ttttttt, the walk's
+`PulseVoiceCell`), so two voices on one record step it in turn, X = 2, 1, 0. One up
+and one down by the same step put it back where it was by the end of every tick,
+and a voice's pulse register is written only on a tick it stepped
+(`PulsePhaseSim.advance`), so each voice reads ONE constant for as long as the pair
+lasts. Devils_Galop, read at f75cc7f, instrument 10 on voices 0 and 1 (step $80,
+delay 2, `-S2`): the original's registers read
+
+    v0  F00 F00 F00 F00 ...        v1  F00 E80 E80 E80 ...   (or F00 F00 E80 ...)
+
+where the walk planned ($F00, up) on v0 and ($F00, down) on v1 and the table
+ramped them apart. A `(width, direction)` pair has nothing to say that.
+
+**The phase.** A hold is a phase whose direction is `HOLD + k` (`goatwriter.
+hold_direction`, `is_hold`, `hold_steps`; `HOLD` is 8, so it is never +1 or -1 and
+still sorts, keys the index and compares like any other): the width the record is
+at when the voice FETCHES, as every phase's first element has been (the plan still
+agrees with the original's attack exactly -- `test_the_lifted_declines_open_on_the_
+originals_width` and its `_LIFTED` table are unchanged), and `k` steps from it to
+the width the voice then reads on every step. Voice 0 of Devils_Galop opens $F00
+and holds $F00 (k = 0); voice 1 opens $F00 and holds $E80 (k = -1), because voice
+1 steps first in the tick and voice 0 puts it back.
+
+**Detection** (`patterns._triangle_hold`, called at a fetch inside
+`_walk_triangle_group`): at least two voices sweep the record, and stepping a
+scratch copy of it for `2 * delay + 2` ticks -- finishing the current tick first,
+with every sharing voice keeping on -- gives the fetching voice one constant read
+(reads taken only on its own steps). Counters out of step change which voice reads
+what, not whether there is a hold (Devils_Galop's delay-2 pair read k = 0 / -1 with
+counters 0, 0 and +1 / 0 with 0, 1: `tests/test_triangle_hold.py`). The rows are NOT
+read ahead: the hold is assumed to last while the partner keeps sweeping, and the
+table holds until the voice's next command, where the original resumes the sweep
+the moment the partner leaves. Three voices on a record read a net of one step and
+a wiggle, which is not constant, so they stay sweeps: a net-direction phase was not
+built.
+
+**The table** (`_phase_block`). A hold on its own width (k = 0), and any hold under
+the shared layout, is a set row and a stop, `set held / FF 00`, one pair per width
+HELD however many openings name it; under the shared layout an opening off the held
+width plays the held width on its attack frame, a step or two from the original's.
+The per-phase layout spends four rows to play the attack: `set w / (1, 0) / set held
+/ FF 00`, one call of nothing keeping the attack frame on the opening width. A hold
+is on no leg and lands on no bound, so `_chained_phases` and `_union_kind` leave it
+out and a record whose moving phases chain still chains. Rows, base -> here:
+Devils_Galop 172 -> 174, Monty_on_the_Run 243 -> 249 (the limit is 255; a first
+version that laid four rows per opening took Monty to 208 rows with instrument 16
+degraded to a static width and lost 12 commanded notes), Chimera 180 -> 198,
+Thing_on_a_Spring 133 -> 137.
+
+**Frame agreement, measured** (presets, `pulse_phase` forced, 180 s; the packed
+trace against the original's frame by frame from each paired attack, a frame
+agreeing within one table step plus $10 -- the rule of 7.ttttttt's table). Hold
+notes only, first 12 frames, base -> here:
+
+| file, voice | notes | 12 frames | to the next attack (<= 400 frames) |
+|---|---|---|---|
+| Devils_Galop v0 | 60 | 66/624 -> **623/624** | 79/2304 -> 2303/2304 |
+| Devils_Galop v1 | 60 | 149/624 -> **533/624** | 169/2304 -> 2172/2304 |
+| Monty_on_the_Run v0 | 16 | 32/168 -> 158/168 | 55/704 -> 639/704 |
+| Monty_on_the_Run v1 | 16 | 34/168 -> 158/168 | 34/648 -> 634/648 |
+| Chimera v0 | 78 | 170/732 -> 725/732 | 170/864 -> 857/864 |
+| Chimera v1 | 78 | 298/732 -> 661/732 | 298/864 -> 793/864 |
+| Thing_on_a_Spring v0 | 4 | 8/48 -> 48/48 | 8/108 -> 108/108 |
+| Thing_on_a_Spring v2 | 4 | 18/48 -> 42/48 | 18/108 -> 96/108 |
+
+The notes that are not holds agree on exactly the frames they did (Devils_Galop v0
+2705/3476, Monty v0 2155/4064, ...: every one of the four files, every voice,
+identical). v1's remaining misses are the attack: the original's attack frame reads
+$F00 (one or two frames of it, by the tick parity of the note; read off the traces,
+not off the disassembly) and ours, on the shared layout, reads $E80. The reach rule of `tests/test_triangle_lockstep.
+py::_reach` accepts the opening or the held width for a hold, which it must: a
+hold that opens off its width plays the held one on the shared layout.
+
+**Mutations that make `tests/test_triangle_hold.py` fail** (ten, each printed from
+disk by the sabotage script): the walk never planning a hold; a read on every tick;
+the held width counted the wrong way round; `_chained_phases` keeping a hold;
+`_union_kind` counting a hold; the per-phase hold dropping its attack tick; the
+shared layout laying the held width once per opening; the shared layout spending
+the per-phase rows; a hold with no stop; the wrap ramp's way back dropped from
+`_phase_block` (this one survived the old suite: its only table witness was
+Devils_Galop's ($E00, up), now a hold, so `test_the_wrap_ramps_still_play_in_the_
+table` plays the block directly).
+
+**Still open.** v1's attack frame under the shared layout (four rows per opening
+only where the table has room); a hold that ends when the partner leaves; a
+net-direction phase for three voices on a record.
+
+### 7.iiiiiiii The phase tables' loop and legs turn on the nibble lattice
+
+From task `phase-block-legs-on-the-nibble-lattice`, opened by the static program's
+lattice legs (`_tri_turns`, section 7.nnnnnn). Figures taken at f75cc7f plus this
+change, presets with `pulse_phase` forced unless said otherwise.
+
+**The defect.** `_phase_block` laid the triangle's shared loop, its chained legs and
+the edge every entry piece ramps to on the BOUNDS. The player turns on the first width
+of its step lattice whose high nibble EQUALS the bound, so its cycle is not
+`$800..$E00`: Game_Killer's record 3 (step `$E0`) runs `$8E0..$E20`, 1344 a leg, and the
+table's loop spanned 1518; step `$80` runs `$880..$E00`, step `$40` `$8C0..$E00`.
+
+**The cycle** (`goatwriter.pulse._phase_cycle`, `_phase_turns`) is read off
+`PulsePhaseSim` for every phase of the record's set and the one most phases reach
+is the loop's (ties to the lowest). It is the phases' cycle, not the record's own
+seed's: a step that does not divide `$1000` shifts the lattice at every 12-bit wrap,
+and the walk's phases come through wraps the file image's seed never did. Commando's
+record 7 seeds `$800` and its own walk cycles `$8E0..$E20`, but its 16 phases cycle
+`$840..$E60`; Human_Race's records 18 and 23 are the other way round, 17 of 18 phases
+on `$840..$E60` and the seed phase on `$8E0..$E20`. Every consumer of the old edges
+reads the cycle instead (`_phase_block`, `_chained_phases`, `_union_kind`), keyed on
+`step`, so the bounds engine (no `step`) is byte-identical. `_union_groups` adds the
+cycle to its key: one union is one loop, and Gremlins' records 3 and 7 (same step,
+speed and bounds) turn on `$8E0..$E20` and `$8C0..$E00`, so they no longer share.
+
+**The legs.** Every triangle tick count is the one whose arrival is nearest the
+sweep's distance at the emitted speed (`_nearest_ticks`, as the static program's),
+where the bounds engine's is the whole ticks below it. `_leg_ramps` aims at the
+cycle's edge with a SIGNED overshoot: an arrival short of the edge climbs on to it,
+one past it comes back (the old `back`), and the same going down, which the bounds
+could not do because the low nibble's first lattice width was always on the far side
+of `$800`.
+
+**Census** (the first three turns of every shipped index entry, played from its
+entry point as gplay.c:872-902 plays them, against `PulsePhaseSim`; 23 triangle files):
+
+| | entries | turns | exact | within half a speed |
+|---|---:|---:|---:|---:|
+| before | 1501 | 4503 | 1701 | 1851 |
+| after | 1568 | 4704 | 4151 | 4647 |
+
+The extra entries are records the shared layout now keeps (Last_V8 and its C128
+version place all four records in 245 / 244 rows with no reserve; they were 223 / 224
+with instrument 9 degraded). What is left over is speeds that do not divide the step
+and the `$E0` steps clamped at 127 (Commando, Zoids, Gerry_the_Germ 18). Kept sets:
+no file loses a record; Human_Race keeps 21 where it kept 23 (5 of 7 either way), and
+Gremlins goes from 168 to 248 rows (records 3 and 7 no longer union), still 4 of 5.
+
+**Frames against the original** (packed at `-S{mult}`, traced at `-m{mult}`, original
+at `-m1`, 180 s; the 48 frames after each paired attack; mean width error in the
+12-bit width): notes whose original sweep TURNS inside the window agree on
+28251 / 75645 frames before and 36963 after (37.3% to 48.9%), mean error 323.5 to
+294.3. Notes that do not turn: 46.1% to 46.4%. Game_Killer 1846 to 2823 of 3123,
+Human_Race 7768 to 10284 of 12136, Last_V8 642 to 1295 of 1632. It is NOT better
+everywhere: Commando 1158 to 1038 of 4728, Zoids 479 to 443, 5_Title_Tunes 97 to 84,
+Gerry_the_Germ 1618 to 1686. Commando, Zoids and Gerry 18 sweep at the clamped speed
+127 against a step of 224, 1.8 times slow, so the legs cannot agree with the original
+in time whichever widths they turn on; 5_Title_Tunes agrees on under 5% either way
+(see the reach figures below). These are the four files whose presets ship
+`pulse_phase`: the lattice legs cost three of them 8 to 13% of their agreeing
+turn-window frames (Commando 10%, Zoids 8%, 5_Title_Tunes 13%) and gain
+Gerry_the_Germ 4%. For the first two the legs run at the wrong rate, so the metric
+is a coincidence of phase either way.
+
+**Commanded but wrong at the packed attack** (`_reach`'s rule, `reach.py` in the
+task's scratch directory; 23 files, 12029 paired planned notes, 180 s). The rule reads
+the width AT the attack, so it cannot see a leg's turn, and it is unmoved on 18 of 23
+files. Five move: Last_V8 691 to 724 reached of 724 (the 32 notes of voice 2 that had
+no command now have one, because record 9 fits) and its C128 version 692 to 724;
+Battle_of_Britain 176 to 177 of 179; Ninja 20 to 23 of 223 (wrong 176 to 173; per
+voice g0v1 goes 9 to 1 reached of 28 while g0v2 goes 0 to 6 of 102, the shifting
+that section 7.gggggggg explains: Ninja's set lands a call after the gate and the
+rule misreads it on both sides); 5_Title_Tunes 8 to 0 of 448 (wrong 440 to 448: the
+8 were one planned phase, ($9E0, down), whose width happens to hold $9E0 at the
+attack, and the other 440 are wrong on both sides: its attack does not carry the
+planned width, which this task did not chase). Totals: reached 7909 to 7970, no
+command 3502 to 3438, **commanded but wrong 618 to 621** (178 to 173 without
+5_Title_Tunes). The lattice legs are a leg-shape change, so a reading at the attack
+is the wrong instrument for them; the turn census above is the one that measures.

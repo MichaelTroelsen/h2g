@@ -296,7 +296,11 @@ def test_the_decoder_reads_bit_7_of_megas_two_legato_notes():
 def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     """Reading bit 7 of the notes and unrolling are bookkeeping: with the
     plan switched off the conversion is the one it was (3d8e9b92c7e9 at
-    81a766c, the base of this change)."""
+    81a766c, the base of this change; 07b74cc424ed since the swell's
+    pattern split, `expanding_vibrato_split`, copied 13 patterns of the
+    plan-free file and commanded their hold rows; 6aa0447e2cf5 since the
+    loops' sharing, `_expanding_vibrato_loop_share`, gave the rows the
+    split had left on their `4xy` a neighbour's loop)."""
     import hashlib
     import h2g.goatwriter.build as B
     monkeypatch.setattr(B._gw_counter_fall, "counter_fall_plan",
@@ -304,7 +308,7 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     monkeypatch.setattr(B._gw_counter_fall, "unroll_fall_repeats",
                         lambda sid, det, tracks, *a, **k: tracks)
     sng, _ = _converted()
-    assert hashlib.sha1(sng).hexdigest()[:12] == "3d8e9b92c7e9"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "6aa0447e2cf5"
 
 
 @needs_corpus
@@ -355,7 +359,14 @@ def test_the_orderlists_written_are_the_ones_the_plan_repointed(monkeypatch,
     (plan,) = seen
     assert plan is not None and len(plan.patterns) > 69
     song = songview.parse_sng(sng)
-    assert [list(t) for t in song.tracks] == [list(t) for t in plan.tracks]
+    # The swell's pattern split (`expanding_vibrato_split`) runs after the
+    # plan and may repoint a position at a copy of its own, numbered past
+    # every pattern the plan had; every other position is the plan's.
+    later = len(plan.patterns)
+    assert len(song.tracks) == len(plan.tracks)
+    for got, want in zip(song.tracks, plan.tracks):
+        assert len(got) == len(want)
+        assert all(g == w or later <= g < 0xD0 for g, w in zip(got, want))
     played = {b for t in song.tracks for b in t[:t.index(0xFF)] if b < 0xD0}
     assert any(b >= 69 for b in played)
 

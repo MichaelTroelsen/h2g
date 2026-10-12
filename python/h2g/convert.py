@@ -881,9 +881,11 @@ def convert(sid_path: str, log: Logger = print,
     #   alphabet on the `-S2` files as on the `-S1` controls; were those
     #   originals entered twice a frame their gaps would be halved.
     #
-    # So `_pulse_tri_program`'s division by `multiplier` is the correct
-    # treatment rather than a guess, and the gate was NOT protecting against a
-    # wrong rate unit.
+    # So `_pulse_tri_program`'s division by `multiplier` is RETRACTED, see
+    # the RETRACTED block below; the actual divisor is calls per ORIGINAL
+    # tick, `multiplier * (O+1) / O` under an outer gate, implemented in
+    # `goatwriter._tri_speed`. The gate was NOT protecting against a wrong rate
+    # unit.
     #
     # **RETRACTED (2026-10-03): "THE SWEEP STEPS PER FRAME, MEASURED AT
     # v0.5.460, three ways that agree"**, and with it "So

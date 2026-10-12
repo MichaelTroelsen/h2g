@@ -18,6 +18,19 @@ The tests pin that: the table played entry by entry, the block itself, and
 the selection `prefer_short` makes.
 
 Figures measured under forced `pulse_phase` at 0d18fce (v0.5.524).
+
+**RE-POINTED at the phase blocks' lattice legs (task
+`phase-block-legs-on-the-nibble-lattice`).** The loop now turns where the
+sweep does (`_phase_cycle`): record 2 loops $8E0..$E00 (1312), not the
+bound-to-bound $800..$E00 (1536) that happened to be a whole number of
+speed-6 steps, so no phase sits on a chained leg any more and the record is
+"plain" (not None) -- the case this file was written for no longer arises on
+5_Title_Tunes. The mechanism it pinned (a None-kind record lays its
+per-phase block row for row) is pinned below on Human_Race's records 18 and
+23, whose seed phase sits on another lattice than their other phases: kind
+None, 14 chained phases that must not be chained. The per-phase figures:
+shared 149 rows against 172 (was 154 / 177). The 37 entries still play the
+per-phase widths.
 """
 from __future__ import annotations
 
@@ -47,14 +60,19 @@ def _record2(args: tuple) -> tuple:
     return params, set(phases[num]) | {(params[0], +1)}
 
 
-def test_record_2_is_neither_chained_nor_plain():
+def test_record_2_has_no_chained_phase_on_its_lattice_cycle():
+    """Was `test_record_2_is_neither_chained_nor_plain` (8 chained phases,
+    kind None) while the loop ran bound to bound; its cycle is $8E0..$E00
+    and 1312 is not a whole number of speed-6 steps, so nothing chains and
+    the kind is "plain"."""
     from h2g.goatwriter import pulse as P
     for args in _second_tables():
         params, want = _record2(args)
         assert params[1:] == (6, 2048, 3584, False, 32), params
         assert len(want) == 18
-        assert len(P._chained_phases(want, *params[1:])) == 8
-        assert P._union_kind(want, *params[1:]) is None
+        assert P._phase_cycle(want, params[2], params[3], params[5]) == (0x8E0, 0xE00)
+        assert P._chained_phases(want, *params[1:]) == set()
+        assert P._union_kind(want, *params[1:]) == "plain"
 
 
 def test_shared_layout_plays_every_entry_of_the_second_table_per_phase():
@@ -77,15 +95,15 @@ def test_shared_layout_plays_every_entry_of_the_second_table_per_phase():
 
 def test_prefer_short_ships_the_shared_layout_and_it_plays_per_phase():
     """The selection the task feared: a compilation's `prefer_short` takes
-    the shared layout (154 rows against 177), and what ships plays the
-    per-phase widths."""
+    the shared layout (149 rows against 172; 154 / 177 on the bound-to-bound
+    loop), and what ships plays the per-phase widths."""
     from h2g.goatwriter import pulse as P
     for args in _second_tables():
         ref = _layouts(args)[1]
         shipped = P.build_pulse_phase_table(*args, prefer_short=True)
         assert shipped is not None
         entries, starts, index = shipped
-        assert (len(entries), len(ref[0])) == (154, 177)
+        assert (len(entries), len(ref[0])) == (149, 172)
         for key, at in index.items():
             assert (_play_pulse_table(entries, at, _CALLS)
                     == _play_pulse_table(ref[0], ref[2][key], _CALLS)), key
@@ -110,3 +128,25 @@ def test_a_none_kind_record_is_laid_as_its_own_per_phase_block():
         b = lambda share: P._phase_block(  # noqa: E731
             10, 1, w1, p1[0], *p1[1:], share)
         assert b(True)[0] != b(False)[0]
+
+
+def test_a_none_kind_record_on_the_lattice_is_laid_per_phase_too():
+    """The None-kind mechanism on a real record again (the file's record 2
+    is "plain" since the lattice legs): Human_Race's records 18 and 23 open
+    on a seed phase ($800, up) whose sweep turns on $E20/$8E0 where every
+    other phase turns on $E60/$840, so 14 of their phases sit on a chained
+    leg and one cannot land -- kind None, and `share=True` lays the
+    per-phase block row for row."""
+    from h2g.goatwriter import pulse as P
+    args = _table_calls("Human_Race.sid")[0]
+    sid, det, iu, pulse, mult, phases, _, lead = args
+    for num in (18, 23):
+        params = P._phase_sweep_params(sid, det, num - 1 - lead, mult)
+        want = set(phases[num]) | {(params[0], +1)}
+        assert P._phase_cycle(want, params[2], params[3], params[5]) == (0x840, 0xE60)
+        assert P._phase_turns(0x800, +1, 0xE0, 8, 14)[:3] == (0xE20, 0x8E0, 0xE20)
+        assert len(P._chained_phases(want, *params[1:])) == 14, num
+        assert P._union_kind(want, *params[1:]) is None, num
+        mk = lambda share: P._phase_block(  # noqa: E731
+            10, num, want, params[0], *params[1:], share)
+        assert mk(True) == mk(False), num

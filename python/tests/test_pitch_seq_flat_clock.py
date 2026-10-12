@@ -53,16 +53,17 @@ def _mega():
 
 
 @needs_corpus
-def test_the_flat_clock_is_read_on_mega_apocalypse_and_nowhere_else():
-    """Every piece from the bytes; None on every other corpus file,
-    including the 34 others that detect the block with an undivided
-    counter (36 detect it; Food_Feud's is divided)."""
+def test_the_zero_page_flat_clock_is_read_on_mega_apocalypse_and_nowhere_else():
+    """Every piece from the bytes; None on every other corpus file. The
+    classic outer-gated players have their own reader
+    (tests/test_pitch_seq_flat_clock_outer.py), and `_pitch_seq_flat_clock`
+    is the dispatcher over both."""
     got = {}
     for path in sorted(CORPUS.glob("*.sid")):
         sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
         if det is None:
             continue
-        clock = G._pitch_seq_flat_clock(sid, det)
+        clock = G._pitch_seq_zp_flat_clock(sid, det)
         if clock is not None:
             got[path.stem] = clock
     assert got == {"Mega_Apocalypse": FLAT}, got

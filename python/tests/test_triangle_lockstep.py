@@ -89,7 +89,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_pulse_phase import (_corpus_and_presets,  # noqa: E402
                               _exact_widths)
 
-from h2g.goatwriter import PulsePhaseSim
+from h2g.goatwriter import PulsePhaseSim, hold_direction
 from h2g.patterns import (GT_NO_NOTE, GT_ORDER_RESTART, GT_REPEAT,
                           collect_pulse_phases)
 
@@ -144,8 +144,14 @@ def test_two_voices_in_opposite_directions_hold_one_width():
     got = collect_pulse_phases([pat0, pat1], tracks, [1],
                                {2: _sim(0xA00)}, tri_start=start)
     assert got is not None
-    assert got[1] == [(0, 0, {4: (2, (0x9C0, +1))}),
-                      (1, 0, {5: (2, (0x9C0, -1))})], got[1]
+    # Both notes open on $9C0 and carry on in opposite directions -- which
+    # is to say they do not carry on: voice 1 steps down and voice 0 puts it
+    # back every tick, so each reads $9C0 on every step after its fetch. The
+    # plan says so (`hold_direction(0)`) where it said `($9C0, +1)` and
+    # `($9C0, -1)` (RETRACTED: the per-voice sweeps, which the table played
+    # as two ramps away from the width the original holds).
+    assert got[1] == [(0, 0, {4: (2, (0x9C0, hold_direction(0)))}),
+                      (1, 0, {5: (2, (0x9C0, hold_direction(0)))})], got[1]
 
 
 def test_a_voice_the_walk_cannot_plan_still_sweeps_what_it_shares():
@@ -480,6 +486,7 @@ def _reach(name: str, seconds: int = 180) -> dict:
     import fidelity as F
     from h2g import convert as C
     from h2g import patterns as P
+    from h2g.goatwriter import is_hold
     from songview import parse_sng
     corpus, doc = _corpus_and_presets()
     if (not Path(F.SIDDUMP).exists() or not Path(F.GT2RELOC).exists()
@@ -594,6 +601,13 @@ def _reach(name: str, seconds: int = 180) -> dict:
                 instr, (w, d) = ph
                 at = index.get((instr, w, d))
                 if at is None or fn[w2f[i]][1] != at:
+                    continue
+                if is_hold(d):
+                    # A hold opens on `w` or, under the shared layout, on
+                    # the width it holds -- the set row the command names.
+                    row = entries[at - 1]
+                    held = ((row[0] & 0xF) << 8) | row[1]
+                    ok += att[f2a[w2f[i]]][1] >> 4 in (w >> 4, held >> 4)
                     continue
                 spd = entries[at][1] if entries[at][0] < 0x80 else 0
                 spd = spd if spd < 0x80 else 0x100 - spd

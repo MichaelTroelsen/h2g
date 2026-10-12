@@ -421,8 +421,8 @@ def _init_clears_zp(sid: SidFile, cell: int) -> bool:
     return False
 
 
-def _pitch_seq_flat_clock(sid: SidFile,
-                          det: Detection) -> Optional[PitchSeqClock]:
+def _pitch_seq_zp_flat_clock(sid: SidFile,
+                             det: Detection) -> Optional[PitchSeqClock]:
     """The UNDIVIDED bit-$10 clock, read from Mega_Apocalypse's shape.
 
     The phase cell steps once per call and the row clock has no outer gate:
@@ -496,6 +496,188 @@ def _pitch_seq_flat_clock(sid: SidFile,
     return PitchSeqClock(divider=0, divider_reload=0, phase=data[off],
                          phase_reload=data[reload_at + 6], outer=None,
                          inner=0)
+
+
+def _pitch_seq_phase_block(sid: SidFile) -> Optional[tuple]:
+    """((lo, hi) of the phase cell, offset of its `DEC`) or None.
+
+    The bit-$10 block's phase operand, and the `DEC cell / BPL / LDA #n / STA
+    cell` that steps and reloads it.
+    """
+    data = sid.data
+    at = -1
+    for shape, _ in PITCH_SEQ_SHAPES:
+        at = search_file(data, shape)
+        if at >= 1:
+            break
+    if at < 1:
+        return None
+    lo, hi = data[at + PITCH_SEQ_AT_PHASE], data[at + PITCH_SEQ_AT_PHASE + 1]
+    dec = bytes([0xCE, lo, hi, 0x10])
+    reload_at = data.find(dec)
+    while reload_at >= 0:
+        j = reload_at
+        if (j + 9 < len(data) and data[j + 5] == 0xA9
+                and data[j + 7] == 0x8D and data[j + 8] == lo
+                and data[j + 9] == hi):
+            break
+        reload_at = data.find(dec, reload_at + 1)
+    if reload_at < 6:
+        return None
+    return (lo, hi), reload_at
+
+
+def _abs_writers(data: bytes, cell: bytes) -> int:
+    """How many instructions of `_ABS_WRITERS` name the absolute `cell`."""
+    return sum(data.count(bytes([op]) + bytes(cell)) for op in _ABS_WRITERS)
+
+
+PITCH_SEQ_ENTRY_REACH = 8        # bytes in front of the entry's `BIT flag`
+PITCH_SEQ_INIT_SCAN = 0x80       # bytes of the PSID init searched for a JSR
+
+
+def _init_runs_player_entry(sid: SidFile, phase_at: int) -> Optional[bool]:
+    """Whether the PSID init itself calls the player's entry, or None.
+
+    The classic player's entry opens `BIT flag` and the init leaves the flag
+    at `$40`, so the FIRST play call takes the new-song path -- which is the
+    one that steps the phase and nothing else, and the call `_pitch_seq_calls`
+    applies before its first yield. Delta_Mix-E-Load_loader's init (`$CCDD`)
+    instead `JSR`s the entry (`$C012`) itself, so the new-song call has run
+    before frame 0 and frame 0 is an ordinary call: measured, its phase reads
+    1 on frame 0 where the simulated clock reads 2 (`siddump -wc581`).
+
+    `phase_at` is the offset of the phase `DEC`. The entry is found from the
+    new-song `JMP` to it, which follows the flag's store (`STA abs` or `STA
+    zp`); the `BIT` of that cell sits `PITCH_SEQ_ENTRY_REACH` bytes behind
+    the entry at most. The init is read from its first byte (through one
+    leading `JMP`) up to its first `JMP`/`RTS` byte or `PITCH_SEQ_INIT_SCAN`
+    bytes -- a wrapper's IRQ handler (After_8's `JSR $1012` at `$2726`) sits
+    behind the `JMP`. The entry is any address a straight run (no `JSR`,
+    `JMP` or `RTS` byte) reaches the `BIT` from: Delta_Mix's `$C012` is five
+    bytes of volume set-up ahead of its `BIT`, while IK_plus's `$E009` is the
+    init vector of a `JMP` table, not the entry. None where the entry
+    cannot be found, which the caller treats as declining.
+    """
+    data = sid.data
+    addr = sid.to_address(phase_at)
+    jmp = bytes([0x4C, addr & 0xFF, addr >> 8])
+    bit = None
+    j = data.find(jmp)
+    while j >= 0 and bit is None:
+        for width, store in ((3, 0x8D), (2, 0x85)):
+            if j >= width and data[j - width] == store:
+                flag = bytes(data[j - width + 1:j])
+                op = 0x2C if width == 3 else 0x24
+                for k in range(j - width, max(0, j - 0x60), -1):
+                    if data[k] == op and bytes(data[k + 1:k + width]) == flag:
+                        bit = k
+                        break
+            if bit is not None:
+                break
+        j = data.find(jmp, j + 1)
+    if bit is None:
+        return None
+    entry = set()                        # where a `JSR` runs straight to the BIT
+    for t in range(bit, max(bit - PITCH_SEQ_ENTRY_REACH, 0) - 1, -1):
+        if t < bit and data[t] in (0x20, 0x4C, 0x60):
+            break
+        entry.add(sid.to_address(t))
+    start = sid.to_offset(sid.init_addr)
+    if not 0 <= start < len(data) - 3:
+        return None
+    if data[start] == 0x4C:              # `JMP init` stub
+        start = sid.to_offset(data[start + 1] | data[start + 2] << 8)
+    for p in range(max(start, 0), min(start + PITCH_SEQ_INIT_SCAN,
+                                      len(data) - 2)):
+        if data[p] in (0x4C, 0x60):      # the init's `JMP` or `RTS`
+            break
+        if data[p] == 0x20 and (data[p + 1] | data[p + 2] << 8) in entry:
+            return True
+    return False
+
+
+def _pitch_seq_flat_clock(sid: SidFile,
+                          det: Detection) -> Optional[PitchSeqClock]:
+    """The UNDIVIDED bit-$10 clock: Mega_Apocalypse's zero-page speed gate
+    (`_pitch_seq_zp_flat_clock`) or the classic outer-gated one
+    (`_pitch_seq_outer_flat_clock`), or None."""
+    return (_pitch_seq_zp_flat_clock(sid, det)
+            or _pitch_seq_outer_flat_clock(sid, det))
+
+
+def _pitch_seq_outer_flat_clock(sid: SidFile,
+                                det: Detection) -> Optional[PitchSeqClock]:
+    """The undivided clock of the classic Hubbard player (Bangkok_Knights
+    `$8059`): Food_Feud's play routine with the divider left out.
+
+        8059  DEC outer / BPL +8 / LDA #skip / STA outer / JMP $8071   ; outer
+        8066  DEC inner / BPL +6 / LDA speed / STA inner               ; speed
+        8071  voice loop: ... LDA outer / BEQ nofetch / LDA inner / CMP speed
+        84D6  DEX / BMI +3 / JMP $8071                       ; voice loop exit
+        84DB  DEC phase / BPL / LDA #n / STA phase           ; the phase
+
+    The voice loop runs on EVERY call (the outer gate only withholds the
+    fetch), so the phase steps once per call, and the new-song call (`JMP
+    $84DB` out of the play entry) runs the phase and nothing else. Required
+    in full, as `_pitch_seq_clock`'s pieces are: the `DEC` directly behind the
+    voice loop's exit (or W_A_R's, which `JMP`s to a `DEC` in a tail routine),
+    a new-song `JMP` to it, the outer gate with the speed gate
+    behind it and its jump landing on the voice loop, the fetch guard naming
+    the outer cell, and no writer of the outer, speed-counter or phase cell
+    but the gate's own -- a file whose init stores a counter has a first value
+    this does not read. The cells' initial values are the file's own bytes.
+    """
+    seq = det.pitch_seq
+    if seq is None or seq.frames_per_step != 1 or seq.pairs < 0:
+        return None
+    found = _pitch_seq_phase_block(sid)
+    if found is None:
+        return None
+    (lo, hi), reload_at = found
+    data = sid.data
+    phase_addr = sid.to_address(reload_at)
+    to_phase = bytes([0x4C, phase_addr & 0xFF, phase_addr >> 8])
+    if (data[reload_at - 6:reload_at - 2] != PITCH_SEQ_VOICE_EXIT
+            and re.search(re.escape(PITCH_SEQ_VOICE_EXIT) + rb".." +
+                          re.escape(to_phase), data, re.DOTALL) is None):
+        return None                      # the exit, or the exit's `JMP` to it
+    if _abs_writers(data, bytes([lo, hi])) != 2:
+        return None
+    if data.find(to_phase) < 0:
+        return None                      # no new-song JMP to the phase
+    if _init_runs_player_entry(sid, reload_at) is not False:
+        return None                      # frame 0 is not the new-song call
+    m = OUTER_GATE.search(data)
+    if m is None or m.group(1) != m.group(3):
+        return None
+    g = SPEED_GATE.match(data, m.end())
+    if g is None or g.group(1) != g.group(3):
+        return None
+    target = sid.to_offset(m.group(4)[0] | m.group(4)[1] << 8)
+    if target != g.end():
+        return None
+    outer, inner = m.group(1), g.group(1)
+    guard = bytes([0xAD, outer[0], outer[1], 0xF0])
+    at = data.find(guard, target, target + 16)
+    if at < 0:
+        return None
+    fetch = bytes([0xAD, inner[0], inner[1], 0xCD, g.group(2)[0],
+                   g.group(2)[1], 0xD0])
+    if data.find(fetch, at, at + 16) < 0:
+        return None
+    for cell in (outer, inner):
+        if _abs_writers(data, cell) != 2:    # the gate's DEC and reload STA
+            return None
+    cells = []
+    for cell in (outer, inner, bytes([lo, hi])):
+        off = sid.to_offset(cell[0] | cell[1] << 8)
+        if not 0 <= off < len(data):
+            return None
+        cells.append(data[off])
+    return PitchSeqClock(divider=0, divider_reload=0, phase=cells[2],
+                         phase_reload=data[reload_at + 6], outer=cells[0],
+                         inner=cells[1])
 
 
 def _pitch_seq_clock(sid: SidFile, det: Detection) -> Optional[PitchSeqClock]:
@@ -630,9 +812,11 @@ def _pitch_seq_calls(clock: PitchSeqClock, frames: int, skip: int):
 def _pitch_seq_rate_read(clock: PitchSeqClock, frames, skip,
                          group: int) -> bool:
     """Whether subtune `group`'s row clock is one `clock` can walk: a row
-    length, and an outer gate exactly where the clock read one. The flat
-    clock (`outer=None`) is the first subtune's only -- its speed counter's
-    first value was read on the init's first-song path (`_init_clears_zp`)."""
+    length, and an outer gate exactly where the clock read one. The
+    zero-page flat clock (`outer=None`) is the first subtune's only -- its
+    speed counter's first value was read on the init's first-song path
+    (`_init_clears_zp`). A subtune whose `skip` is None (W_A_R's ninth) is
+    not walked either: its gate reload is no immediate this reads."""
     if not frames:
         return False
     if clock.outer is None:
@@ -670,8 +854,11 @@ def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     notes split three ways by row mod 3 -- and `pitch_seq_phase_split_plan`
     gives each minority state a clone of its own; this stays the record's.
 
-    Empty wherever no clock is read (`_pitch_seq_any_clock`), which is every
-    file but Food_Feud and Mega_Apocalypse.
+    Empty wherever no clock is read (`_pitch_seq_any_clock`): Food_Feud's
+    divided one, Mega_Apocalypse's zero-page one and the 24 classic
+    outer-gated files `_pitch_seq_outer_flat_clock` reads (each checked with
+    `siddump -w` on the outer, speed and phase cells over every subtune that
+    runs the gate, 60 s: tests/test_pitch_seq_flat_clock_outer.py).
     """
     clock = _pitch_seq_any_clock(sid, det)
     if clock is None:
@@ -813,9 +1000,23 @@ def pitch_seq_phase_split_plan(sid: SidFile, det: Detection,
     `det.pitch_seq`, exactly as `pitch_seq_phases`' caller does; empty
     wherever no clock is read, which is every file but Food_Feud and
     Mega_Apocalypse.
+
+    **None for the outer-gated flat clocks** (`_pitch_seq_outer_flat_clock`,
+    task pitch-seq-flat-clock-other-files). Their records get the majority
+    phase from `pitch_seq_phases` and no per-note clone: on the shipped
+    `pitch_seq` files the clones took the instrument slots, pattern copies
+    and wavetable room that already-adopted passes need -- 12 existing tests
+    failed (Star_Paws lost its entry-instrument split, Saboteur_II left 32
+    rows on cells that read past the table, Lightforce's and Shockway_Rider's
+    free-note passes moved), and Chain_Reaction's 19 clones all logged "has
+    no block of its own". Per-note phases there want a room-aware plan.
     """
     if det.pitch_seq is None:
         return None
+    clock = _pitch_seq_any_clock(sid, det)
+    if clock is not None and clock.outer is not None and (
+            clock.divider_reload == 0):
+        return None                      # no per-note clones: see above
     phases = pitch_seq_phases(sid, det, tracks, patterns)
     if not phases:
         return None

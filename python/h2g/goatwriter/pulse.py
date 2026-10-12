@@ -5,6 +5,7 @@ import re
 from bisect import (bisect_right)
 from dataclasses import (dataclass)
 from fractions import (Fraction)
+from functools import lru_cache
 from typing import (Dict, List, Mapping, Optional, Set, Tuple)
 
 from ..detect import (Detection, pulse_tri_offset, _TRI_COUNTER, _TRI_DIR,
@@ -89,9 +90,10 @@ def _pulse_triangle(width: int, low: int, high: int, speed: int,
     player's turn width at the emitted speed, measured from where the
     previous leg actually stopped; where the speed divides the step (every
     `-S1` delay-1 step up to 127) that is the turn width exactly. Without
-    `step` -- the per-record-bounds engine, `_pulse_program` -- the old
-    edges stand: it turns on the same equality, but that engine was not
-    measured here.
+    `step` the old edges stand. The per-record-bounds engine now passes its
+    rate as the step (`_pulse_program`), so only a caller with no rate to
+    give gets them. RETRACTED: "that engine was not measured here" -- it
+    was, on 484 records (`PulseBoundsSim` and this are one arithmetic).
     """
     lo_v, hi_v = low << 8, high << 8
     turns = _tri_turns(width, step, low, high) if step else None
@@ -182,7 +184,9 @@ def _lattice_legs(width: int, speed: int, first_top: int, bottom: int,
 
 
 def _pulse_triangle_wrapped(width: int, low: int, high: int,
-                            speed: int) -> tuple[List[tuple], int]:
+                            speed: int,
+                            step: Optional[int] = None,
+                            ) -> tuple[List[tuple], int]:
     """`_pulse_triangle` for a bounds byte whose high nibble is <= its low one.
 
     Same shape, same opening at the record's own width, same loop back to the
@@ -212,9 +216,22 @@ def _pulse_triangle_wrapped(width: int, low: int, high: int,
       player's first descent runs a full $1000 before settling into the
       jitter, and this leg does not. Nine corpus records read `$00`, all on
       instrument 18 or above.
-    * As in `_pulse_triangle`, each leg turns a fraction of a step early
-      rather than a fraction late.
+    * Without `step`, each leg turns a fraction of a step early rather
+      than a fraction late.
+
+    **With `step` (the record's rate, the player's whole per-frame step),
+    the legs turn where the player turns** (`_tri_turns`, as in
+    `_pulse_triangle`): on the first width of the step lattice whose high
+    nibble EQUALS the bound, which is the sweep's own arithmetic
+    (`PulseBoundsSim.advance` and `PulsePhaseSim.advance` are the same
+    add, mask and equality test). The modular distances above are then
+    measured to those widths. The `high == low` case needs no special
+    reading: the sim turns at once where the step stays inside the nibble
+    and runs the full $1000 where it leaves it, as the player does.
     """
+    turns = _tri_turns(width, step, low, high) if step else None
+    if turns is not None:
+        return _lattice_legs(width, speed, *turns)
     lo_v, hi_v = low << 8, high << 8
     entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
     first = ((hi_v - width) & 0xFFF) // speed
@@ -250,10 +267,14 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
 
     Two places this is an approximation, both stated rather than hidden:
 
-    * the player turns around when the high nibble *equals* a bound, so a rate
-      that does not divide the span exactly overshoots by up to one step before
-      flipping; the tick count here is the span divided by the speed, which
-      turns around a fraction of a step early instead.
+    * the player turns around when the high nibble *equals* a bound, on the
+      first width of its step lattice inside that nibble, and the legs turn
+      there too (`_tri_turns`, `_lattice_legs`) -- to the nearest tick at the
+      emitted speed, which is the width exactly only where the speed divides
+      the rate. RETRACTED: "the tick count here is the span divided by the
+      speed, which turns around a fraction of a step early" -- it aimed at
+      the bound itself, up to a whole nibble from the player's turn
+      (Saboteur_II's record 10: 1533 against the player's 1344).
     * `multiplier` is the gt2reloc -S factor. Goattracker steps the pulse table
       once per play *call* (gplay.c:872, inside the per-call block) where the
       player steps once per *frame*, so at -S2 an unscaled speed would sweep at
@@ -304,8 +325,8 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     # branch had it frozen at $080: 1 pulse change per voice against the
     # original's 342. 25 corpus records have this shape, on 15 files.
     if high <= low:
-        return _pulse_triangle_wrapped(width, low, high, speed)
-    return _pulse_triangle(width, low, high, speed)
+        return _pulse_triangle_wrapped(width, low, high, speed, rate)
+    return _pulse_triangle(width, low, high, speed, rate)
 
 
 def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
@@ -971,6 +992,30 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
 # pattern across the limit.
 # --------------------------------------------------------------------------
 
+# A planned phase is `(width, direction)`: the width the note opens on, and
+# +1 / -1 for the way the sweep carries on from it. A HOLD is the third
+# thing a phase can say: a record that two voices step in opposite
+# directions on the same tick (`patterns._triangle_hold`) does not carry on
+# anywhere, it reads one width on every step -- so its direction is `HOLD`
+# plus the number of steps from the opening width to the width it holds
+# (`hold_direction`, `hold_steps`; an integer, so a phase still sorts and
+# keys a table like any other). Devils_Galop's instrument 10 opens voice 1
+# on $F00 and holds $E80, one step down, voice 0 on $F00 and holds $F00.
+HOLD = 8
+
+
+def hold_direction(steps: int) -> int:
+    return HOLD + steps
+
+
+def is_hold(direction: int) -> bool:
+    return direction > 1
+
+
+def hold_steps(direction: int) -> int:
+    return direction - HOLD
+
+
 class PulseVoiceCell:
     """The triangle sweep's per-VOICE state: its direction (+1 up, -1 down)
     and its delay counter. The player keeps both in `dir,X` / `counter,X`
@@ -1426,6 +1471,10 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
     engine)" -- the triangle's sweep crosses $FFF too, from any phase
     outside its band.
 
+    `lo_v`/`hi_v` are the BOUNDS, for both engines. The triangle's loop does
+    not turn on them: `_phase_block` and its helpers replace them with the
+    lattice cycle the phases walk (`_phase_cycle`), keyed on `step`.
+
     The two engines reach the same table shape from different record bytes:
     the triangle's step and delay are packed into +6 and its bounds are the
     routine's constants; the bounds engine's rate is the whole
@@ -1489,6 +1538,19 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
     and a clamp is what keeps that phase's ramp empty)" -- with the equality
     turn the sim stores no such value (it turns ON the step that reaches the
     nibble), and the clamp emptied the ramps of the phases outside the band.
+
+    **`lo_v` / `hi_v` are the loop's EDGES, which for the triangle engine
+    are the cycle's turns, not its bounds** (`_phase_cycle`): the sweep
+    turns on the first width of its step lattice inside the bound's nibble,
+    so Game_Killer's record 3 loops $8E0..$E20 where the bounds say
+    $800..$E00. The bounds engine passes its bounds, and its results are
+    the ones above. Aimed at a lattice edge the arrival can sit on either
+    side of it, so the overshoot is SIGNED: an arrival short of the edge
+    climbs on to it, one past it comes back to it (the old `back`), and
+    the same holds going down -- a phase ON the low nibble whose first step
+    stays in it steps down, turns, and comes back up to the edge, as
+    ($E00, up) steps up and comes back. Measured to the edge for the shared
+    loop to continue from.
     """
     if wrap:
         return ((hi_v - w) & 0xFFF if d > 0 else (w - lo_v) & 0xFFF), 0
@@ -1503,10 +1565,68 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
             break
     else:                            # never reaches the nibble: no turn
         return (max(0, hi_v - w) if d > 0 else max(0, w - lo_v)), 0
+    # `over` is SIGNED: x and the edge are both in the bound's nibble, and
+    # the edge is the bound itself only for the old callers. Aimed at a
+    # lattice turn (`_phase_cycle`) the arrival can sit on either side of it.
     if d < 0:
-        return travel + ((x - lo_v) & 0xFFF), 0
-    over = (x - hi_v) & 0xFFF
-    return (travel - over, 0) if travel > over else (travel, over)
+        over = ((x - lo_v + 0x800) & 0xFFF) - 0x800
+        net = travel + over
+        return (net, 0) if net > 0 else (travel, -over)
+    over = ((x - hi_v + 0x800) & 0xFFF) - 0x800
+    net = travel - over
+    return (net, 0) if net > 0 else (travel, over)
+
+
+@lru_cache(maxsize=None)
+def _phase_turns(w: int, d: int, step: int, lo: int, hi: int):
+    """The widths a sweep entered at phase (w, d) turns on, successively --
+    four turns, read off `PulsePhaseSim.advance` -- or None if a nibble is
+    never reached. The first is the phase's own first turn; from the second
+    on the sweep is in the cycle the record then repeats (see
+    `_phase_cycle`)."""
+    sim = PulsePhaseSim(w, step, 1, lo, hi, PulseVoiceCell(d, 0))
+    out, going = [], d
+    for _ in range(4):
+        for _ in range(0x1000 // step + 2):
+            sim.advance(1)
+            if sim.direction == -going:
+                break
+        else:
+            return None
+        out.append(sim.width)
+        going = -going
+    return tuple(out)
+
+
+def _phase_cycle(want_set: set, lo_v: int, hi_v: int,
+                 step: Optional[int]) -> tuple[int, int]:
+    """(bottom, top): the widths the loop of a triangle record's phase block
+    turns on -- the cycle most of its phases end up repeating, as the
+    sweep itself runs it (`_phase_turns`) -- or (lo_v, hi_v) for the
+    bounds engine (no `step`) and for a set that reaches no turn.
+
+    The sweep turns on the first width of its step lattice whose high
+    nibble EQUALS the bound, so the cycle is NOT bound to bound:
+    Game_Killer's record 3 (step $E0) runs $8E0..$E20, 1344 a leg, where
+    the bounds say $800..$E00; a step of $80 runs $880..$E00. Every phase
+    of a record sits on the one lattice its seed's sweep walks, bar the few
+    that entered through a 12-bit wrap (a step that does not divide $1000
+    shifts the lattice on every lap: Commando's record 7 runs $840..$E60,
+    not the $8E0..$E20 its seed's own walk does), so the cycle is the one
+    most phases reach, ties to the lowest bottom. A phase on another cycle
+    keeps its own turn in its entry piece and joins this loop from there."""
+    if not step:
+        return lo_v, hi_v
+    tally: Dict[tuple, int] = {}
+    for (w, d) in want_set:
+        t = _phase_turns(w, d, step, lo_v >> 8, hi_v >> 8)
+        if t is None:
+            continue
+        cyc = (t[2], t[3]) if d < 0 else (t[1], t[2])
+        tally[cyc] = tally.get(cyc, 0) + 1
+    if not tally:
+        return lo_v, hi_v
+    return min(tally, key=lambda c: (-tally[c], c))
 
 
 def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int,
@@ -1518,11 +1638,19 @@ def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int,
     in-band distance and no way back). A phase ON a bound heading out of
     the band is on the lattice and on no leg: Human_Race's instrument 2 at
     ($800, down), step $80, steps to $780 and laps $1000 before it turns,
-    where the chained down leg ends on it and turns at once."""
+    where the chained down leg ends on it and turns at once. A HOLD
+    (`is_hold`, `patterns._triangle_hold`) is on no leg either: it is a
+    set row, the held width and a stop.
+
+    `lo_v`/`hi_v` are the loop's edges (`_phase_cycle` for the triangle
+    engine): the lattice is measured from the cycle's bottom, and the legs
+    run to its top."""
+    lo_v, hi_v = _phase_cycle(want_set, lo_v, hi_v, step)
     if not (lo_v < hi_v and (hi_v - lo_v) % speed == 0):
         return set()
     return {(w, d) for (w, d) in want_set
-            if lo_v <= w <= hi_v and (w - lo_v) % speed == 0
+            if not is_hold(d) and lo_v <= w <= hi_v
+            and (w - lo_v) % speed == 0
             and _leg_ramps(w, d, lo_v, hi_v, wrap, step)
             == ((hi_v - w if d > 0 else w - lo_v), 0)}
 
@@ -1549,11 +1677,17 @@ def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
     56 entry points, and record 3's own pointer, off the per-phase widths
     within 3200 calls. Records of one kind share a loop whose widths are
     the ones their own blocks played, so every entry plays what it played."""
+    lo_v, hi_v = _phase_cycle(want_set, lo_v, hi_v, step)
+
     def lands(w: int, d: int) -> bool:   # `_phase_block`'s ramps, `_leg_ramps`
         out, back = _leg_ramps(w, d, lo_v, hi_v, wrap, step)
         n = out // speed * speed - back // speed * speed
         return (w + n * d) & 0xFFF == (hi_v if d > 0 else lo_v)
-    if all(lands(w, d) for (w, d) in want_set):
+    # A hold is a set row, the held width and a stop, whatever the lattice:
+    # it lands on nothing and chains nothing, so it takes no part in the
+    # kind -- the phases that move decide it.
+    moving = {(w, d) for (w, d) in want_set if not is_hold(d)}
+    if all(lands(w, d) for (w, d) in moving):
         return "chained"
     return (None if _chained_phases(want_set, speed, lo_v, hi_v, wrap, step)
             else "plain")
@@ -1601,12 +1735,40 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     below). A row is never a jump's target if it is a jump
     itself (the two players follow one jump per call, gplay.c:865-869 before
     the step and player.s `mt_nextpulsestep` after it).
+
+    **The triangle engine's loop and legs turn on the sweep's lattice**
+    (`_phase_cycle`; `step` is what says which engine). The player turns on
+    the first width of its step lattice whose high nibble EQUALS the bound,
+    so the loop is bottom..top of THAT cycle -- Game_Killer's record 3 runs
+    $8E0..$E20, 1344 a leg, where the bounds say $800..$E00 and this loop
+    spanned 1518 -- the chained legs run between the same two widths, and an
+    entry piece ramps to the edge of the cycle its phase joins. Every
+    triangle tick count is the one whose arrival is NEAREST the sweep's
+    distance at the emitted speed (`_nearest_ticks`), where the bounds
+    engine's is the whole ticks below it. Census under forced `pulse_phase`
+    (turns of the first three legs of every shipped index entry, against
+    `PulsePhaseSim`): 1851 of 4503 within half a speed before, 4647 of 4704
+    after, 1701 exact before and 4151 after (the rest are speeds that do
+    not divide the step, and the clamped speeds of $E0 steps at `-S1`).
+    RETRACTED: "the loop's span only: bound to bound" -- true of the bounds
+    engine, and of this one before the lattice.
     """
+    # The triangle engine's loop turns where the sweep does (`_phase_cycle`),
+    # not on its bounds, and every leg is the tick count nearest the
+    # sweep's own distance (`_nearest_ticks`) where the bounds engine's is
+    # the whole ticks below it. Everything below -- `_leg_ramps`, the chained
+    # legs, `_union_kind` -- reads these edges, and re-deriving them from
+    # an edge returns the same edge.
+    lo_v, hi_v = _phase_cycle(want_set, lo_v, hi_v, step)
+
     def dist(a: int, b: int) -> int:
         # The loop's span only: an entry piece's ramps are `_leg_ramps`, which
         # says why the triangle's no longer clamps.
         return (a - b) & 0xFFF if wrap else max(0, a - b)
     up_spd, down_spd = speed, (0x100 - speed) & 0xFF
+
+    def whole(distance: int) -> int:
+        return _nearest_ticks(distance, speed) if step else distance // speed
 
     def ramp(ticks: int, spd: int) -> List[tuple]:
         return [(t, spd) for t in _split_ticks(ticks)] if ticks > 0 else []
@@ -1672,7 +1834,7 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     else:
         # The shared alternating loop: a down leg and an up leg, each jumping
         # to the other. Every phase entry ramps to its bound and joins here.
-        span_ticks = max(1, dist(hi_v, lo_v) // speed)
+        span_ticks = max(1, whole(dist(hi_v, lo_v)))
         down_head = base + 1
         down = [(t, down_spd) for t in _split_ticks(span_ticks)]
         up_head = down_head + len(down) + 1
@@ -1680,19 +1842,44 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         block += [(t, up_spd) for t in _split_ticks(span_ticks)]
         block += [(0xFF, down_head)]
 
+    tails: dict = {}
     for (w, direction) in sorted(want_set):
         if (w, direction) in chained:
             continue
         at = base + len(block) + 1
         piece = [setrow(w)]
+        if is_hold(direction):
+            # A hold (`patterns._triangle_hold`): the voice opens on `w`
+            # and reads `held` on every step after it, for as long as its
+            # partner keeps the record still. Where it opens on the width
+            # it holds -- or under the shared layout, which is the one
+            # that is short of rows -- its entry is a set row and a stop
+            # (`FF 00`, as the table's first rows), one pair per width
+            # held however many openings name it. Under the shared layout
+            # an opening off the held width therefore plays the held width
+            # on its attack frame, a step or two from the original's, where
+            # the per-phase layout spends four rows to play it: `w`, one
+            # tick of nothing that keeps the attack frame on it (the
+            # original's fetch tick writes the width and sweeps from the
+            # next tick), then `held`, then the stop.
+            held = (w + hold_steps(direction) * (step or 0)) & 0xFFF
+            if held == w or share:
+                if held not in tails:
+                    tails[held] = base + len(block) + 1
+                    block += [setrow(held), (0xFF, 0)]
+                phase_index[(num, w, direction)] = tails[held]
+            else:
+                phase_index[(num, w, direction)] = at
+                block += piece + [(1, 0), setrow(held), (0xFF, 0)]
+            continue
         out, back = _leg_ramps(w, direction, lo_v, hi_v, wrap, step)
         if direction > 0:
-            piece += ramp(out // speed, up_spd)
-            piece += ramp(back // speed, down_spd)
+            piece += ramp(whole(out), up_spd)
+            piece += ramp(whole(back), down_spd)
             piece += [(0xFF, down_head)]
         else:
-            piece += ramp(out // speed, down_spd)
-            piece += ramp(back // speed, up_spd)
+            piece += ramp(whole(out), down_spd)
+            piece += ramp(whole(back), up_spd)
             piece += [(0xFF, up_head)]
         phase_index[(num, w, direction)] = at
         block += piece
@@ -1856,7 +2043,7 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 def _union_groups(sid: SidFile, det: Detection, instr_used: int,
                   multiplier: int, phases: dict, lead: int) -> dict:
     """The sweep groups `_lay_pulse_phase_table`'s shared pass may lay as
-    one union block: {(speed, lo_v, hi_v, wrap, step, kind): {num: want_set}}, only
+    one union block: {(speed, lo_v, hi_v, wrap, step, kind, cycle): {num: want_set}}, only
     groups of two or more records, in allocation order of their first
     member. `want_set` is the record's planned phases plus its own (width,
     up), exactly the set the pass lays for it alone."""
@@ -1869,7 +2056,11 @@ def _union_groups(sid: SidFile, det: Detection, instr_used: int,
         want_set = set(want) | {(params[0], +1)}
         kind = _union_kind(want_set, *params[1:])
         if kind is not None:
-            groups.setdefault(params[1:] + (kind,), {})[j + 1 + lead] = want_set
+            # The cycle the loop turns on (`_phase_cycle`) is part of the
+            # sweep: records of one step on different lattices lay different
+            # loops, and one shared loop would play one of them off.
+            cycle = _phase_cycle(want_set, params[2], params[3], params[5])
+            groups.setdefault(params[1:] + (kind, cycle), {})[j + 1 + lead] = want_set
     return {k: v for k, v in groups.items() if len(v) > 1}
 
 

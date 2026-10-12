@@ -766,6 +766,16 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # files, whose bytes this must not move.
     if (vibrato_command and vib_ptrs and det.vibrato_offset is not None
             and _expanding_vibrato_counter(sid, det) is not None):
+        # A pattern some positions want the swell on and others do not is
+        # copied per set of rows wanted first; same-length orderlists, so the
+        # bytes already written are written over (`expanding_vibrato_split`).
+        tracks, patterns, vib_copies = _gw_note_passes.expanding_vibrato_split(
+            sid, det, tracks, patterns, vib_ptrs, table, lead, multiplier,
+            row_calls, instr_row_calls=instr_row_calls, log=log)
+        if vib_copies:
+            split_copies.update(vib_copies)
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
         _expanding_vibrato_pass(sid, det, tracks, patterns, vib_ptrs, table,
                                 lead, multiplier, row_calls,
                                 instr_row_calls=instr_row_calls, log=log)
@@ -798,9 +808,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     arp_tie_rows = (fixed_arp_tie_rows(sid, det, tracks, patterns)
                     if effects and det.arp_fixed_up else None)
     # Bit $10's global phase, the same walk: only where its clock is read
-    # (`_pitch_seq_any_clock` -- Food_Feud's divided one, Mega_Apocalypse's
-    # undivided one), and only behind the option that emits the arpeggio at
-    # all.
+    # (`_pitch_seq_any_clock` -- Food_Feud's divided one, and the undivided
+    # ones of Mega_Apocalypse and the classic outer-gated players), and only
+    # behind the option that emits the arpeggio at all.
     pitch_phases = (_gw_arpeggio.pitch_seq_phases(sid, det, tracks, patterns)
                     if pitch_seq and fmt == FORMAT_GTS5
                     and det.pitch_seq is not None else None)
@@ -1009,6 +1019,13 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             and duty_split is None and phase_split is None
             and det.vibrato_offset is not None
             and _expanding_vibrato_counter(sid, det) is not None):
+        tracks, patterns, vib_copies = _gw_note_passes.expanding_vibrato_split(
+            sid, det, tracks, patterns, vib_ptrs, table, lead, multiplier,
+            row_calls, instr_row_calls=instr_row_calls, loops=True, log=log)
+        if vib_copies:
+            split_copies.update(vib_copies)
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
         wave_entries, _looped = _gw_note_passes._expanding_vibrato_loops(
             sid, det, tracks, patterns, vib_ptrs, table, lead, multiplier,
             row_calls, wave_entries, wave_starts,

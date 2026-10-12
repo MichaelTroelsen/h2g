@@ -10,6 +10,11 @@ append at `without pulse_phase` -- every record's sweep intact, pulse 248 of
 255 (measured at 81da71d). `prefer_short` asks for that layout, and
 `convert` passes it on exactly the gate `_append_players` appends on: not a
 PlayerView, two or more players.
+
+Re-pinned at the phase tables' lattice legs (task
+`phase-block-legs-on-the-nibble-lattice`): the loops turn on the sweep's
+lattice and are shorter, so the shared layout is 143 rows (was 167) and the
+per-phase one 215 (was 214).
 """
 import json
 import pathlib
@@ -113,9 +118,10 @@ def test_5_title_tunes_subtune_0_asks_for_the_short_layout_and_gets_it(
     assert calls, "no pulse phase table was built"
     kind, prefer, rows = calls[0]
     assert (kind, prefer) == ("SidFile", True), calls
-    assert rows == 167, calls
-    assert any(l.startswith("Pulse phase.............: shared ramps -- 167 "
-                            "table row(s) where one ramp per phase took 214")
+    assert rows == 143, calls          # 167 on the bound-to-bound loops
+    # 167 / 214 until the phase tables' loops turned on the nibble lattice.
+    assert any(l.startswith("Pulse phase.............: shared ramps -- 143 "
+                            "table row(s) where one ramp per phase took 215")
                for l in lines), [l for l in lines if "Pulse phase" in l]
 
 

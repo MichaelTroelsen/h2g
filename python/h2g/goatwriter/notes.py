@@ -7,7 +7,7 @@ from typing import (List, Optional)
 from ..detect import (Detection)
 from ..sidfile import (SidFile)
 from .constants import (DRUM_DEEPEN_MARGIN, _drum_speed, EFFECT_PITCH_SEQ_MASK,
-                        WAVE_NOTE_BASE)
+                        WAVE_MAX_DELAY, WAVE_NOTE_BASE)
 from .primitives import (_arp_relative, _note_freq)
 def _drum_steps_safe(steps: int, min_note: Optional[int],
                      multiplier: int = 1) -> bool:
@@ -349,10 +349,26 @@ def _pitch_seq_phased_entries(notes: List[int], phases: tuple, wave: int,
     reading 1, and the `-4` lands on 1513) -- and so does every call of it.
 
     Entry `e` covers call `e + 1` of the note (player.s:908-911, as
-    `_pitch_seq_entries` reads it), which is frame `(e + 1) // multiplier`:
-    `multiplier - 1` entries of frame 0, then the period, one frame being
-    `multiplier` entries, looped onto its own first entry -- which is
-    continuous because the period is the counter's whole cycle.
+    `_pitch_seq_entries` reads it). A frame is sampled at its LAST call and
+    the attack is named from the frame holding call 1 -- the first with the
+    gate on -- which is the frame holding call 0 unless call 0 is the last
+    call of its frame. So the plain lead is `multiplier` CALLS, never
+    `multiplier - 1`: that is the length for which, wherever in its frame the
+    note's call 0 falls, the attack frame samples the note's own note and
+    frame `f` samples the group `f - 1` of the body. At `multiplier - 1` a
+    note starting on its frame's last call sampled `phases[0]` on the attack
+    frame -- measured on the shipped `pitch_seq` files at -S2 and up, whose
+    melody fell from 1.0000 to 0.85-0.99 once the player's clock was read
+    (Chain_Reaction, Zoolook, Saboteur_II, Shockway_Rider, Lightforce). The
+    body is the period, one frame being `multiplier` calls, looped onto its
+    own first step -- which is continuous because the period is the
+    counter's whole cycle.
+
+    At -S2 and up a run of `multiplier` calls is ONE delay entry `(m - 1,
+    note)`, so the block is `1 + period` entries (5 at -S3 on a 3-step cell)
+    where one entry per call needs `m + period * m` (13): the long form left
+    Saboteur_II's past-table split 4 rows on cells that depend on the packed
+    layout, for want of wavetable room.
 
     **At -S1 frame 0 is entry 0, not the firstwave call.** The note's call
     0 writes only the `$09` firstwave, below `$10` (siddump.c:436), so the
@@ -361,19 +377,34 @@ def _pitch_seq_phased_entries(notes: List[int], phases: tuple, wave: int,
     entry of the attack's own note leads, never fewer (task
     mega-0a06-frame-2-pitch-move: Mega_Apocalypse `$0A06`, the first -S1
     record on this path, read `0, 8, 3, 0` from its attack without it
-    against the original's `0, 0, 8, 3` on all 110 notes). At -S2 and up
-    `multiplier - 1` is already at least one.
+    against the original's `0, 0, 8, 3` on all 110 notes). At -S1 the lead
+    is `multiplier` too, so one rule covers every multiplier.
     """
     m = max(1, multiplier)
-    lead = max(1, m - 1)
-    body: List[int] = []
+    steps: List[int] = []
     for f in range(1, len(phases) + 1):
         n = _phase_note(notes, phases, f)
         if n is None:
             return None
-        body += [n] * m
-    right = [WAVE_NOTE_BASE] * lead + body
+        steps.append(n)
+    if 1 < m <= WAVE_MAX_DELAY + 1:
+        # A run of `m` calls in one state is ONE delay entry `(m - 1, note)`:
+        # it is current for `m` calls and applies its right side on the last
+        # of them (`fixed_arp_entries`, gplay.c's wavetable-delay `else`). So
+        # entry 0 is call 1 alone and each step's entry lands on the call the
+        # long form's first copy of it did -- calls `m + 1`, `2m + 1`, ... --
+        # in `1 + period` entries where the long form needs `m + period * m`:
+        # 5 against 13 at -S3, so the table has room for the clones and the
+        # pinned copies the passes after it ask for (Saboteur_II's past-table
+        # split left 4 rows on cells that depend on the packed layout with
+        # the long form).
+        right = [WAVE_NOTE_BASE] + steps
+        if len(right) + 1 > budget:
+            return None
+        return ([wave] + [m - 1] * len(steps) + [0xFF],
+                right + [start + 1])
+    right = [WAVE_NOTE_BASE] * m + [n for n in steps for _ in range(m)]
     if len(right) + 1 > budget:
         return None
     left = [wave] * len(right) + [0xFF]
-    return left, right + [start + lead]
+    return left, right + [start + m]

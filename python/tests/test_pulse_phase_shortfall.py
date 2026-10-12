@@ -33,6 +33,13 @@ with 22 kept (168 rows; `test_pulse_phase_union.py` pins that). So every
 test here lays the table as it was measured, with the triangle's entry
 ramps clamped (`_the_clamp`); Last_V8 has no phase outside the band, so the
 clamp changes nothing there.
+
+Nor by the phase blocks' lattice legs (task
+`phase-block-legs-on-the-nibble-lattice`): the loops turn on the sweep's
+lattice and are 56 to 64 ticks shorter, Gremlins' records 3 and 7 turn on
+different cycles and no longer share a union, and Last_V8 fits whole in 245
+rows. `_the_clamp` puts those back too (loops on the bounds, whole-tick
+legs), so the clauses stay pinned on the layout they were measured on.
 """
 from __future__ import annotations
 
@@ -59,6 +66,11 @@ def _the_clamp(monkeypatch):
     real = P._leg_ramps
     monkeypatch.setattr(P, "_leg_ramps", lambda w, d, lo_v, hi_v, wrap, step:
                         real(w, d, lo_v, hi_v, wrap, None))
+    # ... and the loop on the bounds, as it was before `_phase_cycle`.
+    monkeypatch.setattr(P, "_phase_cycle", lambda want, lo_v, hi_v, step:
+                        (lo_v, hi_v))
+    monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
+                        distance // speed)
 
 
 def _capture(name: str) -> dict:

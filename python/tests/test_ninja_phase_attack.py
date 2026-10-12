@@ -235,14 +235,17 @@ def test_the_pulse_set_lands_the_call_after_the_gate_and_every_command_is_exact(
 def test_reading_at_the_gate_frame_misreads_the_same_output():
     """RETRACTED reading (`_reach`'s rule on a real-firstwave file): the width
     at the attack frame, the attack paired by name. Pinned so the number
-    cannot be rediscovered as a defect: 20 of 223 reached, on bytes that are
-    exact."""
+    cannot be rediscovered as a defect: 23 of 223 reached, on bytes that are
+    exact. (20 of 223, {0: (11, 93), 1: (9, 28), 2: (0, 102)}, until the phase
+    tables' loop and legs turned on the nibble lattice: the table is laid
+    differently, the correct reading above is still exact, and the
+    misreading lands on other notes.)"""
     run = _packed_run(True)
     at_gate, _ = _reading(run, lag=0, shift=0)
-    assert at_gate == {0: (11, 93), 1: (9, 28), 2: (0, 102)}, at_gate
+    assert at_gate == {0: (16, 93), 1: (1, 28), 2: (6, 102)}, at_gate
     # Each half of the misreading alone is as bad: the stale width at T with
     # the name shifted, and the right frame with the name unshifted.
-    assert _reading(run, lag=0, shift=1)[0] == {0: (9, 93), 1: (0, 28), 2: (9, 102)}
+    assert _reading(run, lag=0, shift=1)[0] == {0: (17, 93), 1: (0, 28), 2: (20, 102)}   # was (9, 0, 9)
     assert _reading(run, lag=1, shift=0)[0] == {0: (0, 93), 1: (0, 28), 2: (0, 102)}
 
 

@@ -287,12 +287,14 @@ def test_the_288_frame_notes_rows_point_at_the_loops_from_the_first_dip():
 
 @needs_corpus
 def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
-    """No note taken -> the same bytes as before the alternation: 3dd7d6f19319
-    at 0d0f6ec."""
+    """No note taken -> the bytes the swell alone gives. 3dd7d6f19319 at
+    0d0f6ec; f5958c98a448 since the swell's pattern split, which moves this
+    sha and nothing else: with the split off too it is 3dd7d6f19319 again
+    (`test_with_the_split_and_the_alternation_off_mega_converts_as_it_did`)."""
     import hashlib
     monkeypatch.setattr(C, "ALTERNATION_MIN_DIPS", 10 ** 6)
     sng, lines = _converted()
-    assert hashlib.sha1(sng).hexdigest()[:12] == "3dd7d6f19319"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "f5958c98a448"
     assert any("not emitted" in m for m in lines), lines
 
 

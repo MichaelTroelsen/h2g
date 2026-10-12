@@ -15,6 +15,13 @@ and index pointing into it. Three properties hold that up, one test each:
 * the unions are taken where they help: fewer rows, fewer records degraded.
 
 Figures measured under forced `pulse_phase` at be0aeb1 + this change.
+
+**Re-pinned at the phase blocks' lattice legs** (task
+`phase-block-legs-on-the-nibble-lattice`): a union is laid over ONE loop, so
+records join one only if they turn on the same cycle (`_phase_cycle` is part
+of `_union_groups`' key). Records of one step whose seeds sit on different
+lattices -- Gremlins 3 / 7, Commando 1 / 7, 5_Title_Tunes 3 / 6 -- no longer
+share; the rest of the corpus's groups are as they were.
 """
 from __future__ import annotations
 
@@ -88,7 +95,9 @@ def test_union_blocks_play_the_widths_each_record_played_alone():
     for name in files:
         args = _table_calls(name)[0]
         sid, det, iu, pulse, mult, phases, _, lead = args
-        if name != "5_Title_Tunes.sid":   # its pair is the next test's
+        # 5_Title_Tunes' pair is the next test's; Commando's records 1 and 7
+        # turn on $820..$E40 and $840..$E60 and so no longer share a loop.
+        if name not in ("5_Title_Tunes.sid", "Commando.sid"):
             assert P._union_groups(sid, det, iu, mult, phases, lead), name
         shared, ref = _layouts(args)
         entries, starts, index = shared[0], shared[1], shared[2]
@@ -100,16 +109,26 @@ def test_union_blocks_play_the_widths_each_record_played_alone():
                     == _play_pulse_table(ref[0], ref[1][num - 1], _CALLS)), (name, num)
 
 
-def test_5_title_tunes_records_3_and_6_share_a_sweep_not_a_kind():
-    """The pair the kind exists for: same (speed, lo, hi, wrap), different
-    `_union_kind`, so `_union_groups` offers no union of them."""
+def test_5_title_tunes_records_3_and_6_share_a_sweep_not_a_cycle():
+    """Was `..._share_a_sweep_not_a_kind` (3 "plain", 6 "chained" on one
+    sweep: a union across kinds played 22 of 56 entries off). On the
+    lattice legs both are "chained" and they differ in the CYCLE instead:
+    record 3 turns on $8E0..$E60, record 6 on $880..$E00, from seeds on
+    different lattices of the same step, so `_union_groups` still offers no
+    union of them -- one loop cannot turn on both. (The kind half of the key
+    is kept for soundness; no two corpus records of one cycle differ in kind
+    any more -- 11 groups of two or more, all one kind, at f75cc7f + the
+    lattice legs.)"""
     from h2g.goatwriter import pulse as P
     sid, det, iu, pulse, mult, phases, _, lead = _table_calls("5_Title_Tunes.sid")[0]
     params = {n: P._phase_sweep_params(sid, det, n - 1 - lead, mult) for n in (3, 6)}
     assert params[3][1:] == params[6][1:]
-    kinds = {n: P._union_kind(set(phases[n]) | {(params[n][0], +1)}, *params[n][1:])
-             for n in (3, 6)}
-    assert kinds == {3: "plain", 6: "chained"}, kinds
+    want = {n: set(phases[n]) | {(params[n][0], +1)} for n in (3, 6)}
+    kinds = {n: P._union_kind(want[n], *params[n][1:]) for n in (3, 6)}
+    assert kinds == {3: "chained", 6: "chained"}, kinds
+    cycles = {n: P._phase_cycle(want[n], params[n][2], params[n][3], params[n][5])
+              for n in (3, 6)}
+    assert cycles == {3: (0x8E0, 0xE60), 6: (0x880, 0xE00)}, cycles
     assert P._union_groups(sid, det, iu, mult, phases, lead) == {}
 
 
@@ -128,14 +147,23 @@ def test_no_union_silences_a_record(monkeypatch):
     `_lay_pulse_phase_table`'s, which `_leg_ramps` does not touch."""
     from h2g.goatwriter import pulse as P
     sid, det, iu, pulse, mult, phases, _, lead = _table_calls("Gremlins.sid")[0]
+    # On the lattice legs records 3 and 7 turn on different cycles and no
+    # longer share, so only (6, 20) is offered, and the real file poses no
+    # choice at all.
     groups = P._union_groups(sid, det, iu, mult, phases, lead)
-    assert sorted(sorted(m) for m in groups.values()) == [[3, 7], [6, 20]]
+    assert sorted(sorted(m) for m in groups.values()) == [[6, 20]]
     both = P._lay_pulse_phase_pass(sid, det, iu, pulse, mult, phases, None,
                                    lead, True, groups)
     assert [i + 1 for i, v in enumerate(both[1]) if v == 0] == []
+    # Put the layout back as the choice was measured: the clamp, loops on the
+    # bounds and whole-tick legs.
     real = P._leg_ramps
     monkeypatch.setattr(P, "_leg_ramps", lambda w, d, lo_v, hi_v, wrap, step:
                         real(w, d, lo_v, hi_v, wrap, None))
+    monkeypatch.setattr(P, "_phase_cycle", lambda want, lo_v, hi_v, step:
+                        (lo_v, hi_v))
+    monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
+                        distance // speed)
     groups = P._union_groups(sid, det, iu, mult, phases, lead)
     assert sorted(sorted(m) for m in groups.values()) == [[3, 7], [6, 20]]
     both = P._lay_pulse_phase_pass(sid, det, iu, pulse, mult, phases, None,
@@ -154,14 +182,19 @@ def test_unions_buy_rows_and_records():
     which is what shipped before."""
     from h2g.goatwriter import pulse as P
     want = {  # name: ((rows, kept) with unions, (rows, kept) without)
-        "Master_of_Magic.sid": ((103, {11, 14}), (172, {11, 14})),
-        "Phantoms_of_the_Asteroid.sid": ((59, {1, 7, 16, 17}), (200, {1, 7, 16, 17})),
-        "Battle_of_Britain.sid": ((147, {7, 8, 9, 10, 11, 15, 16}),
-                                  (225, {7, 8, 9, 10, 11, 15, 16})),
+        # Re-pinned at the lattice legs (was 103/172, 59/200, 147/225): the
+        # loops are 56 to 64 ticks shorter than the bound-to-bound ones.
+        "Master_of_Magic.sid": ((102, {11, 14}), (170, {11, 14})),
+        "Phantoms_of_the_Asteroid.sid": ((58, {1, 7, 16, 17}), (196, {1, 7, 16, 17})),
+        "Battle_of_Britain.sid": ((143, {7, 8, 9, 10, 11, 15, 16}),
+                                  (215, {7, 8, 9, 10, 11, 15, 16})),
         # Re-pinned at the triangle's wrap ramps (was ((252, {3, 6, 7,
         # 20}), ...)): record 10's out-of-band ramps grow its block to 113
         # rows, it degrades either way, and both unions now fit.
-        "Gremlins.sid": ((168, {3, 6, 7, 20}), (254, {3, 6, 7})),
+        # Re-pinned again at the lattice legs (was ((168, ...), (254, ...))):
+        # records 3 and 7 turn on different cycles and no longer union, so
+        # the shared layout is 248 rows and the no-union one 250.
+        "Gremlins.sid": ((248, {3, 6, 7, 20}), (250, {3, 6, 7})),
         # Re-pinned at the lockstep triangle walk (was ((252, {1, 4, 18,
         # 21, 23}), (249, {1, 4, 18, 21}))): subtune 0 voice 1 is walked,
         # record 2 joins the plan, 21 no longer fits, and record 2 lays its
@@ -171,7 +204,10 @@ def test_unions_buy_rows_and_records():
         # record's kind goes from None to "chained" (its own shared block
         # 77 -> 54 rows) and it unions with record 1; records 18 and 23
         # each pay 3 rows for their wrap ramps (55 -> 58, 58 -> 61).
-        "Human_Race.sid": ((179, {1, 2, 4, 18, 23}), (214, {1, 2, 4, 18})),
+        # Re-pinned at the lattice legs (was ((179, {1, 2, 4, 18, 23}),
+        # (214, ...))): record 23's 61 rows no longer fit behind 21's 87, so
+        # 21 is kept in its place (5 of 7 swept either way).
+        "Human_Race.sid": ((245, {1, 2, 4, 18, 21}), (200, {1, 2, 4, 18})),
     }
     for name, (with_u, without) in want.items():
         sid, det, iu, pulse, mult, phases, _, lead = _table_calls(name)[0]

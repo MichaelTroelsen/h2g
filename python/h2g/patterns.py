@@ -20,7 +20,8 @@ from typing import Dict, List, Optional, Set, Tuple
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
 from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
-                         TEMPO_FASTEST_STEADY, restarted_gate_calls)
+                         TEMPO_FASTEST_STEADY, hold_direction,
+                         restarted_gate_calls)
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -3660,6 +3661,10 @@ def _regrid_spots(pattern: List[int], n: int, rows: int):
             # effect would carry the CMD_SETTEMPO through two more rows.
             r2 = _shifted_regrid_spot(work, r, rows)
             if r2 is None:
+                # No clean pair anywhere. A run of identical 1XY/2XY cells
+                # carries a pair without losing the slide, see below.
+                r2 = _slide_covered_regrid_spot(work, r, rows)
+            if r2 is None:
                 skipped += 1             # no clean free pair in the pattern
                 continue
             moved = True
@@ -4417,6 +4422,34 @@ def _shifted_regrid_spot(pattern: List[int], want: int,
             if (1 <= r <= last and pattern[r * 4 + 2] == 0
                     and pattern[(r + 1) * 4 + 2] == 0
                     and not _inherits_continuous_effect(pattern, r)):
+                return r
+    return None
+
+
+def _slide_covered_regrid_spot(pattern: List[int], want: int,
+                               rows: int) -> Optional[int]:
+    """The nearest row to `want` whose pair lies INSIDE a run of identical
+    1XY/2XY cells, or None. **The slides are kept**: a `CMD_SETTEMPO` is
+    one-shot (player.s `mt_tick0_5`..`mt_tick0_f` jump past `sta mt_chnfx`),
+    so with the previous row's identical 1XY/2XY already running, overwriting
+    the repeated cell leaves `mt_chnfx` and `mt_chnparam` exactly as the cell
+    would have set them, and the next row's own cell re-specifies the slide as
+    before. Only 1 and 2 qualify: a 3XY cell decides whether its note is
+    retriggered (a tie) and a 4XY resets the vibrato phase. Rows `r-1`, `r`
+    and `r+1` must all carry the same command and parameter, so neither
+    pair cell is the first of its run and the pair cannot end one. Measured
+    need: Nineteen's pattern, 49 rows of `1XY`/`2XY` between two ties
+    (`regrid-unplaced-pairs-slides`).
+    """
+    last = rows - 3
+
+    def cell(k: int):
+        return pattern[k * 4 + 2], pattern[k * 4 + 3]
+
+    for d in range(0, rows):
+        for r in ((want - d, want + d) if d else (want,)):
+            if (2 <= r <= last and cell(r)[0] in (1, 2)
+                    and cell(r - 1) == cell(r) == cell(r + 1)):
                 return r
     return None
 
@@ -5588,7 +5621,9 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
-      phases -- {instrument byte: set of (width, direction)}
+      phases -- {instrument byte: set of (width, direction)}; direction is
+                +1 / -1 for a sweep, or `goatwriter.hold_direction(k)` for
+                the triangle engine's HOLD (`_triangle_hold`)
       writes -- [(track index, slot index, {row: (instr, (width, dir))})]
 
     Declines a voice whose repeats will not expand inside the orderlist
@@ -5885,6 +5920,67 @@ def _triangle_rows(track: List[int], songlen: int, restart: int,
         start, npass = restart, npass + 1
 
 
+def _triangle_hold(x: int, sim, recs: dict, cells: list, cur: list,
+                   lead: list) -> Optional[int]:
+    """The direction `hold_direction(k)` voice `x`'s note opens on, if the
+    record is HELD: two or more voices sweep it, and what `x` reads on every
+    step after this fetch is one constant `k` steps from the width it opens
+    on. None otherwise (the plan is then `(width, direction)`, a sweep).
+
+    A phase `(w, d)` is a promise that the voice's reads walk away from `w`
+    along `d`. The record's width is per record and its direction per voice,
+    so voices X = 2, 1, 0 stepping one record up and down by the same step
+    on the same tick put it back where it was by the end of the tick, and
+    each voice's read -- taken after ITS step -- is the same on every step:
+    Devils_Galop instrument 10 on voices 0 and 1 opens both on $F00 and
+    then reads $F00 (voice 0) and $E80 (voice 1) for the whole note, where
+    the per-voice phases `($F00, up)` and `($F00, down)` ramp away in
+    opposite directions. A table cannot say that with a direction alone,
+    so a hold names the width it settles on as a count of steps
+    (`goatwriter.hold_direction`).
+
+    Read off the lockstep state the walk is in -- `recs`, `cells` and `cur`
+    (the rows being played, the fetch flag at index 5) -- by stepping a
+    scratch copy of the record for as many ticks as both voices' counters
+    take to repeat twice over, on the assumption that every voice sweeping
+    the record keeps sweeping it (the rows are not read ahead). Two voices
+    at least must sweep it: one voice alone holds a record only if its step
+    is nil, which is not a hold the plan needs a word for. The current tick
+    is finished first -- the voices after `x` in the loop still step in it,
+    unless they are fetching too. The routine writes the SID's pulse
+    registers only on a tick it stepped, so a read is the width after one
+    of `x`'s own steps and a tick its counter spends counting down reads
+    nothing."""
+    sharers = [y for y in (2, 1, 0) if cur[y] is not None
+               and recs.get(cur[y][4] or lead[y]) is sim]
+    if x not in sharers or len(sharers) < 2:
+        return None
+    scratch = {y: PulseVoiceCell(cells[y].direction, cells[y].counter)
+               for y in sharers}
+    rec = sim.clone(scratch[x])
+    opens = sim.width
+
+    def step(y: int) -> None:
+        rec.cell = scratch[y]
+        rec.advance(1)
+    for y in sharers:
+        if y < x and not cur[y][5]:
+            step(y)
+    reads = []
+    for _ in range(2 * max(1, sim.delay) + 2):
+        for y in sharers:
+            before = rec.width
+            step(y)
+            if y == x and rec.width != before:
+                reads.append(rec.width)
+    if not reads or len(set(reads)) != 1:
+        return None
+    away = (reads[0] - opens + 0x800) % 0x1000 - 0x800
+    if away % sim.step:
+        return None
+    return hold_direction(away // sim.step)
+
+
 def _walk_triangle_group(g: int, patterns: List[List[int]],
                          tracks: List[List[int]], tempo: int, sims: dict,
                          calls_per_frame: int, tri_start: Optional[list],
@@ -5984,8 +6080,10 @@ def _walk_triangle_group(g: int, patterns: List[List[int]],
                     # lead-in record but is not planned: our side plays it
                     # on whatever Goattracker's channel holds.)
                     if kind == "note" and instr and x in passes and npass < 2:
+                        held = _triangle_hold(x, sim, recs, cells, cur, lead)
                         passes[x][npass].setdefault(pos, {})[r] = (
-                            instr, (sim.width, cells[x].direction))
+                            instr, (sim.width, cells[x].direction
+                                    if held is None else held))
                     continue
                 if k < ticks:
                     sim.cell = cells[x]

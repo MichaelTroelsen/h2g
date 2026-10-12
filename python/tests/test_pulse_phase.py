@@ -737,6 +737,24 @@ def _forced_table_args(name: str) -> tuple:
     return cap["args"], cap["table"]
 
 
+def _bound_to_bound(monkeypatch) -> None:
+    """Lay the triangle's phase blocks as they were before they turned on the
+    sweep's lattice (task `phase-block-legs-on-the-nibble-lattice`): the loop
+    on the bounds (`_phase_cycle` an identity) and whole-tick legs
+    (`_nearest_ticks` a floor). The capacity figures the reserve rescue and
+    the Last_V8 degrade were measured on are THIS layout's -- on the lattice
+    legs Last_V8 fits whole (`test_last_v8_fits_on_the_lattice_legs`) and the
+    rescue is no longer reached there -- so the tests that pin that regime
+    ask for it by name. Static programs (`_lattice_legs`) share
+    `_nearest_ticks`, which is why this is a patch of the two names and not
+    a flag on the real function."""
+    from h2g.goatwriter import pulse as P
+    monkeypatch.setattr(P, "_phase_cycle", lambda want, lo_v, hi_v, step:
+                        (lo_v, hi_v))
+    monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
+                        distance // speed)
+
+
 def _play_pulse_table(entries: list, ptr: int, calls: int) -> list:
     """The width the GT pulse table holds after each of `calls` play calls
     from a note that set pointer `ptr` -- gplay.c:856-902 with pulse
@@ -795,7 +813,10 @@ _OVERFLOWING = {
     "Battle_of_Britain.sid": (11, 15, 16),
     "Crazy_Comets.sid": (17,),
     "Gremlins.sid": (7, 20),
-    "Human_Race.sid": (18, 23),
+    # (18, 23) until the lattice legs: record 23's 61 rows no longer fit
+    # behind 21's 87 once the loops are shorter, so 21 is kept in its place
+    # (5 of 7 swept either way; `test_pulse_phase_union.py` pins the rows).
+    "Human_Race.sid": (18, 21),
 }
 
 
@@ -812,9 +833,11 @@ def test_one_ramp_per_phase_is_what_overflowed_and_a_merge_has_nothing_to_merge(
     apart (the sim moves the width a whole engine step a tick), so no two
     are within one and a merge loses nothing because it merges nothing."""
     from h2g.goatwriter import _phase_block, _phase_sweep_params
-    want_rows = {("Last_V8.sid", 7): (130, 87), ("Last_V8.sid", 9): (70, 47),
-                 ("Master_of_Magic.sid", 14): (112, 75),
-                 ("Phantoms_of_the_Asteroid.sid", 17): (70, 47)}
+    # Shared 87 / 47 / 75 / 47 until the lattice legs; the shared loop's
+    # span is one tick shorter on all four (the per-phase ramps are unmoved).
+    want_rows = {("Last_V8.sid", 7): (130, 86), ("Last_V8.sid", 9): (70, 46),
+                 ("Master_of_Magic.sid", 14): (112, 74),
+                 ("Phantoms_of_the_Asteroid.sid", 17): (70, 46)}
     for (name, num), (per_phase, shared) in want_rows.items():
         (sid, det, _, _, mult, phases, _, lead), _ = _forced_table_args(name)
         params = _phase_sweep_params(sid, det, num - 1 - lead, mult)
@@ -871,7 +894,7 @@ def test_shared_ramps_play_the_widths_the_per_phase_ramps_played():
                         == _play_pulse_table(ref_entries, b, calls)), (name, num)
 
 
-def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
+def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8(monkeypatch):
     """`build_pulse_phase_table` used to return None outright once one
     instrument's phase set overflowed `GT_MAX_TABLELEN`, and convert.py's
     caller reverted the WHOLE expansion -- Last_V8 shipped with no
@@ -899,8 +922,17 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     the chosen one leaves a record on pointer 0 the table is laid again
     holding back every later record's static width, and that layout
     (shared ramps, 223 rows) ships: instruments 2, 7 and 8 keep their
-    phases, 9 alone degrades to a static width, none to pointer 0."""
+    phases, 9 alone degrades to a static width, none to pointer 0.
+
+    **ON THE LATTICE LEGS THIS REGIME IS GONE** (task
+    `phase-block-legs-on-the-nibble-lattice`): the loops span 56 to 64 ticks
+    less, the shared layout places all four records in 245 rows, and the
+    reserve is never consulted (`test_last_v8_fits_on_the_lattice_legs`).
+    This test lays the bound-to-bound loops it was measured on
+    (`_bound_to_bound`), so the degrade-not-refuse path stays pinned on a
+    real file."""
     import h2g.goatwriter as G
+    _bound_to_bound(monkeypatch)
     (sid, det, iu, pulse, mult, phases, _, lead), table = _forced_table_args("Last_V8.sid")
     assert {k: len(v) for k, v in phases.items()} == {2: 28, 7: 42, 8: 11, 9: 22}
     per_phase = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
@@ -920,6 +952,34 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
                for l in lines), (
         "a partial table must still ship phase commands for the "
         "instruments that kept one -- got:\n" + "\n".join(lines))
+
+
+def test_last_v8_fits_on_the_lattice_legs():
+    """The loops turn on the sweep's lattice (`_phase_cycle`): Last_V8's
+    records 2, 7, 8 and 9 loop 1344-1536 wide instead of bound to bound, and
+    the shared layout places all four in 245 rows with no record degraded
+    and none on pointer 0, so the reserve rescue is not consulted (it was at
+    223 rows with 9 degraded). The per-phase layout still overflows (7
+    degraded, 5 on pointer 0, 255 rows) -- it is the shared one that ships.
+    The C128 version is 244 rows. Measured at f75cc7f + the lattice legs,
+    forced `pulse_phase`."""
+    import h2g.goatwriter as G
+    for name, rows in (("Last_V8.sid", 245), ("Last_V8_C128_version.sid", 244)):
+        (sid, det, iu, pulse, mult, phases, _, lead), table = _forced_table_args(name)
+        per_phase = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
+                                             None, lead, False)
+        shared = G._lay_pulse_phase_table(sid, det, iu, pulse, mult, phases,
+                                          None, lead, True)
+        assert (per_phase[3], per_phase[4], per_phase[6]) == (7, 5, 2), (name, per_phase[3:])
+        assert (shared[3], shared[4], shared[6]) == (0, 0, 4), (name, shared[3:])
+        assert len(table[0]) == rows and {k[0] for k in table[2]} == {2, 7, 8, 9}
+        assert 0 not in table[1][lead:], (name, table[1])
+        lines = _forced_pulse_phase_logs(name)
+        assert not any("PULSE TABLE FULL" in l or "statics reserved" in l
+                       for l in lines), lines
+        assert any(l.startswith("Pulse phase.............: shared ramps -- "
+                                f"{rows} table row(s) place 4 of 4")
+                   for l in lines), lines
 
 
 def test_gerry_the_germ_has_the_least_headroom_that_has_not_yet_overflowed():

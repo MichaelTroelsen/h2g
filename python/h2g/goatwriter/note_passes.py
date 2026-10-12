@@ -2177,23 +2177,10 @@ def _expanding_vibrato_pass(sid: SidFile, det: Detection,
     """
     if not vib_ptrs or row_calls < 1:
         return 0
-    by_slot, gate_of = _expanding_vibrato_slots(sid, det, vib_ptrs,
-                                                speed_table, lead)
+    by_slot, gate_of, choose, _ties = _expanding_vibrato_setup(
+        sid, det, vib_ptrs, speed_table, lead, multiplier, False)
     if not by_slot:
         return 0
-
-    def choose(block, ages):
-        (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
-         k, on) = block[:10]
-        target = bound * sum(
-            _expanding_vibrato_step(hi, lo, a, shift)
-            for a in ages) / len(ages)
-        level = _expanding_vibrato_level(target, gt_note, cmp_value, base)
-        if level == base and not on:
-            return None
-        block[9] = True
-        return (SPEED_NOTE_RELATIVE | cmp_value, level)
-
     wants, _where, off_table = _expanding_vibrato_wants(
         sid, det, tracks, patterns, by_slot, gate_of, multiplier, row_calls,
         instr_row_calls, choose)
@@ -2239,12 +2226,52 @@ def _expanding_vibrato_slots(sid: SidFile, det: Detection, vib_ptrs: dict,
     return by_slot, gate_of
 
 
+def _expanding_vibrato_setup(sid: SidFile, det: Detection, vib_ptrs: dict,
+                             speed_table: List[tuple], lead: int,
+                             multiplier: int, loops: bool) -> tuple:
+    """`(by_slot, gate_of, choose, ties_end)`: what `_expanding_vibrato_wants`
+    is given by `_expanding_vibrato_pass` (the `4xy` rows) or, with `loops`,
+    by `_expanding_vibrato_loops` (the wavetable ones, which are not walked
+    with a gate of their own and mark the tie-ended blocks). Shared with
+    `expanding_vibrato_split`, which must ask the walk the same question the
+    pass will."""
+    mult = max(1, multiplier)
+    by_slot, gate_of = _expanding_vibrato_slots(sid, det, vib_ptrs,
+                                                speed_table, lead)
+    if loops:
+        def choose(block, ages):
+            bound, shift, _cmp, base, hi, lo, _frames, gt_note = block[:8]
+            cmp_loop = min(0x7F, max(0, bound * mult - VIBRATO_CMP_BIAS))
+            swinging = ([a for a in ages if a >= gate_of[block[10]]]
+                        or list(ages))
+            target = bound * sum(
+                _expanding_vibrato_step(hi, lo, a, shift)
+                for a in swinging) / len(swinging)
+            return _expanding_vibrato_loop_entry(target, gt_note, cmp_loop,
+                                                 base)
+        return by_slot, {s: 0 for s in by_slot}, choose, True
+
+    def choose(block, ages):
+        (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
+         k, on) = block[:10]
+        target = bound * sum(
+            _expanding_vibrato_step(hi, lo, a, shift)
+            for a in ages) / len(ages)
+        level = _expanding_vibrato_level(target, gt_note, cmp_value, base)
+        if level == base and not on:
+            return None
+        block[9] = True
+        return (SPEED_NOTE_RELATIVE | cmp_value, level)
+    return by_slot, gate_of, choose, False
+
+
 def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                              tracks: List[List[int]],
                              patterns: List[List[int]], by_slot: dict,
                              gate_of: dict, multiplier: int, row_calls: int,
                              instr_row_calls: Optional[dict],
-                             choose, ties_end: bool = False) -> tuple:
+                             choose, ties_end: bool = False,
+                             visits: Optional[dict] = None) -> tuple:
     """`(wants, where, off_table)`: the orderlist walk of
     `_expanding_vibrato_pass`, shared with `_expanding_vibrato_loops`.
 
@@ -2262,16 +2289,28 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
     marked `TIE` as well, so no row of it is unanimous: a wavetable loop
     entered there would run on under the tie, and a wavetable command
     keeps the voice off the continuous effects, the portamento included.
+
+    With `visits` (a dict, filled), `visits[(track index, orderlist
+    position)]` is what `wants` holds, kept per POSITION: `{(pattern, row):
+    the set of what that position's visits want there}`. The same walk, the
+    same marks -- `wants` is exactly the union of the positions' sets -- so
+    `expanding_vibrato_clones` can tell which positions disagree.
     """
     mult = max(1, multiplier)
     wants: dict = {}
     where: dict = {}
     off_table = 0
-    for track in tracks:
+
+    def put(vis, key, what) -> None:
+        wants.setdefault(key, set()).add(what)
+        if vis is not None:
+            vis.setdefault(key, set()).add(what)
+
+    for ti, track in enumerate(tracks):
         live, transpose, repeat, operand = 0, 0, 1, False
         block = None        # (bound, shift, cmp, base, hi, lo, frames, k, on)
-        mine: list = []     # the rows the current block wanted something on
-        for b in track:
+        mine: list = []     # (visit, row) the current block wanted something on
+        for pos, b in enumerate(track):
             if operand:                  # $FF's restart position
                 operand = False
                 continue
@@ -2287,6 +2326,8 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
             if b >= len(patterns):
                 continue
             pat = patterns[b]
+            vis = (visits.setdefault((ti, pos), {})
+                   if visits is not None else None)
             for _ in range(repeat):
                 for r in range(0, len(pat) - 3, 4):
                     note, instr = pat[r], pat[r + 1]
@@ -2297,11 +2338,11 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                         if instr:
                             live = instr
                         if ties_end and pat[r + 2] == CMD_TONEPORTA:
-                            for at in mine:
-                                wants[at].add(EXPANDING_VIBRATO_TIE)
+                            for at_vis, at in mine:
+                                put(at_vis, at, EXPANDING_VIBRATO_TIE)
                         mine = []
                         block = None
-                        wants.setdefault(key, set()).add(None)
+                        put(vis, key, None)
                         if live not in by_slot:
                             continue
                         bound, shift, cmp_value, base = by_slot[live]
@@ -2325,7 +2366,7 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                         # `mine` runs on: a loop entered before this row
                         # is still running, and only a note re-points it.
                         block = None
-                        wants.setdefault(key, set()).add(None)
+                        put(vis, key, None)
                         continue
                     block[8] += 1
                     (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
@@ -2336,13 +2377,13 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                         # a row the gate falls inside is left to the
                         # instrument's own vibdelay, which `_classic_gate_
                         # refine` already starts on the gate's frame.
-                        wants.setdefault(key, set()).add(None)
+                        put(vis, key, None)
                         continue
                     want = choose(block, ages)
-                    wants.setdefault(key, set()).add(want)
+                    put(vis, key, want)
                     if want is not None:
                         where.setdefault(key, set()).add((live, k))
-                        mine.append(key)
+                        mine.append((vis, key))
             repeat = 1
     return wants, where, off_table
 
@@ -2350,6 +2391,118 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
 # What `_expanding_vibrato_wants(ties_end=True)` adds to a row whose block a
 # tie ends: never a speed entry, so the row is never unanimous.
 EXPANDING_VIBRATO_TIE = "tie"
+
+
+def _expanding_vibrato_unanimous(entries: set) -> bool:
+    """Whether a row's `wants` set lets a pass write it (or leaves it alone
+    because nothing is wanted): one entry, not None -- or only None. A tie
+    mark always arrives beside the entry it voids, so it never stands alone."""
+    return entries == {None} or (len(entries) == 1 and None not in entries)
+
+
+def expanding_vibrato_split(sid: SidFile, det: Detection,
+                            tracks: List[List[int]],
+                            patterns: List[List[int]], vib_ptrs: dict,
+                            speed_table: List[tuple], lead: int,
+                            multiplier: int, row_calls: int,
+                            instr_row_calls: Optional[dict] = None,
+                            loops: bool = False,
+                            limit: int = _SONG_MAX_PATTERNS,
+                            log=None) -> tuple:
+    """`(tracks, patterns, {copy: source})`: each pattern the swell's rows
+    are wanted on by some orderlist positions and not by others, copied once
+    per distinct set of rows its positions want, the positions repointed.
+    The arguments are not touched; `loops` asks the question of
+    `_expanding_vibrato_loops` (the wavetable rows) instead of
+    `_expanding_vibrato_pass`'s `4xy`.
+
+    **Patterns are global and orderlists are per subtune**, and a pass
+    writes a row only where every position that reaches it wants the same
+    entry, because a `4xy` or a wavetable loop shakes whatever instrument
+    is sounding. Mega_Apocalypse pattern $0F is eighty hold rows of rests
+    after notes that name no instrument: voice 1 enters it holding slot 4
+    (`$09B7`, a swell) and voice 3 holding 1 or 2 (plain), so the two never
+    agreed and the long low notes of slot 4 kept the instrument's own
+    shallow level -- swinging 22 units against the original's 1634. A
+    copy per distinct want set lets the swelling positions have the rows
+    and leaves the plain ones the pattern they always played. Nothing
+    anyone hears changes where nothing is written: a copy is byte-identical
+    until a pass writes into it.
+
+    The want sets are read per position by the pass's own walk
+    (`_expanding_vibrato_wants(visits=)`) -- the same question, so what a
+    pass finds unanimous after the split is exactly what the split made
+    unanimous. That walk is one lap: a position the restart re-enters
+    holding another instrument is not asked, in the passes or here (the
+    32 rows Arcade_Classics and Ricochet would read differently lapped;
+    Mega_Apocalypse and BMX_Kidz read none). Positions whose sets are equal
+    share a copy; those that want nothing at all stay on the source, else
+    the largest group does. A pattern whose copies would take the song past
+    `limit` (MAX_PATT) is left whole, and counted."""
+    if not vib_ptrs or row_calls < 1 or (loops and max(1, multiplier) != 1):
+        return tracks, patterns, {}
+    by_slot, gate_of, choose, ties_end = _expanding_vibrato_setup(
+        sid, det, vib_ptrs, speed_table, lead, multiplier, loops)
+    if not by_slot:
+        return tracks, patterns, {}
+    visits: dict = {}       # (track, position) -> {(pattern, row): wants}
+    wants, _where, _off = _expanding_vibrato_wants(
+        sid, det, tracks, patterns, by_slot, gate_of,
+        multiplier, row_calls, instr_row_calls, choose, ties_end=ties_end,
+        visits=visits)
+    split = {b for (b, _r), e in wants.items()
+             if not _expanding_vibrato_unanimous(e)}
+    if not split:
+        return tracks, patterns, {}
+    at_pos = visits
+
+    def wanted(sig: frozenset) -> bool:
+        return any(x not in (None, EXPANDING_VIBRATO_TIE)
+                   for _key, entries in sig for x in entries)
+
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = list(patterns)
+    copies: dict = {}
+    full = 0
+    for b in sorted(split):
+        groups: dict = {}
+        idle: list = []
+        for (ti, at), seen in sorted(at_pos.items()):
+            if tracks[ti][at] != b:
+                continue
+            sig = frozenset((key, frozenset(entries))
+                            for key, entries in seen.items())
+            if wanted(sig):
+                groups.setdefault(sig, []).append((ti, at))
+            else:
+                idle.append((ti, at))
+        if not groups:
+            continue
+        if idle:
+            moved = list(groups.values())
+        else:
+            stays = max(groups, key=lambda g: (len(groups[g]),
+                                               -min(groups[g])[0],
+                                               -min(groups[g])[1]))
+            moved = [v for g, v in groups.items() if g != stays]
+        if not moved:
+            continue
+        if len(new_patterns) + len(moved) > limit:
+            full += len(moved)
+            continue
+        for members in moved:
+            copy = len(new_patterns)
+            new_patterns.append(list(patterns[b]))
+            copies[copy] = b
+            for ti, at in members:
+                new_tracks[ti][at] = copy
+    if log is not None and (copies or full):
+        log(f"Swell pattern split.....: {len(copies)} pattern cop(ies) of "
+            + (", ".join(f"{p:02X}" for p in sorted(set(copies.values())))
+               or "none")
+            + ", one per set of rows the orderlist positions want"
+            + (f"; {full} left whole, the pattern table full" if full else ""))
+    return new_tracks, new_patterns, copies
 
 
 
@@ -2391,6 +2544,80 @@ def _expanding_vibrato_remainder(entries: List[tuple], ptr: int,
         read.add(at - 1)
         at += 1
     return tuple(tuple(entries[i]) for i in span if i not in read)
+
+
+def _expanding_vibrato_loop_swing(entry: tuple, gt_note: int) -> float:
+    """Peak-to-peak of one loop entry on a note, `(cmp + 2) * speed`: a
+    note-relative entry's speed is the interval shifted, an absolute one's
+    is the byte itself (`_expanding_vibrato_loop_entry`)."""
+    cmp_value = entry[0] & ~SPEED_NOTE_RELATIVE
+    if entry[0] & SPEED_NOTE_RELATIVE:
+        speed = _note_freq(gt_note + 1) - _note_freq(gt_note) >> entry[1]
+    else:
+        speed = entry[1]
+    return (cmp_value + 2) * max(1, speed)
+
+
+def _expanding_vibrato_loop_share(plan: list, room: int) -> tuple:
+    """`(alias, merged, off)`: which swing loops share a block when the
+    wavetable has `room` entries for them and the rows in `plan`
+    (`(pattern, row, remainder, entry, notes)`) would take more.
+
+    A loop is `F4 idx / FF -> F4` behind the row's remainder: two entries
+    and the remainder. Mega_Apocalypse with its pattern 15 split wants 56 of
+    them, 282 entries for a table with 99, and the rest of the table is
+    spoken for. While the blocks do not fit, the loop whose rows lose the
+    least moves them onto another loop with the SAME remainder -- the cost
+    of a row is how far, in log space, its swing lands from the one
+    `_expanding_vibrato_loop_entry` chose, taken on the row's own notes --
+    per entry freed. `alias` maps `(remainder, entry)` of a loop given up
+    to the one that took its rows (followed to the end); empty where
+    everything fits, which leaves the rows exactly as they were. `off` is
+    the mean relative change in swing over the rows moved. A row's notes
+    are the notes its entry was chosen on anywhere in the walk."""
+    groups: dict = {}
+    for _b, _r, rest, entry, notes in plan:
+        groups.setdefault((rest, entry), []).append((entry, notes))
+
+    def size(key):
+        return len(key[0]) + 2
+
+    def cost(rows, entry):
+        total = 0.0
+        for own, notes in rows:
+            total += sum(abs(math.log(_expanding_vibrato_loop_swing(entry, n))
+                             - math.log(_expanding_vibrato_loop_swing(own, n)))
+                         for n in notes) / max(1, len(notes))
+        return total
+
+    alias: dict = {}
+    if sum(size(k) for k in groups) <= room:
+        return alias, 0, 0.0
+    held = {k: list(v) for k, v in groups.items()}
+    while sum(size(k) for k in held) > room:
+        best = None
+        for i in held:
+            here = cost(held[i], i[1])
+            for j in held:
+                if j == i or j[0] != i[0]:
+                    continue
+                score = (cost(held[i], j[1]) - here) / size(i)
+                if best is None or score < best[0]:
+                    best = (score, i, j)
+        if best is None:
+            break
+        _score, i, j = best
+        held[j] += held.pop(i)
+        alias[i] = j
+    for k in list(alias):
+        while alias[k] in alias:
+            alias[k] = alias[alias[k]]
+    moved = [(own, notes, k) for k, rows in held.items()
+             for own, notes in rows if own != k[1]]
+    change = [abs(_expanding_vibrato_loop_swing(k[1], n)
+                  / _expanding_vibrato_loop_swing(own, n) - 1)
+              for own, notes, k in moved for n in notes]
+    return alias, len(alias), (sum(change) / len(change) if change else 0.0)
 
 
 def _expanding_vibrato_loops(sid: SidFile, det: Detection,
@@ -2473,8 +2700,8 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
     """
     if not vib_ptrs or row_calls < 1 or max(1, multiplier) != 1:
         return wave_entries, 0
-    by_slot, gate_of = _expanding_vibrato_slots(sid, det, vib_ptrs,
-                                                speed_table, lead)
+    by_slot, _walk_gates, choose, ties_end = _expanding_vibrato_setup(
+        sid, det, vib_ptrs, speed_table, lead, multiplier, True)
     if not by_slot:
         return wave_entries, 0
     mult = max(1, multiplier)
@@ -2488,21 +2715,24 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
         gate_call[slot] = _counter_gate_call(det, mult, 0 if real else 1,
                                              slot - lead - 1)
 
+    # The notes each entry was chosen on, for `_expanding_vibrato_loop_share`:
+    # a note-relative entry swings as far as its note's interval.
+    seen: dict = {}
+    pick = choose
+
     def choose(block, ages):
-        bound, shift, _cmp, base, hi, lo, _frames, gt_note = block[:8]
-        cmp_loop = min(0x7F, max(0, bound * mult - VIBRATO_CMP_BIAS))
-        swinging = [a for a in ages if a >= gate_of[block[10]]] or list(ages)
-        target = bound * sum(
-            _expanding_vibrato_step(hi, lo, a, shift)
-            for a in swinging) / len(swinging)
-        return _expanding_vibrato_loop_entry(target, gt_note, cmp_loop, base)
+        entry = pick(block, ages)
+        if entry is not None:
+            seen.setdefault(entry, set()).add(block[7])
+        return entry
 
     wants, where, _off = _expanding_vibrato_wants(
-        sid, det, tracks, patterns, by_slot, {s: 0 for s in by_slot},
-        multiplier, row_calls, instr_row_calls, choose, ties_end=True)
+        sid, det, tracks, patterns, by_slot, _walk_gates,
+        multiplier, row_calls, instr_row_calls, choose, ties_end=ties_end)
     out = list(wave_entries)
     starts: dict = {}           # (remainder, speed index) -> loop start
     converted = taken = disagree = looping = full = early = tied = 0
+    plan: list = []     # (pattern, row, remainder, entry, notes) per row
     for (b, r), entries in sorted(wants.items()):
         if EXPANDING_VIBRATO_TIE in entries:
             tied += 1
@@ -2544,8 +2774,20 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
             looping += None in rests
             disagree += None not in rests
             continue
-        rest = next(iter(rests))
-        idx = _speed_index(speed_table, next(iter(entries)))
+        entry = next(iter(entries))
+        plan.append((b, r, next(iter(rests)), entry,
+                     tuple(sorted(seen.get(entry, ())))))
+    # Where the loops would not all fit, the rows of the least-used swing
+    # go onto the nearest loop of the same remainder that does.
+    alias, shared, off = _expanding_vibrato_loop_share(
+        plan, GT_MAX_TABLELEN - len(out))
+    moved = 0
+    for b, r, rest, entry, _notes in plan:
+        pat = patterns[b]
+        if (rest, entry) in alias:
+            moved += 1
+            entry = alias[(rest, entry)][1]
+        idx = _speed_index(speed_table, entry)
         if not idx:
             full += 1
             continue
@@ -2571,5 +2813,7 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
                if looping else "")
             + (f", {early} before the gate's call" if early else "")
             + (f", {tied} in a block a tie ends" if tied else "")
+            + (f", {moved} on the nearest loop that fits ({shared} swing(s) "
+               f"merged, mean {off * 100:.0f}% off in size)" if moved else "")
             + (f", {full} with a table full" if full else ""))
     return out, converted
