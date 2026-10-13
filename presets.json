@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.533 presets.py",
+  "generator": "h2g 0.5.534 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -209,7 +209,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15616,
+      "bytes": 15600,
       "subtunes": 2,
       "rows": 17441,
       "multiplier": 1
@@ -378,7 +378,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 43044,
+      "bytes": 43050,
       "subtunes": 7,
       "rows": 32302,
       "multiplier": 1,
@@ -425,7 +425,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 24943,
+      "bytes": 24957,
       "subtunes": 5,
       "rows": 21036,
       "multiplier": 1,
@@ -437,7 +437,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23474,
+      "bytes": 23466,
       "subtunes": 1,
       "rows": 10942,
       "multiplier": 1
@@ -544,7 +544,7 @@
       "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 13816,
+      "bytes": 13741,
       "subtunes": 16,
       "rows": 6844,
       "multiplier": 4,
