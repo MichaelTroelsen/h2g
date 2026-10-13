@@ -2424,7 +2424,8 @@ def nibble_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
 
     `fixed_arp_phases`' walk for the nibble dialect's counter: `(base + first
     + row * frames) mod P`, in the player's passing-call clock, the majority
-    over each instrument's notes, P the longest cycle any record's mask makes
+    over each instrument's UNTIED notes (a tie restarts no wavetable and
+    casts no vote, as in `fixed_arp_phases`), P the longest cycle any record's mask makes
     (`fixed_arp_period` of the larger mask, so every record's own cycle
     divides it). Empty where the block carries no period code, its counter
     test is not read (`nibble_arp_counter_test`), or the rows cannot be
@@ -2449,7 +2450,9 @@ def nibble_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         frames = speeds.frames_for(ti // 3)
         if frames is None:
             continue
-        for row, current, _pat, _r in _walk_note_rows(track, patterns):
+        for row, current, pat, r in _walk_note_rows(track, patterns):
+            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
+                continue                 # a tie restarts no wavetable
             residue = (base + first + row * frames) % period
             votes.setdefault(current, [0] * period)[residue] += 1
     return {instr: max(range(period), key=lambda p: (counts[p], -p))
@@ -2600,7 +2603,7 @@ def nibble_gate_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     so the two never disagree modulo P. Empty unless the counter's `INC` is
     behind the gate (`nibble_arp_counter_gated`), the gate cell's starting
     byte is read (`nibble_gate_byte`), and every walked subtune's reload is
-    `gate`; a group whose reload differs casts no vote.
+    `gate`; a group whose reload differs casts no vote, nor does a tied note.
     """
     per = det.arp_nibble_period
     if per is None or not gate or not nibble_arp_counter_gated(sid, per):
@@ -2621,7 +2624,9 @@ def nibble_gate_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         frames = speeds.frames_for(ti // 3)
         if frames is None or outer_gate_skip(sid, ti // 3) != gate:
             continue
-        for row, current, _pat, _r in _walk_note_rows(track, patterns):
+        for row, current, pat, r in _walk_note_rows(track, patterns):
+            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
+                continue                 # a tie restarts no wavetable
             residue = (test[0] + first + row * frames) % mod
             votes.setdefault(current, [0] * mod)[residue] += 1
     return {instr: _refined_majority(counts, period)

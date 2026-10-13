@@ -15269,12 +15269,19 @@ its "pairing slips") reads 135/135 by name, and 135 of 135 reach the packed
 output (134 of 134 before). Under `tie_restart`, 477 tie rows stay
 row-locked, down from 541.
 
-Record 8 keeps its drum shape: `80` noise on the gate-off row's third call,
-where the original holds `$10`. Every one of its notes is the last event of a
-pattern, which `median_played_durations` reads as unknown. Gate-off noise-run
-starts went 174 -> 226 over all voices (original 182), 48 of them voice 1
-inside the ranges. That is probably where `wave`'s -0.3 pp comes from; this
-was not checked.
+Record 8 kept its drum shape until v0.5.534: `80` noise on the gate-off row's
+third call, where the original holds `$10`. Every one of its notes is the
+last event of a pattern, which `median_played_durations` then read as
+unknown. Gate-off noise-run starts went 174 -> 226 over all voices (original
+182), 48 of them voice 1 inside the ranges. Since v0.5.534 a pattern's last
+event is measured to its successor's first event (`_pattern_successors`: the
+next orderlist entry, a REPEAT's own pattern, or the `$FF` restart target),
+and stays unknown only where the orderlist ends or the successor has no
+event. Record 8 then reads one row and the one-row rule drops its drum (GT9's
+wavetable `(16,0),(128,128),(128,12),(16,128),...` -> `(16,0),(17,128),(0,12),
+(6,0)`): noise frames 2562 -> 2508 against the original's 2644, and
+Gerry_the_Germ (travel 0.88 -> 0.95) and Human_Race (tie 0.84 -> 1.04) move
+with it; no column fell on the three.
 
 ### 7.dddddddd Spellbound's gate hold: the status byte read from zero page
 

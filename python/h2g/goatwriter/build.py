@@ -437,6 +437,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               wave_alternate: bool = False,
               ilv_filter_routing: bool = False,
               gate_off_firstwave_instruments: tuple = (),
+              gatetimer_trim: int = 0,
               tie_restart: bool = False,
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
@@ -1140,6 +1141,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        instr_row_calls=instr_row_calls,
                        gate_off_firstwave_instruments=tuple(
                            gate_off_firstwave_instruments),
+                       gatetimer_trim=gatetimer_trim,
                        gate_clear_firstwave=effects)
     written_instr = instr_used
     if duty_split is not None:

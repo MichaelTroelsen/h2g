@@ -183,8 +183,10 @@ LIVE_ON = {
     # test_the_option_moves_exactly_the_familys_heard_files). 23 at 6e467ff,
     # 26 after entry_instrument_split and the zero-page gate hold, 25 at
     # v0.5.515 once Action_Biker's max_rows rose 94 -> 128, 26 once
-    # Formula_1_Simulator's phase-mismatched ties were respelled (MOVERS).
-    "tie_restart": 26,
+    # Formula_1_Simulator's phase-mismatched ties were respelled (MOVERS), 25
+    # once Las_Vegas_Video_Poker's ties stopped voting (its tie rows then all
+    # land off their record's gate residue and keep the old spelling).
+    "tie_restart": 25,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:
@@ -608,6 +610,22 @@ EXCLUDED_FROM_ALWAYS = {
     # `pulse_phase` trap above. Adopting it on Chicken_Song is a listening
     # decision: a song entry `"wave_alternate": true`.
     "wave_alternate",
+    # `aligned_firstwave`: the note-init call's gate write on the pitch's frame
+    # (OPTIONS.md `--aligned-firstwave`). Per song and never a default: it
+    # overrides `no_test_restart`, whose gate-ON firstwave opens every gate
+    # one call before the pitch, and it moves the columns both ways.
+    # HISTORICAL, 0421071, -t 180, added to each `no_test_restart` song's
+    # entry: `gate` Chicken_Song .331 -> .991, Hollywood_or_Bust .329 -> .975,
+    # Sigma_Seven .300 -> .542; `wave` Tarzan .691 -> .976, Radio_ACE
+    # .767 -> .890, Pacific_Coast .532 -> .670, Ninja .879 -> .944; costs
+    # Hollywood melody .657 -> .552 and `gate` on the three files that
+    # had no uniform one-frame-early envelope (Powerplay .463 -> .421,
+    # Pygmies_Revenge .567 -> .403, Wiz .226 -> .180). Not in
+    # FIDELITY_TOGGLES: the walk is 127 combinations a song and this would
+    # double it for ten files, and its winners are decided by an edge census
+    # at the file's lag, which no `fidelity_better` term reads. A song entry
+    # `"aligned_firstwave": true`.
+    "aligned_firstwave",
 }
 
 

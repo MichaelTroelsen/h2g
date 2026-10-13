@@ -36,7 +36,8 @@ PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PYTHON_ROOT))
 import fidelity                                              # noqa: E402
 from h2g.goatwriter import arpeggio as gw_arpeggio           # noqa: E402
-from h2g.goatwriter import (GatePhase, _entered_record_block,  # noqa: E402
+from h2g.goatwriter import (CMD_TONEPORTA, GatePhase,  # noqa: E402
+                            _entered_record_block,
                             _orderlist_occurrences, _refined_majority,
                             _same_wave_stream, fixed_arp_period,
                             nibble_gate_note_residues, nibble_gate_phases)
@@ -164,7 +165,9 @@ def test_the_per_note_walk_is_the_majority_walk():
                     break
                 if pat[4 * k + 1]:
                     cur = pat[4 * k + 1]
-                if k in res and cur:
+                if k in res and cur and not (
+                        pat[4 * k + 2] == CMD_TONEPORTA
+                        and pat[4 * k + 3] == 0):     # a tie casts no vote
                     assert res[k].period == period
                     votes.setdefault(cur, [0] * mod)[res[k].residue] += 1
     want = nibble_gate_phases(sid, det, tracks, patterns, gate)
@@ -184,7 +187,7 @@ def test_the_lvvp_clones_enter_their_records_blocks():
         pytest.skip("presets.json not present")
     sng, got = _converted(LVVP)
     plan = got["plans"][-1]
-    assert plan is not None and len(plan.clones) >= 10
+    assert plan is not None and len(plan.clones) >= 9
     assert all(isinstance(res, GatePhase) for _r, _c, res in plan.clones)
     s = songview.parse_sng(sng)
     # The plan numbers clones from `instr_used + 1`, before the unnamed

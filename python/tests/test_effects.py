@@ -407,20 +407,22 @@ def test_median_played_durations_takes_the_median_not_the_minimum():
         """One pattern playing instrument 2 for each gap in turn.
 
         A trailing note is added so the last measurable gap is `gaps[-1]`;
-        that trailing one runs to the end and is dropped.
+        that trailing one is instrument 3 -- a pattern's last event now measures
+        against its successor (test_pattern_last_event.py), and this test is
+        about the gaps inside a pattern.
         """
         out = []
         for gap in gaps:
             out += [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * (gap - 1)
-        return out + [0x60, 2, 0, 0] + [0xFF, 0, 0, 0]
+        return out + [0x60, 3, 0, 0] + [0xFF, 0, 0, 0]
 
     order = [[0, 0xFF, 0x00]]
-    assert median_played_durations(order, [pattern(6, 4, 4)]) == {2: 4}
+    assert median_played_durations(order, [pattern(6, 4, 4)])[2] == 4
     # A minority of short notes must not collapse the sweep: the minimum of
     # 1, 4, 4, 4 is 1 -- no sweep at all -- where the median is 4.
-    assert median_played_durations(order, [pattern(1, 4, 4, 4)]) == {2: 4}
+    assert median_played_durations(order, [pattern(1, 4, 4, 4)])[2] == 4
     # ... and a minority of long ones must not deepen it.
-    assert median_played_durations(order, [pattern(2, 2, 2, 16)]) == {2: 2}
+    assert median_played_durations(order, [pattern(2, 2, 2, 16)])[2] == 2
 
 
 def test_median_played_durations_drops_a_note_running_to_the_pattern_end():
@@ -431,26 +433,27 @@ def test_median_played_durations_drops_a_note_running_to_the_pattern_end():
     """
     pat = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 3 + [0x60, 2, 0, 0] \
         + [0xBD, 0, 0, 0] + [0xFF, 0, 0, 0]
-    assert median_played_durations([[0, 0xFF, 0x00]], [pat]) == {2: 4}, \
+    # an orderlist that ENDS leaves the last event without a successor
+    assert median_played_durations([[0]], [pat]) == {2: 4}, \
         "only the first note is measurable"
     # An instrument with nothing measurable at all is absent, not short --
     # callers must read a missing key as unknown.
     only = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] + [0xFF, 0, 0, 0]
-    assert median_played_durations([[0, 0xFF, 0x00]], [only]) == {}
+    assert median_played_durations([[0]], [only]) == {}
 
 
 def test_median_played_durations_weights_by_how_often_a_pattern_plays():
     # A duration in a pattern the orderlist plays three times outweighs one in
     # a pattern played once: the median is a statement about what is heard.
-    long_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 7 + [0x60, 2, 0, 0] \
+    long_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 7 + [0x60, 3, 0, 0] \
         + [0xFF, 0, 0, 0]
-    short_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 3 + [0x60, 2, 0, 0] \
+    short_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 3 + [0x60, 3, 0, 0] \
         + [0xFF, 0, 0, 0]
     pats = [long_p, short_p]
-    assert median_played_durations([[0, 1, 0xFF, 0x00]], pats) == {2: 4}
+    assert median_played_durations([[0, 1, 0xFF, 0x00]], pats)[2] == 4
     # the same two patterns, with the long one repeated -- REPEAT applies to
     # the entry that follows it, so this plays pattern 0 three times.
-    assert median_played_durations([[0xD2, 0, 1, 0xFF, 0x00]], pats) == {2: 8}
+    assert median_played_durations([[0xD2, 0, 1, 0xFF, 0x00]], pats)[2] == 8
 
 
 def test_the_bound_is_read_against_the_scaled_step_not_the_constant():

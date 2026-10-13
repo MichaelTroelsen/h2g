@@ -2139,6 +2139,52 @@ A per-frame agreement *rewards* losing notes, because fewer attacks mean fewer
 transitions to disagree about. `tests/test_first_wave.py` pins that so the
 number cannot be rediscovered as a success.
 
+## `--aligned-firstwave` (the init call's gate on the pitch's frame)
+
+Goattracker's note-init call writes only `$D404` (`player.s` `mt_newnoteinit`);
+the note's frequency arrives on the NEXT call. `--no-test-restart` spends that
+call on the record's waveform with the gate ON, so every gate rises a call
+before its pitch -- and every fall too, because the gatetimer counts from that
+call. Once `fidelity.startup_lag` stopped counting the stale-pitch frame as the
+attack (6e467ff) this showed as a whole envelope one frame ahead of the pitch:
+Chicken_Song and Hollywood_or_Bust at 30 s, lag 8, every rise and fall at -1
+on all three voices (`edges.py`: Chicken `{-1: 34/98/161}` rises).
+
+The option writes, on every instrument, the record's own waveform with the gate
+CLEAR (`gate_off_firstwave`), keeps the wavetable's lead entry so gate and pitch
+land together on call 1, and takes one call off each such record's gatetimer, so
+the gate stays off for the span it was off for (the init call is now one of its
+calls). **Both halves are needed**: the firstwave alone (`--gate-off-firstwave`
+on every instrument, `--no-test-restart` off) puts every rise on the pitch and
+leaves every fall at -1 (Chicken_Song gate .331 -> .662); with the shorter
+gatetimer it is exact (rise `{0}` and fall `{0}` on all voices of both files,
+gate .331 -> .991 and .329 -> .975). It overrides `--no-test-restart`.
+
+Off by default and **per song** (`presets.EXCLUDED_FROM_ALWAYS`, not in the
+search): it moves the columns both ways. HISTORICAL, 0421071, `-t 180`, under
+presets with the option added to each `no_test_restart` song's entry:
+
+| file | gate | wave | melody |
+|---|---|---|---|
+| Chicken_Song | .331 -> .991 | .873 -> .873 | .652 -> .688 |
+| Hollywood_or_Bust | .329 -> .975 | .833 -> .833 | .657 -> **.552** |
+| Tarzan | .585 -> .585 | .691 -> .976 | .993 -> .9995 |
+| Sigma_Seven | .300 -> .542 | .886 -> .916 | .989 -> 1.0 |
+| Radio_ACE | .581 -> .610 | .767 -> .890 | .942 -> .958 |
+| Pacific_Coast | .436 -> .436 | .532 -> .670 | .937 -> .941 |
+| Ninja | .748 -> .748 | .879 -> .944 | .998 -> .9996 |
+| Powerplay | .463 -> **.421** | .953 -> .952 | .979 -> .9995 |
+| Pygmies_Revenge | .567 -> **.403** | .733 -> .733 | .974 -> .974 |
+| Wiz | .226 -> **.180** | .786 -> .784 | .948 -> .972 |
+
+The three that lose `gate` did not have a uniform one-frame-early envelope at
+the pitch-aligned lag (30 s, presets: Pygmies at lag 21 rises `{0: 109}`, falls
+`{1: 69}`; Powerplay at lag 6 rises `{-1: 15, 0: 11, 1: 6}` on voice 0; Wiz at
+lag 6 rises `{-2: 35, -1: 32, -3: 30}`), so a uniform shift moves them off the
+original; Hollywood loses melody (3254 attacks both ways). Adopt per file from a
+trace (`edges.py`-style rise and fall census at the file's lag), not from this
+table.
+
 ## `--rest-wave-silence` (the rest that parks a waveform)
 
 Status bit 6 is a rest. A Goattracker `KEYOFF` clears the *gate* and nothing

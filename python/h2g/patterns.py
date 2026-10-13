@@ -4813,6 +4813,48 @@ def _pattern_plays(tracks: List[List[int]],
     return out
 
 
+def _pattern_successors(tracks: List[List[int]],
+                        patterns: List[List[int]]) -> dict:
+    """`{pattern: {next pattern: times}}` over every voice's orderlist.
+
+    What the player fetches after a pattern's last row: the next pattern entry
+    of the orderlist, the same pattern again under a `$D0`-`$DF` REPEAT, or
+    the entry a `$FF` restart names. An orderlist that simply ends has no
+    successor, and contributes none.
+    """
+    out: dict = {}
+    for track in tracks:
+        entries: List[List[int]] = []          # [pattern, repeat]
+        at_byte: dict = {}                     # orderlist byte -> entry index
+        restart, operand, repeat = None, False, 1
+        for pos, b in enumerate(track):
+            if operand:
+                restart, operand = b, False
+            elif b == GT_ORDER_RESTART:
+                operand = True
+            elif GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+                pass
+            elif GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+                repeat = b - GT_REPEAT + 1
+            elif b < len(patterns):
+                at_byte[pos] = len(entries)
+                entries.append([b, repeat])
+                repeat = 1
+        target = None
+        if restart is not None:
+            later = [i for p, i in at_byte.items() if p >= restart]
+            target = min(later) if later else None
+        for k, (pat, rep) in enumerate(entries):
+            slot = out.setdefault(pat, {})
+            if rep > 1:
+                slot[pat] = slot.get(pat, 0) + rep - 1
+            nxt = k + 1 if k + 1 < len(entries) else target
+            if nxt is not None:
+                n = entries[nxt][0]
+                slot[n] = slot.get(n, 0) + 1
+    return out
+
+
 def median_played_durations(tracks: List[List[int]],
                             patterns: List[List[int]]) -> dict:
     """The rows each instrument's *typical* note lasts, before the next fetch.
@@ -4859,19 +4901,35 @@ def median_played_durations(tracks: List[List[int]],
     is the shallower sweep. Both are L1-optimal, so the tie is broken on the
     same ground as `_drum_steps_safe`'s: only the deep side can wrap.
 
-    **An occurrence whose hold rows run to the end of its pattern is
-    dropped.** What that measures is not the note's length but the distance to
-    a pattern boundary, and the note continues into whichever pattern the
-    orderlist plays next -- so the count is a lower bound on the real duration
-    rather than the duration. Counting them would read Commando's instrument
-    13 as two rows (a two-row pattern whose only row is such a note). An
-    instrument with no untruncated occurrence at all is simply absent from the
-    result, which callers must read as "unknown" rather than as "short".
+    **A pattern's LAST event is measured through to the orderlist's next
+    pattern** (`_pattern_successors`): the rows left in its own pattern plus
+    the rows to the successor's first event, once per way the orderlist
+    reaches that successor (the next entry, the same pattern under a REPEAT,
+    the `$FF` restart target). Counting only the rows to the pattern end would
+    be a lower bound -- it read Commando's instrument 13 as two rows -- which
+    is why these were dropped outright, and why Chimera's record 8, every note
+    of which is a last event, had no known length and kept the drum's `$80`
+    noise on a one-row note the original never runs the drum for. A last event
+    with NO resolvable successor (the orderlist ends, or the successor holds
+    no event at all) is still dropped, and an instrument with no measurable
+    occurrence at all is simply absent from the result, which callers must
+    read as "unknown" rather than as "short".
 
     Returns `{goattracker instrument number: rows}`.
     """
     entry = _entry_instruments(tracks, patterns)
     weight = _pattern_plays(tracks, patterns)
+    successors = _pattern_successors(tracks, patterns)
+
+    def _first_event_row(pattern: List[int]):
+        for row in range(len(pattern) // 4):
+            if pattern[4 * row] == GT_END_PATTERN:
+                return None
+            if pattern[4 * row] != GT_NO_NOTE or pattern[4 * row + 1]:
+                return row
+        return None
+
+    first_event = {i: _first_event_row(p) for i, p in enumerate(patterns)}
 
     hist: dict = {}
     for index, pattern in enumerate(patterns):
@@ -4902,7 +4960,21 @@ def median_played_durations(tracks: List[List[int]],
                     owners.setdefault(row, set()).add(current)
         for k, row in enumerate(events):
             if k + 1 >= len(events):
-                break                    # runs to the pattern end: unknown
+                # The pattern's LAST event: its note runs on into whatever
+                # the orderlist plays next, so its length is the rows left
+                # in this pattern plus the rows to the successor's first
+                # event -- known wherever the successor is, and unknown only
+                # where it is not (the orderlist ends, or the successor
+                # opens on a hold row).
+                for nxt, times in successors.get(index, {}).items():
+                    lead = first_event.get(nxt)
+                    if lead is None:
+                        continue
+                    gap = end - row + lead
+                    for instr in owners.get(row, ()):
+                        counts = hist.setdefault(instr, {})
+                        counts[gap] = counts.get(gap, 0) + times
+                break
             gap = events[k + 1] - row
             for instr in owners.get(row, ()):
                 counts = hist.setdefault(instr, {})

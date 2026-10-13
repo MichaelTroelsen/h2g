@@ -189,6 +189,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        real_firstwave_instruments: tuple = (),
                        instr_row_calls: dict | None = None,
                        gate_off_firstwave_instruments: tuple = (),
+                       gatetimer_trim: int = 0,
                        gate_clear_firstwave: bool = False) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
@@ -436,6 +437,15 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             firstwave = (data[base + 2] | 0x01) & 0xFF
         elif gt_number in gate_off_firstwave_instruments:
             firstwave = gate_off_firstwave(data[base + 2])
+            if gatetimer_trim and firstwave != FIRSTWAVE_TESTBIT:
+                # `aligned_firstwave`: the init call is now one of the gate's
+                # off calls (it writes the record's waveform with the gate
+                # clear and the pitch follows on call 1), so the counter
+                # needs one call less to leave the off span where the
+                # gate-on firstwave left it. Not on the testbit fallback,
+                # whose init call is still gate ON.
+                ticks = max(1, (gatetimer & 0x3F) - gatetimer_trim)
+                gatetimer = (gatetimer & ~0x3F) | ticks
         elif (gate_clear_firstwave and data[base + 2] & 0xF0
                 and not data[base + 2] & 0x01 and data[base + 2] < 0xFE):
             # **A record whose own waveform has the gate CLEAR takes it as

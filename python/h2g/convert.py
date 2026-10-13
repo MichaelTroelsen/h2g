@@ -264,7 +264,8 @@ def convert(sid_path: str, log: Logger = print,
             regrid_full_debt: bool = False,
             regrid_per_play: bool = False,
             regrid_prepay: int = 0,
-            regrid_park: bool = False) -> bytes:
+            regrid_park: bool = False,
+            aligned_firstwave: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -400,6 +401,25 @@ def convert(sid_path: str, log: Logger = print,
     11.5 points of melody (figures beside the emission in goatwriter, and
     in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every other file.
 
+    aligned_firstwave puts the note-init call's gate write on the pitch's
+    frame. Goattracker's init call writes only `$D404` (player.s
+    mt_newnoteinit); the note's frequency arrives one call later. So the
+    gate-ON firstwave `no_test_restart` writes opens every note's gate on a
+    call the pitch has not reached, and the whole gate envelope -- rise AND
+    fall, because the gatetimer counts from that call -- sits one frame ahead
+    of the pitch (Chicken_Song and Hollywood_or_Bust: every rise and fall at
+    -1 once `fidelity.startup_lag` stopped counting the stale-pitch frame).
+    This option spends the init call on the record's own waveform with the
+    gate CLEAR on every instrument (`gate_off_firstwave_instruments` over all
+    of them, `goatwriter.instruments.gate_off_firstwave`), keeps the wavetable's
+    lead entry, so gate and pitch land together on call 1, and gives each
+    such record a gatetimer one call shorter, so the gate is off for the span
+    it was off for before (the init call is now one of its calls). It
+    OVERRIDES `no_test_restart`, whose real-waveform byte and `written`
+    layout are the other spelling of the same call. Off by default and per
+    song (presets.EXCLUDED_FROM_ALWAYS): it moves the columns both ways, so
+    adoption is a measurement per file.
+
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
     columns to match; instrument 1 is always kept, because both players
@@ -487,6 +507,11 @@ def convert(sid_path: str, log: Logger = print,
     subtune. See `_append_players`. `sid_path` may also be an already-loaded
     `SidFile`, which is how each player's view is converted.
     """
+    if aligned_firstwave:
+        no_test_restart = False
+        gate_off_firstwave_instruments = tuple(sorted(
+            set(gate_off_firstwave_instruments)
+            | set(range(1, GT_TEMPO_INSTRUMENT))))
     opts = {k: v for k, v in locals().items() if k not in ("sid_path", "log")}
     if (_gw_skydive.CARRY_VIBRATO and _gw_skydive.CARRY_BUDGET is None
             and not isinstance(sid_path, SidFile)):
@@ -1140,6 +1165,7 @@ def convert(sid_path: str, log: Logger = print,
                          compact_instruments=compact_instruments,
                          real_firstwave_instruments=real_firstwave_instruments,
                          gate_off_firstwave_instruments=gate_off,
+                         gatetimer_trim=1 if aligned_firstwave else 0,
                          arps=ilv_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
@@ -1197,9 +1223,10 @@ def convert(sid_path: str, log: Logger = print,
             # list `instrument_row_calls` was taken from.
             sng = split_funk_gatetimers(
                 sng, group_tempos,
-                lambda r: _hard_restart_ticks(
+                lambda r: max(1, (_hard_restart_ticks(
                     multiplier, r, wide_hard_restart, max_hard_restart,
-                    hard_restart_frames) & 0x3F, log)
+                    hard_restart_frames) & 0x3F)
+                    - (1 if aligned_firstwave else 0)), log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

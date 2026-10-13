@@ -247,6 +247,17 @@ def main(argv=None) -> int:
              "a --presets entry's gate_off_firstwave_instruments; unset "
              "leaves every conversion byte-identical.")
     parser.add_argument(
+        "--aligned-firstwave", action="store_true",
+        help="put the note-init call's gate write on the pitch's frame: every "
+             "instrument's firstwave is its own waveform with the gate CLEARED "
+             "(the init call writes only $D404; the pitch arrives a call "
+             "later), the wavetable's lead entry opens the gate with the "
+             "pitch, and the gatetimer is one call shorter so the gate is "
+             "off for the span it was. Overrides --no-test-restart, whose "
+             "gate-ON firstwave opens every gate one frame before the pitch. "
+             "Per song (a --presets entry's aligned_firstwave); off leaves "
+             "every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -661,6 +672,7 @@ def main(argv=None) -> int:
                           ("--cut-release", "cut_release"),
                           ("--tie", "tie"),
                           ("--tie-restart", "tie_restart"),
+                          ("--aligned-firstwave", "aligned_firstwave"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--filter", "filters"),
@@ -771,6 +783,7 @@ def main(argv=None) -> int:
                       cut_release=args.cut_release,
                       tie=args.tie,
                       tie_restart=args.tie_restart,
+                      aligned_firstwave=args.aligned_firstwave,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       filters=args.filters,

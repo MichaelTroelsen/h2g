@@ -2059,7 +2059,10 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         start = len(entries) + 1
         block = None
         entered = None
-        if isinstance(residue, GatePhase) and 0 <= i < n:
+        # Every phase clone (gate, fixed-arp int, pitch-seq tuple) may enter;
+        # a tie block keeps its own layout unless it is a GatePhase one
+        # (`test_tie_phase_blocks` pins the no-room spelling).
+        if 0 <= i < n and (isinstance(residue, GatePhase) or not for_tie):
             # Laid out at position 1 and the whole table's room, exactly as
             # `phase_probe` asks its question, then entered into the
             # record's block where it can be (`_entered_record_block`): the

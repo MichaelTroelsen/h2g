@@ -211,8 +211,12 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
     kw2["phase_clones"] = kept + [(record, 99, residue)]
     kw2["phase_clone_starts"] = clone_starts = []
     entries2, _starts2, _a2 = real(*args, **kw2)
-    assert clone_starts[len(kept):] == [at]
-    assert entries2[at - 1:] == entries[at - 1:]
+    # The stand-in clone may enter its record's block rather than lay one out
+    # (`_entered_record_block`, every non-tie phase clone); the tie block keeps
+    # its own layout, and the two must play the same stream.
+    (x,) = clone_starts[len(kept):]
+    assert x
+    assert GW._same_wave_stream(entries, at, entries2, x)
     own = starts[record - 1] - 1                     # not the record's block
     assert entries[at - 1:at - 1 + 6] != entries[own:own + 6]
     # And a legato clone points at it.
@@ -225,17 +229,18 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
 
 @needs_corpus
 def test_a_table_with_no_room_keeps_the_old_spelling():
-    """Las_Vegas_Video_Poker: record $15's tie rows land on residue 1, whose
-    block the full table cannot hold (`tie phase block: 15 at
-    residue 1 has no room in the wavetable`): the 6 rows stay on the old
-    spelling, with the gated ones."""
+    """Las_Vegas_Video_Poker: its tie rows keep the old spelling, with the
+    gated ones. Through 0421071 record $15's ties landed on residue 1, whose
+    block the full table could not hold (`tie phase block: 15 at residue 1
+    has no room in the wavetable`); since gate-majority-counts-tied-notes
+    ties cast no vote, $15 sits on residue 3 with the rest, every one of the
+    28 tie rows lands off it, and no block is asked for. The corpus no
+    longer exercises the no-room message."""
     _sng, lines, seen, _real = _convert_capturing("Las_Vegas_Video_Poker.sid")
-    assert any("(6 arpeggio phase; 16 gated arpeggio phase)" in line
-               for line in lines), lines
-    assert seen[-1][1]["tie_blocks"] == [(21, 1)]
-    assert seen[-1][1]["tie_block_starts"] == [0]
-    assert any("tie phase block: 15 at residue 1 has no room" in line
-               for line in lines), lines
+    assert any("(28 gated arpeggio phase)" in line for line in lines), lines
+    assert not seen or not seen[-1][1]["tie_blocks"]
+    assert not any("tie phase block: 15 at residue 1 has no room" in line
+                   for line in lines), lines
     assert not any("restart the block of the residue" in line
                    for line in lines)
 
