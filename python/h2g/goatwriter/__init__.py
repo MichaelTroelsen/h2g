@@ -265,7 +265,9 @@ from .skydive import (CARRY_VIBRATO, vibrato_carry, _Assembly, _compress, _high_
 from .note_rise import (_note_rows, NOTE_RISE_MAX_DURATION,
                         NOTE_RISE_MAX_STEP, NOTE_RISE_NOTE_BASE,
                         NOTE_RISE_ROW_TICKS, _ticks, delays_fit,
-                        nearest_value, note_rise_entries, note_rise_plan,
+                        _rise_pieces, layout_pieces, reclaimable_holes,
+                        nearest_value, note_rise_entries, note_rise_placed,
+                        note_rise_plan,
                         program_cost, program_entries, row_calls_of,
                         store_lag, store_phase, store_rows, store_values,
                         tail_entries)  # noqa: F401

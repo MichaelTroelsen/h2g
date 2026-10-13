@@ -61,6 +61,10 @@ def _convert(name: str, forced: bool = False):
     real = C.pin_past_table_wave_notes
 
     def spy(blob, sid, det, log=None):
+        # These tests are about the drum cell. The rows that sound an entry
+        # above 92 (tests/test_top_note_wave.py) also move wavetable and
+        # pattern bytes in Master_of_Magic, so they are left out here.
+        det.top_cols = {}
         after = real(blob, sid, det, log)
         seen.append((bytes(after), bytes(blob), sid, det))
         return after

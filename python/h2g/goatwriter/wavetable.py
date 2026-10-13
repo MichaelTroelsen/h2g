@@ -1858,6 +1858,7 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       tie_blocks: Optional[List[tuple]] = None,
                       tie_block_starts: Optional[list] = None,
                       phase_probe: Optional[List[tuple]] = None,
+                      phase_block_probe: Optional[dict] = None,
                       attack_holds: Optional[List[int]] = None,
                       attack_hold_starts: Optional[list] = None,
                       wave_alternate: bool = False,
@@ -2003,6 +2004,17 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
             phase_probe[k] = (record, residue, 0 <= i < n and (
                 record_entries(i, 1, _gw_constants.GT_MAX_TABLELEN, phase=residue)
                 != record_entries(i, 1, _gw_constants.GT_MAX_TABLELEN)))
+        return entries, starts, []
+    if phase_block_probe is not None:
+        # The block itself, for the plan to tell two residues' apart:
+        # {(record, residue): its entries at position 1}, None past the table.
+        for (record, residue) in list(phase_block_probe):
+            i = record - lead - 1
+            got = (record_entries(i, 1, _gw_constants.GT_MAX_TABLELEN,
+                                  phase=residue) if 0 <= i < n else None)
+            phase_block_probe[(record, residue)] = (
+                None if got is None
+                else tuple(tuple(side) for side in got))
         return entries, starts, []
     for i in range(n):
         start = len(entries) + 1

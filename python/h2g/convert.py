@@ -631,6 +631,9 @@ def convert(sid_path: str, log: Logger = print,
         sid, det, tracks, det.pattern_used + 1 + len(variants), floor, log,
         slides=slides, status_bit6=status_bit6)
     want_event_rows = bool(pulse_phase and pulse and det.pulse_tri_hi >= 0)
+    # The note rows that sound an entry 93-95 of the player's table, which
+    # Goattracker's note column cannot name (past_table_wave plays them).
+    top_cols = det.top_cols
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -650,7 +653,7 @@ def convert(sid_path: str, log: Logger = print,
         # The triangle walk's fetch rows (patterns.collect_pulse_phases'
         # `event_rows`). Unlike `free_rows` the request moves no byte -- the
         # dedup key is left alone -- so it is made wherever that walk can run.
-        event_rows=want_event_rows,
+        event_rows=want_event_rows, top_cols=top_cols,
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.

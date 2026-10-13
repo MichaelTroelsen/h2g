@@ -288,13 +288,17 @@ def test_crazy_comets_rise_leaves_the_past_table_split_its_wavetable_rows():
     song, needs 12 (3 pinned copies of its wave program). Without the room it
     leaves 5 note rows on a relative step past the table, which
     tests/test_past_table_split.py forbids. `convert` builds the song again
-    with the shortfall held back, and the rise then keeps its lowest 43
-    values exact and leaves the stores above them to the vibrato (spreading
-    13 values over the range instead costs 72% of the stores)."""
+    with the shortfall held back, and the rise then kept its lowest 43
+    values exact and left the stores above them to the vibrato (spreading
+    13 values over the range instead costs 72% of the stores). Since the
+    duplicate instrument blocks' rows are reused (`note_rise.
+    reclaimable_holes`, tests/test_note_rise_reclaim.py) it keeps all 46
+    and the split still has its room."""
     import songview
     sng, lines, _ = _converted("Crazy_Comets")
     rise = [m for m in lines if "Note rise (bit $02)" in m]
-    assert len(rise) == 1 and "left to the vibrato" in rise[0], rise
+    assert len(rise) == 1 and "left to the vibrato" not in rise[0], rise
+    assert "46 of 46 store value(s)" in rise[0] and "reused from" in rise[0]
     split = [m for m in lines if m.startswith("Past-table wave split")]
     assert len(split) == 1 and "pinned copy(ies)" in split[0], split
     assert "left on a relative step" not in split[0], split

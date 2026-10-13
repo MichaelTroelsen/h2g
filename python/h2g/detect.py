@@ -448,6 +448,12 @@ class Detection:
     # above still describe the first player, exactly as before. See
     # `find_players`.
     players: Tuple["PlayerTables", ...] = ()
+    # The note rows that sound an entry 93-95 of the player's table, which
+    # Goattracker's note column (92 at most) cannot name: {a slice's note
+    # column: its rows, or None where unknown}. Filled by `convert_patterns`
+    # and read by `past_table_wave`, which plays them from the wavetable. A
+    # result of the conversion, not a property of the file.
+    top_cols: dict = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def can_convert(self) -> bool:

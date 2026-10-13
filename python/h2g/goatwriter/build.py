@@ -135,6 +135,32 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                           eor_phases=eor_phases)
         cache[(record, residue)] = bool(probe[0][2])
         return cache[(record, residue)]
+
+    blocks: dict = {}
+
+    def block(record: int, residue):
+        """The block (record, residue) lays out, as a hashable: two residues
+        of one record with the same value are the same bytes. Probed with the
+        same arguments as `distinct`."""
+        if (record, residue) not in blocks:
+            probe = {(record, residue): None}
+            _wavetable_layout(sid, det, instr_used, effects, fmt, list(table),
+                              multiplier, min_notes, lead, two_stage,
+                              sfx_drum, wave_program, pitch_seq, note_rows,
+                              row_calls, no_test_restart, voice_two_stage,
+                              instr_voices, gate_skip,
+                              real_firstwave_instruments, None,
+                              arp_phases=arp_phases,
+                              arp_tie_rows=arp_tie_rows,
+                              pitch_phases=pitch_phases,
+                              phase_block_probe=probe,
+                              arp_gate_phases=arp_gate_phases,
+                              wave_alternate=wave_alternate,
+                              instr_row_calls=instr_row_calls,
+                              eor_phases=eor_phases)
+            blocks[(record, residue)] = probe[(record, residue)]
+        return blocks[(record, residue)]
+    distinct.block = block
     return distinct
 
 
@@ -544,7 +570,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     instr_used + 1, gate_skip,
                     distinct=(lambda rec, res: (rec, res) not in no_room
                               and gate_distinct(rec, res)),
-                    log=log if _pass else None)
+                    log=log if _pass else None,
+                    block_of=gate_distinct.block)
                 if phase_split is None:
                     break
                 dry_starts: List[int] = []
@@ -573,7 +600,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                         _gw_arpeggio.nibble_gate_phase_split_plan(
                             sid, det, tracks, patterns, effects, lead,
                             instr_used, instr_used + 1, gate_skip,
-                            distinct=gate_distinct, log=log)
+                            distinct=gate_distinct, log=log,
+                            block_of=gate_distinct.block)
                     break
                 if log:
                     log(f"gate phase split: {len(failed)} clone(s) the "
@@ -1049,9 +1077,18 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         rise = _gw_note_rise.note_rise_plan(
             sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
             gate_skip, row_calls, table, len(wave_entries), no_test_restart,
-            tuple(real_firstwave_instruments), log=log, reserve=wave_reserve)
+            tuple(real_firstwave_instruments), log=log, reserve=wave_reserve,
+            wave_entries=wave_entries, wave_starts=wave_starts,
+            wave_pointers=[r for r in (
+                list(arp_starts) + clone_starts + phase_clone_starts
+                + tie_block_starts + attack_hold_starts + drum_starts) if r])
         if rise is not None:
             patterns = rise.patterns
+            if rise.base is not None:
+                # Duplicate instrument blocks gave their rows to the
+                # programs: the records now share the first copy.
+                wave_entries = rise.base
+                wave_starts[:] = rise.starts
             wave_entries = wave_entries + rise.entries
     # The counter-started fall (`counter_fall_plan`): the same stepping byte
     # gated by a frame count the note's fetch zeroes. Its rows are taken

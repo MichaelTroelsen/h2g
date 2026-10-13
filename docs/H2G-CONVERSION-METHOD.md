@@ -16044,3 +16044,22 @@ did for the restart kinds. 17 files move; Trans-Atlantic_Balloon_Challenge subtu
 voice 2 changes waveform and pitch together on frames 6494, 6592, 6883 and 6981. Above
 -S1 the clone's init call is the frame's last sampled call and neither spelling reproduces
 the original's single-frame change (Shockway_Rider, 26 frames); that is still open.
+
+### 7.NEW A note byte above Goattracker's note column is played from the wavetable: Spellbound's sweep top
+
+From task `spellbound-sweep-top-note-past-table`. Spellbound's sweep ends on `00 5F`: the original
+plays `$FD2E` (entry 95 of its 96-entry table) and ours played `$DD0E`. It is not a past-table
+cell: `$5F` is a real entry. Goattracker's NOTE COLUMN stops at index 92 (`$BC`), so
+`_build_raw_pattern` clamped the byte, and its comment called the clamp "the only available
+answer" for `$5C`-`$5F`. The wavetable can name them (`gplay.c:717-721`: a relative step adds to
+the voice's note, an absolute one names it, both `& $7F`, and the frequency table has 96 entries).
+`past_table_wave` already pins a program's steps for a note row; it now does so for these rows
+too. Mechanism, in `past_table_wave`'s docstring ("A note above the note column"):
+`top_rows` (decoder out-parameter) -> `top_cols` (keyed by note column) -> `_walk`/`_split_key`.
+The row points (`CMD_SETWAVEPTR`) at a copy of its wave program with every relative step turned
+absolute at 92 + the entries above 92. Commando stays held (`HELD`); its `$5D`/`$5F` rows keep
+the clamp, and the fixture is byte-identical. Measured under presets at -t 180: Spellbound
+melody 0.9292 -> 0.9986, sequence 0.9495 -> 0.9992 (110 frames at entry 95 against the original's
+108 at `$FD2E`; none at `$DD0E` where the clamp had them); Kentilla 0.9822 -> 1.0, Wiz 0.9482 ->
+0.9763, Proteus 0.9499 -> 0.9988; Dragons_Lair_Part_II, International_Karate, Master_of_Magic and
+Star_Paws move bytes and no displayed figure. 8 files move in all.

@@ -183,9 +183,14 @@ def test_game_killer_points_rows_2_to_17_of_each_note_at_a_rising_store(
         tie_restart):
     """Every note of GT 2 is 18 rows; store k is on the original's tick
     2 + 2k, the first tick of row k + 1, so rows 2..17 carry k = 1..16 --
-    through ten programs (the wavetable's last 23 entries), each the
-    nearest value, every one a single `F1` of `$100 * v` into the shared
-    tail. The same with `tie_restart`, which presets.FIXED turns on."""
+    through sixteen programs, one a value (the wavetable's last 23 entries
+    held ten; the five identical `41 00 / 07 00 / 41 00 / FF 00 / FF 00`
+    instrument blocks now share one copy and the other four give their rows
+    to the programs), every one a single `F1` of `$100 * v` into the shared
+    tail. A pattern whose packed size the sixteen distinct operands would
+    push past the limit takes the value below the one asked for on some of
+    its rows (98 of 672 rows at the time of writing). The same with
+    `tie_restart`, which presets.FIXED turns on."""
     import songview
     sng, lines, _ = _converted("Game_Killer", tie_restart=tie_restart)
     song = songview.parse_sng(sng)
@@ -193,15 +198,19 @@ def test_game_killer_points_rows_2_to_17_of_each_note_at_a_rising_store(
     assert {j for j, _ in hits} == set(range(2, 18)), hits
     wt, stbl = song.tables["WTBL"], song.tables["STBL"]
     assert len(wt) <= 255
-    values = R.store_values(16, 10)
+    exact = 0
     for j, start in hits:
         prog = _run(wt, start)
-        v = R.nearest_value(j - 1, values)
         (cmd,) = [s for s in prog.values() if s != "note"]
-        assert cmd[0] == 0xF1 and stbl[cmd[1] - 1] == (v, 0x00), (j, prog)
+        v = stbl[cmd[1] - 1][0]
+        assert cmd[0] == 0xF1 and stbl[cmd[1] - 1][1] == 0x00, (j, prog)
+        assert v in (j - 1, j - 2), (j, v)
+        exact += v == j - 1
         assert prog == {0: cmd, 10: "note", 19: "note"}, (j, prog)
+    assert exact > 5 * len(hits) // 6, (exact, len(hits))
+    assert len({start for _j, start in hits}) == 16
     assert any("Note rise (bit $02).....: 176 store row(s)" in m
-               for m in lines), lines
+               and "16 of 16 store value(s)" in m for m in lines), lines
 
 
 def _hi_frames(trace, nframes, key, keep):

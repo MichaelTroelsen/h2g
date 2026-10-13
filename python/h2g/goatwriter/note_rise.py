@@ -301,6 +301,111 @@ def note_rise_entries(values: dict, tick_calls: int, step: int, start: int,
     return entries, starts
 
 
+def _rise_pieces(values: dict, tick_calls: int, row_ticks: int):
+    """[(key, size)] in layout order: per tick a row ends on, its shared
+    tail (key `last`) and then its programs (key `(half, value)`). A tail of
+    no entries is left out. The same order `note_rise_entries` lays out."""
+    pieces: List[tuple] = []
+    for last in sorted({_ticks(h)[-1] for h in values}):
+        n = len(tail_entries(last, tick_calls, row_ticks))
+        if n:
+            pieces.append((last, n))
+        for half in sorted((h for h in values if _ticks(h)[-1] == last),
+                           key=_ticks):
+            for v in values[half]:
+                pieces.append(((half, v), len(program_entries(
+                    half, tick_calls, WAVECMD_PORTAUP,
+                    (1,) * len(_ticks(half)), 1, row_ticks))))
+    return pieces
+
+
+def layout_pieces(sizes: List[int], holes: List[Tuple[int, int]],
+                  wave_len: int) -> Tuple[List[int], int]:
+    """([first row of each piece], rows appended past `wave_len`).
+
+    Each piece goes into the first hole (first row, rows) it fits, else onto
+    the end. Every piece is a run of delays ending in a jump, so it works
+    wherever it stands. With no holes this is the contiguous layout."""
+    free = [list(h) for h in holes]
+    at = wave_len + 1
+    rows: List[int] = []
+    for size in sizes:
+        for h in free:
+            if h[1] >= size:
+                rows.append(h[0])
+                h[0] += size
+                h[1] -= size
+                break
+        else:
+            rows.append(at)
+            at += size
+    return rows, at - 1 - wave_len
+
+
+def note_rise_placed(values: dict, tick_calls: int, step: int, wave_len: int,
+                     holes: List[Tuple[int, int]], speed_index,
+                     row_ticks: int = 2
+                     ) -> Tuple[Dict[int, tuple], dict]:
+    """({row: wavetable entry}, {(ticks, value): its program's start}), the
+    pieces of `note_rise_entries` placed by `layout_pieces`: in `holes`
+    where they fit, else from `wave_len + 1` on."""
+    cmd = WAVECMD_PORTAUP if step > 0 else WAVECMD_PORTADOWN
+    pieces = _rise_pieces(values, tick_calls, row_ticks)
+    rows, _ = layout_pieces([n for _k, n in pieces], holes, wave_len)
+    at = dict(zip([k for k, _n in pieces], rows))
+    placed: Dict[int, tuple] = {}
+    starts = {}
+    for last in sorted({_ticks(h)[-1] for h in values}):
+        tail = at.get(last, 0)
+        for i, e in enumerate(tail_entries(last, tick_calls, row_ticks)):
+            placed[tail + i] = e
+        for half in sorted((h for h in values if _ticks(h)[-1] == last),
+                           key=_ticks):
+            for v in values[half]:
+                starts[(half, v)] = at[(half, v)]
+                sp = tuple(speed_index(x) for x in _ticks(v))
+                for i, e in enumerate(program_entries(
+                        half, tick_calls, cmd,
+                        sp[0] if len(sp) == 1 else sp, tail, row_ticks)):
+                    placed[at[(half, v)] + i] = e
+    return placed, starts
+
+
+def reclaimable_holes(wave_entries: List[tuple], wave_starts: List[int],
+                      pointers: List[int]
+                      ) -> Tuple[List[Tuple[int, int]], List[int]]:
+    """([(first row, rows)] of unused duplicate blocks, the starts to use).
+
+    Every instrument's record is its own block, and several records carry
+    the same one (Game_Killer: instruments 1, 2, 4, 8 and 10 are all `41 00 /
+    07 00 / 41 00 / FF 00 / FF 00`). A block that ends in a stop, jumps
+    nowhere but 0 (so it does not care where it stands), is named by no
+    pointer and entered by no jump from elsewhere is the same program as the
+    first block with its entries; its records are repointed there and its
+    rows are free. `pointers` is every other row anything points at.
+    """
+    size = len(wave_entries)
+    named = {p for p in pointers if p}
+    bounds = sorted({s for s in wave_starts if s} | named | {size + 1})
+    jump_to = [t for left, t in wave_entries if left == GT_WAVE_JUMP and t]
+    canon: Dict[tuple, int] = {}
+    move: Dict[int, int] = {}
+    holes: List[Tuple[int, int]] = []
+    for s in sorted({s for s in wave_starts if s}):
+        e = next(b for b in bounds if b > s)
+        block = tuple(wave_entries[s - 1:e - 1])
+        if (not block or block[-1] != (GT_WAVE_JUMP, 0x00)
+                or any(left == GT_WAVE_JUMP and t for left, t in block)):
+            continue
+        if block not in canon:
+            canon[block] = s
+        elif (not any(s <= p < e for p in named)
+              and not any(s <= t < e for t in jump_to)):
+            move[s] = canon[block]
+            holes.append((s, len(block)))
+    return holes, [move.get(x, x) for x in wave_starts]
+
+
 def _note_rows(tracks: List[List[int]], patterns: List[List[int]],
                numbers: set):
     """Every note an instrument in `numbers` plays, one lap of each orderlist
@@ -331,7 +436,10 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                    fmt: str, multiplier: int, gate_skip: Optional[int],
                    row_calls: int, speed_table: List[tuple], wave_used: int,
                    no_test_restart: bool = False, real_firstwave: tuple = (),
-                   log=None, reserve: int = 0
+                   log=None, reserve: int = 0,
+                   wave_entries: Optional[List[tuple]] = None,
+                   wave_starts: Optional[List[int]] = None,
+                   wave_pointers: Optional[List[int]] = None
                    ) -> Optional[_gw_skydive.SkydivePlan]:
     """The rows holding a store of every long note on a bit-$02 record, each
     pointed at its store's program, or None where nothing is taken.
@@ -343,7 +451,11 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     same store or stores on the same ticks and its command column persists
     the row before's (`skydive_plan`'s rule). Everything declined is counted
     in the log line. `reserve` wavetable entries are left free for a later
-    pass (`past_table_wave.retarget_mixed_steps`).
+    pass (`past_table_wave.retarget_mixed_steps`). Where the programs do not
+    all fit, the rows of duplicate instrument blocks (`reclaimable_holes`)
+    are used too, given `wave_entries`, `wave_starts` and `wave_pointers`
+    (every other row anything points at): the plan then carries the
+    wavetable to use (`base`) and the instrument starts (`starts`).
     """
     nr = det.note_rise
     if nr is None:
@@ -450,14 +562,6 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 vs[0] if len(vs) == 1 else vs)
         return {h: sorted(vs, key=_ticks) for h, vs in out.items()}
 
-    def program_total(chosen: List[int], rows: Dict[tuple, tuple]) -> int:
-        progs = programs_for(chosen, rows)
-        lasts = {_ticks(h)[-1] for h in progs}
-        return (sum(len(tail_entries(h, tick_calls, frames)) for h in lasts)
-                + sum(len(program_entries(h, tick_calls, WAVECMD_PORTAUP,
-                                          _ticks(v), 1, frames))
-                      for h, vs in progs.items() for v in vs))
-
     def clipped(top: int) -> Dict[tuple, tuple]:
         """`taken` with the stores above `top` left out, and the rows that
         had nothing else."""
@@ -475,25 +579,21 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # has four) repeat each spread value in every kind, so there the lowest
     # values are kept exact and the stores above them are left to the vibrato.
     kinds = {ticks_of(ask) for ask in taken.values()}
-    chosen: List[int] = []
-    rows = taken
-    for count in range(min(kmax, room), 0, -1):
-        if count < kmax and len(kinds) > 1:
-            trial_values, trial_rows = list(range(1, count + 1)), clipped(count)
-        else:
-            trial_values, trial_rows = store_values(kmax, count), taken
-        if (trial_rows and wave_used + program_total(trial_values, trial_rows)
-                <= limit):
-            chosen, rows = trial_values, trial_rows
-            break
-    if not chosen:
-        say(f"{len(taken)} store row(s), no wavetable room, not emitted")
-        return None
-    dropped_stores = sum(len(a) for a in taken.values()) - sum(
-        len(a) for a in rows.values())
-    taken = rows
-    halves = sorted({h for ask in taken.values() for _k, h in ask})
-    values = programs_for(chosen, taken)
+    def fitting(holes: List[Tuple[int, int]]):
+        """Every (values, rows) whose programs fit, most values first."""
+        for count in range(min(kmax, room), 0, -1):
+            if count < kmax and len(kinds) > 1:
+                trial_values, trial_rows = (list(range(1, count + 1)),
+                                            clipped(count))
+            else:
+                trial_values, trial_rows = store_values(kmax, count), taken
+            if not trial_rows:
+                continue
+            sizes = [n for _k, n in _rise_pieces(
+                programs_for(trial_values, trial_rows), tick_calls, frames)]
+            if (wave_used + layout_pieces(sizes, holes, wave_used)[1]
+                    <= limit):
+                yield trial_values, trial_rows
 
     def speed_index(k: int) -> int:
         entry = (k, 0x00)
@@ -501,35 +601,149 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             speed_table.append(entry)
         return speed_table.index(entry) + 1
 
-    entries, starts = note_rise_entries(values, tick_calls, nr.step,
-                                        wave_used + 1, speed_index, frames)
-    if len(speed_table) > GT_MAX_TABLELEN:
+    def attempt(chosen: List[int], rows: Dict[tuple, tuple],
+                holes: List[Tuple[int, int]]) -> Optional[dict]:
+        """Everything the plan emits for `chosen` values, or None where the
+        speed table is full or no pattern can take its rows. Leaves
+        `speed_table` as it found it; the speed table it wants is in the
+        result."""
         speed_table[:] = snapshot
-        say("speed table full, not emitted")
-        return None
+        values = programs_for(chosen, rows)
+        base_table: Optional[List[tuple]] = None
+        placed: Dict[int, tuple] = {}
+        if holes:
+            placed, starts = note_rise_placed(values, tick_calls, nr.step,
+                                              wave_used, holes, speed_index,
+                                              frames)
+            base_table = list(wave_entries)
+            entries: List[tuple] = []
+            for row in sorted(placed):
+                if row <= wave_used:
+                    base_table[row - 1] = placed[row]
+                else:
+                    assert row == wave_used + len(entries) + 1, row
+                    entries.append(placed[row])
+        else:
+            entries, starts = note_rise_entries(values, tick_calls, nr.step,
+                                                wave_used + 1, speed_index,
+                                                frames)
+        speeds = list(speed_table)
+        speed_table[:] = snapshot
+        if len(speeds) > GT_MAX_TABLELEN:
+            return None
+        out = [list(pat) for pat in patterns]
+        edited = stores = over = cut = 0
+        numbers: set = set()
+        for p in sorted({p for p, _r in rows}):
+            def fill(pool: List[int]) -> Optional[List[int]]:
+                trial = list(out[p])
+                for (tp, r), ask in rows.items():
+                    if tp == p:
+                        vs = tuple(nearest_value(k, pool) for k, _h in ask)
+                        at = starts.get((ticks_of(ask),
+                                         vs[0] if len(vs) == 1 else vs))
+                        if at is None:
+                            return None   # no program of that value here
+                        trial[4 * r + 2] = CMD_SETWAVEPTR
+                        trial[4 * r + 3] = at
+                return trial
 
-    out = [list(pat) for pat in patterns]
-    edited = 0
-    numbers: set = set()
-    for p in sorted({p for p, _r in taken}):
-        trial = list(out[p])
-        for (tp, r), ask in taken.items():
-            if tp == p:
-                vs = tuple(nearest_value(k, chosen) for k, _h in ask)
-                trial[4 * r + 2] = CMD_SETWAVEPTR
-                trial[4 * r + 3] = starts[(ticks_of(ask),
-                                           vs[0] if len(vs) == 1 else vs)]
-        if (_gw_pulse.packed_pattern_size(_gw_pulse.pattern_rows(trial))
-                > PACKED_PATTERN_LIMIT):
-            decline("pattern past the packed limit")
-            continue
-        edited += sum(1 for tp, _r in taken if tp == p)
-        numbers |= set().union(*(askers[key] for key in taken if key[0] == p))
-        out[p] = trial
-    if not edited:
-        speed_table[:] = snapshot
-        say("every pattern past the packed limit, not emitted")
+            def too_big(trial: Optional[List[int]]) -> bool:
+                return trial is None or (_gw_pulse.packed_pattern_size(
+                    _gw_pulse.pattern_rows(trial)) > PACKED_PATTERN_LIMIT)
+
+            trial = fill(chosen)
+            # A command/data pair costs two bytes wherever it changes, and
+            # every store of a long note asks for a value of its own: a
+            # pattern past the limit takes every other value (then every
+            # third ...) from the programs there are, before it is given up.
+            # Only where the duplicate blocks made room for the values: a
+            # file that fits without them is laid out as it was.
+            thin = 1
+            while holes and too_big(trial) and thin < len(chosen):
+                thin += 1
+                trial = fill(chosen[::thin] + [chosen[-1]])
+            kept = [key for key in rows if key[0] == p]
+            if too_big(trial):
+                # First-fit in row order, as `pulse.budget_pulse_phase_commands`:
+                # the pack charges a command only where it changes from the row
+                # before, so which pointers fit depends on which were kept
+                # before them. A pattern that does not take every row keeps the
+                # rest on the vibrato rather than losing the lot (Human_Race's
+                # patterns $50 and $53 pack to 262 with all 112 rows, 6 bytes
+                # over greloc's 256).
+                trial, kept = list(out[p]), []
+                for (tp, r), ask in sorted(rows.items()):
+                    if tp != p:
+                        continue
+                    vs = tuple(nearest_value(k, chosen) for k, _h in ask)
+                    at = starts.get((ticks_of(ask),
+                                     vs[0] if len(vs) == 1 else vs))
+                    if at is None:
+                        continue
+                    cell = trial[4 * r + 2:4 * r + 4]
+                    trial[4 * r + 2] = CMD_SETWAVEPTR
+                    trial[4 * r + 3] = at
+                    if too_big(trial):
+                        trial[4 * r + 2:4 * r + 4] = cell
+                        cut += 1
+                        continue
+                    kept.append((tp, r))
+                if not kept:
+                    over += 1
+                    continue
+            edited += len(kept)
+            stores += sum(len(rows[key]) for key in kept)
+            numbers |= set().union(*(askers[key] for key in kept))
+            out[p] = trial
+        if not edited:
+            return None
+        return dict(chosen=chosen, rows=rows, holes=holes, out=out,
+                    edited=edited, over=over, cut=cut, numbers=numbers,
+                    entries=entries, base=base_table, placed=placed,
+                    speeds=speeds, score=(stores, len(chosen)))
+
+    best: Optional[dict] = None
+    for values_, rows_ in fitting([]):
+        best = attempt(values_, rows_, [])
+        break
+    # Where they do not all go in, the rows of duplicate instrument blocks
+    # are free too (`reclaimable_holes`). Every count of values that fits
+    # with them is tried -- more values mean more distinct operands, and a
+    # pattern past the packed limit loses all its rows -- and they are used
+    # only where that keeps more stores, or the same with more values, so a
+    # file that fits is laid out as before.
+    new_starts: Optional[List[int]] = None
+    perfect = (best is not None and len(best["chosen"]) == kmax
+               and best["over"] == 0)
+    if (not perfect and wave_entries is not None and wave_starts is not None
+            and len(wave_entries) == wave_used):
+        named = list(wave_pointers or []) + [
+            pat[4 * r + 3] for pat in patterns for r in range(len(pat) // 4)
+            if pat[4 * r + 2] == CMD_SETWAVEPTR]
+        free, starts_to = reclaimable_holes(wave_entries, wave_starts, named)
+        if free:
+            for values_, rows_ in fitting(free):
+                got = attempt(values_, rows_, free)
+                if got is not None and (best is None
+                                        or got["score"] > best["score"]):
+                    best, new_starts = got, starts_to
+    if best is None:
+        say(f"{len(taken)} store row(s), no wavetable room or no pattern "
+            f"within the packed limit, not emitted")
         return None
+    chosen, rows, holes = best["chosen"], best["rows"], best["holes"]
+    out, edited, numbers = best["out"], best["edited"], best["numbers"]
+    entries, base_table, placed = best["entries"], best["base"], best["placed"]
+    speed_table[:] = best["speeds"]
+    if best["over"]:
+        declined["pattern past the packed limit"] = best["over"]
+    if best["cut"]:
+        declined["row past the packed limit"] = best["cut"]
+    dropped_stores = sum(len(a) for a in taken.values()) - sum(
+        len(a) for a in rows.values())
+    taken = rows
+    halves = sorted({h for ask in taken.values() for _k, h in ask})
     names = ("first", "second", "third", "fourth")
     how = ("" if len(chosen) == kmax else
            f" ({dropped_stores} store(s) above left to the vibrato)"
@@ -540,7 +754,10 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         f"{'/'.join(names[h] for h in halves)} tick, "
         f"{tick_calls} calls a tick, {len(entries)} wavetable step(s) at "
         f"{wave_used + 1}"
+        + (f" and {sum(1 for r in placed if r <= wave_used)} reused from "
+           f"{len(holes)} duplicate block(s)" if holes else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + ("; declined: " + ", ".join(f"{n} {w}" for w, n in declined.items())
            if declined else ""))
-    return _gw_skydive.SkydivePlan(patterns=out, entries=entries)
+    return _gw_skydive.SkydivePlan(patterns=out, entries=entries,
+                                   base=base_table, starts=new_starts)

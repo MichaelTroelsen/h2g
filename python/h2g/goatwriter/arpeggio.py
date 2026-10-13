@@ -265,8 +265,8 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     the difference -- the tie-row shape is identical at residues 0-6 and
     Game_Killer's GT 8 at all eight -- so the corpus moved no byte under
     presets (C:/t/tie-votes-in-fixed-arp-phases). A slide (`CMD_TONEPORTA`
-    with a speed) skips the same init in both players, but the converter
-    emits none on a note the walk reads, so only the tie is tested.
+    with a speed) skips the same init in both players, so every
+    `CMD_TONEPORTA` row is left out of the vote, whatever its parameter.
 
     **The walk is in the player's own clock: calls that pass the outer
     gate.** Where the player has one (`SongSpeeds.skip`, Game_Killer's
@@ -302,8 +302,8 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         if frames is None:
             continue
         for row, current, pat, r in _walk_note_rows(track, patterns):
-            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
-                continue                 # a tie restarts no wavetable
+            if pat[r + 2] == CMD_TONEPORTA:
+                continue                 # a tie or slide restarts no wavetable
             residue = (base + first + row * frames) % period
             votes.setdefault(current, [0] * period)[residue] += 1
     # The majority residue; a tie goes to the lower one, which for the parity
@@ -1950,7 +1950,8 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
                       label: str = "phase split",
                       log=None,
                       factor: Optional[int] = FIXED_ARP_SPLIT_FACTOR,
-                      spell: Optional[tuple] = None
+                      spell: Optional[tuple] = None,
+                      block_of=None
                       ) -> Optional[ArpPhaseSplit]:
     """The per-note split shared by `fixed_arp_phase_split_plan` and
     `pitch_seq_phase_split_plan`: `residues` is {(track, orderlist position,
@@ -1966,7 +1967,12 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
     voted on (`fixed_arp_unrolled_tracks`): the renaming below walks that
     one, and the returned tracks are its -- except a track whose copied laps
     all want what their first lap wants, which goes back to its own: a longer
-    orderlist that sounds the same is only bytes (Zoids, +42 under presets)."""
+    orderlist that sounds the same is only bytes (Zoids, +42 under presets).
+
+    `block_of(record, residue)`, where given, is a hashable of the block the
+    residue lays out: residues of one record with the same key share ONE
+    clone (the most-heard one's), as their bytes are the same
+    (`nibble_gate_phase_split_plan`)."""
     def plays(source=tracks):
         """(ti, pos, play, pattern) in play order, per track."""
         for ti, track in enumerate(source):
@@ -2010,6 +2016,7 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
             row += 1
     _share(held, lap, row)
     wanted = []                              # (share heard, record, residue)
+    twins: dict = {}                         # (rec, residue) -> its twin
     for rec, n in votes.items():
         major = phases.get(rec)
         if major is None:
@@ -2021,6 +2028,23 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
             if distinct is not None and not distinct(rec, r):
                 continue
             wanted.append((held.get((rec, r), 0), rec, r))
+    if block_of is not None and wanted:
+        # Residues whose blocks are byte-for-byte one block: the most-heard
+        # keeps its clone and the rest are renamed to it (Warhawk's record
+        # 11 got four identical six-entry clones).
+        wanted.sort(key=lambda w: (-w[0], w[1], w[2]))
+        first: dict = {}
+        kept = []
+        for share, rec, r in wanted:
+            twin = first.setdefault((rec, block_of(rec, r)), (rec, r))
+            if twin == (rec, r):
+                kept.append((share, rec, r))
+            else:
+                twins[(rec, r)] = twin
+        if twins and log:
+            log(f"{label}: {len(twins)} residue(s) lay out a block their "
+                "record's other clone already has; they share it")
+        wanted = kept
     if not wanted:
         return None
     # Below the lowest dangling reference too (`clone_number_ceiling`).
@@ -2048,6 +2072,9 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
     for k, (_c, rec, r) in enumerate(wanted):
         clone_of[(rec, r)] = first_clone + k
         clones.append((rec, first_clone + k, r))
+    for alias, twin in twins.items():
+        if twin in clone_of:
+            clone_of[alias] = clone_of[twin]
 
     # Per play: the edit set the new walk wants, first play of an entry wins.
     stracks, sresidues, folds = (spell if spell is not None
@@ -2716,7 +2743,8 @@ def nibble_gate_phase_split_plan(sid: SidFile, det: Detection,
                                  lead: int, instr_used: int,
                                  first_clone: int, gate: Optional[int],
                                  distinct=None,
-                                 log=None) -> Optional[ArpPhaseSplit]:
+                                 log=None,
+                                 block_of=None) -> Optional[ArpPhaseSplit]:
     """Clone each gated nibble-arpeggio record whose notes attack on more
     than one gate residue, one clone per minority residue, and rename each
     such note to its residue's clone -- `fixed_arp_phase_split_plan` for the
@@ -2771,7 +2799,7 @@ def nibble_gate_phase_split_plan(sid: SidFile, det: Detection,
                 tracks, residues = wide, wide_res
     return _note_phase_split(tracks, patterns, residues, phases, records,
                              first_clone, distinct, "gate phase split", log,
-                             factor=None)
+                             factor=None, block_of=block_of)
 
 
 def _nibble_gate_shape(sid: SidFile, det: Detection, nibble: int,

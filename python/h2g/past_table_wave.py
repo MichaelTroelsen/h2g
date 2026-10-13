@@ -49,6 +49,26 @@ transposed, plus every CMD_SETWAVEPTR row with the voice's note. Where the
 notes reaching a step read different cells, the most-played note's cell
 wins, and the log says how many notes it overrode.
 
+**A note above the note column.** Goattracker's note column stops at index
+92 (`$BC`) and the player's table has entries 93-95 (`$5D`-`$5F` in a
+Hubbard pattern; `patterns.py` clamps them to 92). The wavetable reaches
+them: the step adds to the voice's note, and an absolute step names the note
+outright, up to 95. `_build_raw_pattern` records each such row
+(`top_rows`: row -> entries above 92), `convert_patterns` files the record
+under the slice's NOTE COLUMN (`top_cols`) -- the one key that survives the
+renumbering, dedup and copying the later passes do, as
+`inherit_free_rows` attributes a copy -- and this pass looks a finished
+pattern up by its own note column. Such a row is a note at index 92 + the
+recorded entries wherever it is walked (`_walk`), and `_split_key` pins EVERY
+relative step of its program, because none of them is where the column
+puts it; the row then points at the same pinned copy a past-the-table row
+does. A column two slices share with different records is left alone. A row
+whose command column is taken, or whose program cannot be copied, stays
+on the clamp, counted in the log as the other rows are. Spellbound's sweep
+top (`00 5F`): the original plays `$FD2E`, the clamp played `$DD0E`, the
+pinned copy plays entry 95 (`$FFFF` in Goattracker's own table, 0.19
+semitones from `$FD2E`).
+
 **COMMANDO IS HELD** (`HELD`), as `stored_wave.HELD` holds it and for the
 same reason: `Commando.sng` is the byte-exact fixture. Under the fixture's
 options its step 27 (`+12`, notes reaching only indexes 97-104) would pin to
@@ -106,7 +126,7 @@ from .goatwriter.appending import _parse_song, _write_song
 from .goatwriter.constants import (CMD_VIBRATO as _CMD_VIBRATO, GT_MAX_TABLELEN,
                                   GT_TEMPO_INSTRUMENT, PACKED_PATTERN_LIMIT)
 from .goatwriter.pulse import packed_pattern_size, pattern_rows
-from .patterns import MAX_PATTERNS
+from .patterns import MAX_PATTERNS, note_column
 
 # Goattracker's frequency table length (gcommon.h:37 MAX_NOTES).
 GT_NOTES = 96
@@ -138,7 +158,23 @@ def _program(wave: List[Tuple[int, int]], start: int) -> List[int]:
     return steps
 
 
-def _contexts(song) -> Dict[int, Counter]:
+def top_rows_of(top_cols: Optional[dict]) -> Dict[tuple, Dict[int, int]]:
+    """`convert_patterns`' `top_cols` reduced to the note columns that hold
+    a row sounding an entry 93-95: {note column: {row: entries above 92}}.
+    A column recorded as unknown or in dispute (None) is dropped, so none
+    of its rows is touched."""
+    return {col: dict(rows) for col, rows in (top_cols or {}).items()
+            if rows}
+
+
+def _row_deltas(top: Optional[dict], pat) -> Dict[int, int]:
+    """{byte offset of a row of `pat`: entries above 92 its note sounds}."""
+    if not top:
+        return {}
+    return {4 * r: d for r, d in top.get(note_column(pat), {}).items()}
+
+
+def _contexts(song, top=None) -> Dict[int, Counter]:
     """{1-based wave step: Counter(note index the voice holds when it runs)}."""
     wave = song.tables[0]
     count = len(song.instruments)
@@ -162,6 +198,7 @@ def _contexts(song) -> Dict[int, Counter]:
             if 0xD0 <= b < 0xE0 or b >= len(song.patterns):
                 continue
             pat = song.patterns[b]
+            deltas = _row_deltas(top, pat)
             for k in range(0, len(pat) - 3, 4):
                 nt, ins, cmd, data = pat[k:k + 4]
                 if ins:
@@ -169,7 +206,8 @@ def _contexts(song) -> Dict[int, Counter]:
                 if _FIRST_NOTE <= nt <= _LAST_NOTE:
                     note = nt - _FIRST_NOTE + trans
                     if 0 < instr <= count and song.instruments[instr - 1][2]:
-                        run(song.instruments[instr - 1][2], note)
+                        run(song.instruments[instr - 1][2],
+                            note + deltas.get(k, 0))
                 if (cmd & 0x0F) == _CMD_SETWAVEPTR and data and note is not None:
                     run(data, note)
     return out
@@ -210,10 +248,15 @@ def _pin_target(sid, det, note: int, right: int) -> Optional[int]:
     return target if target < GT_NOTES else None
 
 
-def _walk(song):
+def _walk(song, top=None):
     """(track number, orderlist position, pattern, [(byte offset of a row,
-    wave row it starts, note it is played at, instrument latched at it),
-    ...]) for every orderlist visit of every pattern.
+    wave row it starts, note it is played at, instrument latched at it,
+    entries above 92 the row's note sounds), ...]) for every orderlist visit
+    of every pattern.
+
+    The note of a row that sounds an entry 93-95 (`top`) is the entry,
+    which its note column (92) cannot say; the voice's own note, which a
+    later pointer row without a note plays, stays 92.
 
     The walk of `_contexts`, but a note row that carries its own
     `CMD_SETWAVEPTR` starts only that program: the pointer replaces the
@@ -230,35 +273,38 @@ def _walk(song):
             if 0xD0 <= b < 0xE0 or b >= len(song.patterns):
                 continue
             pat = song.patterns[b]
+            deltas = _row_deltas(top, pat)
             rows = []
             for k in range(0, len(pat) - 3, 4):
                 nt, ins, cmd, data = pat[k:k + 4]
                 if ins:
                     instr = ins
                 start = None
+                delta = 0
                 if _FIRST_NOTE <= nt <= _LAST_NOTE:
                     note = nt - _FIRST_NOTE + trans
+                    delta = deltas.get(k, 0)
                     if 0 < instr <= count and song.instruments[instr - 1][2]:
                         start = song.instruments[instr - 1][2]
                 if (cmd & 0x0F) == _CMD_SETWAVEPTR and data and note is not None:
                     start = data
                 if start is not None and note is not None:
-                    rows.append((k, start, note, instr))
+                    rows.append((k, start, note + delta, instr, delta))
             yield ti, pos, b, rows
 
 
-def _reach(song) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
+def _reach(song, top=None) -> Dict[Tuple[int, int], List[Tuple[int, int, int]]]:
     """{(pattern, byte offset of the row): [(wave row the row starts, note
     it is played at, instrument latched at the row), ...]}, one entry per
     orderlist visit (see `_walk`)."""
     out: Dict[Tuple[int, int], List[Tuple[int, int, int]]] = defaultdict(list)
-    for _ti, _pos, b, rows in _walk(song):
-        for k, start, note, instr in rows:
+    for _ti, _pos, b, rows in _walk(song, top):
+        for k, start, note, instr, _delta in rows:
             out[(b, k)].append((start, note, instr))
     return out
 
 
-def _split_patterns(song, sid, det, cache: dict) -> Dict[int, int]:
+def _split_patterns(song, sid, det, cache: dict, top=None) -> Dict[int, int]:
     """Give each orderlist visit of a pattern its own copy where the visits
     disagree about which rows overflow the table and how (a shared pattern
     under two orderlist transposes: row 12 plays note 85 + 12 = 97 under one
@@ -271,10 +317,10 @@ def _split_patterns(song, sid, det, cache: dict) -> Dict[int, int]:
     original (it needs no change); with none such, the largest does. Whatever
     the pass cannot use is taken back out by `_drop_unused_clones`."""
     groups: Dict[int, Dict[tuple, List[Tuple[int, int]]]] = defaultdict(dict)
-    for ti, pos, b, rows in _walk(song):
+    for ti, pos, b, rows in _walk(song, top):
         sig = []
-        for k, start, note, instr in rows:
-            key = _split_key(song, sid, det, start, note, cache)
+        for k, start, note, instr, delta in rows:
+            key = _split_key(song, sid, det, start, note, cache, delta)
             if key is not None:
                 sig.append((k, key, instr))
         groups[b].setdefault(tuple(sig), []).append((ti, pos))
@@ -358,9 +404,14 @@ def _closure(wave: List[Tuple[int, int]],
     return [(a, b) for a, b in merged]
 
 
-def _split_key(song, sid, det, start: int, note: int, cache: dict):
+def _split_key(song, sid, det, start: int, note: int, cache: dict,
+               delta: int = 0):
     """(start, ((row, pinned note), ...)) for a program played at `note`
-    whose relative steps read past the table, or None."""
+    whose relative steps read past the table, or None.
+
+    Where the row's note is an entry above 92 (`delta`, the note column
+    having said 92) every relative step is pinned, to the absolute note the
+    player sounds: none of them is where the note column would put it."""
     wave = song.tables[0]
     if start not in cache:
         cache[start] = _closure(wave, start)
@@ -374,6 +425,10 @@ def _split_key(song, sid, det, start: int, note: int, cache: dict):
             if left >= _WAVE_CMD or right >= _KEEP:
                 continue
             target = _pin_target(sid, det, note, right)
+            if target is None and delta:
+                inside = (note + right) & 0x7F
+                if 0 < inside < GT_NOTES:
+                    target = inside
             if target is not None:
                 pins.append((row, target))
     return (start, tuple(pins)) if pins else None
@@ -433,7 +488,8 @@ def mixed_split(on: bool):
 
 def retarget_mixed_steps(song, sid, det,
                          log: Optional[Callable[[str], None]] = None,
-                         stats: Optional[dict] = None) -> bool:
+                         stats: Optional[dict] = None,
+                         top: Optional[dict] = None) -> bool:
     """Split the steps `pin_past_table_wave_notes` cannot pin in place (see
     the module docstring) by pointing each note row that overflows one at a
     pinned copy of its wave program. Edits `song`; True where it changed.
@@ -456,11 +512,13 @@ def retarget_mixed_steps(song, sid, det,
         return False
     wave = song.tables[0]
     cache: dict = {}
-    made = _split_patterns(song, sid, det, cache)
+    made = _split_patterns(song, sid, det, cache, top)
     plans: Dict[Tuple[int, int], tuple] = {}
     conflict = busy = edge = 0
-    for (b, k), visits in _reach(song).items():
-        keys = {_split_key(song, sid, det, st, n, cache) for st, n, _i in visits}
+    for (b, k), visits in _reach(song, top).items():
+        delta = _row_deltas(top, song.patterns[b]).get(k, 0)
+        keys = {_split_key(song, sid, det, st, n, cache, delta)
+                for st, n, _i in visits}
         if keys == {None}:
             continue
         instrs = {i for _s, _n, i in visits}
@@ -601,12 +659,13 @@ def _pinned_song(blob: bytes, sid, det, log, stats):
     """(the parsed song with the pass applied, whether anything changed)."""
     if det.freq_table is None or sid.name in HELD:
         return None, False
+    top = top_rows_of(getattr(det, "top_cols", None))
     song = _parse_song(blob)
     wave = song.tables[0]
     shift = det.note_base
     pinned: List[str] = []
     overridden = 0
-    for step, notes in sorted(_contexts(song).items()):
+    for step, notes in sorted(_contexts(song, top).items()):
         left, right = wave[step - 1]
         if left >= _WAVE_CMD or right >= _KEEP:
             continue
@@ -634,5 +693,5 @@ def _pinned_song(blob: bytes, sid, det, log, stats):
             f"cell ({', '.join(pinned)})"
             + (f"; {overridden} note(s) whose own cell reads another pitch"
                if overridden else ""))
-    split = retarget_mixed_steps(song, sid, det, log, stats)
+    split = retarget_mixed_steps(song, sid, det, log, stats, top)
     return song, bool(pinned or split)

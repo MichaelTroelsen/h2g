@@ -625,7 +625,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        wave_notes: Optional[Dict[int, int]] = None,
                        event_rows: Optional[List[int]] = None,
                        gate_clear_records: frozenset = frozenset(),
-                       legato_bit7: bool = False
+                       legato_bit7: bool = False,
+                       top_rows: Optional[Dict[int, int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -1204,9 +1205,14 @@ def _build_raw_pattern(data: bytes, addr: int,
             # to bound an index into the table". So:
             #
             #  * **$5C-$5F are REAL entries 92-95** that Goattracker's note
-            #    column cannot name, since it stops at index 92. Clamping is
-            #    the only available answer and nothing here is a defect. The
-            #    nine files are Kentilla, Spellbound, Wiz, Master_of_Magic,
+            #    column cannot name, since it stops at index 92. The column
+            #    clamps (below), but the WAVETABLE can name them: a relative
+            #    step adds to the note and an absolute one names it, up to
+            #    95. `top_rows` records the rows, and `past_table_wave`
+            #    points each at a copy of its wave program pinned to the
+            #    entry (Spellbound's sweep top, `$FD2E` in the original,
+            #    played `$DD0E`, 2.3 semitones low). The nine files are
+            #    Kentilla, Spellbound, Wiz, Master_of_Magic,
             #    Las_Vegas_Video_Poker, International_Karate, Nineteen,
             #    Star_Paws, W_A_R_Preview.
             #  * **$60 and above index PAST the 96-entry table**, so what the
@@ -1288,6 +1294,13 @@ def _build_raw_pattern(data: bytes, addr: int,
                 if const_notes and g_note in const_notes:
                     g_note = const_notes[g_note]
                 if g_note >= 0x5C:
+                    # Entries 93-95 are real and the note column stops at
+                    # 92: `top_rows` records by how many, and
+                    # `past_table_wave` plays the difference from the
+                    # wavetable.
+                    if (top_rows is not None and 0x5C < g_note <= 0x5F
+                            and g_note + note_base < 96):
+                        top_rows[len(events) // 4] = g_note - 0x5C
                     g_note = 0x5C
                 # A shifted table can push the lowest byte below its own
                 # entry 0; that entry holds $0000 in the one player this
@@ -2321,7 +2334,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  free_rows: Optional[List[int]] = None,
                  event_log: Optional[List[tuple]] = None,
                  wave_notes: Optional[Dict[int, int]] = None,
-                 event_rows: Optional[List[int]] = None
+                 event_rows: Optional[List[int]] = None,
+                 top_rows: Optional[Dict[int, int]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2397,7 +2411,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               event_rows=event_rows,
                               gate_clear_records=(record_gate_clear(sid, det)
                                                   if tie else frozenset()),
-                              legato_bit7=det.counter_fall is not None)
+                              legato_bit7=det.counter_fall is not None,
+                              top_rows=top_rows)
 
 
 def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
@@ -2752,6 +2767,34 @@ def scale_portamento_data(patterns: List[List[int]], multiplier: int) -> int:
     return changed
 
 
+def note_column(events: List[int]) -> tuple:
+    """A pattern's note column with the ENDPATT rows at its end dropped: the
+    key `convert_patterns` records `top_cols` under, and the one the
+    finished song's patterns are looked up by."""
+    col = [events[k] for k in range(0, len(events) - 3, 4)]
+    while col and col[-1] == GT_END_PATTERN:
+        col.pop()
+    return tuple(col)
+
+
+def _record_top(top_cols: dict, events: List[int],
+                rows: Optional[Dict[int, int]], base: int, count: int) -> None:
+    """Enter one slice (`count` data rows from raw row `base`) in `top_cols`.
+    `rows` None says the slice's top rows are unknown (a transposed
+    variant). A note column two slices share with different top rows, or
+    one of them unknown while it holds a `GT_LASTNOTE`, is recorded None:
+    nobody can say which rows are which, so none is touched."""
+    col = note_column(events)
+    if rows is None:
+        value = None if GT_LASTNOTE in col else frozenset()
+    else:
+        value = frozenset((r - base, d) for r, d in rows.items()
+                          if base <= r < base + count)
+    if col in top_cols and top_cols[col] != value:
+        value = None
+    top_cols[col] = value
+
+
 class PatternList(list):
     """`convert_patterns`' patterns, with each output pattern's bit-7 note
     rows attached for `goatwriter.legato_tie_clones`.
@@ -2848,8 +2891,14 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      free_rows: bool = False,
                      wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
                      wave_copies: Optional[List[tuple]] = None,
-                     event_rows: bool = False):
+                     event_rows: bool = False,
+                     top_cols: Optional[dict] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
+
+    `top_cols`, when given a dict, receives `note_column_top_rows`' record of
+    the note rows that sounded an entry 93-95 (`_build_raw_pattern`'s
+    `top_rows`), keyed by the slice's note column so that it survives the
+    renumbering and copying the later passes do. Pure: no byte moves.
 
     `used` (from referenced_patterns) restricts output to the patterns some
     track plays. Unlike dedup this can rescue tunes that abort on
@@ -2935,6 +2984,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     # (only when asked for; see `event_rows` in the docstring).
     starts: Dict[int, Optional[List[int]]] = {}
     want_ev = event_rows and det.pattern_dialect == "classic"
+    # Entry -> {raw row: entries above 92}, or None where unknown (a
+    # variant, or any dialect but the classic one). Only when asked for.
+    tops: Dict[int, Optional[Dict[int, int]]] = {}
+    want_top = top_cols is not None and det.pattern_dialect == "classic"
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -2955,6 +3008,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         ex: List[bool] = []
         fr: List[int] = []
         ev: List[int] = []
+        tr: Dict[int, int] = {}
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -2963,9 +3017,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               arps=arps,
                               free_rows=fr if collect else None,
                               wave_notes=(wave_notes or {}).get(i),
-                              event_rows=ev if want_ev else None)
+                              event_rows=ev if want_ev else None,
+                              top_rows=tr if want_top else None)
         exits[i] = bool(ex and ex[0])
         free[i] = fr
+        tops[i] = tr if want_top else None
         starts[i] = ev if want_ev and events is not None else None
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -3009,6 +3065,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         # source's, row for row, since shift_notes moves no row.
         exits[len(raw_patterns)] = exits.get(src, False)
         free[len(raw_patterns)] = list(free.get(src, ()))
+        tops[len(raw_patterns)] = None
         starts[len(raw_patterns)] = (None if base is None
                                      else starts.get(src))
         if base is None:
@@ -3030,6 +3087,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         ex = []
         fr = []
         ev = []
+        tr = {}
         events = decode_entry(sid, det, src, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -3038,9 +3096,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               arps=arps,
                               free_rows=fr if collect else None,
                               wave_notes=notes,
-                              event_rows=ev if want_ev else None)
+                              event_rows=ev if want_ev else None,
+                              top_rows=tr if want_top else None)
         exits[n] = bool(ex and ex[0])
         free[n] = fr
+        tops[n] = tr if want_top else None
         starts[n] = ev if want_ev and events is not None else None
         if events is None:
             log(f"*** PATTERN ${n:X} (WAVEFORM-STATE COPY OF ${src:X}) "
@@ -3088,6 +3148,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             ev_rows = (None if entry_starts is None else
                        frozenset(r - base_row for r in entry_starts
                                  if base_row <= r < base_row + data_rows))
+            if top_cols is not None:
+                _record_top(top_cols, s, tops.get(i), base_row, data_rows)
             base_row += data_rows
             key = None
             if dedup:
