@@ -4471,17 +4471,38 @@ def _regrid_per_play(patterns: List[List[int]], order: List[int],
 _CONTINUOUS_COMMANDS = frozenset((1, 2, 3, 4))
 
 
+def _new_note_row(pattern: List[int], k: int) -> bool:
+    """Whether row `k` starts a note (gplay.c's `newnote`: FIRSTNOTE..LASTNOTE,
+    `$60`-`$BC`; `$BD`, `$BE` and `$BF` are not one)."""
+    return 0x60 <= pattern[k * 4] <= 0xBC
+
+
 def _inherits_continuous_effect(pattern: List[int], r: int) -> bool:
     """Whether a one-shot command written on row `r` would keep a 1XY-4XY of
     an earlier row running through it. True where it cannot be told -- every
     row back to the pattern's start is one-shot, so the answer is whatever the
-    orderlist played before, which is position-dependent."""
+    orderlist played before, which is position-dependent.
+
+    **A NEW NOTE ENDS THE WALK.** Both players zero the running effect on
+    every new note before the row's command is read (gplay.c `if
+    (cptr->newnote) { ... cptr->command = 0; ...}`, player.s
+    `mt_newnoteinit` `sta mt_chnfx,x ;Reset effect`), so a note row ahead of
+    `r` whose own command is one-shot (or empty) leaves nothing running, and
+    so does `r` itself being a note row: a `CMD_SETTEMPO` there inherits
+    nothing. Only a note row whose own
+    command is 1XY-4XY starts an effect that reaches `r`. Before this the
+    walk read command columns only and called a slide inherited across a
+    note that had already reset it."""
+    if _new_note_row(pattern, r):
+        return False
     for k in range(r - 1, -1, -1):
         cmd = pattern[k * 4 + 2]
         if cmd == 0:
             return False
         if cmd in _CONTINUOUS_COMMANDS:
             return True
+        if _new_note_row(pattern, k):
+            return False
     return True
 
 
@@ -4528,7 +4549,11 @@ def _slide_covered_regrid_spot(pattern: List[int], want: int,
     before. Only 1 and 2 qualify: a 3XY cell decides whether its note is
     retriggered (a tie) and a 4XY resets the vibrato phase. Rows `r-1`, `r`
     and `r+1` must all carry the same command and parameter, so neither
-    pair cell is the first of its run and the pair cannot end one. Measured
+    pair cell is the first of its run and the pair cannot end one. **Neither
+    pair row may start a note**: new-note init zeroes the running effect
+    first (gplay.c `cptr->command = 0`; player.s `mt_newnoteinit`), so a
+    `CMD_SETTEMPO` over a note row's 1XY/2XY leaves no slide on that row,
+    which the original cell had. Measured
     need: Nineteen's pattern, 49 rows of `1XY`/`2XY` between two ties
     (`regrid-unplaced-pairs-slides`).
     """
@@ -4540,7 +4565,9 @@ def _slide_covered_regrid_spot(pattern: List[int], want: int,
     for d in range(0, rows):
         for r in ((want - d, want + d) if d else (want,)):
             if (2 <= r <= last and cell(r)[0] in (1, 2)
-                    and cell(r - 1) == cell(r) == cell(r + 1)):
+                    and cell(r - 1) == cell(r) == cell(r + 1)
+                    and not _new_note_row(pattern, r)
+                    and not _new_note_row(pattern, r + 1)):
                 return r
     return None
 

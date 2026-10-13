@@ -14,7 +14,7 @@ What this file pins, and what it does not:
   Chimera's record 8 carries it in the converted song whether or not a given
   landing is tied, so an untied landing on that record gets it too. That is
   the mechanism behind "an untied landing closes a unit late"; the timing
-  itself is NOT measured here (no siddump run on a synthetic untied landing).
+  (3 frames, one tick) is measured in tests/test_gate_clear_untied_timing.py.
 """
 
 import pathlib

@@ -3093,7 +3093,9 @@ exact remainder was built and measured: a portamento by what the count leaves
 is a small step the trace calls a slide, and I_Ball, Bangkok_Knights and IK+,
 whose originals read 0 `bend`, read 24067, 6474 and 6547. A record the player
 vibrates, and a song with any real or gate-off firstwave, still restore to the
-note.
+note. A record the player vibrates gets no closing travel at any `-S`: above
+`-S1` the program's closing travel was still emitted for one until v0.5.532
+(`s2-closing-travel-vibrated-records`), and only Kings_of_the_Beach_intro moved.
 
 Measured base -> new. Reversals per ADSR (original in brackets): Mega `$09F9`
 801 -> 1095 (1086), `$07E7` 860 -> 1034 (1034); the sum over every ADSR of
@@ -15268,6 +15270,21 @@ The triangle lockstep's Chimera v1 row in § 7.qqqqqqq ("v1 96/135", one of
 its "pairing slips") reads 135/135 by name, and 135 of 135 reach the packed
 output (134 of 134 before). Under `tie_restart`, 477 tie rows stay
 row-locked, down from 541.
+
+The `$40` is exact for TIED landings, which are every landing in the corpus.
+An UNTIED one -- a record-8 event after a note with `wait > 0`, whose hold path
+has already shut the gate a tick before the fetch -- gets the bit too, since it
+belongs to the record. Measured on a synthetic one (Chimera's pattern `$19`
+rewritten in place so the landing follows a wait-1 note on record 10; both
+sides through siddump, presets, 180 s, voice 1, 26 occurrences of each
+landing, at 8618f82): the original has the gate clear 3 frames (one Hubbard
+tick) before the fetch, the shipped bit closes ON the fetch, 3 frames late; with
+the bit deleted it closes 1 frame late, and the tied landings 2 frames early.
+Declined: no file decodes an untied event on a gate-clear instrument record
+(Chimera's four all follow a wait-0 event; Devils_Galop's record 15 is never
+named), and a per-landing split (a `tie_restart`-style clone without the bit)
+would win 2 of the 3 frames. `tests/test_gate_clear_untied_timing.py` pins the
+lag; a fix changes its `ours == {0: 2 * n}` line to `ours == orig`.
 
 Record 8 kept its drum shape until v0.5.534: `80` noise on the gate-off row's
 third call, where the original holds `$10`. Every one of its notes is the

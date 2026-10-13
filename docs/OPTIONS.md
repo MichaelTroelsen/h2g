@@ -1547,7 +1547,8 @@ note relative to the pattern's, chosen against the pitches the instrument is
 played at and declined where one count does not stand for 75% of them. Where
 the closing hold applies the restore takes the last slide's count and no
 travel follows, so the tail is within a quarter-tone of the accumulator and not
-on it. Above `-S1` nothing changes. Mega_Apocalypse `$09F9`/`$07E7` and the
+on it. Above `-S1` nothing else changes. A record the player vibrates takes no
+closing travel at any `-S` (since v0.5.532). Mega_Apocalypse `$09F9`/`$07E7` and the
 `$0797` drums of I_Ball, Bangkok_Knights and Nineteen are the records it moves;
 see H2G-CONVERSION-METHOD.md §7.fff for the figures and the two losses.
 

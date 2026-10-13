@@ -470,9 +470,14 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # With `$40` the firstwave above does it on the same frame --
             # voice-1 gate agreement over 5618-5906/6194-6482/8210-8372/
             # 8498-8642 went 0.891 -> 1.000 (`tail` 88% -> 100%, `gate` 78%
-            # -> 79%). An UNTIED landing (none in the corpus) would lose the
-            # early gate-off that stands for its predecessor's hold-path one,
-            # closing a unit late instead of about a call early. Above -S1
+            # -> 79%). An UNTIED landing (none in the corpus) loses the
+            # early gate-off that stands for its predecessor's hold-path one:
+            # measured on a synthetic one (tests/test_gate_clear_untied_
+            # timing.py, 2026-10-13) it closes ON the fetch, 3 frames (one
+            # Hubbard tick) after the original, where without this bit it
+            # would close 1 frame late (and a tied landing 2 early). Declined:
+            # no file has one, and a per-landing split would win 2 frames.
+            # Above -S1
             # greloc's FIRSTLEGATOINSTR slip (note_passes.legato_slip_decoy)
             # can gate one legato record off at the fetch like a no-HR note:
             # the behaviour without this bit, not a new one.

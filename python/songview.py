@@ -51,8 +51,8 @@ from h2g.goatwriter import (  # noqa: E402
     WAVE_MAX_DELAY, WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
 )
 from h2g.patterns import (  # noqa: E402
-    GT_END_PATTERN, GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
-    GT_TRANSPOSE_UP,
+    CMD_TONEPORTA, GT_END_PATTERN, GT_FIRSTNOTE, GT_ORDER_RESTART, GT_REPEAT,
+    GT_TRANSPOSE_DOWN, GT_TRANSPOSE_UP, MAX_PATTERNS, _phase_note_rows,
 )
 
 # gcommon.h's command numbering, in order. Index is the pattern row's command
@@ -252,6 +252,53 @@ def decode_orderlist(track: List[int]) -> List[Tuple[str, str, str]]:
                 note += f", played {repeat} times"
             out.append(("pattern", f"${b:02X}", note))
             repeat = 1
+    return out
+
+
+def planned_notes(patterns: List[List[int]], track: List[int],
+                  transpose: bool = True,
+                  skip_toneporta: bool = True) -> List[Tuple[int, int, int, str]]:
+    """(orderlist position, row, instrument, pitch name) per note a voice plays.
+
+    The pitch name is the pattern's note PLUS the orderlist's transpose state
+    -- the same state `decode_orderlist` carries, and the one a name-for-name
+    comparison against an original's attacks needs. Read the pattern byte
+    alone and a transposed voice comes out a constant interval from the
+    original while playing it note for note: Auf_Wiedersehen_Monty subtune 0
+    voice 2 plans 1802 notes whose names agree with the original's 856
+    attacks 625 times untransposed and 856 times transposed (subtune 6 voice
+    2: 6 of 54, then 54 of 54).
+
+    `transpose=False` keeps the old reading, for a caller that wants the
+    pattern's own names; `skip_toneporta` drops TONEPORTA rows, which are
+    slides to a note and not strikes.
+    """
+    out: List[Tuple[int, int, int, str]] = []
+    live, trans, repeat = 0, 0, 1
+    for pos, b in enumerate(track):
+        if b == GT_ORDER_RESTART:
+            break
+        if GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+            trans = b - GT_TRANSPOSE_UP
+            continue
+        if GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+            repeat = b - GT_REPEAT + 1
+            continue
+        if b >= MAX_PATTERNS or b >= len(patterns):
+            continue
+        for _ in range(repeat):
+            for r, kind, instr in _phase_note_rows(patterns[b], live, {}):
+                if patterns[b][4 * r + 1]:
+                    live = patterns[b][4 * r + 1]
+                if kind != "note":
+                    continue
+                if skip_toneporta and patterns[b][4 * r + 2] == CMD_TONEPORTA:
+                    continue
+                n = patterns[b][4 * r] - GT_FIRSTNOTE
+                if transpose:
+                    n += trans
+                out.append((pos, r, instr, f"{NOTE_NAMES[n % 12]}{n // 12}"))
+        repeat = 1
     return out
 
 
