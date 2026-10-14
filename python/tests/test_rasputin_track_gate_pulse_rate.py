@@ -8,8 +8,9 @@ at 0d18fce, 310 s, voice 0, all sweep frames with holds counted, per section:
 85.3, 96.0, 105.1, 114.6, 125.7, 127.5 for R 2, 3, 5, 10, 60, 120. Record 0
 sounds 3.1, 2.8, 12.3, 10.6, 14.0 and 58.1 s under those R, which weighs the
 original to 121.0 a frame; the shipped packed ramp was 128.0, this change's
-is 122.0. One speed per record cannot follow R, so the per-section error
-stays (+43% at R = 2, -4% at R = 120).
+is 122.0. One speed per record cannot follow R (+43% at R = 2, -4% at
+R = 120): `tri_clock` gives the notes at the far clocks a clone of the record
+with a program of their own (test_rasputin_triangle_clock_classes).
 """
 import json
 import shutil
@@ -221,11 +222,14 @@ def _ramp_rate(trace, nframes: int, band: tuple):
 
 @needs_corpus
 def test_rasputins_packed_sweep_travels_at_the_originals_weighted_rate(monkeypatch):
-    """Our side re-taken over 180 s: the complete legs' ramp is the emitted
-    speed times the multiplier exactly (turn frames excluded), 122.0 where the
-    shipped division read 128.0. The target is the original's per-section
-    rates weighed by the time record 0 sounds in each (see the module
-    docstring): 121.0. Held within 3%, which 128.0 (+5.8%) is not."""
+    """Both sides re-taken over 180 s on the complete legs' ramp (turn frames
+    excluded). The record's own program still runs 122.0 a frame (the emitted
+    speed times the multiplier), but since `tri_clock` the notes at the fast
+    clocks sound a clone of their own, so the average over all legs is the
+    original's own, long notes weighting it: 105.0 against 105.6 (this test
+    read 121.0 +-3% while one speed served every note, 122.0 against a target
+    the time-weighted sections gave; the shipped division read 128.0).
+    Held within 3%; per section in test_rasputin_triangle_clock_classes."""
     import fidelity as F
     sng, _ratios, _lines, doc = _convert_ras(monkeypatch)
     if not Path(F.SIDDUMP).exists() or not Path(F.GT2RELOC).exists():
@@ -240,9 +244,14 @@ def test_rasputins_packed_sweep_travels_at_the_originals_weighted_rate(monkeypat
         assert packed is not None, "gt2reloc wrote no .sid"
         sub = F.resolve_subtune(CORPUS / _RAS, "auto")
         ours = F.run_siddump(packed, _SECONDS, sub, F.SIDDUMP, calls=mult)
+        local = wd / "o.sid"
+        shutil.copyfile(CORPUS / _RAS, local)
+        cal, _ = F.table_calibration(CORPUS / _RAS, F._preset_opts(doc, _RAS))
+        orig = F.run_siddump(local, _SECONDS, sub, F.SIDDUMP, cal)
     finally:
         shutil.rmtree(wd, ignore_errors=True)
     rate, _legs = _ramp_rate(ours, _SECONDS * 50, band)
-    assert 121.0 * 0.97 <= rate <= 121.0 * 1.03, (
-        f"packed sweep {rate:.1f}/frame; the original's weighted rate is 121.0 "
+    want, _ = _ramp_rate(orig, _SECONDS * 50, band)
+    assert want * 0.97 <= rate <= want * 1.03, (
+        f"packed sweep {rate:.1f}/frame; the original's legs read {want:.1f} "
         f"and the multiplier-only division read 128.0")

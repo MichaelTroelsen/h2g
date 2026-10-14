@@ -2237,6 +2237,30 @@ Measured with the tempo preserved, at `-t 60` against the shipped presets:
 So it is safe and it is not an improvement, which is why it ships off. The
 option exists because the measurement had never once been valid before it.
 
+**Under a running wavetable the park is a pointer, not a waveform** (measured
+at 9a0a452, `-t 180`, presets plus the option; figures historical).
+`CMD_SETWAVE $08` survives only where the instrument's table has *stopped*: a
+loop, or a program longer than the note, runs WAVEEXEC on the next call and
+its waveform entry overwrites the park (`gplay.c:525`), so the voice reads
+`$40` across the rest and siddump prints every arpeggio step as a tie where the
+original, parked at `$08`, prints none. The rest now points the table at a
+two-row program of its own, `E8 80 / FF 00` (`goatwriter/rest_park.py`):
+`CMD_SETWAVEPTR` runs it on the same call, it writes `$08` and zeroes the
+pointer. It is **shared by every instrument — two wavetable rows, four bytes,
+per file**, measured on all 15 corpus files the option moves. Only a rest whose
+live instrument has a wavetable program (or is not known) is rewritten. The next
+note reloads `ptr[WTBL]` from the instrument (`gplay.c:367`); of 328 rests whose
+next event is in the same pattern, none is followed by a `CMD_TONEPORTA` note,
+the one row that would keep the parked pointer. A pattern that *opens* on a rest
+loses row 0 to the tempo, so its park moves to hold row 1
+(`patterns._move_rest_wave_off_row0`), as the `CMD_SETSR` half already did.
+Nineteen `our_ties_silent` 1457 → 6 (the original: 148); Shockway Rider
+216 → 189, of which 128 are frames the original also ties; `melody`, `seq`,
+`retrig` and the attack counts do not move. `tie_ratio_audible` on Nineteen
+falls 0.970 → 0.911 because the silent surplus had been masking audible ties
+the file is short of on voices 1 and 2 (voice 0 alone: 1.175 → 0.926), and
+`wave` on Nineteen voice 2 loses 0.7 pp.
+
 ## `--rest-envelope-silence` (the rest that zeroes the envelope)
 
 The *other* thing that bit-6 branch does, and the half the `testbit` /

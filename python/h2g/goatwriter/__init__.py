@@ -150,7 +150,7 @@ from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _wave_alternate_entries, _wave_block_calls)  # noqa: F401
 from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     build_pulse_phase_table, _chained_phases, _lay_out_pulse,
-                    _lay_pulse_phase_pass, _lay_pulse_phase_table, _cost,
+                    _lay_pulse_phase_pass, _lay_pulse_phase_table, _cost, _score,
                     _leg_ramps, HOLD, hold_direction, hold_steps, is_hold,
                     packed_pattern_size, pattern_rows, _union_groups,
                     _union_kind, _phase_cycle, _phase_turns,
@@ -161,8 +161,13 @@ from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     PulseBoundsSim, PulsePhaseSim, PulseVoiceCell,
                     _speed_counter, _split_ticks, _tri_speed, _tri_step_delay,
                     _tri_turns, _nearest_ticks, _lattice_legs,
-                    track_set_tick_ratios,
+                    track_set_tick_ratios, CLOCK_WINDOW_ROWS, ClockNote,
+                    _clock_notes,
                     triangle_start, TriangleStart, _write_pulsetable)  # noqa: F401
+from .tri_clock import (clock_classes, CLOCK_BAND, CLOCK_TOLERANCE,
+                        extra_programs, MAX_CLOCK_CLASSES,
+                        tri_clock_clones, tri_clock_plan, tri_clock_split_plan,
+                        tri_swept, TriClockPlan, _tri_split_once)  # noqa: F401
 from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _best_sweep_length, _filter_entries_once, _sweep_rows,
                       classic_sweep_calls,
@@ -212,6 +217,9 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _tied_instrument_envelopes, _vibrato_command_pass)  # noqa: F401
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
+from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, programmed_instruments,
+                        rest_park_pass, rest_park_plan,
+                        rest_wave_rows)  # noqa: F401
 from .filters import (FETCH_HOLD_BACK, _FETCH_TAIL, _FETCH_TAIL_JMP,
                       _FILTER_BLOCK_LEN, _VOICE_LOOP_DOWN, _fetch_hold_pattern,
                       _fetch_hold_plan, free_running_fetch_hold_voice,

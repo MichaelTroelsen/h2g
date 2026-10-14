@@ -39,12 +39,14 @@ from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
+from . import rest_park as _gw_rest_park
 from . import filters as _gw_filters
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
+from . import tri_clock as _gw_tri_clock
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
     """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
@@ -777,16 +779,23 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # names table indices. Built by build_pulse_phase_table with this same
         # lead, so the starts line up with the records exactly as below.
         pulse_entries, pulse_starts = pulse_plan
+        tri_plan = None
     else:
         # A triangle sweep's speed is divided by our calls per original tick,
         # which a track-set outer gate (Rasputin's `$FE nn`) moves mid-song:
-        # each record gets the clock it sounds at (`track_set_tick_ratios`).
+        # each record gets the clock it sounds at (`track_set_tick_ratios`),
+        # and the notes it serves badly get a clone per clock class, spelled
+        # by the last pass of all (`tri_clock_clones`).
+        tick_ratios = (_gw_pulse.track_set_tick_ratios(
+            sid, det, tracks, patterns, lead, multiplier, log)
+            if pulse else None)
         pulse_entries, pulse_starts = _pulse_layout(
             sid, det, instr_used, pulse, multiplier, log, lead=lead,
             usage=_gw_pulse.pulse_usage(tracks, patterns, lead),
-            tick_ratios=(_gw_pulse.track_set_tick_ratios(
-                sid, det, tracks, patterns, lead, multiplier, log)
-                if pulse else None))
+            tick_ratios=tick_ratios)
+        tri_plan = (_gw_tri_clock.tri_clock_plan(
+            sid, det, tracks, patterns, lead, multiplier, tick_ratios, log)
+            if tick_ratios else None)
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
@@ -1477,6 +1486,30 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             (eor_span[0], eor_span[1]))
         patterns = _gw_wave_eor.eor_stop_pass(patterns, tracks, rings,
                                               eor_span[2], log)
+    # A swept record's notes at a clock its program misses sound a clone of
+    # it with the program of their clock class. Here, after every pass that
+    # appends or renames an instrument -- the clone is made from the finished
+    # record, and numbered after the last one -- and before the tables are
+    # written, which it extends.
+    if tri_plan is not None:
+        tracks, patterns, written_instr, tri_clones = (
+            _gw_tri_clock.tri_clock_clones(
+                sid, det, tri_plan, tracks, patterns, out, instr_at,
+                written_instr, pulse_entries, pulse_starts, lead,
+                multiplier, log))
+        stair_aliases.extend(tri_clones)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
+    # `--rest-wave-silence`'s parked waveform under a LOOPING wavetable
+    # (`rest_park`): the rest's `CMD_SETWAVE $08` is overwritten by the next
+    # call's WAVEEXEC, so such a rest points at a parked program appended
+    # here instead. Inert where no pattern holds a `CMD_SETWAVE $08` row.
+    # After every pass that names an instrument or appends a block (it reads
+    # the finished starts), before the table is written.
+    patterns, wave_entries = _gw_rest_park.rest_park_plan(
+        patterns, tracks, wave_entries,
+        {g: out[instr_at + 1 + (g - 1) * 25 + 2]
+         for g in range(1, written_instr + 1)}, log)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

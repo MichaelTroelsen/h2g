@@ -519,8 +519,11 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     averaged over the time it sounds: record 0 x1.057, speed 64 -> 61, packed
     ramp 128.0 -> 122.0 a frame against the 121.0 the original's per-section
     rates weigh to (record 0 sounds 3.1, 2.8, 12.3, 10.6, 14.0 and 58.1 s
-    under those R). **Per-section error is NOT fixed**: one speed runs 43%
-    fast at R = 2 and 4% slow at R = 120.
+    under those R). One speed per record runs 43% fast at R = 2 and 4% slow
+    at R = 120, so the notes it serves badly sound a clone with the program
+    of their own clock class (`tri_clock`): packed, the complete legs read
+    86.0, 96.0, 106.0 and 122.0 a frame at R = 2, 3, 5 and 60 against the
+    original's 82.3, 92.2, 105.3 and 121.3.
 
     **So the `pul` COUNT overshoots by (O+1)/O by construction, and that is
     not a pulse defect.** The gate skips the WHOLE play routine one frame in
@@ -729,6 +732,130 @@ def pulse_usage(tracks: List[List[int]], patterns: List[List[int]],
     return [counts.get(i, 0) for i in range(n)]
 
 
+# Rows either side of a note over which `ClockNote.around` averages the row
+# clock: wide enough to span the fractional-row compensation (a few rows) and
+# a pattern or two, narrow enough to stay inside one of Rasputin's sections
+# (the shortest, R = 3, is 256 rows).
+CLOCK_WINDOW_ROWS = 24
+
+
+@dataclass(frozen=True)
+class ClockNote:
+    """One note row of the finished patterns, with the clock it sounds at.
+
+    `key` is (track index, orderlist position, row in the pattern): a repeated
+    orderlist entry, or a second lap, yields the same key again. `calls` and
+    `ticks` are the working calls and the original ticks the note is held for
+    (to the voice's next note); `around` is the same ratio taken over
+    `CLOCK_WINDOW_ROWS` rows either side of the note's middle -- the section's
+    clock, free of the few-row noise the compensation commands put in a short
+    note's own span."""
+    record: int
+    key: Tuple[int, int, int]
+    calls: int
+    ticks: int
+    around: Fraction
+
+
+def _clock_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
+                 patterns: List[List[int]], lead: int, multiplier: int
+                 ) -> Optional[Tuple[SongSpeeds, List[List[ClockNote]]]]:
+    """Every note of every subtune's finished patterns with its clock (the
+    walk `track_set_tick_ratios` sums), or None where `speeds` cannot be read
+    or the groups do not fit the subtunes. A subtune whose rows are shorter
+    than the tempo floor yields no notes."""
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    groups = len(tracks) // 3
+    if speeds is None or not 0 < groups <= max(sid.subtunes, 1):
+        return None
+    per_group: List[List[ClockNote]] = []
+    for g in range(groups):
+        frames = speeds.frames_for(g)
+        notes_g: List[ClockNote] = []
+        per_group.append(notes_g)
+        if not frames or frames * multiplier < TEMPO_FASTEST_STEADY:
+            continue
+        plays = []                       # per voice: ([(pattern, row, pos)], rows)
+        events = []                      # (row, voice, T): every CMD_SETTEMPO
+        for v in range(3):
+            row, repeat, operand = 0, 1, False
+            voice = []
+            for pos, b in enumerate(tracks[3 * g + v]):
+                if operand:              # $FF's restart position
+                    operand = False
+                    continue
+                if b == 0xFF:            # patterns.GT_ORDER_RESTART
+                    operand = True
+                    continue
+                if 0xE0 <= b < 0xFF:     # a transpose, no row of its own
+                    continue
+                if 0xD0 <= b < 0xE0:     # patterns.GT_REPEAT: the NEXT entry
+                    repeat = b - 0xD0 + 1
+                    continue
+                if b >= len(patterns):
+                    continue
+                pat = patterns[b]
+                n = 0
+                while 4 * n < len(pat) and pat[4 * n] != 0xFF:
+                    n += 1
+                for _ in range(repeat):
+                    for k in range(n):
+                        if (pat[4 * k + 2] == CMD_SETTEMPO
+                                and TEMPO_FASTEST_STEADY <= pat[4 * k + 3]
+                                < 0x80):
+                            events.append((row + k, v, pat[4 * k + 3]))
+                    voice.append((b, row, pos))
+                    row += n
+                repeat = 1
+            plays.append((voice, row))
+        # The row clock: a tempo command sets the length of its own row and
+        # every later one, the voice serviced last winning a shared row. Rows
+        # before the first command run the subtune's opening length.
+        events.sort()
+        rows_at = [e[0] for e in events]
+        clock = [e[2] for e in events]
+        opening = frames * multiplier
+        starts = [0]                     # calls up to each event's row
+        for k in range(1, len(events)):
+            before = clock[k - 1] if k else opening
+            starts.append(starts[-1] + (rows_at[k] - rows_at[k - 1]) * before)
+
+        def calls_to(row: int) -> int:
+            k = bisect_right(rows_at, row) - 1
+            if k < 0:
+                return row * opening
+            return (starts[k] + (row - rows_at[k]) * clock[k]
+                    + rows_at[0] * opening)
+
+        for v in range(3):
+            voice, total = plays[v]
+            notes = []                   # (row, record, key)
+            current = 1
+            for b, row0, pos in voice:
+                pat = patterns[b]
+                for k in range(len(pat) // 4):
+                    r = 4 * k
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+                    if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                        notes.append((row0 + k, current - lead - 1,
+                                      (3 * g + v, pos, k)))
+            for n, (at, rec, key) in enumerate(notes):
+                end = notes[n + 1][0] if n + 1 < len(notes) else total
+                end = max(end, at + 1)
+                mid = (at + end) // 2
+                lo = max(0, mid - CLOCK_WINDOW_ROWS)
+                hi = min(max(total, end), mid + CLOCK_WINDOW_ROWS + 1)
+                around = Fraction(calls_to(hi) - calls_to(lo),
+                                  max(hi - lo, 1) * frames)
+                notes_g.append(ClockNote(
+                    rec, key, calls_to(end) - calls_to(at),
+                    (end - at) * frames, around))
+    return speeds, per_group
+
+
 def track_set_tick_ratios(sid: SidFile, det: Detection,
                           tracks: List[List[int]],
                           patterns: List[List[int]], lead: int,
@@ -742,7 +869,8 @@ def track_set_tick_ratios(sid: SidFile, det: Detection,
     not one number: `$FE nn` moves it mid-song (Rasputin subtune 0 runs 2, 3,
     5, 10, 60, 120, 6, 2) and a pulse program is one per RECORD, so the
     nearest a record can come is the clock it SOUNDS at, averaged over the
-    time it sounds. The original's sweep covers 128 * R / (R + 1) width a
+    time it sounds -- the program the record itself keeps, with a clone per
+    far clock class on top (`tri_clock.tri_clock_plan`). The original's sweep covers 128 * R / (R + 1) width a
     frame in a section of reload R, so the one speed that matches the mean
     travel per frame sounded is step / (delay * c), `c` being the calls per
     tick summed over the record's notes -- `sum(calls) / sum(ticks)`, a
@@ -770,89 +898,19 @@ def track_set_tick_ratios(sid: SidFile, det: Detection,
     if (not getattr(det, "track_fe_command", False)
             or outer_gate_skip(sid) is not None or multiplier < 1):
         return {}
-    speeds = _gw_tempo.find_song_speeds(sid, det)
-    groups = len(tracks) // 3
-    if speeds is None or not 0 < groups <= max(sid.subtunes, 1):
+    walked = _clock_notes(sid, det, tracks, patterns, lead, multiplier)
+    if walked is None:
         return {}
+    speeds, notes_by_group = walked
+    groups = len(notes_by_group)
     per_group: List[Dict[int, List[int]]] = []
-    for g in range(groups):
-        frames = speeds.frames_for(g)
+    for notes_g in notes_by_group:
         acc: Dict[int, List[int]] = {}
         per_group.append(acc)
-        if not frames or frames * multiplier < TEMPO_FASTEST_STEADY:
-            continue
-        plays = []                       # per voice: ([(pattern, row)], rows)
-        events = []                      # (row, voice, T): every CMD_SETTEMPO
-        for v in range(3):
-            row, repeat, operand = 0, 1, False
-            voice = []
-            for b in tracks[3 * g + v]:
-                if operand:              # $FF's restart position
-                    operand = False
-                    continue
-                if b == 0xFF:            # patterns.GT_ORDER_RESTART
-                    operand = True
-                    continue
-                if 0xE0 <= b < 0xFF:     # a transpose, no row of its own
-                    continue
-                if 0xD0 <= b < 0xE0:     # patterns.GT_REPEAT: the NEXT entry
-                    repeat = b - 0xD0 + 1
-                    continue
-                if b >= len(patterns):
-                    continue
-                pat = patterns[b]
-                n = 0
-                while 4 * n < len(pat) and pat[4 * n] != 0xFF:
-                    n += 1
-                for _ in range(repeat):
-                    for k in range(n):
-                        if (pat[4 * k + 2] == CMD_SETTEMPO
-                                and TEMPO_FASTEST_STEADY <= pat[4 * k + 3]
-                                < 0x80):
-                            events.append((row + k, v, pat[4 * k + 3]))
-                    voice.append((b, row))
-                    row += n
-                repeat = 1
-            plays.append((voice, row))
-        # The row clock: a tempo command sets the length of its own row and
-        # every later one, the voice serviced last winning a shared row. Rows
-        # before the first command run the subtune's opening length.
-        events.sort()
-        rows_at = [e[0] for e in events]
-        clock = [e[2] for e in events]
-        opening = frames * multiplier
-        starts = [0]                     # calls up to each event's row
-        for k in range(1, len(events)):
-            before = clock[k - 1] if k else opening
-            starts.append(starts[-1] + (rows_at[k] - rows_at[k - 1]) * before)
-
-        def calls_to(row: int) -> int:
-            k = bisect_right(rows_at, row) - 1
-            if k < 0:
-                return row * opening
-            return (starts[k] + (row - rows_at[k]) * clock[k]
-                    + rows_at[0] * opening)
-
-        for v in range(3):
-            voice, total = plays[v]
-            notes = []                   # (row, record)
-            current = 1
-            for b, row0 in voice:
-                pat = patterns[b]
-                for k in range(len(pat) // 4):
-                    r = 4 * k
-                    if pat[r] == 0xFF:
-                        break
-                    if pat[r + 1]:
-                        current = pat[r + 1]
-                    if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
-                        notes.append((row0 + k, current - lead - 1))
-            for n, (at, rec) in enumerate(notes):
-                end = notes[n + 1][0] if n + 1 < len(notes) else total
-                end = max(end, at + 1)
-                slot = acc.setdefault(rec, [0, 0])
-                slot[0] += calls_to(end) - calls_to(at)
-                slot[1] += (end - at) * frames
+        for note in notes_g:
+            slot = acc.setdefault(note.record, [0, 0])
+            slot[0] += note.calls
+            slot[1] += note.ticks
     pack = _gw_tempo.pack_subtune(speeds, sid.start_song)
     out: Dict[int, Fraction] = {}
     recs = {r for acc in per_group for r in acc if r >= 0}
@@ -1938,6 +1996,13 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     Master_of_Magic / Phantoms / Battle_of_Britain ship 172 -> 103,
     200 -> 59, 225 -> 147 rows.
 
+    **One order everywhere: `_score` = (silent, dropped, rows).** The
+    shared-vs-per-phase choice, the reserve and the unions all rank by it
+    (the first used (dropped, silent) until v0.5.542), and the reserve is
+    tried whenever the chosen layout degrades any record, shipped where it
+    is strictly better by it. Under presets no corpus file moves; forced
+    `pulse_phase` moves Gremlins (252 -> 253 rows, record 10 swept too).
+
     **Where the chosen layout still leaves a record on pointer 0, both are
     laid again with every later record's static width RESERVED** before a
     record may spend rows on movement (`_lay_pulse_phase_pass`'s `reserve`),
@@ -1982,7 +2047,7 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         short = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                        multiplier, phases, short_log.append,
                                        lead, True, **ukw)
-        if _cost(short) <= _cost(first) \
+        if _score(short) <= _score(first) \
                 and len(short[0]) < len(first[0]):
             chosen, chosen_log = short, short_log
             short_log.insert(0, (
@@ -1995,17 +2060,17 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         shared = _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                         multiplier, phases, shared_log.append,
                                         lead, True, **ukw)
-        # `dropped` counts every degraded record and `silent` the subset
-        # that reached pointer 0, so the pair compares in that order.
-        if _cost(shared) < _cost(first):
+        # One order everywhere (`_score`): pointer 0 first, then degraded.
+        if _score(shared) < _score(first):
             chosen, chosen_log = shared, shared_log
             shared_log.insert(0, (
                 f"Pulse phase.............: shared ramps -- {len(shared[0])} "
                 f"table row(s) place {shared[6]} of {shared[5]} phase-tracked "
                 f"record(s), where one ramp per phase placed {first[6]} and "
                 f"degraded {first[3]} record(s), {first[4]} to pointer 0"))
-    if chosen[4]:
-        # Still a record on pointer 0: the blocks laid ahead of it took the
+    if chosen[3] or chosen[4]:
+        # A record degraded (on pointer 0 or a static width): the blocks laid
+        # ahead of it took the
         # rows its static width needed. Lay both layouts again holding back
         # every later record's static first (`reserve`), and ship the one
         # that silences fewest, then degrades fewest, then is shortest.
@@ -2016,10 +2081,10 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                                            multiplier, phases,
                                            trial_log.append, lead, share,
                                            reserve=True, **ukw)
-            trials.append(((_cost(trial)[1], _cost(trial)[0], len(trial[0])),
+            trials.append(((*_score(trial), len(trial[0])),
                            share, trial, trial_log))
         (rank, share, trial, trial_log) = min(trials, key=lambda t: t[:2])
-        if rank[0] < _cost(chosen)[1]:
+        if rank[:2] < _score(chosen):
             trial_log.insert(0, (
                 f"Pulse phase.............: statics reserved -- "
                 f"{'shared ramps, ' if share else ''}{len(trial[0])} table "
@@ -2071,6 +2136,15 @@ def _cost(t: tuple) -> tuple:
     return (t[7], t[8]) if len(t) > 7 else (t[3], t[4])
 
 
+def _score(t: tuple) -> tuple:
+    """(silent, dropped) of a layout: THE order every layout comparison uses
+    (`build_pulse_phase_table`, `_lay_pulse_phase_table`) -- records on
+    pointer 0 first, since a record with no width at all is worse than one on
+    a static width, then degraded records. Weighed as `_cost` weighs."""
+    dropped, silent = _cost(t)
+    return silent, dropped
+
+
 def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            pulse: bool, multiplier: int, phases: dict, log,
                            lead: int, share: bool,
@@ -2103,7 +2177,7 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                                      usage)
 
     def score(t: tuple) -> tuple:
-        return _cost(t)[1], _cost(t)[0], len(t[0])
+        return (*_score(t), len(t[0]))
     best_log: list = []
     best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                  phases, best_log.append, lead, True, {},

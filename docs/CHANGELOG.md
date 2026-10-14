@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.542 — 2026-10-14
+
+- runqueue cycle 26 at 9a0a452: tri-clock clones, rest-wave park, pulse-phase one score order
+
 ## 0.5.541 — 2026-10-14
 
 - runqueue cycle 25

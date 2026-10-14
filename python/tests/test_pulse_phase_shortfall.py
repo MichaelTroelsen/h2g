@@ -199,8 +199,8 @@ def test_both_unions_are_three_rows_short_and_the_shipped_table_keeps_22():
     # subtune 3's entry instrument adds one use of record 22; 1344 before.
     assert cap["use"][22] == max(cap["use"].values()) == 1345
     entries, starts, index = cap["table"]
-    assert len(entries) == 252
-    assert sorted({k[0] for k in index}) == [3, 6, 7, 20]
+    assert len(entries) == 253
+    # 253 rows keep 10 swept too since the reserve is tried whenever a record\n    # degrades (one order: silent, dropped, rows); 252 / [3, 6, 7, 20] before.\n    assert sorted({k[0] for k in index}) == [3, 6, 7, 10, 20]
     assert starts[22 - 1] != 0 and cap["use"][10] == 280
 
 

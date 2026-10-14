@@ -877,6 +877,10 @@ def _build_raw_pattern(data: bytes, addr: int,
             # *loops*, WAVEEXEC runs every frame at gplay.c:525 and would
             # clobber this within the frame; that is why the claim is about
             # these files and not about the format.
+            # A rest on such an instrument is repointed afterwards instead:
+            # `goatwriter.rest_park` swaps this row's CMD_SETWAVE for a
+            # CMD_SETWAVEPTR to a shared `E8 80 / FF 00` program (the table
+            # has to be laid out first, so it is decided at build time).
             # BOTH FAMILIES AT ONCE, ordered by audibility. Until
             # v0.5.453 this was `if rest_wave: ... elif rest_envelope: ...`,
             # so a conversion asking for both got the waveform park and the
@@ -4665,6 +4669,33 @@ def _move_rest_silence_off_row0(pattern: List[int]) -> None:
         pattern[10], pattern[11] = CMD_SETAD, 0
 
 
+def _move_rest_wave_off_row0(pattern: List[int]) -> None:
+    """Keep a rest's `CMD_SETWAVE $08` when row 0's command column goes to the
+    subtune's tempo (`--rest-wave-silence`).
+
+    The same displacement `_move_rest_silence_off_row0` repairs for the SETSR
+    half: a pattern that OPENS on a bit-6 rest has the parked waveform on row
+    0, which `CMD_SETTEMPO` outranks (`TEMPO_OVERWRITABLE`), so the rest was
+    left unparked. Nineteen's pattern 0 is the case -- a 32-row rest that
+    plays four times from frame 2030, 385 frames of looping arpeggio printed
+    as `$40` ties where the original, parked at `$08` from frame 2036, prints
+    none.
+
+    The tempo keeps row 0. The park moves to hold row 1, one row (3 frames at
+    Nineteen's tempo) after the gate closes -- the original is no earlier: its
+    gate closes at 2033 and the `$08` lands at 2036. Only a row 1 that is a
+    plain hold row (`GT_NO_NOTE`, no instrument, no command) takes it; a rest
+    of `wait` 0 has none, and a pattern whose row 0 is not exactly KEYOFF +
+    `CMD_SETWAVE $08` is left alone, so the move is inert on anything else.
+    """
+    if (len(pattern) < 8 or pattern[0] != GT_KEYOFF
+            or pattern[2] != CMD_SETWAVE or pattern[3] != REST_SILENT_WAVE):
+        return
+    if pattern[4] != GT_NO_NOTE or pattern[5] != 0 or pattern[6] != 0:
+        return
+    pattern[6], pattern[7] = CMD_SETWAVE, REST_SILENT_WAVE
+
+
 def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
                  values: List[int], log=None) -> int:
     """`apply_tempo` for a song whose subtunes want *different* tempos.
@@ -4727,6 +4758,7 @@ def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
         if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
         _move_rest_silence_off_row0(pattern)
+        _move_rest_wave_off_row0(pattern)
         pattern[2], pattern[3] = CMD_SETTEMPO, values[k]
         written += 1
     if log and (cloned or dropped):
@@ -4813,6 +4845,7 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
         if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
         _move_rest_silence_off_row0(pattern)
+        _move_rest_wave_off_row0(pattern)
         pattern[2], pattern[3] = CMD_SETTEMPO, value
         written += 1
     if log and written:

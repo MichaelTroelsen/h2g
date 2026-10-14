@@ -1021,7 +1021,9 @@ def test_rasputin_splits_its_opening_by_tempo():
     # original's gate clock (counter phase, the outer gate's R and the
     # toggle's position in its cycle), where the first split had 8 per
     # (phase, tick).
-    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 39
+    # Plus the 3 clones of record 0's triangle sweep, one per far clock class
+    # (`tri_clock_clones`), numbered last of all: 16 + 23 + 3.
+    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 42
     clones = {7: 15, 14: 16}
     moved = {7: 0, 14: 0}
     for g in range(s.subtunes):
