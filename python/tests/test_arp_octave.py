@@ -1016,9 +1016,12 @@ def test_rasputin_splits_its_opening_by_tempo():
     s = songview.parse_sng(sng)
     # 16 before tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption);
     # they are numbered after the duty clones, so 15 and 16 keep their place.
-    # Plus the 8 clones of bit $02's EOR phase split (`wave_eor_split_plan`),
-    # numbered after the duty clones too: 16 + 8.
-    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 24
+    # Plus the 23 clones of bit $02's EOR phase split (`wave_eor_split_plan`),
+    # numbered after the duty clones too: 16 + 23. A clone per place on the
+    # original's gate clock (counter phase, the outer gate's R and the
+    # toggle's position in its cycle), where the first split had 8 per
+    # (phase, tick).
+    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 39
     clones = {7: 15, 14: 16}
     moved = {7: 0, 14: 0}
     for g in range(s.subtunes):

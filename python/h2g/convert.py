@@ -7,6 +7,7 @@ from typing import Callable, List, Optional
 from .detect import Detection, PlayerView, detect, player_view
 from .goatwriter import call_phase as _call_phase
 from .goatwriter import note_passes as _gw_note_passes
+from .goatwriter import wave_eor as _gw_wave_eor
 from .goatwriter import skydive as _gw_skydive
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          TEMPO_FASTEST_STEADY,
@@ -673,6 +674,12 @@ def convert(sid_path: str, log: Logger = print,
     step_clocks = (orderlist_tempo_clocks(sid, det, raw_tempos, tempo,
                                           skip_gate)
                    if step_tempos else None)
+    # Where the outer gate restarts, in rows, for the EOR toggle's per-note
+    # phase (goatwriter.wave_eor): read here because it needs the
+    # orderlists in the player's numbering, which reindexing renumbers.
+    if det.wave_eor is not None and step_clocks:
+        det.gate_restarts = _gw_wave_eor.gate_restart_rows(
+            tracks, track_index, new_patterns, step_clocks, floor)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows,
                             tempos=step_tempos, tempo_calls=step_calls,

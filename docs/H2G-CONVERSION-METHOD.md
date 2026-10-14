@@ -14348,6 +14348,93 @@ note's first toggle by a frame. One loop per residue cannot say that.
 The note's last tick holds the state with the gate off. A looping block
 toggles once more there, and a block cannot know where its note ends.
 
+#### The five-call ticks: the toggle's frames come off the original's gate clock
+
+The fixed loop was wrong on the segments where the gate skips often, and the
+reason is that "every second effect call" counts WORKING calls of the outer
+gate (section 7.ddddd), not frames. `$FE nn` restarts that gate: R working
+calls on consecutive frames, then one skipped frame, counted from the call
+that read the change (`wave_eor.gate_tick`). A row is two working calls whatever
+R is, so a tick is `2 (R + 1) / R` frames: 3 at R = 2, 2.67 at R = 3, 2.4 at
+R = 5, and the toggles land two or three frames apart in a cycle. A note
+fetching at working call `m` of its segment toggles at working calls
+`m + c + 2j` (c = 1 on counter phase 0, 2 on phase 1) -- on the frames
+`gate_tick(R, m + c + 2j) - gate_tick(R, m)` after its attack, for the L - 1
+(phase 0) or L - 2 (phase 1) toggles the note's ticks but the last make.
+
+* **The clock names every toggle.** The restarts' rows come off the
+  orderlists (`wave_eor.gate_restart_rows`, called in `convert()` where the
+  orderlists are still in the player's numbering and left on
+  `det.gate_restarts`): subtune 0 restarts at rows 0, 384, 640, 1792, 2304,
+  3712, 5632 and 6720 with R = 2, 3, 5, 10, 60, 120, 6 and 2, subtune 1 at
+  row 0 with R = 3. Every voice of a subtune plays the same rows, so a note's
+  `m` is two working calls a row since the last restart at or before its
+  own. The 376 toggling record-10 notes of subtune 0 in 180 s flip on
+  exactly the frames the formula gives, 376 of 376
+  (`tests/test_wave_eor_clock.py`). The first row after a restart has no
+  skip behind it, so a counter-phase-1 note there toggles two frames in
+  where the cycle says three.
+* **One set of cycles in the wavetable, entered at the right node.** Toggle
+  `w` and its successor `w + 2` bound a node: the waveform one toggle left
+  it in, held for `gate_tick(R, w + 2) - gate_tick(R, w)` frames
+  (`wave_eor.node_frames`, periodic in `w` with period R). The nodes of one R
+  form rings -- `2R` nodes for an odd R, two rings of R for an even one --
+  and `wave_eor.eor_library` lays R = 2, 3, 5 and the no-skip R = 0 out once,
+  right after the wavetable's leading blocks: 49 entries, two a node and a
+  jump a ring. A note of counter phase 1 starts on a whole node, so its
+  instrument's wave pointer IS that node (one entry in where the firstwave
+  owns the first call); a note of phase 0 holds the wave for the frames to
+  its first toggle and jumps to the node that toggles it, three entries.
+  `wave_eor_block` returns an int for the first and a block for the second;
+  `_wavetable_layout` takes both (`record_entries`).
+* **Which R get a ring.** Rasputin's 10, 60, 120 and the closing 6 skip a
+  frame too rarely for it to land inside a note, or cost a ring the
+  255-entry wavetable has no room for: R = 10 is two rings of ten nodes, 42
+  entries, against 5 free after this layout (the table goes 206 -> 250 of
+  255; the first emission's eight blocks went with it). They are read as a
+  gate that never skips in a note (R = 0), and the residue says so
+  (`EorPhase.family` 0).
+* **The residue.** `EorPhase(phase, period, family, pos)`: `period` is the
+  frames to the first toggle, `family` the R of the ring (or 0, or -1 where
+  the clock is not read and the first emission's residue stands), `pos` the
+  first toggle's working-call index modulo R. `det.gate_restarts` is trusted
+  only if the finished song has the subtunes it was read from and no voice
+  plays fewer rows than the original's (`wave_eor._gate_valid`).
+  Rasputin: 23 clones, 15 pattern copies, 294 instrument bytes (the first
+  emission: 8, 10, 288); instruments 27 -> 42, patterns 187 -> 186.
+
+Measured at 1aae7cc, presets, `-t 180`, over the 416 record-10 notes, each
+compared from its attack with the trace over the frames before its last tick
+(3998 of them; the last tick's model-exact start), on `wave & $FE`. Grouped by
+the first emission's residue, (phase, tick in calls):
+
+| Residue | notes | first emission | gate clock |
+|---|---|---|---|
+| (1, 5) | 79 | 732 / 902 = 0.812 | 880 / 902 = 0.976 |
+| (0, 5) | 72 | 793 / 949 = 0.836 | 924 / 949 = 0.974 |
+| (0, 6) | 19 | 272 / 286 = 0.951 | 286 / 286 = 1.000 |
+| (1, 6) | 14 | 185 / 185 | 185 / 185 |
+| (0, 4) | 77 | 698 / 750 = 0.931 | 698 / 750 |
+| (1, 4) | 75 | 666 / 739 = 0.901 | 666 / 739 |
+| (0, 0) | 40 | 85 / 91 = 0.934 | 85 / 91 |
+| none | 40 | 96 / 96 | 96 / 96 |
+| record 10 | 416 | 3527 / 3998 = 0.882 | 3820 / 3998 = 0.956 |
+
+No residue moves down. The two four-call groups, (0, 4) and (1, 4), are
+unchanged because they are the R = 10 and R = 60 notes, which still read as
+a gate that never skips: over the notes' frames but the trailing two, R = 10
+loses 83 of 434 and R = 60 96 of 1304 (the notes a skip lands in). Record 4 (the drum) is unchanged,
+251 / 266. The column A/B on Rasputin (`fidelity.measure`, presets, `-t 180`,
+`--sound`): `wave` 0.8737 -> 0.8786, `aud` 0.9336 -> 0.9339, `loud` 0.9785 ->
+0.9790, `loud_ratio` 0.9982 -> 0.9975; melody, sequence, `adsr`, gate, noise
+frames, startup lag unmoved. The corpus byte-hash under presets moves
+Rasputin only. The column moves less than the frames do because the last tick
+is still wrong: over every frame of every note the same notes read 4051 ->
+4207 of 4947 (0.819 -> 0.850), so the ring's extra toggle in the last tick
+costs 562 frames of 949 there. Cutting the toggle off at the note's last row
+is a pattern command (`CMD_SETWAVEPTR` to a stop entry), not a wavetable
+shape, and is open.
+
 ### 7.qqqqqqq The triangle walk in lockstep: a record two voices sweep is stepped by both
 
 The triangle engine's width is per RECORD and its direction and delay counter

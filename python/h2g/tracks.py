@@ -272,8 +272,12 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             # the `cmd_transposes` paragraph in the docstring. Every marker
             # below is read exactly as version 0 reads it.
             # **`$FD` ends a voice's list in two of the three players that
-            # test it.** Rasputin `$C094`, and Tarzan (`$55AF`: `$FD` stores a
-            # flag and leaves). Knucklebusters tests the byte too but reads
+            # test it.** Rasputin `$C094`, and Tarzan (`$55AF`: `$FD` loads 1
+            # into `$59F7`, the voice-loop start index, and jumps to `$58C6`:
+            # every frame then runs voices X=1,0 only, so voice 3 alone stops,
+            # with no restart and no pointer advance; voices 1 and 2 keep
+            # playing, traced with siddump on Tarzan.sid). Knucklebusters
+            # tests the byte too but reads
             # `$FD a b` as a three-byte tempo command that CONTINUES the list
             # (`fd_tempo`, below): it was grouped with these two until
             # subtune 0 was traced past frame 18042. Rasputin's shape:

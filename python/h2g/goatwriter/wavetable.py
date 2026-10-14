@@ -33,7 +33,7 @@ from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
-from .wave_eor import (EorPhase, wave_eor_block)
+from .wave_eor import (EorPhase, eor_library, wave_eor_block)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -1901,6 +1901,25 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         entries += [(0x09, 0x00), (0xFF, 0x00),
                     (0x00, 0x00), (0x00, 0x00), (0x00, 0x00)]
     n = max(instr_used - lead, 0)
+    # Bit $02's residues on the original's gate clock (`EorPhase.family` >= 0)
+    # jump into one set of cycles (`wave_eor.eor_library`), laid out right
+    # after the leading blocks so that its positions are the same whichever
+    # record or probe asks. Only a file whose walk named such a residue has
+    # one, and its records start after it.
+    eor_lib = None
+    if det.wave_eor is not None and effects:
+        pooled = [(gt - lead - 1, r) for gt, r in (eor_phases or {}).items()]
+        pooled += [(rec - lead - 1, r) for rec, _c, r in (phase_clones or [])]
+        pooled += [(rec - lead - 1, r) for rec, r, _x in (phase_probe or [])]
+        pooled += [(rec - lead - 1, r) for rec, r in (phase_block_probe or {})]
+        waves = set()
+        for i_, r in pooled:
+            if isinstance(r, EorPhase) and r.family >= 0 and 0 <= i_ < n:
+                w_ = sid.data[det.instr_start + i_ * det.instr_stride + 2]
+                waves.add((w_, w_ ^ det.wave_eor.mask))
+        if waves:
+            eor_lib = eor_library(sorted(waves), multiplier, len(entries) + 1)
+            entries += list(zip(eor_lib.left, eor_lib.right))
     # The fixed-interval block's counter mask, read once for the file: a duty
     # mask ($02, $04, $07) sends every arpeggio record to
     # `fixed_arp_duty_entries`, the parity mask ($01) keeps the shapes below.
@@ -1932,7 +1951,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                toggled=True),
                 multiplier, start, budget,
                 written=(no_test_restart
-                         or gt_number in real_firstwave_instruments))
+                         or gt_number in real_firstwave_instruments),
+                library=eor_lib)
         gate = phase if isinstance(phase, GatePhase) else None
         if gate is not None:
             phase = gate.residue % gate.period
@@ -2014,6 +2034,7 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                   phase=residue) if 0 <= i < n else None)
             phase_block_probe[(record, residue)] = (
                 None if got is None
+                else ((got,),) if isinstance(got, int)
                 else tuple(tuple(side) for side in got))
         return entries, starts, []
     for i in range(n):
@@ -2021,7 +2042,12 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
         budget = max(WAVE_ENTRIES_PER_INSTR,
                      _gw_constants.GT_MAX_TABLELEN - len(entries) - reserved)
-        left, right = record_entries(i, start, budget)
+        got = record_entries(i, start, budget)
+        if isinstance(got, int):
+            # A residue the library holds whole: the record starts INSIDE it.
+            starts.append(got)
+            continue
+        left, right = got
         starts.append(start)
         entries += list(zip(left, right))
 
@@ -2048,6 +2074,10 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         if 0 <= i < n and len(entries) < _gw_constants.GT_MAX_TABLELEN:
             block = record_entries(i, start, _gw_constants.GT_MAX_TABLELEN - len(entries),
                                    step)
+        if isinstance(block, int):
+            if clone_starts is not None:
+                clone_starts.append(block)
+            continue
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
             if clone_starts is not None:
                 clone_starts.append(0)
@@ -2071,10 +2101,14 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         start = len(entries) + 1
         block = None
         entered = None
+        # A residue on the original's gate clock jumps into the library by
+        # its own address, so the record-entry searches below do not apply.
+        clocked = isinstance(residue, EorPhase) and residue.family >= 0
         # Every phase clone (gate, fixed-arp int, pitch-seq tuple) may enter;
         # a tie block keeps its own layout unless it is a GatePhase one
         # (`test_tie_phase_blocks` pins the no-room spelling).
-        if 0 <= i < n and (isinstance(residue, GatePhase) or not for_tie):
+        if (not clocked and 0 <= i < n
+                and (isinstance(residue, GatePhase) or not for_tie)):
             # Laid out at position 1 and the whole table's room, exactly as
             # `phase_probe` asks its question, then entered into the
             # record's block where it can be (`_entered_record_block`): the
@@ -2097,7 +2131,11 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
             block = record_entries(i, start, room, phase=residue)
             if block == record_entries(i, start, room):
                 block = None
-            elif block is not None:
+            elif isinstance(block, int):
+                if sink is not None:
+                    sink.append(block)
+                continue
+            elif block is not None and not clocked:
                 # Its loop is the record's entered elsewhere, mostly: share it.
                 block = _shared_loop_block(block, start, entries,
                                            starts[i + lead])
@@ -2130,7 +2168,7 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         if 0 <= i < n and len(entries) < _gw_constants.GT_MAX_TABLELEN:
             room = _gw_constants.GT_MAX_TABLELEN - len(entries)
             block = record_entries(i, start, room, hold_attack=True)
-            if block == record_entries(i, start, room):
+            if block == record_entries(i, start, room) or isinstance(block, int):
                 block = None
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
             if attack_hold_starts is not None:

@@ -105,6 +105,19 @@ def _frames(calls):
     return [calls[k] for k in range(MULT - 1, len(calls), MULT)]
 
 
+def _program(sid, det, rec, res, base, n):
+    """The `n` calls of the program `res` gives record `rec`, laid out the
+    way the song lays it: the library first (position 1), then the block --
+    or, for a residue the library holds whole, from its entry."""
+    lib = W.eor_library([(0x41, 0x59)], MULT, 1)
+    start = len(lib.left) + 1
+    got = W.wave_eor_block(sid, det, rec, res, base, MULT, start, 64,
+                           library=lib)
+    if isinstance(got, int):
+        return _calls(lib.left, lib.right, got, n)
+    return _calls(lib.left + got[0], lib.right + got[1], start, n)
+
+
 def _song_wave(song):
     left = [l for l, _ in song.tables["WTBL"]]
     right = [r for _, r in song.tables["WTBL"]]
@@ -235,9 +248,7 @@ def test_every_bit02_note_plays_its_own_residue(monkeypatch):
                     for w in drum_base]
         if res == W.NO_TOGGLE:
             return [0x41] * 24
-        l2, r2 = W.wave_eor_block(sid, det, 10, res, ([0xFF], [0]), MULT,
-                                  1, 64)
-        return _calls(l2, r2, 1, 24)
+        return _program(sid, det, 10, res, ([0xFF], [0]), 24)
 
     walked = [(ti, key, k, gt) for ti, key, k, gt, _i, _l, _p, quiet, _t
               in _walk(seen) if not quiet]
@@ -345,13 +356,16 @@ def test_the_emission_matches_the_original_frame_by_frame(monkeypatch):
     """Each original record-10 / record-4 note, paired in order with the
     residue the walk gives it, against that residue's program sampled per
     frame from the attack, over the note but its last tick (where the
-    original holds and the gate is off). Measured at 862f703 (v0.5.522):
-    3614 of 4082 record-10 frames (0.885) and 251 of 266 record-4 frames
-    (0.944) agree on `wave & $FE`, where each record's own first waveform
-    held throughout agrees on 2299 (0.563) and 138 (0.519). The weakest
-    residues are the five-call ticks (0.84 / 0.83): R = 3, 5 and 6 rows
-    are 5.33, 4.8 and 4.67 calls, and where the skip falls moves the first
-    toggle by a frame from note to note."""
+    original holds and the gate is off). Measured at 862f703 (v0.5.522),
+    every residue a fixed loop of (phase, tick): 3614 of 4082 record-10
+    frames (0.885) and 251 of 266 record-4 frames (0.944) agree on
+    `wave & $FE`, where each record's own first waveform held throughout
+    agrees on 2299 (0.563) and 138 (0.519). The weakest residues were the
+    five-call ticks (0.84 / 0.83): R = 3, 5 and 6 rows are 5.33, 4.8 and
+    4.67 calls, and where the skip falls moves the first toggle by a frame
+    from note to note. With the residue read off the original's gate clock
+    (`wave_eor.clock_residue`, tests/test_wave_eor_clock.py) record 10 reads
+    3876 of 4088 (0.948) here; record 4 is unchanged."""
     sys.path.insert(0, str(ROOT / "python"))
     import fidelity as F
     _blob, seen = _convert(monkeypatch)
@@ -376,15 +390,15 @@ def test_the_emission_matches_the_original_frame_by_frame(monkeypatch):
                  for j, a in enumerate(att) if tl_e[a] == key]
         agree = total = flat = 0
         for (a, e), res in zip(notes, mine):
-            block = W.wave_eor_block(sid, det, rec, res, base, MULT, 1, 40)
-            ours = _frames(_calls(*block, 1, MULT * (e - a)))
-            tick = 3 if res.period == 3 * MULT else 2
+            ours = _frames(_program(sid, det, rec, res, base,
+                                    MULT * (e - a)))
+            tick = 3 if (res.family == 2 or res.period == 3 * MULT) else 2
             for k in range(max(0, e - a - tick)):
                 total += 1
                 agree += (ours[k] & 0xFE) == (tl_w[a + k] & 0xFE)
                 flat += (base[0][0] & 0xFE) == (tl_w[a + k] & 0xFE)
         assert total > (3000 if gt == REC10 else 200), total
-        floor = 0.87 if gt == REC10 else 0.93
+        floor = 0.94 if gt == REC10 else 0.93
         assert agree / total >= floor, (hex(gt), agree, total)
         assert agree > flat, (hex(gt), agree, flat)
 

@@ -1519,10 +1519,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # instrument, so nothing holds it (`free_running_fetch_holds`). Last of
     # the passes that fill a command column, so it takes only columns nobody
     # else wanted; the instrument records are final here, clones included.
-    # One call is a whole frame only at -S1: the original's hold is a frame
-    # without a step, which above it is `multiplier` calls, not one.
+    # The original's hold is a frame without a step, which is `multiplier`
+    # calls: the instrument's block opens with that many params rows
+    # (`_free_running_block`'s `hold_calls`), so the one pointer jump covers
+    # the whole frame at any -S.
     if (filters and filter_entries and filter_ptrs and det.filter is not None
-            and det.filter.free_running and multiplier == 1):
+            and det.filter.free_running):
         hold_voice = _gw_filters.free_running_fetch_hold_voice(sid)
         if hold_voice is not None:
             ptr_of = {g: out[instr_at + 1 + (g - 1) * 25 + 4]

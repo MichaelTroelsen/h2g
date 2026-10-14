@@ -305,7 +305,10 @@ from .wave_eor import (_hold, _is_drum, _plays, _record_effect, _row_tempos,
                        NO_TOGGLE, note_parities, WAVE_EOR_ARP_BIT,
                        WAVE_EOR_DRUM_BIT, WAVE_EOR_EFFECT_BIT,
                        wave_eor_block, wave_eor_note_residues,
-                       wave_eor_split_plan)  # noqa: F401
+                       wave_eor_split_plan, _event_rows, _gate_valid,
+                       clock_residue, EorLibrary, eor_library, GATE_FAMILIES,
+                       gate_phase, gate_restart_rows, gate_tick,
+                       node_frames)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
                     _heard_splits, _RetrySplit, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _record_numbers,

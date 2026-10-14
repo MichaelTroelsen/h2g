@@ -25,6 +25,21 @@ phases: `wave_eor_split_plan` clones the record per (phase, period) the way
 `arpeggio._note_phase_split` clones a fixed arp per counter residue, and the
 record's own block carries the majority (`wave_eor_note_residues`' first
 value).
+
+**The period is not a number of calls where the gate skips often.** The
+"effect call" the counter counts is a WORKING call of the outer gate, which
+`$FE nn` restarts and skips one frame in R + 1 (`gate_tick`): a tick is two
+working calls and 2 (R + 1) / R frames, 2.67 at R = 3 and 2.4 at R = 5, so
+the toggles land on frames 2 or 3 apart in a cycle, and where in the cycle
+a note's fetch falls moves each of its toggles. A fixed loop of the rounded
+tick (the first emission, still the residue where the clock is not read)
+agrees on 0.84 / 0.83 of those notes' frames. `gate_restart_rows` reads the
+restarts' rows off the orderlists (convert.py, as `det.gate_restarts`),
+`clock_residue` names the note's place in the cycle (`EorPhase.family`,
+`.pos`), and `eor_library` lays the cycles out once for the residues to jump
+into: a ring of nodes per R, a node being one toggle's state held for the
+frames to the next. R = 2, 3 and 5 get a ring; every other R (10, 60, 120
+and the closing 6) is read as a gate that does not skip inside a note.
 """
 from __future__ import annotations
 
@@ -61,9 +76,20 @@ class EorPhase:
     keeps the drum's own shape). `period` is the note's tick in our calls,
     0 where the block does not depend on it. Its own type -- not an int (the
     fixed arp's residue) nor a tuple (bit $10's) -- so `_wavetable_layout`
-    routes it to `wave_eor_block` and nothing else."""
+    routes it to `wave_eor_block` and nothing else.
+
+    `family` and `pos` are the note's place on the ORIGINAL'S gate clock
+    (`gate_phase`), where the walk can read it: `family` is the outer gate's
+    reload R of the segment the note starts in when the library has a cycle
+    for it (`GATE_FAMILIES`), 0 for any other R, whose skip comes too rarely
+    to fall inside a note; -1 for a residue read without the clock. `pos` is
+    `(m + c) % R`, the toggle's working-call index modulo the cycle (0 for
+    family 0). `period` is, on such a residue, the frames from the attack to
+    the first toggle: the block is the clock's, not a fixed loop."""
     phase: int
     period: int
+    family: int = -1
+    pos: int = 0
 
 
 NO_TOGGLE = EorPhase(-1, 0)
@@ -143,6 +169,192 @@ def _row_tempos(tracks: List[List[int]], patterns: List[List[int]],
             rows.append(cur)
         out.append(rows)
     return out
+
+
+# --- the original's outer gate, as a clock ------------------------------------
+#
+# Rasputin's `$FE nn` restarts the outer gate (`detect.track_fe_restarts_gate`):
+# R working calls, then one skipped frame, counted from the call that read the
+# change. The speed gate is untouched, so a row is `frames` (2) working calls
+# whatever R is, and the effect block toggles on every second one. A note
+# fetching at working call `m` of its segment therefore toggles at working
+# calls `m + c + 2j` (c = 1 on counter phase 0, 2 on phase 1), and the frame a
+# working call lands on is `gate_tick`. Where a note's first toggle falls, and
+# every one after it, is a function of `m % R` alone.
+#
+# Measured against the trace, the 376 toggling record-10 notes of subtune 0 in
+# 180 s: the model names every toggle frame of every note, all 376
+# (`tests/test_wave_eor_clock.py` re-derives it).
+
+# The segment reloads that get a cycle of their own in the library. Rasputin's
+# others (10, 60, 120 and the 6 of the closing minutes) skip a frame too
+# rarely for it to land inside one note, or cost a cycle the 255-entry
+# wavetable has no room for (a cycle is `2R` nodes of two entries).
+GATE_FAMILIES = (2, 3, 5)
+
+
+def gate_tick(R: int, m: int) -> int:
+    """The frame, counted from the change that restarted the gate, on which
+    working call `m` runs: the call that read the change is call 0 on frame
+    0, calls 1..R follow on the next frames, and the call after R is
+    skipped (`tempo.restarted_gate_calls`). `R` 0 is a gate that never skips
+    inside a note."""
+    if not R or m < 1:
+        return m
+    return m + (m - 1) // R
+
+
+def node_frames(R: int, w: int) -> int:
+    """Frames from the toggle at working call `w` to the next one (`w + 2`).
+    Periodic in `w` with period R; `w` 0 is read as R."""
+    if not R:
+        return 2
+    w = (w - 1) % R + 1
+    return gate_tick(R, w + 2) - gate_tick(R, w)
+
+
+def gate_restart_rows(tracks: List[List[int]], track_index, patterns,
+                      clocks: List[dict], floor: int) -> Optional[dict]:
+    """Where the outer gate restarts, in rows from the start of its subtune.
+
+    `tracks` are the orderlists as `reindex_tracks` takes them (the player's
+    numbering, commands from `floor` up), `track_index[b]` the Goattracker
+    patterns pattern `b` became and `clocks` `orderlist_tempo_clocks`'
+    {orderlist position: (frames, R, multiplier)} per track. Every voice of a
+    subtune plays the same rows at the same time, so the restart a track's
+    command makes is a row of all three:
+
+        {"groups": subtunes, "rows": [rows one lap of each track plays],
+         "restarts": {subtune: [(row, frames, R), ...] sorted}}
+
+    None where no track carries a restart."""
+    restarts: Dict[int, list] = {}
+    totals = []
+    for ti, track in enumerate(tracks):
+        at_row = {}
+        row = 0
+        for at, b in enumerate(track):
+            at_row[at] = row
+            if b == 0xFF:
+                break
+            if b >= floor:
+                continue
+            if b < len(track_index):
+                for p in track_index[b]:
+                    pat = patterns[p]
+                    row += next((k for k in range(len(pat) // 4)
+                                 if pat[4 * k] == 0xFF), len(pat) // 4)
+        totals.append(row)
+        for at, (frames, R, _mult) in (clocks[ti] if ti < len(clocks)
+                                       else {}).items():
+            if at in at_row:
+                restarts.setdefault(ti // 3, []).append(
+                    (at_row[at], frames, R))
+    if not restarts:
+        return None
+    return {"groups": len(tracks) // 3, "rows": totals,
+            "restarts": {g: sorted(v) for g, v in restarts.items()}}
+
+
+def gate_phase(det: Detection, group: int, row: int):
+    """(working calls since the gate's last restart, its R) for a call
+    fetching on `row` of subtune `group`, or None where no restart is read."""
+    gr = getattr(det, "gate_restarts", None)
+    if not gr:
+        return None
+    seen = [x for x in gr["restarts"].get(group, ()) if x[0] <= row]
+    if not seen:
+        return None
+    r0, frames, R = seen[-1]
+    return frames * (row - r0), R
+
+
+def _gate_valid(det: Detection, tracks: List[List[int]],
+                rows: Dict[int, int]) -> bool:
+    """Whether the finished orderlists are the ones `det.gate_restarts` was
+    read from: the same number of subtunes, and no voice shorter than its
+    original (a lap that plays FEWER rows than the original's has lost some,
+    and every row after the loss is on the wrong clock)."""
+    gr = getattr(det, "gate_restarts", None)
+    if not gr or gr["groups"] != len(tracks) // 3:
+        return False
+    return all(rows.get(ti, 0) >= gr["rows"][ti] for ti in range(len(tracks)))
+
+
+def _event_rows(tracks: List[List[int]], patterns: List[List[int]],
+                ti: int) -> Tuple[Dict[tuple, int], int]:
+    """({((track, orderlist position, play), row in pattern): rows since the
+    start of the subtune}, rows in one lap) of track `ti`."""
+    out: Dict[tuple, int] = {}
+    row = 0
+    for _ti, pos, play, p in _plays([tracks[ti]], patterns):
+        pat = patterns[p]
+        for k in range(len(pat) // 4):
+            if pat[4 * k] == 0xFF:
+                break
+            out[((ti, pos, play), k)] = row
+            row += 1
+    return out, row
+
+
+def clock_residue(det: Detection, group: int, row: int,
+                  phase: int) -> Optional[EorPhase]:
+    """The note's `EorPhase` on the original's gate clock, or None where the
+    clock is not read. `phase` is the counter on the attack (0 or 1)."""
+    st = gate_phase(det, group, row)
+    if st is None:
+        return None
+    m, R = st
+    family = R if R in GATE_FAMILIES else 0
+    c = 1 if phase == 0 else 2
+    first = gate_tick(family, m + c) - gate_tick(family, m)
+    return EorPhase(phase, first, family, (m + c) % family if family else 0)
+
+
+@dataclass
+class EorLibrary:
+    """The cycles the clocked residues jump into, laid out once, right after
+    the wavetable's leading blocks. `nodes[(wave, R, state, w)]` is the
+    1-based position of the node that holds `state` (0 the record's wave, 1
+    the toggled one) from the toggle at working call `w` (mod R) to the next:
+    `_hold` of `node_frames(R, w)` frames, two entries, and a ring's last
+    entry jumps back to its first."""
+    start: int
+    left: List[int]
+    right: List[int]
+    nodes: Dict[Tuple[int, int, int, int], int]
+
+
+def eor_library(waves: List[Tuple[int, int]], multiplier: int,
+                start: int) -> EorLibrary:
+    """`(wave, toggled wave)` pairs -> their rings, from position `start`.
+    A ring is the nodes (state, w) -> (other state, w + 2 mod R) until it
+    closes: one ring of 2R nodes for an odd R, two of R for an even one (the
+    toggle's working call keeps its parity), and two nodes for R 0."""
+    m = max(1, multiplier)
+    left: List[int] = []
+    right: List[int] = []
+    nodes: Dict[Tuple[int, int, int, int], int] = {}
+    for wave, alt in sorted(set(waves)):
+        for R in (0,) + GATE_FAMILIES:
+            seen = set()
+            for w0 in (range(R) if R else (0,)):
+                for s0 in (0, 1):
+                    if (s0, w0) in seen:
+                        continue
+                    ring_start = start + len(left)
+                    s, w = s0, w0
+                    while (s, w) not in seen:
+                        seen.add((s, w))
+                        nodes[(wave, R, s, w)] = start + len(left)
+                        hl, hr = _hold(alt if s else wave,
+                                       node_frames(R, w) * m)
+                        left += hl
+                        right += hr
+                        s, w = 1 - s, ((w + 2) % R if R else 0)
+                    left.append(GT_WAVE_JUMP)
+                    right.append(ring_start & 0xFF)
+    return EorLibrary(start, left, right, nodes)
 
 
 def note_parities(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -228,7 +440,14 @@ def wave_eor_note_residues(sid: SidFile, det: Detection,
         return None
     residues: dict = {}
     votes: Dict[int, Counter] = {}
-    for _ti, key, k, gt, i, length, phase, quiet, tempo in note_parities(
+    # The original's gate clock, where `det.gate_restarts` was read and the
+    # finished orderlists are the ones it was read from.
+    rowmap: Dict[int, dict] = {}
+    laps: Dict[int, int] = {}
+    for ti in range(len(tracks)):
+        rowmap[ti], laps[ti] = _event_rows(tracks, patterns, ti)
+    clocked = _gate_valid(det, tracks, laps)
+    for ti, key, k, gt, i, length, phase, quiet, tempo in note_parities(
             sid, det, tracks, patterns, instr_used, lead, aliases):
         if quiet:
             continue
@@ -236,10 +455,13 @@ def wave_eor_note_residues(sid: SidFile, det: Detection,
             res = NO_TOGGLE
         elif length == 2 or _is_drum(sid, det, i):
             res = EorPhase(0, 0) if phase == 0 else NO_TOGGLE
-        elif tempo is None:
-            continue
         else:
-            res = EorPhase(phase, int(tempo + 0.5))
+            res = (clock_residue(det, ti // 3, rowmap[ti][(key, k)], phase)
+                   if clocked else None)
+            if res is None:
+                if tempo is None:
+                    continue
+                res = EorPhase(phase, int(tempo + 0.5))
         residues.setdefault(key, {})[k] = res
         votes.setdefault(gt, Counter())[res] += 1
     if not votes:
@@ -273,9 +495,19 @@ def _hold(w: int, calls: int) -> Tuple[List[int], List[int]]:
 def wave_eor_block(sid: SidFile, det: Detection, i: int, eor: EorPhase,
                    block: Optional[tuple], multiplier: int,
                    start: Optional[int], budget: int,
-                   written: bool = False) -> Optional[tuple]:
+                   written: bool = False,
+                   library: Optional[EorLibrary] = None):
     """Record `i`'s wavetable block under toggle `eor`, from `block` -- the
     block `_wavetable_entries` lays out for it with no toggle.
+
+    * A residue on the original's gate clock (`eor.family` >= 0) is the
+      library's (`eor_library`): on counter phase 1 the note's first tick is
+      a whole node, so the answer is an INT, the position to start the
+      instrument's wave pointer at -- one entry in, where the firstwave has
+      already sounded the note's first call (`written`); on phase 0 it holds
+      the record's wave for the frames up to the first toggle and jumps to
+      the node that toggles it. The block is None-safe: without a library
+      (or a node for it) `block` stands.
 
     * A drum record (`+7` bit $01 read): the toggle runs after the drum
       (Rasputin `$C31E` then `$C35A`) and overwrites its noise tick, so on
@@ -299,6 +531,29 @@ def wave_eor_block(sid: SidFile, det: Detection, i: int, eor: EorPhase,
     wave = data[base + 2]
     mask = det.wave_eor.mask
     alt = wave ^ mask
+    if eor.family >= 0:
+        if (library is None or _is_drum(sid, det, i)
+                or _record_effect(sid, det, i) & WAVE_EOR_ARP_BIT
+                or not _first_frame_entry(wave)):
+            return block
+        R, p0, frames = eor.family, eor.pos, eor.period
+        # Counter phase 1 starts on a whole node when the first toggle is a
+        # full node's length away (every note but a segment's opening one,
+        # whose first row has no skip behind it); anything else holds the
+        # wave for `frames` frames (`period`) and jumps to the node that
+        # toggles it.
+        w0 = (p0 - 2) % R if R else 0
+        if eor.phase == 1 and frames == node_frames(R, w0):
+            at = library.nodes.get((wave, R, 0, w0))
+            return block if at is None else at + (1 if written else 0)
+        target = library.nodes.get((wave, R, 1, p0 if R else 0))
+        if target is None or frames < 1:
+            return block
+        m = max(1, multiplier)
+        lead_l, lead_r = _hold(wave, frames * m - (1 if written else 0))
+        left = lead_l + [GT_WAVE_JUMP]
+        right = lead_r + [target & 0xFF]
+        return (left, right) if len(left) <= budget else block
     if _is_drum(sid, det, i):
         if eor.phase != 0:
             return block

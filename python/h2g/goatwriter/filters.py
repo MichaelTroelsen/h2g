@@ -976,7 +976,7 @@ def classic_sweep_calls(tracks: List[List[int]], patterns: List[List[int]],
 
 
 def _free_running_block(passband: int, resctl: int, per_call: int,
-                        at: int) -> List[tuple]:
+                        at: int, hold_calls: int = 1) -> List[tuple]:
     """Set params, then modulate forever; no set-cutoff row at all.
 
     For an accumulator nothing resets (`FilterInfo.free_running`): every note
@@ -985,10 +985,17 @@ def _free_running_block(passband: int, resctl: int, per_call: int,
     does. player.s `mt_nextfiltstep` takes a $FF row's jump on the same call
     the modulation row runs out, so `[7F step][FF back]` adds `step` on every
     call with no gap, wrapping at 8 bits as the player's `ADC` does. `at` is
-    the 1-based table step this block starts on."""
-    block = [(FILT_SET_PARAMS | passband, resctl)]
+    the 1-based table step this block starts on.
+
+    `hold_calls` is how many calls a pointer set to the block's first row
+    steps nothing (`free_running_fetch_holds`): each params row is one call
+    (gplay.c:265-270), so the head is that many params rows and the loop
+    jumps back to the modulation row after them. The original's hold is a
+    frame without a step, which is `multiplier` calls, not one."""
+    hold_calls = max(1, hold_calls) if per_call else 1
+    block = [(FILT_SET_PARAMS | passband, resctl)] * hold_calls
     if per_call:
-        block += [(FILT_MODULATE, per_call), (FILT_STOP, at + 1)]
+        block += [(FILT_MODULATE, per_call), (FILT_STOP, at + hold_calls)]
     else:
         block.append((FILT_STOP, 0x00))
     return block
@@ -1532,8 +1539,14 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
         if block is not None:
             pass
         elif filt.free_running:
+            # The fetch-frame hold (`free_running_fetch_holds`) is a frame
+            # without a step: `multiplier` calls. Only a player that skips
+            # the filter block on a fetch frame is held, so only its block
+            # carries the extra params rows.
+            held = (multiplier if free_running_fetch_hold_voice(sid)
+                    is not None else 1)
             block = _free_running_block(filt.passband, resctl, per_call,
-                                        len(entries) + 1)
+                                        len(entries) + 1, held)
         elif filt.clamp:
             block = _clamped_block(filt.passband, resctl, filt.cutoff, step,
                                    per_call)
