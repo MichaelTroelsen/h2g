@@ -6116,7 +6116,12 @@ DIMENSIONS = (
     # The other half of the same question, and the half a count cannot answer
     # -- `cut` exists beside `filt` for exactly this reason.
     Dimension("bend_ratio", "bend", _PITCH_REGS, "ratio",
-              "how far the pitch travels within notes, over the original's"),
+              "how far the pitch travels within notes, over the original's; "
+              "BLIND to a pattern-stair step (a rise made of one note per "
+              "row, which siddump prints as a tie or an attack, never as a "
+              "bend): a conversion that renders an original's bend as such "
+              "a stair reads 0.00x here however faithful it is. Read "
+              "`travel` beside it, which counts those steps"),
     # The same travel read off the frequency register instead of siddump's
     # printed bends: a tie adds to it, a stepped sweep counts as fully as a
     # glided one. `bend` beside it is what siddump chose to print.
@@ -8244,7 +8249,14 @@ def report(rows: list[dict], args) -> str:
         "column: differencing counted note changes as bends, both the tie form "
         "and the bare frequency write a note start makes on a frame of its own "
         "-- which put Zoolook at 121,107 units against about 3,400 of printed "
-        "bending. `-` is an original whose pitch never moves within a note.",
+        "bending. `-` is an original whose pitch never moves within a note. "
+        "**Blind to pattern-stair steps:** a rise rendered as one pattern "
+        "note per row is printed by siddump as ties/attacks, which this "
+        "column never sums, so it reads 0.00x for a conversion whose pitch "
+        "travels as far (Las_Vegas_Video_Poker subtunes 9 and 10: our bend "
+        "0 against the original's 2046 and 2270, our travel 11466 against "
+        "589 and 453642 against 320698; measured at v0.5.542, -t 60). "
+        "**travel** counts those steps.",
         "* **wave** -- per-frame agreement of the waveform *class* (the "
         "waveform-select nibble of $D404: triangle/saw/pulse/noise, with a "
         "combined waveform its own class and the gate/sync/ring/test bits "

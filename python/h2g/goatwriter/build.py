@@ -40,6 +40,7 @@ from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
 from . import rest_park as _gw_rest_park
+from . import rest_ring as _gw_rest_ring
 from . import filters as _gw_filters
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
@@ -838,6 +839,15 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         legato_rows = set()
     patterns = _tied_instrument_envelopes(patterns, envelopes, tracks, log,
                                           skip=legato_rows)
+    if cut_release and det.envelope_cut:
+        # The markers `_build_raw_pattern` left at a rest's KEYOFF and last
+        # hold row; the rest rings at the record's own release in between.
+        patterns, tracks = _gw_rest_ring.rest_ring_pass(
+            patterns,
+            {i + lead + 1: record_envelope(sid.data, det, i, sustain_exact,
+                                           False)
+             for i in range(max(instr_used - lead, 0))},
+            envelopes, tracks, log)
     # After the layout because it needs the speed-table indices it allocated,
     # and before the records because it decides what goes in their byte 5.
     # Triangle-dialect only: it is that player's length gate this expresses,

@@ -649,6 +649,13 @@ def convert(sid_path: str, log: Logger = print,
         # the half a KEYOFF cannot say. See
         # detect._find_rest_silence_envelope.
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
+        # `--cut-release` on a player that cuts at a note's end also cuts at
+        # a REST's end, and the rest rings out until then -- see
+        # goatwriter.rest_ring, which finishes what this marks.
+        rest_ring=(cut_release and det.envelope_cut
+                   and status_bit6 and det.status_bit6 and rest_keyoff
+                   and not (rest_envelope_silence
+                            and det.rest_silence_envelope)),
         instr_base=instr_base, tie=tie,
         wave_notes=wave_notes, wave_copies=wave_copies,
         # The triangle walk's fetch rows (patterns.collect_pulse_phases'

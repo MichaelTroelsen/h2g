@@ -613,6 +613,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                        rest_keyoff: bool = False,
                        rest_wave: bool = False,
                        rest_envelope: bool = False,
+                       rest_ring: bool = False,
                        exits_tied: Optional[List[bool]] = None,
                        instr_mask: int = 0x7F,
                        rest_notes: frozenset = frozenset(),
@@ -814,6 +815,14 @@ def _build_raw_pattern(data: bytes, addr: int,
         b1 = data[addr + i2]
 
         if b1 == 0xFF:
+            if (rest_ring and pending_tie and len(events) >= 4
+                    and events[-4:-1] == [GT_NO_NOTE, 0x00, 0x00]
+                    and events[-1] == 0x00):
+                # The pattern ends on a tied note's hold row: the gate is
+                # still open, and a rest that opens whatever plays next is
+                # entered with it open. This row is where that rest's ring is
+                # written (`goatwriter.rest_ring`), and says nothing else.
+                events[-2:] = [CMD_SETSR, 0x00]
             events += [0xFF, 0x00, 0x00, 0x00]
             if span is not None:
                 span.append(i2 + 1)
@@ -965,6 +974,32 @@ def _build_raw_pattern(data: bytes, addr: int,
                 # write only. That is the right half to keep, and the AD is
                 # dropped rather than displacing it.
                 hold_cmds = [(CMD_SETAD, 0x00)]
+            # **The cut at the END of a rest** (`goatwriter.rest_ring`). A
+            # classic player that cuts the envelope when a note ends (Las
+            # Vegas `$518B`: `counter == 0` -> gate off, `STA $D405/$D406`
+            # = 0) does it for a rest too -- but a rest dropped its gate at
+            # its START (the `BVS` branch shuts the mask), and the fall
+            # through the common path re-wrote the instrument's AD/SR, so
+            # the release SOUNDS from the start of the rest to the tick
+            # before its last. Las Vegas voice 1, event `$43` (wait 3):
+            # gate off at frame 301, SR `$0C` held, `$0000` at 312.
+            # `$20` in the status byte skips the cut, so such a rest is never
+            # zeroed, and `wait` 0 never reaches `counter == 0` after the
+            # decrement. This row marks WHERE the cut falls (the last hold
+            # row: `counter == 0` is reached `wait` ticks in) and nothing
+            # else: the pass needs the held instrument to say what rings
+            # before it, and takes the marker out again where it cannot.
+            #
+            # **Only where the gate is still OPEN at the rest's start**: the
+            # note before it was tied (`pending_tie`), or this is the
+            # pattern's first event and `goatwriter.rest_ring` asks the
+            # orderlists whether the pattern before it left the gate open. A
+            # rest after an ordinary note enters a gate that note's own end
+            # shut and a pair it zeroed (Las Vegas 237 -> 241: ADSR `0A0C`
+            # re-written into a released envelope at zero), and nothing rings.
+            elif (rest_ring and rest_keyoff and wait and not no_adsr
+                    and (pending_tie or ordinal == 0)):
+                hold_cmds = [(0, 0)] * (wait - 1) + [(CMD_SETSR, 0x00)]
 
         if get_next:
             i2 += 1
@@ -2332,6 +2367,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  rest_keyoff: bool = False,
                  rest_wave: bool = False,
                  rest_envelope: bool = False,
+                 rest_ring: bool = False,
                  exits_tied: Optional[List[bool]] = None,
                  arps: Optional[List[tuple]] = None,
                  transpose_exit: Optional[List[tuple]] = None,
@@ -2394,7 +2430,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               rest_instrument=rest_instrument,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
-                              rest_envelope=rest_envelope,
+                              rest_envelope=rest_envelope, rest_ring=rest_ring,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
@@ -2892,6 +2928,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_keyoff: bool = False,
                      rest_wave: bool = False,
                      rest_envelope: bool = False,
+                     rest_ring: bool = False,
                      free_rows: bool = False,
                      wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
                      wave_copies: Optional[List[tuple]] = None,
@@ -3017,7 +3054,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
-                              rest_envelope=rest_envelope, exits_tied=ex,
+                              rest_envelope=rest_envelope, rest_ring=rest_ring, exits_tied=ex,
                               arps=arps,
                               free_rows=fr if collect else None,
                               wave_notes=(wave_notes or {}).get(i),
@@ -3056,7 +3093,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                                 steps, rest_instrument, instr_base,
                                 tie=tie, rest_keyoff=rest_keyoff,
                                 rest_wave=rest_wave,
-                                rest_envelope=rest_envelope,
+                                rest_envelope=rest_envelope, rest_ring=rest_ring,
                                 exits_tied=ex, arps=arps,
                                 free_rows=fr if collect else None,
                                 event_rows=ev if want_ev else None)
@@ -3096,7 +3133,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
-                              rest_envelope=rest_envelope, exits_tied=ex,
+                              rest_envelope=rest_envelope, rest_ring=rest_ring, exits_tied=ex,
                               arps=arps,
                               free_rows=fr if collect else None,
                               wave_notes=notes,
@@ -3157,10 +3194,17 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             base_row += data_rows
             key = None
             if dedup:
-                key = (bytes(s), flags) if free_rows else bytes(s)
+                # `rest_ring` rows are an edit a pass finishes or takes out
+                # again, and a pattern that differs only in them has always
+                # been one pattern: key without them, and keep a marker only
+                # where every source has it (`_merge_ring_markers`).
+                kb = _ring_key(s) if rest_ring else bytes(s)
+                key = (kb, flags) if free_rows else kb
             if key is not None and key in seen:
                 idx = seen[key]
                 reused += 1
+                if rest_ring and new_patterns[idx] != s:
+                    _merge_ring_markers(new_patterns[idx], s)
                 if want_bit7 and note_bit7.get(idx) != flags:
                     note_bit7[idx] = None     # two sources disagree
                 if event_rows and pattern_starts.get(idx) != ev_rows:
@@ -3210,6 +3254,29 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
         pattern_free, pattern_starts)
+
+
+def _ring_key(pattern: List[int]) -> bytes:
+    """`pattern`'s bytes with every `CMD_SETSR $00` on an otherwise empty row
+    (`goatwriter.rest_ring`'s markers) read as an empty row."""
+    out = bytearray(pattern)
+    for k in range(0, len(out) - 3, 4):
+        if out[k] == 0xFF:
+            break
+        if (out[k] == GT_NO_NOTE and out[k + 1] == 0
+                and out[k + 2] == CMD_SETSR and out[k + 3] == 0):
+            out[k + 2] = 0
+    return bytes(out)
+
+
+def _merge_ring_markers(kept: List[int], other: List[int]) -> None:
+    """Two sources share `kept` because they differ only in `rest_ring`
+    markers: a marker stays only where both carry it, since the ring it asks
+    for is a property of the source's own gate state."""
+    for k in range(0, min(len(kept), len(other)) - 3, 4):
+        if kept[k + 2] == CMD_SETSR and kept[k + 3] == 0 and not (
+                other[k + 2] == CMD_SETSR and other[k + 3] == 0):
+            kept[k + 2] = 0
 
 
 def _new_slices(slices: List[List[int]], entry_free, terminate: bool,

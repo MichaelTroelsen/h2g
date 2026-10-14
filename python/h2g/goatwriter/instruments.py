@@ -325,11 +325,20 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # (player.s:1090-1098), so its next note is never fetched
         # (Gerry_the_Germ subtune 2: melody 79.6 -> 7.9 before this fix).
         own_row_calls = (instr_row_calls or {}).get(i + lead + 1, row_calls)
-        gatetimer = ((0x80 if no_hard_restart else 0)
-                     | (_gw_hard_restart._hard_restart_ticks(multiplier, own_row_calls,
-                                            wide_hard_restart,
-                                            max_hard_restart,
-                                            hard_restart_frames) & 0x3F))
+        hr_ticks = _gw_hard_restart._hard_restart_ticks(
+            multiplier, own_row_calls, wide_hard_restart, max_hard_restart,
+            hard_restart_frames) & 0x3F
+        # An instrument whose every note is ONE row long (tracks.
+        # single_row_note_instruments) is followed by a gate event on the
+        # very next row, and that row is fetched `gatetimer` calls early: a
+        # `max_hard_restart` value near the row length leaves such a note one
+        # call of gate. Las_Vegas_Video_Poker subtunes 14 and 15 (the sound
+        # effects) never raised the gate at all. Capped at the value a
+        # default song carries, which is the floor of the schedule.
+        if (i + lead + 1) in getattr(instr_row_calls, "single_row", ()):
+            hr_ticks = min(hr_ticks,
+                           _gw_hard_restart.SINGLE_ROW_HARD_RESTART_TICKS)
+        gatetimer = (0x80 if no_hard_restart else 0) | hr_ticks
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
         # (gsong.c:224-225) and the same pair the other way round, packed, in a

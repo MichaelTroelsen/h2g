@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
-from .patterns import (DEFAULT_TRACK, GT_END_PATTERN, GT_KEYOFF, GT_LASTNOTE,
+from .patterns import (CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
+                       GT_KEYOFF, GT_LASTNOTE,
                        GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
                        MAX_PATTERNS, MAX_TRACK_LEN,
                        cmdtable_transposes, command_floor, decode_entry,
@@ -1241,10 +1242,120 @@ class InstrumentRowCalls(dict):
     else, which is the conservative failure.
     """
     start_rows: Dict[int, int]
+    # {instrument} whose every note is one row long: see single_row_note_instruments.
+    single_row: frozenset
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start_rows = {}
+        self.single_row = frozenset()
+
+
+def _orderlist_entries(track: List[int]):
+    """([(start, pattern, repeat)], restart) of a finished orderlist.
+
+    `start` is the raw index of the entry's first byte (its repeat and
+    transpose commands included), because the `$FF` operand is a raw index.
+    `restart` is None when the orderlist does not loop (no `$FF`).
+    """
+    entries, repeat, start = [], 1, None
+    i = 0
+    while i < len(track):
+        b = track[i]
+        if b == GT_ORDER_RESTART:
+            return entries, (track[i + 1] if i + 1 < len(track) else None)
+        if start is None:
+            start = i
+        if b >= GT_REPEAT:
+            if b < GT_TRANSPOSE_DOWN:
+                repeat = b - GT_REPEAT + 1
+        else:
+            entries.append((start, b, repeat))
+            repeat, start = 1, None
+        i += 1
+    return entries, None
+
+
+def single_row_note_instruments(tracks: List[List[int]],
+                                patterns: List[List[int]]) -> frozenset:
+    """{Goattracker instrument} whose notes are ALL one row long.
+
+    A note is one row long when the row after it -- across the pattern's end,
+    through the orderlist's repeats and its restart -- is itself a gate event:
+    a note (other than a portamento row, which gplay.c:926-937 exempts) or a
+    KEYOFF. Goattracker fetches that next row `gatetimer & $3F` calls early
+    (gplay.c:905) and clears the gate when it does, so such a note keeps the
+    gate for `row - gatetimer` calls only. The instrument-wide hard restart
+    is sized for a note followed by a rest row (a two-row note, the shape the
+    music has); on a one-row note with `max_hard_restart` it leaves ONE call
+    of gate -- Las_Vegas_Video_Poker subtunes 14 and 15, whose gate the
+    original holds for the whole 4-frame row and ours never raises.
+
+    Conservative on every doubt: a note whose next row cannot be resolved
+    (empty pattern, orderlist that does not loop, a note under no instrument
+    yet) disqualifies its instrument, and so does one long note.
+    """
+    single: Dict[int, bool] = {}
+    for track in tracks:
+        entries, restart = _orderlist_entries(track)
+        if not entries:
+            continue
+        loop = None
+        if restart is not None:
+            for k, (start, _p, _r) in enumerate(entries):
+                if start >= restart:
+                    loop = k
+                    break
+
+        def first_row(k):
+            """(note, cmd) of entry k's first row, or None."""
+            if k is None or k >= len(entries):
+                return None
+            pat = entries[k][1]
+            if pat >= len(patterns) or len(patterns[pat]) < 4:
+                return None
+            row = patterns[pat]
+            if row[0] == GT_END_PATTERN:
+                return None
+            return row[0], row[2]
+
+        def event(row):
+            if row is None:
+                return None
+            note, cmd = row
+            return note == GT_KEYOFF or (note <= GT_LASTNOTE
+                                         and cmd != CMD_TONEPORTA)
+
+        current = 0
+        for k, (_start, pat, repeat) in enumerate(entries):
+            if pat >= len(patterns):
+                continue
+            rows = patterns[pat]
+            nrows = 0
+            while nrows * 4 < len(rows) and rows[nrows * 4] != GT_END_PATTERN:
+                nrows += 1
+            for rep in range(repeat):
+                for r in range(nrows):
+                    o = r * 4
+                    if rows[o + 1]:
+                        current = rows[o + 1]
+                    note, cmd = rows[o], rows[o + 2]
+                    if not (note <= GT_LASTNOTE and cmd != CMD_TONEPORTA
+                            and note >= GT_FIRSTNOTE):
+                        continue
+                    if not current:
+                        continue
+                    if r + 1 < nrows:
+                        nxt = (rows[o + 4], rows[o + 6])
+                    elif rep + 1 < repeat:
+                        nxt = first_row(k)
+                    elif k + 1 < len(entries):
+                        nxt = first_row(k + 1)
+                    else:
+                        nxt = first_row(loop)
+                    ok = bool(event(nxt))
+                    single[current] = single.get(current, True) and ok
+    return frozenset(i for i, ok in single.items() if ok)
 
 
 def start_subtune_row_calls(tracks: List[List[int]],
@@ -1384,6 +1495,7 @@ def instrument_row_calls(tracks: List[List[int]],
                         implicit.add(group)
                 first = False
     out = InstrumentRowCalls()
+    out.single_row = single_row_note_instruments(tracks, patterns)
     if start_group is not None:
         out.start_rows = start_subtune_row_calls(tracks, patterns,
                                                  group_tempos, start_group)

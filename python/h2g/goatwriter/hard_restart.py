@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 from . import constants as _gw_constants
+
+# The hard restart a ONE-ROW-NOTE instrument keeps (tracks.single_row_note_instruments):
+# the schedule's floor, which is what a default song carries.
+SINGLE_ROW_HARD_RESTART_TICKS = 2
+
 def _hard_restart_ticks(multiplier: int, row_calls: int,
                         wide: bool = False, full: bool = False,
                         frames: int | None = None) -> int:

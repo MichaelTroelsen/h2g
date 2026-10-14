@@ -82,7 +82,8 @@ from .constants import (_ABS_X_LOAD, _ADJACENT_TABLE_WINDOW, ARP_HEAD_FRAMES,
                         WAVE_SILENT_BASE, WAVE_SILENT_TESTBIT,
                         _WAVE_SPEED_COMMANDS, WAVE_TEST_BIT, WAVECMD_BASE,
                         WAVECMD_PORTADOWN, WAVECMD_PORTAUP, _X_RELOADERS)  # noqa: F401
-from .hard_restart import (_hard_restart_ticks)  # noqa: F401
+from .hard_restart import (SINGLE_ROW_HARD_RESTART_TICKS,  # noqa: F401
+                           _hard_restart_ticks)
 from .instruments import (_build_header, _field_bytes, _instruments_used,
                           _padded_name_bytes, gate_off_firstwave,
                           record_envelope,
@@ -220,6 +221,8 @@ from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
 from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, programmed_instruments,
                         rest_park_pass, rest_park_plan,
                         rest_wave_rows)  # noqa: F401
+from .rest_ring import (_ring_free, _ring_last_row, _ring_marker,
+                        _ring_occurrences, rest_ring_pass)  # noqa: F401
 from .filters import (FETCH_HOLD_BACK, _FETCH_TAIL, _FETCH_TAIL_JMP,
                       _FILTER_BLOCK_LEN, _VOICE_LOOP_DOWN, _fetch_hold_pattern,
                       _fetch_hold_plan, free_running_fetch_hold_voice,
