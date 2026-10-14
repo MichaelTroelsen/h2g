@@ -207,10 +207,13 @@ def test_the_rows_of_a_note_alternate_one_store_and_two(name, rows, numbers):
     consecutive = alternating = 0
     for hits in notes:
         for (j1, p1), (j2, p2) in zip(hits, hits[1:]):
-            if j2 != j1 + 1 or j1 == 1:
+            if j2 != j1 + 1 or j1 == 1 or (j2, p2) == hits[-1] and len(p2) == 1:
                 # a hole (a mixed or occupied row); or the note's first row,
                 # where store 0 (the note's own byte, nothing to emit) is the
-                # other half of what would be a pair
+                # other half of what would be a pair; or a single last row,
+                # which is Chimera's carried-on note cut at its last kept
+                # store with a tail (note_rise.py `clipped`, the 51 values
+                # that fit) and so not a pair like the rows before it
                 continue
             consecutive += 1
             alternating += (len(p1) == 1) != (len(p2) == 1)
@@ -309,5 +312,11 @@ def test_crazy_comets_rise_leaves_the_past_table_split_its_wavetable_rows():
 def test_chimeras_rise_keeps_every_value_where_the_split_needs_no_room():
     sng, lines, _ = _converted("Chimera")
     rise = [m for m in lines if "Note rise (bit $02)" in m]
-    assert len(rise) == 1 and "left to the vibrato" not in rise[0], rise
-    assert "34 of 34 store value(s)" in rise[0], rise
+    assert len(rise) == 1, rise
+    # The notes' own events ask for 34 values and all 34 are exact. The six
+    # long notes now also run on through the rest after them
+    # (tests/test_note_rise_rest_carry.py), which asks for 29 values above
+    # them and has room for 17: the stores above the 51st are left to the
+    # vibrato.
+    assert "51 of 63 store value(s)" in rise[0], rise
+    assert "6 note(s) carried on through the rest after them" in rise[0], rise

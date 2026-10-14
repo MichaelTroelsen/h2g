@@ -38,6 +38,23 @@ GT_MAX_TRANSPOSE = 0x0E
 GT_MIN_TRANSPOSE = GT_TRANSPOSE_DOWN - GT_TRANSUP
 
 
+# The most entries one orderlist read may produce -- a runaway guard, NOT
+# Goattracker's limit. The VB6 original cut every read at 254 entries
+# (h2g.frm:1143 `'If track is too long, mark it as trackend` /
+# `If GoatTracks(GoatTracksMax, 0) >= 254 Then b1 = &HFF`) and this port kept
+# that, with Delta's reader cutting at 252 beside it. That was the wrong
+# place for the limit: `patterns.reindex_tracks` already fits an over-long
+# orderlist into `MAX_TRACK_LEN` by REPEAT packing, merging
+# (`compact_orderlist`), splitting the subtune or dropping it, and a read that
+# truncates first takes those decisions away. Delta's subtune 0 voices 0 and 1
+# expand to 925 and 870 entries that pack into 166 and 223 bytes; the old
+# cut kept 252 of each, so both looped back to the top (3420 and 6156 rows)
+# while voice 2 played its 13822. No other corpus file reaches 254 entries
+# (tests/test_orderlist_read_cap.py). Larger than any 16-bit stream can reach
+# except through Delta's repeat expansion, which is what it bounds.
+ORDERLIST_READ_CAP = 0x4000
+
+
 def _transpose_byte(semitones: int) -> int:
     """Goattracker orderlist byte for a Hubbard transpose, clamped to -16..+14.
 
@@ -114,7 +131,7 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
 
         count = len(track) + 1
         b1 = data[addr + i2]
-        if count >= 254:
+        if count >= ORDERLIST_READ_CAP:
             b1 = 0xFF
         i2 += 1
 
@@ -249,9 +266,9 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 break
             repeat = 1 if not track else _delta_repeat
             # Clamp the expansion itself, not just the next iteration: a
-            # stored count of 0 is 256 plays, which alone overflows the
-            # 254-byte orderlist if appended before checking.
-            room = 252 - len(track)
+            # stored count of 0 is 256 plays, so appending before checking
+            # steps over `ORDERLIST_READ_CAP` in one go.
+            room = ORDERLIST_READ_CAP - 2 - len(track)
             track += [b1] * min(repeat, room)
             if repeat >= room:
                 track += [0xFF, 0x00]

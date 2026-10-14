@@ -67,11 +67,12 @@ def test_fe_still_means_tune_ended():
 
 def test_a_repeat_of_zero_counts_256_times():
     # The player's DEC wraps $00 to $FF and the BNE keeps replaying, so a
-    # stored 0 is 256 plays -- which cannot fit in a 254-byte orderlist and
-    # must truncate cleanly rather than emit nothing.
+    # stored 0 is 256 plays. The reader emits all of them: fitting the result
+    # into Goattracker's orderlist is `patterns.reindex_tracks`' job (REPEAT
+    # packing), not a cut at read time -- see tracks.ORDERLIST_READ_CAP and
+    # tests/test_orderlist_read_cap.py.
     track = _track([0x05, 0x00, 0x06, 0xFF])
-    assert track[-2:] == END
-    assert len(track) <= 254
+    assert track == [0x05] + [0x06] * 256 + END
 
 
 # --- the bit-7 note flag ----------------------------------------------------

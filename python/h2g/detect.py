@@ -5227,6 +5227,7 @@ def _find_skydive(sid: SidFile, det: Detection) -> Optional[Skydive]:
 NOTE_RISE_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? AD ?? ?? 29 01 "
                    "F0 ?? BD ?? ?? F0 ?? ?? ?? ?? AC ?? ?? 99 01 D4")
 # Offsets into NOTE_RISE_SHAPE (past the effect-byte load).
+NOTE_RISE_AT_DUR = 5            # the `LDA dur,X` operand: BD lo hi
 NOTE_RISE_AT_MIN = 10
 NOTE_RISE_AT_COUNTER = 14
 NOTE_RISE_AT_SAVE = 21
@@ -5329,6 +5330,54 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
         counter=data[b + NOTE_RISE_AT_COUNTER]
         | data[b + NOTE_RISE_AT_COUNTER + 1] << 8,
         min_length=data[b + NOTE_RISE_AT_MIN], step=step)
+
+
+# How far into the bit-6 branch to look for a store to the stepped byte.
+# Chimera's runs 85 bytes from its target ($C2FF) to the `JMP` that rejoins the
+# voice loop; the other four are shorter.
+NOTE_RISE_REST_WINDOW = 160
+
+
+def note_rise_rest_carries_on(sid: SidFile, det: Detection) -> bool:
+    """Whether the rise runs on through a bit-6 (no note) event.
+
+    The rise tests the duration byte of whatever event the voice is in
+    (`LDA dur,X / AND #$1F / CMP #min`) and steps `savehi`, which the NOTE
+    fetch sets to the note's high byte. A status byte with bit 6 branches
+    past the note read -- and with it past that store -- so where the status
+    byte is stored into the very array the rise reads, and the branch
+    target's code writes `savehi` nowhere, the stepping carries on through the
+    event, its length counted afresh. Chimera `$C2B0 STA $C634,X` (the status
+    byte, before `BIT $C641 / BVS $C2FF`) against `$C511 LDA $C634,X`, and no
+    `STA $C656,X` between `$C2FF` and the `JMP $C560` at `$C353`.
+
+    Read from the player's own code; the corpus's five rise players (Chimera,
+    Crazy_Comets, Game_Killer, Battle_of_Britain, Human_Race) all show it.
+    Only the primary bit-6 spelling is followed (`STATUS_BIT6_SHAPE`), and a
+    store to `savehi` anywhere in the window -- aligned or not -- says no.
+    """
+    nr = det.note_rise
+    found = _effect_byte_address(sid, det)
+    if nr is None or not found:
+        return False
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    data = sid.data
+    at = search_file(data, f"{load} {NOTE_RISE_SHAPE}")
+    if at < 1:
+        return False
+    b = at + (2 if zp else 3)
+    dur = data[b + NOTE_RISE_AT_DUR:b + NOTE_RISE_AT_DUR + 2]
+    save = data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2]
+    i = search_file(data, STATUS_BIT6_SHAPE)
+    if i < 1 or data[i + 3:i + 5] != dur:
+        return False                 # the status byte is not what the rise reads
+    bvs = i + len(STATUS_BIT6_SHAPE.split())      # the BVS's own operand
+    rel = data[bvs] - 256 if data[bvs] > 127 else data[bvs]
+    target = bvs + 1 + rel
+    if not 0 <= target < len(data):
+        return False
+    return b"\x9d" + bytes(save) not in data[target:target + NOTE_RISE_REST_WINDOW]
 
 
 # Bit $02 read a FIFTH way: the skydive's falling high byte, gated by a count

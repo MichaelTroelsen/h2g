@@ -306,7 +306,10 @@ def test_nothing_but_the_bit02_notes_moves(monkeypatch):
     -- except a bit-$02 note, which names its record or one of its clones,
     and the instruments numbered after the clones, which shift by their
     count. Holds the tempo split's renames inside this plan's pattern
-    copies (they get that plan's edits)."""
+    copies (they get that plan's edits). The one other change is
+    `wave_eor.eor_stop_pass`'s: a `CMD_SETWAVEPTR` on the empty command
+    column of a rest row, the last row of a toggling note
+    (tests/test_wave_eor_stop.py)."""
     import songview
     off, _ = _convert(monkeypatch, enabled=False)
     monkeypatch.undo()
@@ -320,7 +323,7 @@ def test_nothing_but_the_bit02_notes_moves(monkeypatch):
         family[rec].add(clone)
     a, b = songview.parse_sng(off), songview.parse_sng(on)
     assert len(a.tracks) == len(b.tracks)
-    rows = 0
+    rows = stops = 0
     for ti in range(len(a.tracks)):
         def stream(song):
             cur, out = 0, []
@@ -337,7 +340,12 @@ def test_nothing_but_the_bit02_notes_moves(monkeypatch):
         sa, sb = stream(a), stream(b)
         assert len(sa) == len(sb), ti
         for (na, ca, oa, ia), (nb, cb, ob, ib) in zip(sa, sb):
-            assert (na, ca, oa) == (nb, cb, ob), ti
+            if (ca, oa) != (cb, ob):
+                assert (na, ca, oa) == (0xBD, 0, 0) and cb == 8, ti
+                assert na == nb
+                stops += 1
+            else:
+                assert (na, ca, oa) == (nb, cb, ob), ti
             if ia in family:
                 assert ib in family[ia], (ti, ia, ib)
             elif ia >= first:
@@ -346,6 +354,7 @@ def test_nothing_but_the_bit02_notes_moves(monkeypatch):
                 assert ib == ia, (ti, ia, ib)
             rows += 1
     assert rows > 6000
+    assert stops > 200
     assert first > instr_used                      # after the duty clones
 
 

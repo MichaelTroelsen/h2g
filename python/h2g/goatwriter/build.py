@@ -894,6 +894,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     and det.pitch_seq is not None else None)
     clone_starts: List[int] = []
     phase_clone_starts: List[int] = []
+    # [first, last, stop] wavetable rows of bit $02's EOR cycles and the
+    # program that ends them, where the layout laid them out.
+    eor_span: List[int] = []
     # The blocks the phase-mismatched tie rows need (`_tie_blocks_wanted`):
     # a legato clone of a record restarts the block it points at, and a tie
     # landing on a residue no block was laid for would restart the wrong
@@ -961,7 +964,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # tail's pitch the next note's init call inherits is never heard.
         hold_travel=not (no_test_restart or real_firstwave_instruments
                          or gate_off_firstwave_instruments),
-        eor_phases=eor_phases, note_pitches=note_pitches)
+        eor_phases=eor_phases, note_pitches=note_pitches,
+        eor_span=eor_span)
     # The sfx drum's one-frame bandpass, written into the filter programs of the
     # drum records. After the wavetable layout, because where the noise lands
     # is read off the laid-out block (`sfx_drum_hit_lattice`); the table is
@@ -1459,6 +1463,20 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             written_instr += 1
         stair_aliases.extend(free_variants)
         out[instr_at] = written_instr
+    # The last tick of a toggling note holds the state the last toggle left,
+    # where the wavetable's cycles would toggle once more
+    # (`wave_eor.eor_stop_pass`). After every pass that names an instrument,
+    # so the numbers it reads are the finished ones.
+    if eor_span and (tuple(wave_entries[eor_span[2] - 1:eor_span[2] + 1])
+                     == _gw_wave_eor.EOR_STOP_PROGRAM):
+        rings = _gw_wave_eor.eor_ring_instruments(
+            wave_entries,
+            {g: out[instr_at + 1 + (g - 1) * 25 + 2]
+             for g in range(1, written_instr + 1)
+             if out[instr_at + 1 + (g - 1) * 25 + 2]},
+            (eor_span[0], eor_span[1]))
+        patterns = _gw_wave_eor.eor_stop_pass(patterns, tracks, rings,
+                                              eor_span[2], log)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

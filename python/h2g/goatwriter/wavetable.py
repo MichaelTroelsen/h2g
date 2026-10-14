@@ -33,7 +33,8 @@ from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
-from .wave_eor import (EorPhase, eor_library, wave_eor_block)
+from .wave_eor import (EOR_STOP_PROGRAM, EorPhase, eor_library,
+                       wave_eor_block)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -1866,7 +1867,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       instr_row_calls: Optional[dict] = None,
                       hold_travel: bool = False,
                       eor_phases: Optional[dict] = None,
-                      note_pitches: Optional[dict] = None) -> tuple:
+                      note_pitches: Optional[dict] = None,
+                      eor_span: Optional[list] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1920,6 +1922,11 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         if waves:
             eor_lib = eor_library(sorted(waves), multiplier, len(entries) + 1)
             entries += list(zip(eor_lib.left, eor_lib.right))
+            # The program a note's last row points the voice at to end the
+            # ring (`wave_eor.eor_stop_pass`), right behind the cycles.
+            if eor_span is not None:
+                eor_span[:] = [eor_lib.start, len(entries), len(entries) + 1]
+            entries += list(EOR_STOP_PROGRAM)
     # The fixed-interval block's counter mask, read once for the file: a duty
     # mask ($02, $04, $07) sends every arpeggio record to
     # `fixed_arp_duty_entries`, the parity mask ($01) keeps the shapes below.

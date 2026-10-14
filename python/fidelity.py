@@ -2781,6 +2781,50 @@ def oscillation_depths(voices: list[Voice], nframes: int,
             if (m := _median(vals)) is not None}
 
 
+def depth_per_call_compare(orig: list[Voice], ours_calls: list[Voice],
+                           nframes: int, keys: set[int] | None,
+                           calls_per_frame: int) -> dict:
+    """`depth_compare` with OUR side read once per play call.
+
+    `ours_calls` is a trace of the packed song at ONE call per row over
+    `calls_per_frame` times the window (the `--equal-calls` shape), so row k
+    is play call k and an m-call frame is m rows. `siddump -m{m}` prints
+    only the register state at the END of each frame: a swing whose turning
+    points fall between two of a multiplier-m conversion's m writes is
+    understated by the frame-resolution `depth_compare`, and a bipolar
+    triangle the most (Game_Killer record $19BA at -S9: 1.27x there against
+    1.49x per call, historical, v0.5.538). The original is single-speed, so
+    its side stays at frame resolution. Same refusals and same median over
+    paired keys as `depth_compare`; the keys come back as `depth_call_*`
+    so they sit beside the frame reading instead of replacing it.
+    """
+    m = max(1, calls_per_frame)
+    r = _depth_compare_sided(orig, ours_calls, nframes, nframes * m, keys,
+                             1, vice_skip_span(m), True, 1, m)
+    names = {"depth_ratio": "depth_call_ratio",
+             "orig_depth": "depth_call_orig",
+             "our_depth": "depth_call_ours",
+             "depth_instruments": "depth_call_instruments",
+             "depth_refusal": "depth_call_refusal"}
+    return {names[k]: v for k, v in r.items() if k in names}
+
+
+def depth_per_call(orig: list[Voice], packed: Path, seconds: int,
+                   subtune: int, exe: str, keys: set[int] | None,
+                   calls_per_frame: int) -> dict:
+    """Trace `packed` one call per row and hand it to
+    `depth_per_call_compare`. One extra siddump run of `calls_per_frame`
+    times the window, only for multiplier > 1 rows. Declines (empty dict)
+    rather than guess when the trace fails."""
+    try:
+        t = run_siddump(packed, seconds * calls_per_frame, subtune, exe,
+                        calls=1)
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        return {}
+    return depth_per_call_compare(orig, t, seconds * 50, keys,
+                                  calls_per_frame)
+
+
 def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
                   keys: set[int] | None = None,
                   skip_radius: int | tuple[int, int] = 1,
@@ -6197,7 +6241,15 @@ DIMENSIONS = (
               "calls), since the depth-vice-envelope-gate change. "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
-              "understated; `--vice` reads it per play call. `--depth-census` splits the shortfall per instrument into AMPLITUDE (our swing over the original's) and COVERAGE (frames whose pitch moves, ours over theirs) and lists instruments the original swings on and ours does not (`absent`, which this median over paired keys cannot see); it reads only this column's vibrato-byte population, so an arpeggio or sweep on another record is outside it"),
+              "understated -- a bipolar triangle most: **blind to the "
+              "sub-frame swing of a multiplier>1 file** (Game_Killer record "
+              "$19BA at -S9 reads 1.27x here, 1.49x per call; historical). "
+              "A multiplier>1 row therefore also carries `depth_call_ratio` "
+              "(+ `depth_call_orig`, `depth_call_ours`, "
+              "`depth_call_instruments`, `depth_call_refusal`) in the JSON: "
+              "the same median over the same keys with OUR side traced one "
+              "call per row; read it instead of this column on such a row. "
+              "`--vice` reads it per play call too. `--depth-census` splits the shortfall per instrument into AMPLITUDE (our swing over the original's) and COVERAGE (frames whose pitch moves, ours over theirs) and lists instruments the original swings on and ours does not (`absent`, which this median over paired keys cannot see); it reads only this column's vibrato-byte population, so an arpeggio or sweep on another record is outside it"),
     # See noise_run_agreement's own docstring for the measured population
     # behind the claims in `of` below (Zoolook's 100%-while-losing-199-
     # frames case, the historical (v0.5.480) 28-of-28 / 0-of-76 hold-minus-1 split and its empty 2026-10-03 re-take, and the
@@ -7583,6 +7635,13 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # vibrato_records). A file whose player has no vibrato routine
             # contributes no row rather than a reading over its portamentos.
             row.update(depth_compare(a, best_dump, nframes, vib_keys))
+            if (traced_calls := getattr(args, "calls_per_frame", None)
+                    or multiplier) > 1:
+                # The column above keeps 1 call in `traced_calls`; read the
+                # same swings once per call too -- see depth_per_call.
+                row.update(depth_per_call(
+                    a, packed, seconds, row.get("matched_subtune", our_sub),
+                    args.siddump, vib_keys, traced_calls))
             row.update(filter_compare(a.filter, best_dump.filter, nframes,
                                       lag=lag))
         if row.get("depth_refusal") == "gated":

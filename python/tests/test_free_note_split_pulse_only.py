@@ -35,10 +35,17 @@ def test_delta_splits_for_its_pulse_only_records():
     free = [ln for ln in lines if ln.startswith("Free note (bit 7)")]
     assert len(free) == 1, lines
     assert "entered with two instruments" not in free[0], free[0]
-    assert "kept the full start" not in free[0], free[0]
-    assert "67 flagged note row(s) on 7 variant(s)" in free[0], free[0]
+    # Figures re-taken at the orderlist-254-entry-read-cap fix (base c4eedc4):
+    # Delta's subtune-0 voices 0 and 1 are now read whole, so the pass sees
+    # rows the capped file never held. The old 67 rows / 7 variants / 0 kept
+    # the full start / 3 copies were the capped file's. The 3 "kept the full
+    # start" are declines at pattern rows reached only past the old cut
+    # (1 unsettled, 2 follow another instrument), not an entry decline.
+    assert "136 flagged note row(s) on 8 variant(s)" in free[0], free[0]
+    assert ("3 kept the full start (1 follows an unsettled instrument; "
+            "2 follows another instrument)") in free[0], free[0]
     split = [ln for ln in lines if ln.startswith("Entry instrument split")]
-    assert split and "3 pattern cop(ies) of 02, 03" in split[0], split
+    assert split and "5 pattern cop(ies) of 02, 03" in split[0], split
 
 
 @needs_corpus

@@ -240,6 +240,12 @@ or never ends, is unchanged. Evidence in `docs/LESSONS.md`.
 - **Build `python/tools/siddump-rt` before taking any fidelity number.** It is
   vendored siddump 1.08 plus `-m<n>`; stock siddump calls the play routine
   `seconds × 50` times whatever the speed field says.
+- **`siddump -a` is the 0-based subtune passed in A at init** (`siddump.c`'s
+  `-a` parse feeds the init call's accumulator). A loop over `-a1 .. -a{n}`
+  never traces subtune 0 and runs `-a{n}` past the song table, so a
+  single-subtune file is traced as a subtune that does not exist and reads 0.
+  Loop `range(n)`. Measured at 1aae7cc (`past-table-split-layout-perturbation`;
+  `docs/LESSONS.md`).
 
 ### Probes lie in five ways
 
@@ -434,6 +440,14 @@ dangerous one because it reads as current and gets cited as current.
 - **When a fix's blast radius is an order of magnitude larger than the evidence
   for it, the rule is scoped wrongly** — visible before any score is read.
 - **A shim that hides a defect from the score does not hide it from the file.**
+- **A new note resets the running effect before its row's command is read**,
+  in both players (`gplay.c`'s new-note path sets `cptr->command = 0`;
+  `player.s` `mt_newnoteinit` stores to `mt_chnfx`). A one-shot command leaves
+  the running effect alone. So any guard that walks back for an inherited
+  effect stops at a note row, and a candidate row that starts a note inherits
+  nothing. The regrid guards `patterns._inherits_continuous_effect` and
+  `_slide_covered_regrid_spot` follow this since v0.5.535
+  (`command-guard-new-note-reset-audit`, 8618f82; `docs/LESSONS.md`).
 
 ### Four small readings that each cost a session
 

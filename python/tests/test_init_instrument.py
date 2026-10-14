@@ -25,10 +25,17 @@ players names an instrument on the first row of its first pattern, so no
 row the passes touch precedes the first named instrument on the first lap.
 
 Delta's "held $02" the trace finds (original pattern $02 entered holding idx
-2 at frame 9602) is NOT this: the converter's orderlist for subtune 0 voice
-0 ends at 254 entries (`tracks.py`: `if count >= 254: b1 = 0xFF`), before
-the original's pattern $05 -- the one that names idx 2 -- so the walk is
-right about the file it walks.
+2 at frame 9602) was first read here as NOT this, because the converter's
+orderlist for subtune 0 voice 0 ended at 254 entries, before the original's
+pattern $05 -- the one that names idx 2 -- "so the walk is right about the
+file it walks". RETRACTED at the orderlist-254-entry-read-cap fix: the
+walk was right about a file that was itself wrong. The 254-entry cut
+(`tracks.py` read cap, and Delta's own 252) discarded 673 of voice 0's 925
+entries, so the walk never saw pattern $05; with the whole orderlist read,
+the walk's entry sets gain GT instrument 3 (original idx 2) on three
+patterns, where the capped file had it on none -- the instrument the trace
+found held (test_delta_orderlist_is_read_in_full pins the read, not the
+walk's sets).
 """
 import json
 import os
@@ -372,11 +379,11 @@ def test_the_start_moves_no_byte_where_every_first_pattern_names_one(
 
 
 @needs_corpus
-def test_delta_orderlist_ends_before_the_pattern_naming_instrument_3():
-    """The original's pattern $05 names idx 2 (GT 3) at frame 9602; the
-    converted voice-0 orderlist is cut at the 254-entry read limit before
-    reaching it, so the walk's {1, 2} for GT pattern 3 is the file's."""
+def test_delta_orderlist_is_read_in_full():
+    """The original's pattern $05 names idx 2 (GT 3) at frame 9602. Voice 0's
+    orderlist used to be cut at 254 entries before reaching it (the retracted
+    claim in this file's docstring); it is now read to its own `$FF` marker."""
     sid, det = _sid("Delta.sid")
     tracks = convert_tracks(sid, det, lambda m: None)
-    assert len(tracks[0]) == 254
-    assert 5 not in tracks[0]
+    assert len(tracks[0]) == 927 and tracks[0][-2:] == [0xFF, 0x00]
+    assert 5 in tracks[0]

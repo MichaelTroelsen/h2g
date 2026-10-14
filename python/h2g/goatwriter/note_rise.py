@@ -76,10 +76,11 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from ..detect import Detection
+from ..detect import Detection, note_rise_rest_carries_on
 from ..sidfile import SidFile
-from .constants import (CMD_SETWAVEPTR, FORMAT_GTS5, GT_FIRST_NOTE,
-                        GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
+from .constants import (CMD_SETWAVEPTR, CMD_TONEPORTA, FORMAT_GTS5,
+                        GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE,
+                        GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
                         PACKED_PATTERN_LIMIT, WAVE_MAX_DELAY,
                         WAVECMD_BASE, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .primitives import _gate_calls
@@ -140,21 +141,70 @@ def store_phase(base: int, first: int, row: int, frames: int) -> int:
 
 
 def store_rows(phase: int, lag: int, frames: int, length: int,
-               kcap: int) -> Dict[int, List[Tuple[int, int]]]:
+               kcap: int, skips=()) -> Dict[int, List[Tuple[int, int]]]:
     """{row of the note: [(store k, its tick in the row)]} for store k = 1 ..
     `kcap - 1`, store k being on the original's tick `phase + 2k` and ours
     `lag` ticks later, up to the note's last tick (`length` rows of `frames`
-    ticks). Store 0 is the note's own byte and is not emitted."""
+    ticks). Store 0 is the note's own byte and is not emitted.
+
+    `skips` are ticks that run no effect (the fetch tick of an event that
+    continues the note, `continuation`): a store due on one is not executed,
+    the byte is not stepped, and the next store is the one that would have
+    been, so every k after it is one store later."""
     stores: Dict[int, List[Tuple[int, int]]] = {}
-    for k in range(1, kcap):
-        tick = phase + 2 * k
+    k = -1
+    tick = phase - 2
+    while True:
+        tick += 2
         if tick >= length * frames:
             break                        # past the note's last tick
+        if tick in skips:
+            continue
+        k += 1
+        if k < 1:
+            continue
+        if k >= kcap:
+            break
         j, half = divmod(tick + lag, frames)
         if j >= length:
             break
         stores.setdefault(j, []).append((k, half))
     return stores
+
+
+def continuation(rows: List[tuple], patterns: List[List[int]], a: int,
+                 length: int, min_length: int) -> List[Tuple[int, int]]:
+    """[(row of the note where an event starts, its rows)] for the events
+    after a note of `length` rows at lap row `a` that the rise runs through.
+
+    The rise tests the current event's duration, not the note's, and a
+    status byte with bit 6 (no operand, no note) leaves the voice, its
+    instrument and the byte being stepped alone: Chimera $C2FF `DEC $C640`
+    for the gate mask, then the instrument's record rewritten with the gate
+    off, and $C656 -- the stepped byte -- untouched. So the rise carries on
+    through the release for as long as each such event is `min_length` rows
+    or more (Chimera's notes of 22 rows rise on for another 21, to $40; the
+    third event, 3 rows, ends it). Our spelling of that event is a KEYOFF
+    with no instrument, whose rows run to the next row with a note or an
+    instrument.
+    """
+    out: List[Tuple[int, int]] = []
+    end = a + length
+    while end < len(rows):
+        p, r, _t = rows[end]
+        if (patterns[p][4 * r] != GT_KEYOFF or patterns[p][4 * r + 1]):
+            break
+        nxt = next((e for e in range(end + 1, len(rows))
+                    if patterns[rows[e][0]][4 * rows[e][1]] != GT_REST
+                    or patterns[rows[e][0]][4 * rows[e][1] + 1]), None)
+        if nxt is None:
+            break
+        dur = nxt - end - 1
+        if not min_length <= dur <= NOTE_RISE_MAX_DURATION:
+            break
+        out.append((end - a, nxt - end))
+        end = nxt
+    return out
 
 
 def store_values(kmax: int, room: int) -> List[int]:
@@ -431,16 +481,17 @@ def _note_rows(tracks: List[List[int]], patterns: List[List[int]],
                    note - GT_FIRST_NOTE + transpose)
 
 
-def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
-                   patterns: List[List[int]], lead: int, instr_used: int,
-                   fmt: str, multiplier: int, gate_skip: Optional[int],
-                   row_calls: int, speed_table: List[tuple], wave_used: int,
-                   no_test_restart: bool = False, real_firstwave: tuple = (),
-                   log=None, reserve: int = 0,
-                   wave_entries: Optional[List[tuple]] = None,
-                   wave_starts: Optional[List[int]] = None,
-                   wave_pointers: Optional[List[int]] = None
-                   ) -> Optional[_gw_skydive.SkydivePlan]:
+def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
+                    patterns: List[List[int]], lead: int, instr_used: int,
+                    fmt: str, multiplier: int, gate_skip: Optional[int],
+                    row_calls: int, speed_table: List[tuple], wave_used: int,
+                    no_test_restart: bool = False, real_firstwave: tuple = (),
+                    log=None, reserve: int = 0,
+                    wave_entries: Optional[List[tuple]] = None,
+                    wave_starts: Optional[List[int]] = None,
+                    wave_pointers: Optional[List[int]] = None,
+                    extend: bool = True, info: Optional[dict] = None
+                    ) -> Optional[_gw_skydive.SkydivePlan]:
     """The rows holding a store of every long note on a bit-$02 record, each
     pointed at its store's program, or None where nothing is taken.
 
@@ -460,6 +511,7 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     nr = det.note_rise
     if nr is None:
         return None
+    extend = extend and note_rise_rest_carries_on(sid, det)
 
     def say(msg: str) -> None:
         if log:
@@ -496,6 +548,9 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             plays[(p, r)] = plays.get((p, r), 0) + 1
     asks: Dict[tuple, List[tuple]] = {}
     askers: Dict[tuple, set] = {}
+    runs: List[Tuple[List[tuple], int]] = []   # per continued note: its rows
+    kbase = 0           # the highest store the notes' own events ask for
+    carried_on: List[tuple] = []        # ((pattern, row), (k, tick)) past a note
     declined: Dict[str, int] = {}
 
     def decline(why: str) -> None:
@@ -521,16 +576,43 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         # The `BEQ` on savehi: a rising byte stops once it wraps to zero, a
         # falling one after it stores 1.
         cap = (0x100 - high) if nr.step > 0 else high
-        stores = store_rows(phase, lag, frames, length,
-                            min(cap, NOTE_RISE_MAX_STEP + 1))
+        kcap = min(cap, NOTE_RISE_MAX_STEP + 1)
+        stores = store_rows(phase, lag, frames, length, kcap)
+        kbase = max([kbase] + [k for v in stores.values() for k, _h in v])
+        more = (continuation(rows, patterns, a, length, nr.min_length)
+                if extend else [])
+        if more:
+            stores = store_rows(phase, lag, frames,
+                                length + sum(n for _s, n in more), kcap,
+                                {s * frames for s, _n in more})
+        seq: List[tuple] = []
+        lp, lr, _ = rows[a + length - 1]
+        carried = patterns[lp][4 * lr + 2] in (0, 4)
         for j, got in stores.items():
             wp, wr, _ = rows[a + j]
             pp, pr, _ = rows[a + j - 1]
             cell = tuple(patterns[wp][4 * wr + 2:4 * wr + 4])
-            safe = (cell == tuple(patterns[pp][4 * pr + 2:4 * pr + 4])
+            before = tuple(patterns[pp][4 * pr + 2:4 * pr + 4])
+            safe = (cell == before
                     and cell[0] in _gw_skydive.SKYDIVE_PERSISTENT_COMMANDS)
+            # The rows of a continuing event: the KEYOFF that opens it carries
+            # the tie's `CMD_TONEPORTA 00` (patterns.py, the `pending_tie`
+            # row), which on a row with no note only pins the voice to its
+            # last note -- and would pin it against the step -- and its hold
+            # rows carry no command at all. A pointer in either leaves the
+            # note's own vibrato (or nothing) running on through the release,
+            # as the original's does; a slide the note had does not carry on,
+            # so the row before the event must be one of those.
+            if (not safe and j >= length and carried
+                    and cell in ((0, 0x00), (CMD_TONEPORTA, 0x00))):
+                safe = True
             asks.setdefault((wp, wr), []).append((tuple(got), safe))
             askers.setdefault((wp, wr), set()).add(number)
+            seq.append((wp, wr))
+            if j >= length:
+                carried_on.extend(((wp, wr), kh) for kh in got)
+        if more:
+            runs.append((seq, frames))
 
     taken: Dict[tuple, tuple] = {}
     mixed = 0
@@ -567,6 +649,22 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         had nothing else."""
         cut = {key: tuple(x for x in ask if x[0] <= top)
                for key, ask in taken.items()}
+        # A store on a row's last tick has no tail to put the voice back on
+        # its note: the next row's program does that, or the next note. Where
+        # a continued note's stores above `top` are left out, neither comes,
+        # so its last kept store is the last one with a tail (the voice would
+        # otherwise stay risen to the end of the release).
+        for seq, fr in runs:
+            if not any(x[0] > top for key in seq for x in taken.get(key, ())):
+                continue
+            for key in reversed(seq):
+                ask = cut.get(key, ())
+                while ask and not tail_entries(ask[-1][1], tick_calls, fr):
+                    ask = ask[:-1]
+                if key in cut:
+                    cut[key] = ask
+                if ask:
+                    break
         return {key: ask for key, ask in cut.items() if ask}
 
     kmax = max(k for ask in taken.values() for k, _h in ask)
@@ -757,7 +855,85 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         + (f" and {sum(1 for r in placed if r <= wave_used)} reused from "
            f"{len(holes)} duplicate block(s)" if holes else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
+        + (f"; {len(runs)} note(s) carried on through the rest after them"
+           if runs else "")
         + ("; declined: " + ", ".join(f"{n} {w}" for w, n in declined.items())
            if declined else ""))
+    if info is not None:
+        info.update(chosen=chosen, kbase=kbase, edited=edited,
+                    cut=best["cut"], over=best["over"], continued=bool(runs),
+                    carried=len(carried_on),
+                    placed=sum(1 for key, kh in carried_on
+                               if kh in rows.get(key, ())))
     return _gw_skydive.SkydivePlan(patterns=out, entries=entries,
                                    base=base_table, starts=new_starts)
+
+
+def _extension_pays(ext: dict, base: dict) -> bool:
+    """Whether the plan that carries notes on through the rest after them
+    (`ext`) keeps everything the plan without it (`base`) does -- every value
+    the notes' own events ask for exact, no more rows cut or patterns lost
+    to the packed limit, no fewer rows edited -- and places at least half of
+    the stores it carries on.
+
+    The last is what keeps a file whose rests are mostly shared rows from
+    moving for a handful of stores: Crazy_Comets asks for 256 and places
+    10-16 (its rests are played after other notes too, so `mixed`), Human_Race
+    18 and 1, Game_Killer 136 and 0; Chimera asks for 192 and places 114.
+    """
+    chosen, kbase = ext["chosen"], ext["kbase"]
+    return (len(chosen) >= kbase and chosen[:kbase] == list(range(1, kbase + 1))
+            and ext["over"] <= base["over"] and ext["cut"] <= base["cut"]
+            and ext["edited"] >= base["edited"]
+            and 2 * ext["placed"] >= ext["carried"])
+
+
+def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
+                   patterns: List[List[int]], lead: int, instr_used: int,
+                   fmt: str, multiplier: int, gate_skip: Optional[int],
+                   row_calls: int, speed_table: List[tuple], wave_used: int,
+                   no_test_restart: bool = False, real_firstwave: tuple = (),
+                   log=None, reserve: int = 0,
+                   wave_entries: Optional[List[tuple]] = None,
+                   wave_starts: Optional[List[int]] = None,
+                   wave_pointers: Optional[List[int]] = None
+                   ) -> Optional[_gw_skydive.SkydivePlan]:
+    """`_rise_plan_once`, with the rise carried on through the rest after a note
+    (`continuation`) where that costs the notes' own stores nothing.
+
+    The continued stores raise the highest value asked for, and a table
+    that cannot hold them all spreads or clips what it can: so the plan is
+    taken twice, with them and without, and the longer one is kept only
+    where every value the notes' own events ask for is still exact (Battle
+    of Britain: one continued note had the other stores' values spread over
+    52 and took its two $0FF voices from 98% and 99% to 59% on the stores),
+    no pattern rows were cut that were not cut before, no row is lost, and
+    half of what it carries on is placed (`_extension_pays`). Everything
+    else -- the speed table, the log -- is the kept plan's. A file the
+    continuation does not touch is planned once, as it was.
+    """
+    def run(extend: bool):
+        table = list(speed_table)
+        lines: List[str] = []
+        info: dict = {}
+        plan = _rise_plan_once(
+            sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
+            gate_skip, row_calls, table, wave_used, no_test_restart,
+            real_firstwave, lines.append, reserve, wave_entries, wave_starts,
+            wave_pointers, extend, info)
+        return plan, table, lines, info
+
+    kept = run(True)
+    if kept[0] is None:
+        # nothing taken with the continuation: never worse than without it
+        kept = run(False)
+    elif kept[3].get("continued"):
+        base = run(False)
+        if base[0] is None or not _extension_pays(kept[3], base[3]):
+            kept = base
+    plan, table, lines, _info = kept
+    speed_table[:] = table
+    if log:
+        for line in lines:
+            log(line)
+    return plan

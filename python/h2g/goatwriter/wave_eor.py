@@ -49,9 +49,11 @@ from typing import Dict, List, Optional, Tuple
 
 from ..detect import Detection
 from ..sidfile import SidFile
-from .constants import (CMD_SETTEMPO, CMD_TONEPORTA, GT_FIRST_NOTE,
-                        GT_KEYOFF, GT_LAST_NOTE, GT_WAVE_JUMP,
-                        WAVE_MAX_DELAY, WAVE_NOISE_GATEOFF, WAVE_NOTE_BASE)
+from .constants import (CMD_SETTEMPO, CMD_SETWAVEPTR, CMD_TONEPORTA,
+                        CMD_VIBRATO,
+                        GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_WAVE_JUMP,
+                        GT_WAVE_NO_NOTE, WAVE_MAX_DELAY, WAVE_NOISE_GATEOFF,
+                        WAVE_NOTE_BASE)
 from .primitives import _first_frame_entry
 
 # The effect byte's bit the block tests (`AND #$02`).
@@ -599,6 +601,166 @@ def wave_eor_block(sid: SidFile, det: Detection, i: int, eor: EorPhase,
     if len(left) > budget:
         return block
     return left, right
+
+
+# --- the last tick: the original's block does not run there --------------------
+#
+# The block stops on a note's last tick (`$C512` = 0), so the voice holds the
+# state its last toggle left. A ring or loop in a wavetable has no such stop:
+# it toggles on its schedule until the next note's fetch restarts it, and the
+# schedule always puts one toggle inside the last tick (the note spends an odd
+# number of effect calls before it). Measured at c4eedc4, Rasputin record 10,
+# subtune 0 in 180 s: the original changes the waveform on 0 of the last-tick
+# frames of 336 toggling notes, the conversion toggles once in each of the 336.
+# The wavetable cannot know the note's length, but the pattern can: a
+# `CMD_SETWAVEPTR` on the note's LAST row points the voice at a program that
+# does nothing and stops (`EOR_STOP_PROGRAM`), so the waveform holds. The
+# pointer may not name an `$FF` row itself (gplay.c:436-445 stops the song on
+# a jump target), which is why the program is a no-op step then the stop.
+
+# Right side `$80` leaves the pitch alone; left `$00` keeps the waveform.
+EOR_STOP_PROGRAM = ((0x00, GT_WAVE_NO_NOTE), (GT_WAVE_JUMP, 0x00))
+# The commands that set the voice's continuous effect (gplay.c:409-422);
+# every other command leaves it as it was.
+CMD_DONOTHING = 0
+CONTINUOUS_COMMANDS = frozenset({1, 2, CMD_TONEPORTA, CMD_VIBRATO})
+
+
+def eor_ring_instruments(entries: List[Tuple[int, int]],
+                         starts: Dict[int, int],
+                         span: Tuple[int, int]) -> frozenset:
+    """The instrument numbers (keys of `starts`: number -> 1-based wavetable
+    row) whose program, read from its start, never ends and jumps back into
+    the EOR cycles `span` = (first, last) rows -- the ones that toggle until
+    something restarts them. Delays and waveforms step one row, an `$FF` row
+    jumps (no call of its own) and `$FF 00` ends the program."""
+    out = set()
+    for number, start in starts.items():
+        at, seen = start, set()
+        while 1 <= at <= len(entries) and at not in seen:
+            seen.add(at)
+            left, right = entries[at - 1]
+            if left == GT_WAVE_JUMP:
+                if right and span[0] <= right <= span[1]:
+                    out.add(number)
+                if not right or right in seen:
+                    break
+                at = right
+                continue
+            at += 1
+    return frozenset(out)
+
+
+def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
+                  rings: frozenset, stop: int, log=None) -> List[List[int]]:
+    """`CMD_SETWAVEPTR` to `stop` on the last row of each note of a `rings`
+    instrument that lasts two rows or more.
+
+    Declined, and counted:
+
+    * **followed**: the next event is not a plain note. A tie
+      (`CMD_TONEPORTA 00`) restarts no wavetable, so the ring runs on into it
+      as the original's toggling does (the counter flips through a tie,
+      `note_parities`); a key-off or key-on is a quiet event of its own.
+      And a note can run on past the pattern's end: `--max-rows` slices
+      long patterns, and a slice's tail is rest rows, not an event. So at the
+      pattern's end every successor's first row must be a plain note.
+    * **unknown**: no row of the pattern has named the instrument and the
+      orderlists enter it holding more than one.
+    * **busy**: the last row's command column is taken.
+    * **running**: a portamento, tone portamento or vibrato command set on
+      an earlier row of the note is still running into the last row. The
+      empty column is `CMD_DONOTHING` there, which ends it (gplay.c:403-406);
+      `CMD_SETWAVEPTR` leaves it running. A new note zeroes the command
+      first, so the walk starts from none at the note row.
+    * **over**: the command would pack the pattern past
+      `PACKED_PATTERN_LIMIT`.
+
+    Changed patterns are COPIES.
+    """
+    if not rings or not stop:
+        return patterns
+    from .note_passes import _entry_instruments, _successor_heads
+    from .pulse import packed_pattern_size, pattern_rows
+    from .constants import PACKED_PATTERN_LIMIT
+    entry = _entry_instruments(tracks, patterns)
+    heads = _successor_heads(tracks, patterns)
+    out: List[List[int]] = []
+    placed = unfollowed = unknown = busy = over = persistent = 0
+    for number, pat in enumerate(patterns):
+        held = entry.get(number, ())
+        live = next(iter(held)) if len(held) == 1 else 0
+        ambiguous = len(held) > 1 and any(h in rings for h in held)
+        events = []                  # (row offset, instrument, plain note, tie)
+        stop_at = len(pat)
+        i = 0
+        while i + 3 < len(pat):
+            nb = pat[i]
+            if nb == 0xFF:
+                stop_at = i
+                break
+            if pat[i + 1]:
+                live = pat[i + 1]
+            note = GT_FIRST_NOTE <= nb <= GT_LAST_NOTE
+            tie = note and pat[i + 2] == CMD_TONEPORTA and pat[i + 3] == 0
+            if note or nb in (GT_KEYOFF, GT_KEYON):
+                events.append((i, live, note and not tie, tie))
+            i += 4
+        copy = None
+        for j, (at, ins, plain, _tie) in enumerate(events):
+            if not plain:
+                continue
+            if ins not in rings:
+                unknown += 1 if not ins and ambiguous else 0
+                continue
+            end = events[j + 1][0] if j + 1 < len(events) else stop_at
+            if (end - at) // 4 < 2:
+                continue
+            if j + 1 < len(events):
+                followed = events[j + 1][2]
+            else:
+                followed = all(
+                    h is not None and GT_FIRST_NOTE <= h[0] <= GT_LAST_NOTE
+                    and not (h[2] == CMD_TONEPORTA and h[3] == 0)
+                    for h in heads.get(number, {None}))
+            if not followed:
+                unfollowed += 1
+                continue
+            last = end - 4
+            cur = copy if copy is not None else pat
+            if cur[last + 2] or cur[last + 3]:
+                busy += 1
+                continue
+            running = 0
+            for r in range(at, last, 4):
+                if cur[r + 2] == CMD_DONOTHING:
+                    running = 0
+                elif cur[r + 2] in CONTINUOUS_COMMANDS:
+                    running = cur[r + 2]
+            if running:
+                persistent += 1
+                continue
+            trial = list(cur)
+            trial[last + 2] = CMD_SETWAVEPTR
+            trial[last + 3] = stop & 0xFF
+            if packed_pattern_size(pattern_rows(trial)) > PACKED_PATTERN_LIMIT:
+                over += 1
+                continue
+            copy = trial
+            placed += 1
+        out.append(pat if copy is None else copy)
+    if log and (placed or busy or unknown or over or unfollowed or persistent):
+        log(f"EOR last tick...........: {placed} note(s) stop their toggle "
+            "on the last row"
+            + (f", {unfollowed} not followed by a plain note"
+               if unfollowed else "")
+            + (f", {busy} with the column in use" if busy else "")
+            + (f", {persistent} under a running effect" if persistent
+               else "")
+            + (f", {unknown} of an instrument not yet named" if unknown
+               else "")
+            + (f", {over} over the pack limit" if over else ""))
+    return out
 
 
 def carry_split_edits(tracks: List[List[int]], new_tracks: List[List[int]],

@@ -14212,6 +14212,82 @@ and 16 rows left out); where it has one (Game_Killer's) it spreads and takes
 the nearest, as before. Game_Killer and Battle_of_Britain asked for no
 reserve (their bytes are unchanged).
 
+**The rise runs on through the rest after a note** (`chimera-note-rise-held-
+store-frames`). The 12 high-byte frames the Chimera measurement above left
+at -t 180 are six pairs (frames 505-506, 1945-1946, 2521-2522, 4249-4250,
+5977-5978, 6553-6554: voice 1, the notes at lap rows 146, 626, 818, 1394,
+1970 and 2162, instruments 10 and 11). The first frame of each is store 32,
+the second the original's fetch tick, and neither is an outer gate or a
+skipped frame: Chimera's IRQ calls the play routine once a frame (`$9FA3 JSR
+$C206`). Row 22 of each note is a bit-6 event (no operand, no note), which
+our decoder spells as a KEYOFF with no instrument. Its fetch tick writes the
+gate off (`$C2FF DEC $C640`, then the record rewritten with `AND $C640`) and
+runs no effect, so no register moves: frame 506 repeats frame 505 byte for
+byte, `21F7` twice, and the vibrato's triangle skips a step (`F7 F7 05 05`
+where the cycle is `F7 FE 05 05`). The rise then carries on through the
+event: `$C511 LDA $C634,X / AND #$1F / CMP #$11` tests the duration of the
+event the voice is in (`$C2B0` stores the status byte there before the
+`BIT $C641 / BVS $C2FF`), and the byte it steps, `$C656,X`, is stored only by
+the note read, which the bit-6 branch jumps past. So the stores go on to
+`$40` at frame 567, 21 rows later; the next event is 3 rows, below the 17
+the test wants, and ends it. Until this the planner ended the note at the
+KEYOFF row, so the 12 frames were the head of a 198-frame tail ours never
+played: 198 of the 201 frames that differ among the 558 where the original
+sits 3 to `$7F` above the note (the other 3 are `D0` against `68` at frames
+649, 721 and 793, a different note). The release is audible: the records'
+AD and SR are `$0F` and `$0F`, so the voice sounds on through all 21 rows.
+
+`note_rise.continuation` follows a note over each KEYOFF event with no
+instrument whose duration is 17 to 31 rows (`min_length` to the duration
+field's 31), and `store_rows` takes the fetch tick of each as a skipped tick:
+a store due on it is not executed, the byte is not stepped, and every k after
+it is one store later (Chimera's stores are on odd ticks and the fetch ticks
+on even ones, so nothing shifts there). Three things are not as in the note's
+own rows. The KEYOFF row carries the tie's `CMD_TONEPORTA 00`
+(`patterns.py`, the `pending_tie` row), which pins the voice to its note
+against the step, so a continuation row with that or with no command takes
+the pointer when the row before the event holds a vibrato or nothing (a
+slide would carry on through it); the vibrato then runs on through the
+release, as the original's does. The 51 values that fit (of 63) are the notes'
+own 34 exact plus the next 17, and the stores above are left to the vibrato
+as for Crazy_Comets; so that the voice is not left risen to the event's end
+the last kept store is the last one with a tail, because a store on a row's
+last tick has none and relies on the next row's program to put the voice
+back. And the whole thing is gated twice: `detect.note_rise_rest_carries_on`
+reads, from the player, that the status byte is stored into the array the
+rise tests and that the bit-6 branch writes `savehi` nowhere (all five rise
+players read so), and `note_rise_plan` takes the plan with and without the
+continuation and keeps the longer only where the notes' own values are still
+exact, no row is cut that was not, no row is lost, and at least half of the
+stores it carries on are placed. Battle_of_Britain's one carried note had
+the other stores' values spread over 52 and took its two `$0FF` voices from
+98% and 99% to 59% before the exactness rule; Crazy_Comets asks for 256 and places 10-16 (its rests
+are rows other notes play too), Game_Killer 136 and 0, Human_Race 18 and 1,
+so those four keep the plan they had, byte for byte.
+
+Measured on the tree at c4eedc4 plus this change, under presets, -t 180,
+voice 1, `$0F0` notes, packed through gt2reloc, lag-aligned:
+
+| window | before | after |
+|---|---:|---:|
+| 3 to `$20` above the note | 174 of 186 | 180 of 186 |
+| 3 to `$7F` above the note | 357 of 558 | 471 of 558 |
+| voice 1, high byte equal, all 9000 frames | 7203 | 7329 |
+| voice 1, whole frequency equal / within `$40` | 1000 / 6994 | 1018 / 7054 |
+
+Voices 0 and 2 are identical frame for frame. The 6 that remain in the
+narrow window are the six held frames (506 and its five twins); holding them
+needs a program that leaves the voice risen for one call, a variant of the
+pair `(0, 2)` with its second step measured from the first rather than from
+the note, and is six frames of 9000. `fidelity.measure`: `reversal_ratio`
+0.861 -> 0.894, `tie_ratio` 0.826 -> 0.854, `tie_agreement` 0.716 -> 0.740,
+`our_oscillation` 0.96644 -> 0.96767; `bend_ratio` 0.941 -> 0.888 and
+`travel_ratio` 0.735 -> 0.718 move away from 1, because the row programs
+replace the instrument's looping vibrato program for the rows they cover
+(the same approximation the note's own rows make). The corpus byte-hash
+compared 95 files, 89 converted, 6 refused, and 1 moved: Chimera. Commando is
+byte-identical.
+
 ### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
 Rasputin's player reads bit `$02` a fourth way. It is not the rise, the
@@ -14432,8 +14508,57 @@ Rasputin only. The column moves less than the frames do because the last tick
 is still wrong: over every frame of every note the same notes read 4051 ->
 4207 of 4947 (0.819 -> 0.850), so the ring's extra toggle in the last tick
 costs 562 frames of 949 there. Cutting the toggle off at the note's last row
-is a pattern command (`CMD_SETWAVEPTR` to a stop entry), not a wavetable
-shape, and is open.
+is a pattern command, not a wavetable shape (next subsection).
+
+#### The last tick: a pattern command ends the ring
+
+The original's block does not run on a note's last tick, so the voice holds
+the state its last toggle left. A wavetable ring has no such stop: it toggles
+on its schedule until the next fetch restarts the table, and because the note
+spends an odd number of effect calls before its last tick the schedule always
+puts one toggle inside it. The wavetable cannot know the note's length; the
+pattern can. `wave_eor.eor_stop_pass` (build.py, after every pass that names
+an instrument and before the wavetable is written) puts a `CMD_SETWAVEPTR` on
+the LAST row of each note of a ring instrument, pointing at
+`wave_eor.EOR_STOP_PROGRAM`: a `$00 / $80` step (waveform and pitch kept)
+then `$FF $00`, two rows laid right behind the library's cycles
+(`_wavetable_layout`'s `eor_span`). It cannot point at the `$FF 00` itself:
+gplay.c:436-445 stops the whole song on a pointer that names a jump.
+
+A ring instrument (`eor_ring_instruments`) is one whose program, read from
+its start, loops back into the library's cycles. The pass declines, and logs
+the count of, a note not followed by a plain note: a tie (a tie restarts no
+wavetable, the ring runs on into it as the original's counter does), a
+key-off, or -- the one that mattered -- a note that runs on past its pattern's
+end, because `--max-rows` slices long patterns and the slice's tail is rest
+rows, not an event (stopping at the slice's last row cut 12 notes' rings
+several ticks early: 24 of the first 60 s' 472 real toggles lost, 7 after the
+check). It
+also declines a note whose last row's command column is taken, one under a
+running portamento or vibrato (the empty column is `CMD_DONOTHING`, which ends
+it; the pointer would not), and one whose pack would pass
+`PACKED_PATTERN_LIMIT`. Rasputin: 266 notes stop, 12 not followed by a plain
+note, none otherwise declined.
+
+Measured at c4eedc4, presets, `-t 180`, on the PACKED song traced (not the
+wavetable simulated: the simulation never sees a pattern command), voice 0's
+toggling record-10 notes of 3 rows or more, 336 of them, counting 4x <-> 5x
+waveform-class changes inside each note's last tick (the model-exact start,
+`lastoff`): the original makes 0; the conversion made 209 (205 notes) before
+and makes 30 (30 notes) after: the 12 notes the pass declines and, for the
+rest, the NEXT note's attack landing a frame early, a `41` on the tick's last
+frame, which the change does not touch. Last-tick frames agreeing on the
+waveform class 232 -> 491 of 858. The toggles BEFORE the last tick (the same
+notes, 4x <-> 5x changes after the attack) number 1480 in the original, 1524
+before and 1486 after: the pointer lands on the last row, and where the
+conversion's row starts a frame ahead of the original's last tick it takes the
+final real toggle with it (about 6 of 100 notes at R = 5, whose last tick is
+two frames). Column A/B on Rasputin (`fidelity.measure`, `--sound`): `wave`
+0.8786 -> 0.8886, `aud` 0.9339 -> 0.9345, `loud` 0.97898 -> 0.97912,
+`loud_ratio` 0.9975 -> 0.9990; every other column unmoved. The song grows by
+the two table rows (36328 -> 36332 bytes). The corpus byte-hash under presets
+moves Rasputin only; Commando is byte-identical. `tests/test_wave_eor_stop.py`
+packs and traces the song and counts both.
 
 ### 7.qqqqqqq The triangle walk in lockstep: a record two voices sweep is stepped by both
 
@@ -14672,13 +14797,20 @@ instrument column and the init instrument is never what a first-lap row plays. I
 Knucklebusters the start changes the entry set of 11 patterns, 8 of which name an
 instrument on row 0; the other three (`$00`, `$07`, `$B6`) change no respell.
 
-**Delta's "held `$02`" is not the walk.** The original enters pattern `$02` holding idx 0,
-1 and 2 on the three laps (frames 2, 7202, 9602); the walk lists GT `{1, 2}` for it
-because the converted voice-0 orderlist is cut at 254 entries
+**Delta's "held `$02`" is not the walk -- RETRACTED (task
+`orderlist-254-entry-read-cap`, measured at base c4eedc4, v0.5.538).** The original enters pattern `$02` holding idx 0,
+1 and 2 on the three laps (frames 2, 7202, 9602); the walk listed GT `{1, 2}` for it
+because the converted voice-0 orderlist was cut at 254 entries
 (`tracks.py`: `if count >= 254: b1 = 0xFF`), before the original's pattern `$05` -- the
-one that names idx 2 -- so the converted file never holds GT 3 there. The walk is right
-about the file it walks; the cut is the VB6 read limit, on an orderlist the original
-plays on past frame 11997 (position `$16` onward, siddump-rt `-w` on `$C2EC`).
+one that names idx 2 -- so the converted file never held GT 3 there. The earlier
+sentence here, "the walk is right about the file it walks", was true and beside the
+point: the file was wrong. The cut was the VB6 read limit (`h2g.frm:1143`, "If track is
+too long, mark it as trackend") plus Delta's own 252, on an orderlist the original
+plays on past frame 11997 (position `$16` onward, siddump-rt `-w` on `$C2EC`); it
+discarded 673 of voice 0's 925 entries and 618 of voice 1's 870 (927 and 872 bytes with
+the `$FF 00`). Both are read whole now
+(`tracks.ORDERLIST_READ_CAP`, a runaway guard) and `reindex_tracks` packs them. Under
+presets Delta is the only file that moves (95 files, 6 refused, 89 compared, 1 moved).
 
 **Records with no attack: the pulse-only variant** (task `free-note-pulse-only-variant`,
 figures historical at 6e467ff plus the cycle-5 merge, under presets). The skipped block
