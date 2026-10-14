@@ -9923,8 +9923,12 @@ def drift(orig: Trace, ours: Trace) -> dict:
 # Method: `rasputin-noise-placement-disagrees-on-both-firstwave-arms`'s
 # probe_onsets.py, which read the same per-window median offsets.
 TP_WINDOW = 500        # original frames per window (10 s)
-TP_INIT_RADIUS = 100   # first window may sit anywhere within +/- this of zero
-TP_TRACK_RADIUS = 15   # later windows may move this far from the last one
+TP_INIT_RADIUS = 30   # first window may sit within +/- this of zero: a startup
+                       # lag (2-6 frames wherever it was true), kept under a
+                       # musical period so no alias of the real offset is in reach
+TP_SEED_NEAR = 0.8   # first window: nearest-to-zero offset scoring this share
+                       # of the best vote wins (I_Ball: true 105 vs alias 116)
+TP_TRACK_RADIUS = 15  # later windows may move this far from the last one
 TP_SNAP = 1            # an attack counts toward an offset within +/- this
 TP_PAIR_TOL = 4        # a pair is the nearest attack within this of the lock
 TP_MIN_PAIRS = 4       # a window with fewer paired attacks reads nothing
@@ -9982,11 +9986,22 @@ TP_MIN_WINDOWS = 3     # a line needs three points and a baseline
 # DOES separate the three aliased arms from the 17 is the first window's
 # offset, which is a startup lag and was 2-6 frames everywhere it was true.
 #
-# What would be needed before this feeds an acceptance term (not done here):
-# seed the first window near zero rather than +/-100 (or refuse, never guess,
-# a first-window offset above some bound), and add a test where a periodic
-# original is aliased by its own period. `time_paired_drift` is still not
-# wired into `_measure`, `DRIFT_ROW_KEYS` or `fidelity_better`.
+# DONE: the first window is seeded near zero (`TP_INIT_RADIUS` 100 -> 30; the
+# measurement above held it to +/-30 and read difflib's offsets window for
+# window), pinned by tests/test_time_paired_drift_alias.py, whose periodic
+# original locks 84 frames (seven rows) from the truth at the old radius. A
+# first-window offset genuinely above 30 now reads the best peak inside +/-30
+# or nothing, never an alias.
+#
+# DECISION ON THE STEP (I_Ball regrid-on, about +25 frames over 3000-5000): it
+# gets NO shape or gate of its own here. With the lock fixed the window offsets
+# reproduce the step faithfully (flat, +25, flat) and the whole-window rate
+# agrees with `drift` (+3.46 against +3.08 on the saved traces, historical), so
+# the two readings no longer disagree about it; a step detector would be a
+# gate calibrated on one file. The window list already carries the evidence
+# (largest adjacent-window jump) for a consumer that needs it.
+# `time_paired_drift` is still not wired into `_measure`, `DRIFT_ROW_KEYS` or
+# `fidelity_better`, so no converter output or score column moves.
 
 
 def time_paired_drift(orig, ours, nframes: int | None = None,
@@ -10023,13 +10038,21 @@ def time_paired_drift(orig, ours, nframes: int | None = None,
             continue
         radius = TP_INIT_RADIUS if first else TP_TRACK_RADIUS
         best_d, best_n = None, -1
+        scored = []
         for d in sorted(range(last - radius, last + radius + 1),
                         key=lambda x: (abs(x - last), x)):
             n = sum(1 for vi, fs in enumerate(theirs) for a in fs
                     if any((a + d + s) in ours_sets[vi]
                            for s in range(-TP_SNAP, TP_SNAP + 1)))
+            scored.append((d, n))
             if n > best_n:
                 best_d, best_n = d, n
+        if first:
+            # A periodic original scores near-equal at every multiple of its
+            # row, so the biggest vote is not the real offset: take the
+            # offset nearest zero that is within TP_SEED_NEAR of the best.
+            best_d, best_n = next((d, n) for d, n in scored
+                                  if n >= TP_SEED_NEAR * best_n)
         if best_n < TP_MIN_PAIRS or best_n / total < TP_MIN_SHARE:
             continue
         offs = []

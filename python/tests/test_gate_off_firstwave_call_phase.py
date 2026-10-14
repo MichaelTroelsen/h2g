@@ -54,10 +54,17 @@ measurement on Go_Go_Dash (loss) and Thrust (gain), shortened to 60 s.
 phase that puts their onsets on the original's frames, and Food_Feud (window
 {0, 1, 2} above, 1158 changed frames at 60 s) moved to the gain class: window
 {-1, 0, 1}, the original's gate off on all 256 frames the option changes, as
-Thrust. So did Chain_Reaction (window {-1, 0, 1}, 223 frames). Go_Go_Dash,
-whose rows are not exact and so gets no startup row, keeps the loss class
-(window {1, 3}, 437 frames), and stands for it here
-(C:/t/jmp-form-outer-gate-clock/p/gofw.py).
+Thrust. So did Chain_Reaction (window {-1, 0, 1}, 223 frames).
+
+**Fourteen of the sixteen are phased now** (multispeed-call-phase-one-call-
+earlier): Go_Go_Dash (the JMP form with a prescaler block above its gate,
+`call_phase._prescaled_new_song_test`; its rows ARE exact, 15 calls at -S4 --
+the earlier "rows are not exact" was wrong) moved from window {1, 3} to
+{0, 2}, and Spellbound (a zero-page entry gate, `call_phase.zp_entry_gate`)
+from {1..5} to {-1..3}. Two keep the loss class. Lion_Heart's default row is
+already exact on every row that carries a note (window {0, 1, 2}, 9 of 575
+inits on the visible phase), and stands for it here; Samantha_Fox reads no
+first fetch of the speed counter, so no clock.
 """
 import json
 import pathlib
@@ -163,7 +170,7 @@ def test_the_option_changes_only_frames_whose_last_call_is_a_note_init(
 @needs_siddump
 @needs_gt2reloc
 @pytest.mark.parametrize("name, orig_gate_on, window", [
-    ("Go_Go_Dash.sid", True, {1, 3}),
+    ("Lion_Heart.sid", True, {0, 1, 2}),
     ("Food_Feud.sid", False, {-1, 0, 1}),
     ("Thrust.sid", False, {-1, 0, 1}),
 ])

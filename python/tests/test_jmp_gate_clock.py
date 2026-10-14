@@ -54,7 +54,8 @@ needs_gt2reloc = pytest.mark.skipif(
 # are test_startup_call_phase's.
 JMP_ALL_ROWS = {
     "ACE_II.sid": 17, "Chain_Reaction.sid": 17, "Deep_Strike.sid": 16,
-    "Delta.sid": 11, "Food_Feud.sid": 17, "Kings_of_the_Beach_intro.sid": 28,
+    "Delta.sid": 11, "Food_Feud.sid": 17, "Go_Go_Dash.sid": 23,
+    "Kings_of_the_Beach_intro.sid": 28, "Lion_Heart.sid": 17,
     "Mr_Meaner.sid": 28, "Off_the_Cuff.sid": 29, "Rock_Tells_the_Tale.sid": 35,
     "Saboteur_II.sid": 16, "Thanatos.sid": 22, "Thundercats.sid": 17,
     "W_A_R.sid": 22, "W_A_R_Preview.sid": 21, "Zoolook.sid": 17,
@@ -169,11 +170,14 @@ def test_the_corpus_movers_of_the_jmp_family_and_their_startup_rows():
     assert got == JMP_ALL_ROWS
 
 
-# What convert() writes: scored over the rows that carry a note, so the three
-# files whose default startup row is already exact on every note are left
-# alone, and W_A_R takes the nearest of its two exact leads.
+# What convert() writes: scored over the rows that carry a note, so the files
+# whose default startup row is already exact on every note are left
+# alone (Lion_Heart too: the prescaler-form player whose note rows are all on
+# the original's frames at the default row), and W_A_R takes the nearest of its
+# two exact leads.
 CONVERTED = {k: v for k, v in JMP_ALL_ROWS.items()
-             if k not in ("Delta.sid", "Thanatos.sid", "W_A_R_Preview.sid")}
+             if k not in ("Delta.sid", "Thanatos.sid", "W_A_R_Preview.sid",
+                          "Lion_Heart.sid")}
 CONVERTED["W_A_R.sid"] = 23
 
 

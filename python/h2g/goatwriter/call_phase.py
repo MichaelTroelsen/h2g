@@ -112,6 +112,17 @@ took it to 31/154); ACE_II, Deep_Strike, Food_Feud, Saboteur_II, Zoolook and
 Thundercats v0/v1 likewise. The JMP family is scored over the rows that carry a
 note (`startup_phase`), which leaves Delta, Thanatos and W_A_R_Preview on the
 default row: they were already exact where they sound.
+
+**Two more spellings of the same clocks** (multispeed-call-phase-one-call-
+earlier). *The prescaler form* (Go_Go_Dash, Lion_Heart): the JMP form with the
+fetch test 79 bytes past the landing, behind the per-voice duration counters,
+and a block between the new-song `LDX` and the gate that a data byte at 0
+switches off (`_prescaled_new_song_test`). Go_Go_Dash takes row 23 (onsets
+.5552 -> 1.0000 `onset_timing`); Lion_Heart's default is exact on its note rows
+and stays. *The zero-page entry gate* (`zp_entry_gate`: Spellbound `$C2`): the
+entry family's `gate_frames` clock with the cell read as 0, for `startup_phase`
+alone -- `entry_gate` and `nibble_gate_byte` stay False / None for it. Spellbound
+takes row 28 (`onset_timing` .5994 -> 1.0000).
 """
 from __future__ import annotations
 
@@ -125,7 +136,8 @@ from ..sidfile import SidFile
 from . import arpeggio as _gw_arpeggio
 from . import tempo as _gw_tempo
 from .constants import (GT_DEFAULT_TEMPO_CALLS, GT_MIN_TEMPO, OUTER_GATE,
-                        OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE)
+                        OUTER_GATE_PAL, OUTER_GATE_RTS, OUTER_GATE_RTS_ZP,
+                        SPEED_GATE)
 
 # `play_entry` (and PLAY_ENTRY_JMPS, how many `JMP`s it follows) live in
 # tempo.py: `outer_gate_match` needs them to pick the gate the play routine
@@ -200,6 +212,38 @@ def entry_gate(sid: SidFile) -> bool:
     return pal is not None and pal.group(1) == pal.group(3)
 
 
+def zp_entry_gate(sid: SidFile) -> bool:
+    """Whether the outer gate is `OUTER_GATE_RTS_ZP` at the play routine's
+    entry, on a zero-page cell nothing else touches (Spellbound `$C2`).
+
+    `entry_gate`'s family with its counter in zero page: `DEC zp / BPL +5 /
+    LDA #O / STA zp / RTS` as the first instruction, so every call passes the
+    gate and the cell's byte is the phase of the first call. A zero-page cell
+    has no byte in the image, so this is NOT `entry_gate` (whose cell byte
+    `nibble_gate_byte` reads and the vibrato and arpeggio code take as read):
+    the cell starts at 0, and the reload `STA` and the gate's `DEC` are the
+    only accesses to it in the file. That nothing reaches it through an
+    indirect pointer is a reading, which the census of the converted song
+    against the original's frames holds to account
+    (tests/test_zp_entry_gate_clock.py).
+    """
+    at = _gw_tempo.play_entry(sid)
+    if at is None:
+        return False
+    data = sid.data
+    m = OUTER_GATE_RTS_ZP.match(data, at)
+    if m is None or m.group(1) != m.group(3):
+        return False
+    cell = m.group(1)[0]
+    zp_stores = sum(data.count(bytes([op, cell]))
+                    for op in (0x85, 0x84, 0x86, 0x95))
+    abs_stores = sum(data.count(bytes([op, cell, 0]))
+                     for op in (0x8D, 0x8C, 0x8E, 0x9D, 0x99))
+    decs = data.count(bytes([0xC6, cell])) + data.count(bytes([0xCE, cell, 0]))
+    # The gate's own `STA zp` is the one store; its `DEC zp` the one decrement.
+    return zp_stores == 1 and abs_stores == 0 and decs == 1
+
+
 # What the JMP form does after it jumps past the speed counter's DEC:
 # `LDA cell / BEQ nofetch / LDA ctr / CMP reload / BNE nofetch`. The fetch is
 # suppressed where the cell reads 0 (Chain_Reaction $0871-$0883).
@@ -211,6 +255,23 @@ _JMP_GATE_FETCH_WINDOW = 16
 # How far before the gate the new-song test `BIT flag / BMI / BVC` is looked
 # for; the BVC lands on the `LDX` right above the gate.
 _JMP_GATE_ENTRY_WINDOW = 128
+# The fetch test of the other spelling sits PAST the per-voice work that follows
+# the landing (Go_Go_Dash `$10E9`, 79 bytes on): it is looked for this far on,
+# and only when the near window found none.
+_JMP_GATE_FETCH_FAR_WINDOW = 160
+# The block between the new-song test's `LDX` and the gate in that spelling
+# (Go_Go_Dash `$1081`, Lion_Heart): clear a cell, then a prescaler that a flag
+# byte switches on --
+#
+#     LDA #0 / STA x / LDA flag / BEQ gate / DEC p / BPL gate / LDA #r /
+#     STA p / STA x / BNE past
+#
+# -- a block that is skipped, and so leaves the gate's clock untouched, while
+# `flag` reads 0. `flag` is a data byte of the file that nothing stores to
+# (`_prescaled_new_song_test` checks both), 0 in both files.
+_JMP_GATE_PRESCALER = re.compile(
+    rb"\xa9\x00\x8d(..)\xad(..)\xf0(.)\xce(..)\x10(.)\xa9(.)\x8d(..)\x8d(..)\xd0(.)",
+    re.DOTALL)
 # How far into the init routine a `JSR` of the play routine is looked for
 # (at most; it stops at the first `RTS` or `JMP` byte).
 INIT_WINDOW = 96
@@ -248,12 +309,20 @@ def jmp_gate(sid: SidFile) -> bool:
         return False
     fetch = _JMP_GATE_FETCH.search(
         data, landing, landing + _JMP_GATE_FETCH_WINDOW + 10)
-    if (fetch is None or fetch.start() > landing + _JMP_GATE_FETCH_WINDOW
-            or fetch.group(1) != gate.group(1)
-            or fetch.group(2) != block.group(1)
-            or fetch.group(3) != block.group(2)):
-        return False
+    if fetch is not None and fetch.start() > landing + _JMP_GATE_FETCH_WINDOW:
+        fetch = None
+    if fetch is None or not _fetch_names_the_cells(fetch, gate, block):
+        # The same test further on, past the per-voice work (Go_Go_Dash,
+        # Lion_Heart): the first one that names this gate's three cells.
+        fetch = next(
+            (m for m in _JMP_GATE_FETCH.finditer(
+                data, landing, landing + _JMP_GATE_FETCH_FAR_WINDOW + 10)
+             if _fetch_names_the_cells(m, gate, block)), None)
+        if fetch is None:
+            return False
     found = _new_song_test(data, gate.start())
+    if found is None:
+        found = _prescaled_new_song_test(sid, gate.start(), landing)
     if found is None:
         return False
     flag, bit_at = found
@@ -272,6 +341,49 @@ def jmp_gate(sid: SidFile) -> bool:
     end = next((k for k in range(init, min(init + INIT_WINDOW, len(data)))
                 if data[k] in (0x60, 0x4C)), init + INIT_WINDOW)
     return jsr not in data[init:end]
+
+
+def _fetch_names_the_cells(fetch, gate, block) -> bool:
+    """Whether a `_JMP_GATE_FETCH` match tests this gate's own cell, speed
+    counter and reload."""
+    return (fetch.group(1) == gate.group(1)
+            and fetch.group(2) == block.group(1)
+            and fetch.group(3) == block.group(2))
+
+
+def _prescaled_new_song_test(sid: SidFile, gate_at: int, landing: int
+                             ) -> Optional[Tuple[bytes, int]]:
+    """`_new_song_test` for a gate that sits `_JMP_GATE_PRESCALER` below the
+    `LDX` the `BVC` lands on, or None.
+
+    The block must be the whole of what lies between the `LDX` and the gate:
+    its two branches land on the gate (the prescaler is skipped while the flag
+    is 0) and its `BNE` jumps past the gate and the speed counter to the same
+    landing the gate's own `JMP` names -- no other way through it -- and the
+    flag byte must be one nothing stores to and the file holds as 0.
+    """
+    data = sid.data
+    start = gate_at - 25
+    blk = _JMP_GATE_PRESCALER.match(data, start) if start > 0 else None
+    if blk is None or len(blk.group(0)) != 25:
+        return None
+    # Both branches over the block's middle land on the gate.
+    beq_at, bpl_at = start + 2 + 3 + 3 + 2, start + 2 + 3 + 3 + 2 + 3 + 2
+    if (beq_at + blk.group(3)[0] != gate_at
+            or bpl_at + blk.group(5)[0] != gate_at):
+        return None
+    # DEC p / LDA #r / STA p: one cell, reloaded where it underflows, and the
+    # cell cleared at the top is the one set again (`STA x`) before the `BNE`
+    # that leaves past the gate -- onto the landing the gate's own `JMP` names.
+    if (blk.group(4) != blk.group(7) or blk.group(1) != blk.group(8)
+            or gate_at + blk.group(9)[0] != landing):
+        return None
+    flag = sid.to_offset(blk.group(2)[0] | blk.group(2)[1] << 8)
+    if not 0 <= flag < len(data) or data[flag] != 0:
+        return None
+    if (b'\x8d' + blk.group(2) in data or b'\x9d' + blk.group(2) in data):
+        return None
+    return _new_song_test(data, start)
 
 
 def _new_song_test(data: bytes, gate_at: int) -> Optional[Tuple[bytes, int]]:
@@ -410,9 +522,10 @@ def startup_phase(sid: SidFile, det: Detection, multiplier: int,
     s0 = _gw_tempo.pack_subtune(speeds, sid.start_song)
     reload = _gw_tempo.outer_gate_skip(sid, s0)
     jmp = jmp_gate(sid)
-    if not reload or not (jmp or entry_gate(sid)):
+    zp = not jmp and not entry_gate(sid) and zp_entry_gate(sid)
+    if not reload or not (jmp or zp or entry_gate(sid)):
         return None
-    gate_byte = _gw_arpeggio.nibble_gate_byte(sid)
+    gate_byte = 0 if zp else _gw_arpeggio.nibble_gate_byte(sid)
     first = _gw_arpeggio.fixed_arp_first_fetch(sid, det)
     frames = speeds.frames_for(s0)
     if gate_byte is None or first is None or frames is None:

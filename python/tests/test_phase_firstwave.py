@@ -10,7 +10,7 @@ waveform, so the note before read one frame SHORT, and its gate bit opened the
 gate a frame before the original's.
 
 The property is the existing option's, named on all instruments, taken by the
-songs that get the record and by no other (the 18 `PHASED` files below;
+songs that get the record and by no other (the 20 files that get the record, `PHASED` below samples them;
 `tests/test_gate_off_firstwave_call_phase.py` is why it is wrong without the
 phase).
 """
@@ -35,7 +35,10 @@ EVERY = tuple(range(1, 64))
 # Entry-gate family (test_startup_call_phase.MOVERS) and a JMP-form sample.
 PHASED = ("Game_Killer.sid", "International_Karate.sid", "Kentilla.sid",
           "Proteus.sid", "Thrust.sid", "Warhawk.sid",
-          "Chain_Reaction.sid", "Food_Feud.sid")
+          "Chain_Reaction.sid", "Food_Feud.sid",
+          # The JMP form with a prescaler block above its gate, and the
+          # zero-page entry gate (multispeed-call-phase-one-call-earlier).
+          "Go_Go_Dash.sid", "Spellbound.sid")
 
 needs_siddump = pytest.mark.skipif(
     not pathlib.Path(fidelity.SIDDUMP).exists(),
@@ -90,9 +93,10 @@ def test_the_default_is_the_phase_taking_the_byte():
 
 
 @needs_corpus
-@pytest.mark.parametrize("name", ["Go_Go_Dash.sid", "Commando.sid"])
+@pytest.mark.parametrize("name", ["Lion_Heart.sid", "Commando.sid"])
 def test_a_song_without_the_startup_record_keeps_the_testbit(name):
-    """Go_Go_Dash's rows are not exact (no startup row; the loss class of
+    """Lion_Heart's default row is already exact on every row that carries a
+    note (no startup row; the loss class of
     test_gate_off_firstwave_call_phase), Commando is -S1. Neither gets a
     record, so neither takes the byte: the testbit is still the firstwave of
     its records (read off the bytes, because the two builds below are equal

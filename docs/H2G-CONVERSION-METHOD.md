@@ -15137,6 +15137,57 @@ at most .0009 (International_Karate). Not re-examined at this base, and
 not a grid: Warhawk voice 0, Game_Killer voice 2's per-note step frames
 (both read at 82d60ac), Thrust's remaining held instruments.
 
+**Two more gate spellings read, 20 files phased (multispeed-call-phase-one-
+call-earlier at 6f6de05; -t 180 for the columns, 60 s for the windows, presets).**
+The task asked for the converted grid one call earlier on the 16 files whose
+note-init lands a frame's last call. Twelve of them were already phased by the
+JMP-form clock (Food_Feud's window {0, 1, 2} -> {-1, 0, 1}); a whole-song shift
+for the other four was measured and refused (it moved 42 files, and a shift
+cannot concentrate a census whose init phases are uniform over 0..m-1 -- it
+only translates the window). Two of the four are now READ instead:
+
+* **Go_Go_Dash (-S4) and Lion_Heart (-S3) are the JMP form with a prescaler
+  block above the gate** (`call_phase._prescaled_new_song_test`): the new-song
+  `BVC` lands on the `LDX` at `$107E`, 25 bytes above the gate, with `LDA #0 /
+  STA x / LDA flag / BEQ gate / DEC p / BPL gate / LDA #r / STA p / STA x /
+  BNE landing` between them -- skipped while `flag` (`$3E36`, a data byte that
+  nothing stores to) reads 0 -- and the fetch test `LDA cell / BEQ / LDA ctr /
+  CMP reload / BNE` sits at `$10E9`, 79 bytes past the landing, behind the
+  per-voice duration counters. Go_Go_Dash's rows ARE exact (15 calls at -S4;
+  the earlier "rows not exact" was wrong): startup row 23 (default 24), 20 of 80
+  rows off the original's frame -> 0. Window {1, 3} -> {0, 2}; `onset_timing`
+  .5552 -> 1.0000, `wave` .7229 -> .8369, `sound_run_agreement` .4286 -> .7143,
+  `tie_agreement` .1926 -> .2468; `gate`, `melody`, `sequence` unmoved (the
+  gate-off byte is invisible there: neither phase -1 nor 3 occurs). Share of
+  our attacks on an original attack frame, 60 s: .525 -> .936 (the rest are
+  attacks the sequence does not share). **Lion_Heart is read and keeps the
+  default**: scored over its 16 note rows the default is exact already (over
+  all 48 rows leads 17 and 14 are exact too, which is why the all-rows score
+  alone would have moved it), so it takes no record and no gate-off byte --
+  and stands for the loss class of `gate_off_firstwave` (window {0, 1, 2}, 9
+  of 575 inits on the visible phase).
+* **Spellbound (-S5) is `entry_gate`'s clock with its counter in zero page**
+  (`call_phase.zp_entry_gate`: `DEC $C2 / BPL +5 / LDA #$0A / STA $C2 / RTS` as
+  the play entry). The cell has no byte in the image, so `nibble_gate_byte`
+  reads None and `entry_gate` stays False -- widening either would move other
+  readers; `startup_phase` alone takes the cell as 0 (siddump's RAM) because
+  the gate's `STA` and `DEC` are the only accesses to it in the file. Startup
+  row 28 (default 30), 88 of 220 rows off -> 0. Window {1..5} -> {-1..3} (all
+  five phases, Thrust's class, so the gate-off byte is a gain there), 469 of
+  469 of our attacks on an original attack frame (.603 before), `onset_timing`
+  .5994 -> 1.0000, `tie_agreement` .6738 -> .9747, `wave` .9491 -> .9842, `gate`
+  .5874 -> .6307, `melody` .9986 -> 1.0, `sequence` .9992 -> 1.0.
+  Samantha_Fox is the same gate but reads no first fetch of the speed counter,
+  so it gets no clock (its start subtune has two onsets in 60 s).
+
+Corpus byte-hash under presets, 6f6de05 vs this tree: 95 files, 6 refused on both
+sides, 89 compared, 2 moved -- Go_Go_Dash and Spellbound; Commando identical.
+The census cannot "concentrate at 0" for any file and the rule it stood for
+was the wrong one: what matters is that the window contains phase -1 (the
+visible init lies BEFORE the original's onset frame), which 14 of the 16 now do
+or never use the byte (W_A_R {0, 2}, Go_Go_Dash {0, 2}: neither visible phase
+occurs). Lion_Heart and Samantha_Fox are the two left.
+
 ### 7.zzzzzzz A wave step past note 95 read gt2reloc's orderlist addresses
 
 A wavetable right side `$00`-`$7F` is relative: both players look up

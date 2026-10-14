@@ -296,7 +296,10 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          ONSET_CALL, onset_mismatches, play_entry,
                          PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
                          STARTUP_RESET_CALLS, StartupPhase,
-                         GATE_OFF_FIRSTWAVE)  # noqa: F401
+                         GATE_OFF_FIRSTWAVE, zp_entry_gate,
+                         _JMP_GATE_FETCH_FAR_WINDOW, _JMP_GATE_PRESCALER,
+                         _fetch_names_the_cells,
+                         _prescaled_new_song_test)  # noqa: F401
 from .wave_eor import (_hold, _is_drum, _plays, _record_effect, _row_tempos,
                        carry_split_edits, eor_records, EorPhase, GT_KEYON,
                        NO_TOGGLE, note_parities, WAVE_EOR_ARP_BIT,

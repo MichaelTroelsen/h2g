@@ -603,8 +603,10 @@ corrected row is an even grid and the original's is not, so the two agree
 frame for frame at one phase only; the converter reads it off both players and
 writes it as instrument 63's attack/decay, which gt2reloc takes as the startup
 row (greloc.c:1140-1141) -- empty records pad 1..62, and the packed `.sid`
-carries none of them. Six corpus files get one (Game_Killer, International
-Karate, Kentilla, Proteus, Thrust, Warhawk); on all six every onset that was a
+carries none of them. Twenty corpus files get one: the six entry-gate files
+(Game_Killer, International Karate, Kentilla, Proteus, Thrust, Warhawk), twelve
+JMP-form players, Go_Go_Dash (the JMP form with a prescaler block) and
+Spellbound (a zero-page entry gate); on all of them every onset that was a
 frame off lands on the original's frame. A constant shift under one frame: no
 listener hears it, every per-frame column sees it. The phase also makes the
 note-init call visible in the frame before the original's onset, so a song
