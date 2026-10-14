@@ -433,6 +433,13 @@ def _octave_verdict(a: int, b: int,
     above; the slide's later steps (`$0E6E`...) do not share that coincidence
     and are refuted. A per-frame oracle cannot close it. Pinned by
     tests/test_osplit_unseen_call_residue.py.
+
+    A per-CALL oracle does (osplit-percall-oracle):
+    `fidelity._oracle_freq_percall` reads the unseen call's high byte off a
+    siddump trace at one call a row, after fitting the line-to-call phase
+    and trace offset on the low bytes (`fidelity._percall_fit`); a +-1 call
+    window without the fit would repair `$FFEE` as `$0EEE`. Pinned by
+    tests/test_osplit_percall_oracle.py.
     """
     ea = sign_extended(a) and a not in whole
     eb = sign_extended(b) and b not in whole

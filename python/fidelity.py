@@ -101,6 +101,7 @@ from h2g.goatwriter import (FORMAT_GTS5, HEADER_LEN, effective_frames,
 from h2g.patterns import GT_ORDER_RESTART, GT_REPEAT
 from h2g.sidfile import find_freq_table, load_sid
 
+import attack_lateness
 import vicetrace
 
 # Defaults are the tools as they sit on this machine; every one is overridable
@@ -5223,7 +5224,8 @@ def vice_octave_split(orig_samples: list, our_samples: list,
                       our_calls_per_frame: int = 1,
                       orig_calls_per_frame: int = 1,
                       orig_keyed_by: list[Voice] | None = None,
-                      our_keyed_by: list[Voice] | None = None) -> dict:
+                      our_keyed_by: list[Voice] | None = None,
+                      our_percall_keyed_by: list[Voice] | None = None) -> dict:
     """`osplit`: frames where a voice holds a note and its octave inside one
     frame (`vicetrace.octave_split_frames`), each side, summed over voices.
 
@@ -5242,7 +5244,10 @@ def vice_octave_split(orig_samples: list, our_samples: list,
     out = {}
     for side, samples, keyed in (("orig", orig_samples, orig_keyed_by),
                                  ("our", our_samples, our_keyed_by)):
-        samples, whole = vice_oracle_repair(samples, keyed)
+        samples, whole = vice_oracle_repair(
+            samples, keyed,
+            our_percall_keyed_by if side == "our" else None,
+            our_calls_per_frame)
         blind: list[int] = []
         first: list = []
         out[f"{side}_octave_split_frames"] = sum(
@@ -5336,8 +5341,83 @@ def _oracle_freq(raw: list[int], oracle: list[int],
     return out, hit
 
 
-def vice_oracle_repair(samples: list, keyed_by: list[Voice] | None
-                       ) -> tuple[list, list[set[int]]]:
+def _percall_fit(raw: list[int], timeline: list[int], calls: int
+                 ) -> tuple[float, int] | None:
+    """`(phase, offset)`: the rasterline at which a side's play call begins
+    and how many calls the per-call trace `timeline` runs behind the VICE
+    trace, fitted on the LOW byte (which the dump never gets wrong) of the
+    value standing at the end of every call. None unless one offset wins
+    outright (>= 80% of the calls, and strictly more than any other)."""
+    lines = vicetrace.PAL_LINES_PER_FRAME
+    total = len(raw)
+    period = lines / calls
+    hold = max(1, int(period) // 2)
+    writes = []
+    i = 0
+    while i < total:
+        j = i + 1
+        while j < total and raw[j] == raw[i]:
+            j += 1
+        if (j - i >= hold or j == total) and i:
+            writes.append(i)
+        i = j
+    if not writes:
+        return None
+    phase = vice_call_phase(writes, period)
+    ncalls = int(total // period) - 2
+    ends = [min(total - 1, max(0, math.ceil(phase + (k + 1) * period) - 1))
+            for k in range(max(0, ncalls))]
+    ends = [(k, e) for k, e in enumerate(ends) if raw[e]]
+    if len(ends) < 8:
+        return None
+    scores = []
+    for off in range(-3 * calls, 3 * calls + 1):
+        hits = 0
+        for k, e in ends:
+            g = k + off
+            if 0 <= g < len(timeline) and (timeline[g] & 0xFF) == (raw[e] & 0xFF):
+                hits += 1
+        scores.append((hits, off))
+    scores.sort(reverse=True)
+    if scores[0][0] < 0.8 * len(ends) or (
+            len(scores) > 1 and scores[0][0] == scores[1][0]):
+        return None
+    return phase, scores[0][1]
+
+
+def _oracle_freq_percall(raw: list[int], timeline: list[int], calls: int
+                         ) -> tuple[list[int], list[int]]:
+    """`_oracle_freq` against a per-CALL timeline (siddump traced at one call
+    a row), for the corrupt samples the per-frame oracle could not name
+    because siddump at `-m{calls}` prints one of the frame's `calls` calls.
+
+    The line-to-call phase and the trace offset are fitted (`_percall_fit`),
+    so a corrupt sample is looked up in the call it sits in and the one
+    before it, never a +-1 window around a guess: `$FFEE` after `$0F6E` is
+    `$0FEE`, and a blind window would as readily say `$0EEE`."""
+    fit = _percall_fit(raw, timeline, calls) if calls > 1 else None
+    if fit is None:
+        return list(raw), []
+    phase, off = fit
+    period = vicetrace.PAL_LINES_PER_FRAME / calls
+    out = list(raw)
+    hit: list[int] = []
+    for i, v in enumerate(raw):
+        if not ((v >> 8) == 0xFF and v & 0x80):
+            continue
+        k = max(0, int((i - phase) // period)) + off
+        lo = v & 0xFF
+        his = {timeline[g] >> 8 for g in (k - 1, k)
+               if 0 <= g < len(timeline) and (timeline[g] & 0xFF) == lo}
+        if len(his) == 1:
+            out[i] = (his.pop() << 8) | lo
+            hit.append(i)
+    return out, hit
+
+
+def vice_oracle_repair(samples: list, keyed_by: list[Voice] | None,
+                       percall: list[Voice] | None = None,
+                       calls: int = 1) -> tuple[list, list[set[int]]]:
     """`(samples, confirmed)`: `samples` with every sign-extended freq that
     siddump's own trace of the same side can name repaired (`_oracle_freq`)
     -- and nothing else: no continuity guess, because `osplit` counts a frame
@@ -5363,6 +5443,12 @@ def vice_oracle_repair(samples: list, keyed_by: list[Voice] | None
                for smp in samples[:total]]
         fixed, hit = _oracle_freq(
             raw, register_timeline(keyed_by[vi].freq_events, nframes), offset)
+        if percall and calls > 1 and vi < len(percall):
+            fixed2, hit2 = _oracle_freq_percall(
+                fixed, register_timeline(percall[vi].freq_events,
+                                         nframes * calls), calls)
+            hit = sorted(set(hit) | set(hit2))
+            fixed = fixed2
         confirmed[vi].update(hit)
         for i in hit:
             if fixed[i] == raw[i]:
@@ -5373,9 +5459,11 @@ def vice_oracle_repair(samples: list, keyed_by: list[Voice] | None
     return out, confirmed
 
 
-def vice_oracle_samples(samples: list, keyed_by: list[Voice] | None) -> list:
+def vice_oracle_samples(samples: list, keyed_by: list[Voice] | None,
+                        percall: list[Voice] | None = None,
+                        calls: int = 1) -> list:
     """`vice_oracle_repair`'s samples alone."""
-    return vice_oracle_repair(samples, keyed_by)[0]
+    return vice_oracle_repair(samples, keyed_by, percall, calls)[0]
 
 
 def vice_freq_repair(raw: list[int], attacks: list[int],
@@ -7585,10 +7673,20 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row.update(vice_register_compare(
                     vo, vu, args.vice_reduce,
                     mask_release=bool(opts.get("cut_release"))))
+                _pc = getattr(args, "calls_per_frame", None) or multiplier
+                # siddump at -m{pc} prints one of a frame's pc calls; the
+                # other call's value is named by a per-call trace
+                # (osplit-percall-oracle).
+                pc_dump = None
+                if _pc > 1 and not row.get("equal_calls"):
+                    pc_dump = run_siddump(
+                        packed, seconds * _pc,
+                        row.get("matched_subtune", our_sub), args.siddump,
+                        calls=1)
                 row.update(vice_octave_split(
-                    vo, vu, our_calls_per_frame=(
-                        getattr(args, "calls_per_frame", None) or multiplier),
-                    orig_keyed_by=a, our_keyed_by=best_dump))
+                    vo, vu, our_calls_per_frame=_pc,
+                    orig_keyed_by=a, our_keyed_by=best_dump,
+                    our_percall_keyed_by=pc_dump))
                 # `vib` and `depth` from the same two traces, at rasterline
                 # resolution -- the reading this mode exists for. Through
                 # v0.5.485 they were not computed here at all and the row
@@ -10869,6 +10967,17 @@ def main(argv=None) -> int:
                         "write the work list here. Needs at least one forcing "
                         "flag (--regrid, --slides, ...), since without one "
                         "both arms are the same conversion")
+    p.add_argument("--attack-census", metavar="PATH",
+                   help="read how many rasterlines pass between each gate rise "
+                        "and the envelope's first increase (ENV3 via VICE, "
+                        "each voice swapped onto voice 3), original against "
+                        "ours, and write the per-file table here. No other "
+                        "column sees this; see attack_lateness.py. Six VICE "
+                        "traces a file: use -t 60")
+    p.add_argument("--attack-opts", metavar="JSON", default="{}",
+                   help="with --attack-census: options laid over the shipped "
+                        "preset for OUR side, e.g. '{\"max_hard_restart\": "
+                        "true}'. The original is never changed")
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", default="auto",
                    help="which subtune of the original to trace: a number, or "
@@ -11038,6 +11147,60 @@ def main(argv=None) -> int:
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+def attack_census_row(sid: Path, workdir: Path, opts: dict, args,
+                      multiplier: int = 1) -> "attack_lateness.FileReading":
+    """One file's attack-lateness reading, original against ours.
+
+    Six VICE traces (three voices a side) at `args.seconds`. Ours is the
+    shipped conversion, packed once per voice with that voice's orderlist
+    exchanged with voice 3's; the original is the file with its `00 07 0E`
+    voice table patched the same way, trying each table the file has until
+    one verifies (`attack_lateness.swap_verified`).
+    """
+    rec = attack_lateness.FileReading(sid.name, options=dict(opts))
+    try:
+        sub, our_sub, _pinned = resolve_pair(sid, args.subtune)
+        sng, _n = legalise_restarts(convert(str(sid), log=lambda m: None, **opts))
+        raw = sid.read_bytes()
+        hits = attack_lateness.voice_table_hits(raw)
+        if not hits:
+            rec.error = "the original has no 00 07 0E voice table to swap"
+            return rec
+        ours: dict[int, Path] = {}
+        for v in (0, 1, 2):
+            wd = workdir / f"ours_v{v}"
+            wd.mkdir(parents=True, exist_ok=True)
+            packed = pack_sid(attack_lateness.swap_sng_voice(sng, v), wd,
+                              args.gt2reloc, multiplier)
+            if packed is None:
+                rec.error = f"gt2reloc wrote no .sid for voice {v}"
+                return rec
+            ours[v] = packed
+        orig: dict[int, Path] = {}
+        alts: dict[int, list[Path]] = {}
+        for v in (0, 1, 2):
+            paths = []
+            for h in range(len(hits)):
+                wd = workdir / f"orig_v{v}_h{h}"
+                wd.mkdir(parents=True, exist_ok=True)
+                f = wd / "o.sid"
+                f.write_bytes(attack_lateness.swap_sid_voice(raw, v, h))
+                paths.append(f)
+                if v == 2:
+                    break
+            orig[v] = paths[0]
+            alts[v] = paths[1:]
+        exe = getattr(args, "vice_exe", None) or vicetrace.VSID
+        jobs = 3        # one vsid per voice of a side
+        rec.orig = attack_lateness.read_side(
+            orig, args.seconds, sub, workdir, exe, alts, jobs=jobs)
+        rec.ours = attack_lateness.read_side(
+            ours, args.seconds, our_sub, workdir, exe, jobs=jobs)
+    except Exception as exc:                    # noqa: BLE001 -- a result
+        rec.error = f"{type(exc).__name__}: {exc}"
+    return rec
+
+
 def _run(p, args, workdir: Path) -> int:
     if args.pair:
         a, b = (Path(x) for x in args.pair)
@@ -11175,6 +11338,29 @@ def _run(p, args, workdir: Path) -> int:
                 naming_census_report(recs), encoding="utf-8")
             print(f"wrote {args.naming_census} "
                   f"(forced: {', '.join(forced)})", file=sys.stderr)
+            print(preset_opts_miss_report(), file=sys.stderr)
+            return 0
+        if args.attack_census:
+            try:
+                forced = json.loads(args.attack_opts)
+            except ValueError as exc:
+                print(f"--attack-opts is not JSON: {exc}", file=sys.stderr)
+                return 2
+            recs = []
+            for sid in sids:
+                opts = _preset_opts(doc, sid.name)
+                opts.update(forced)
+                scratch = workdir / ("attack_" + sid.stem)
+                scratch.mkdir(parents=True, exist_ok=True)
+                rec = attack_census_row(
+                    sid, scratch, opts, args, _preset_multiplier(doc, sid.name))
+                recs.append(rec)
+                print(f"{sid.name}: "
+                      + (rec.error or f"delta {rec.delta}"), file=sys.stderr)
+            Path(args.attack_census).write_text(
+                attack_lateness.report(recs, args.seconds, forced or None),
+                encoding="utf-8")
+            print(f"wrote {args.attack_census}", file=sys.stderr)
             print(preset_opts_miss_report(), file=sys.stderr)
             return 0
         rows = []

@@ -15,15 +15,24 @@ abnote.py: each original note paired with ours by voice and onset, its frame
 sequence compared over the frames both hold it):
 
     International_Karate 120 s, one-step `$5800`   exact 0/51  -> 51/51
-    Kentilla 120 s, one-step `$0C00`/`$090A`       exact 4/86  -> 52/86
+    Kentilla 120 s, one-step `$0C00`/`$090A`       exact 4/86  -> 52/86  (historical)
     Warhawk 120 s, gate-agnostic                   exact 35/421 -> 421/421
     Proteus 120 s, gate-agnostic                   exact 155/517 -> 517/517
 
-Kentilla's other 34 are the wavetable budget, not this: its records 6, 12,
-13 and 14 are emitted in a 5-entry budget (a full table), where the phased
-9-entry shape does not fit and the unphased loop -- the alternation from the
-attack -- stands (C:/t/ik-kentilla-gate-long-half/shape_log.py; the 34 are
-exactly the notes whose first interval call is +11, not +22).
+HISTORICAL (superseded at 0d18fce, v0.5.524): the "other 34" below were not
+the wavetable budget. Cycle 3's warhawk-proteus-0f09-never-swept (v0.5.520)
+freed the drum-sweep room; Kentilla records 6, 12, 13 and 14 now lay out at
+budgets 76/66/62/58 in the 9-entry phased shape, and the 34 notes are exact
+(one-step 86/86, octave 108/108 at 120 s). Pinned by
+tests/test_kentilla_gate_records.py. The 52/86 row above is the figure at
+6e467ff, kept for the record.
+
+Kentilla's other 34 were the wavetable budget as measured at 6e467ff, not
+this: its records 6, 12, 13 and 14 were emitted in a 5-entry budget (a full
+table), where the phased 9-entry shape does not fit and the unphased loop --
+the alternation from the attack -- stood (C:/t/ik-kentilla-gate-long-half/
+shape_log.py; the 34 were exactly the notes whose first interval call is +11,
+not +22).
 """
 import math
 import pathlib

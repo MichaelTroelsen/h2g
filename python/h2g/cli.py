@@ -351,13 +351,13 @@ def main(argv=None) -> int:
         help="give each voice the instrument the player starts it on. Hubbard "
              "keeps a per-voice instrument index and writes it only when a "
              "pattern carries an instrument byte, so a voice whose first note "
-             "arrives before any pattern names one sounds the index array's "
-             "loaded value. Goattracker instead starts every channel on "
-             "instrument 1, which this writer emits as an empty record, so "
-             "those voices came out silent -- Delta Mix-E-Load loses two of "
-             "its three. Costs one pattern-table entry per distinct "
-             "(pattern, instrument) pair. Off by default: it changes the "
-             "output bytes of the 9 corpus files it reaches")
+             "arrives before any pattern names one sounds whatever index the "
+             "player's init wrote there (the file image's value is used only "
+             "when no init store is found). Goattracker instead starts every "
+             "channel on instrument 1, which this writer emits as an empty "
+             "record, so those voices came out silent -- Delta Mix-E-Load "
+             "loses two of its three. Costs one pattern-table entry per "
+             "distinct (pattern, instrument) pair. Off by default")
     parser.add_argument(
         "--sustain-exact", action="store_true",
         help="read the instrument's sustain nibble as the SID does. The VB6 "

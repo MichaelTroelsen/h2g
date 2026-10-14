@@ -1145,10 +1145,29 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
     (original 80.71). Fidelity, -t 180, presets, --sound, 29 files:
     `adsr_exact` falls on 28 and rises on none (mean -24 pp),
     `release_tail_agreement` the same (mean -31 pp, Proteus 1.0 -> 0.31),
-    `loud` -1 pp and `aud` -1.5 pp, `nrun` up on two files. The R=0 write
-    has to survive into the gate-off tick for the wrap to stay gone, so a
-    form that restores the record's release after the attack starts is the
-    untried one.
+    `loud` -1 pp and `aud` -1.5 pp, `nrun` up on two files.
+
+    **Release 0 at note init, restored by a wavetable `CMD_SETSR` on the
+    call before the gate-off tick, keeps the tail and brings the wrap back**
+    (task `drum-release-setsr-at-gate-off`, base 5813a45, not shipped;
+    `tests/test_drum_release_setsr.py`). Built: the frame-0 padding entry
+    (the waveform repeat, or the last call of the delay holding it) becomes
+    `$F6 sr`, which gplay.c:650 writes to `$D406` in that call, so the noise
+    tick keeps its call; +0 slots at -S2, +1 above. 19 of the 29 files moved.
+    VICE, 60 s, rise to first ENV3 increase: the share starting within 5
+    lines stays 0.5-4.9% (head 0-3.0%; release 0 whole-note 0.86-0.91), the
+    median 466-512 lines. The 8-frame tail is kept (Rasputin 500981 -> 504367,
+    release 0: 278660). Fidelity, -t 180, presets, --sound: `adsr_exact`
+    mean -0.27 pp (down on 9, rises on none, Thrust -1.6 pp),
+    `release_tail_agreement` unmoved. So the SR write at note init is not
+    what lowers the period: it is the release the PREVIOUS note ran at. The
+    release-0 arm removed the wrap because the whole previous release ran at
+    period 9; restoring the release at the gate-off tick gives the long
+    period back for the rest of that note, and a counter that has cycled at
+    it is above the attack's 9 when the next gate rises. What removes the
+    wrap is a window of period 9 of at least one wrap (~33 ms) before the
+    rise, as the original's `ADSR $0000` write is, and that also cuts the
+    previous tail; no write at the rise can.
     `-A0000` (the original writes $0000 before every rise; Goattracker's
     `adparam` default is $0F00) changes no packed byte under presets on
     any of the 89 files that convert: every file carries `no_hard_restart`,

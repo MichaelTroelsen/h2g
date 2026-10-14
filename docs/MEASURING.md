@@ -739,6 +739,64 @@ than the converter's. The same blindness `hold` itself carries.
 The document goes to the path given and nothing else about the run changes, as
 with `--census`.
 
+### Attack lateness — `--attack-census`
+
+```sh
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json --attack-census ../build/ATTACKCENSUS.md
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json --attack-census out.md \
+    --attack-opts '{"max_hard_restart": true}'      # a forced option on OUR side only
+```
+
+**No other column sees it.** Every register column compares what was written,
+so a conversion whose notes all start ~200 rasterlines late scores the same as
+the original provided the same ADSR and control bytes land in the same frames.
+This one reads what the chip *did*: the rasterlines between each gate rise and
+the first ENV3 increase, from VICE's per-rasterline dump. ENV3 exists only for
+voice 3, so each of the three voices is swapped onto voice 3 in turn -- ours by
+exchanging two orderlists in the `.sng` before packing, the original by
+patching its `00 07 0E` voice-offset table (`attack_lateness.py`). A swap is
+checked against the unswapped run's gate-edge count for that voice, and a voice
+that does not verify is dropped and named in `unswapped`, never scored.
+Six VICE traces a file, three at a time: about 4-8 minutes at `-t 60` on a busy
+machine, and the original's subtune is the one the fidelity row scores
+(`resolve_pair`), not VICE's tune 1.
+
+A tone rise is **late** at 100 lines or more (a threshold read off the split
+below, not a chip constant). Drums, noise rises, a saturated envelope, a gate
+that falls before the envelope moves and attack nibbles of 13 and up (their own
+period is past 100 lines) are counted apart and not scored. `delta` is ours'
+late fraction minus the original's, in points: positive is a converter defect,
+near zero is either on time or the SID's own lateness (Delta, Sanxion).
+
+Keyed by file and option, `late/n (median delay in lines)`, `-t 60`, tree
+5813a45, 2026-10-14. The last column is the `--attack-opts` run:
+
+| file | original | ours, shipped preset | ours, + `max_hard_restart` |
+|---|---|---|---|
+| Monty_on_the_Run | 1/319 (0) | 311/317 (206) | 2/317 (49) |
+| Thing_on_a_Spring | 0/301 (0) | 290/296 (207) | 0/296 (50) |
+| Last_V8 | 0/228 (0) | 216/222 (207) | 57/227 (51) |
+| Rasputin | 0/293 (0) | 128/187 (191) | 20/80 (0) -- **breaks the song: 187 rises become 80** |
+| Gerry_the_Germ | 0/352 (0) | 92/254 (0) | not run |
+| Delta | 130/139 (513) | 135/139 (181) | not run |
+| Sanxion | 105/205 (506) | 221/332 (516) | not run |
+
+Read it as three classes. Monty, Thing and Last_V8: the original is prompt and
+ours is late on nearly every note, and `max_hard_restart` removes most of it
+(median ~205 -> ~50 lines) while no other column moves -- which is why the
+preset search, which only sees columns, never selected it. Rasputin: late too,
+but the option costs the song its notes. Delta and Sanxion: the original is
+itself late (median ~500 lines), so a high ours figure there is the SID's, not a
+defect. The Monty, Thing, Last_V8 and Rasputin figures reproduce the earlier
+probe's (task adsr-attack-delay-fix-candidates) rise for rise, except two
+cells on the current tree (Last_V8 + `max_hard_restart` 57 against 54, Rasputin
++ it 20 against 21); Gerry and Delta
+differ from it only because the probe read tune 1.
+
+What this does **not** do: it is not a `build/fidelity.json` column, so
+`fidelity_better` and the preset search still cannot see it. Wiring `delta`
+into the search is a separate decision (it costs six VICE traces a candidate).
+
 ### A/B against a previous run
 
 ```sh

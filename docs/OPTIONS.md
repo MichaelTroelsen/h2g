@@ -653,7 +653,13 @@ delta above is the measurement that sees it.
 Hubbard's player keeps a per-voice instrument *index* in a three-byte array
 and writes it only when a pattern carries an instrument byte. A voice whose
 first note is reached before any pattern names one therefore sounds whatever
-that array held. Goattracker has the same carry-forward rule --
+that array held. **Which value that is comes from the player's init, not the file
+image**: since v0.5.524 `tracks._initial_for` returns `det.init_instrument`
+(the `LDA #imm / STA array,X / DEX / BPL` store `detect._find_init_instrument`
+reads) before it consults the array's image, which is a snapshot the init
+overwrites -- all 36 reset-site files whose image differs agree with the init
+literal (`reset-idiom-image-vs-literal`, 8618f82, pinned in
+`tests/test_reset_idiom_literal_first.py`). Goattracker has the same carry-forward rule --
 `gplay.c:914` assigns `cptr->instr` only when the row's instrument column is
 non-zero -- but a different starting point: `gplay.c:223` sets every channel
 to instrument **1**, which this writer emits as the empty "Clear Voice"
