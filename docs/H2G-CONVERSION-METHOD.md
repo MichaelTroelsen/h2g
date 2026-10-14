@@ -15939,12 +15939,48 @@ flagged note skips it, the counter not being reloaded), and
 free-note log of both movers is unchanged line for line: no flagged row reaches
 one.
 
-Not modelled: a short note whose vibrato gate never opens holds the fixed pitch
-to its end in the original (`_attack_hold_records`, which takes `$44` records
-only); Lightforce's vibrato gate is a duration gate (3), and no short record-6
-note was looked for -- the 16 measured onsets all agree on frames 1-4. The shape of the vibrato after the pitch (the original
-steps down first, `04D1`; ours up) is the vibrato's, not this block's.
-`tests/test_fixed_attack_only.py`.
+The shape of the vibrato after the pitch (the original steps down first, `04D1`;
+ours up) is the vibrato's, not this block's. `tests/test_fixed_attack_only.py`.
+
+**A short note keeps the fixed pitch to its end** (`_attack_hold_records` names a
+record that is exactly `$40` as well as the `$44` ones). Lightforce's
+vibrato gate is a duration gate (3) and the `$40` handler yields to it
+(`_fixed_pitch_yield_field` = the vibrato byte, +5), so a record-6 note of at most
+3 rows is never vibrated and holds `$09C4` to the next attack. **No corpus note
+qualifies**: Lightforce plays record 6 only as four 16-row notes (1200 s of the
+original, 48 onsets, all 52 frames), and Knucklebusters' record 13 only as notes
+that run on into the next. The property was measured on a copy of Lightforce whose
+pattern 10 (`8F 06 1A 0F 1A 0F 1A 0F 1A FF`) has its waits cut to 2 or 1
+(`tests/test_attack_hold_40_only.py`, measured at 7afbe58, -t 180 under presets):
+the original holds `09C4` x9 (wait 2) to the next attack; the conversion before
+stepped back to the played note on frame 5 and vibrated; after, frames 0-11 of the
+16 onsets agree within 2 units 192 of 192 (before 104 of 192 at wait 2, 160 of 192
+at wait 1). Corpus byte-hash under presets: 0 movers.
+
+**The vibrato after the pitch is not one shape: it alternates between two, half a period apart
+(`lightforce-vibrato-phase-after-fixed-pitch`; figures historical, siddump-rt -m1, 40 s, all six subtunes
+identical over the record's span).** The `04D1 04E2 04F3 0504 0515` above is the EVEN onset only.
+Record 6's 16 onsets (frames 897, 953, ... 1737, voice 3) alternate: even ones find the player's
+counter at 4 falling and read `04D1 04E2 04F3 0504 0515 0504 04F3 04E2 04D1` on frames 5..13; odd ones
+find it at 1 rising and read `0504 04F3 04E2 04D1 04C0 04D1 04E2 04F3 0504`. The mechanism is the
+classic vibrato's own free-running counter (`$F0B0,X`, direction `$F0B6,X`, bound 5, `$11` per step,
+note = `04C0 + $11 * counter`), and three facts about it, each pinned in
+`tests/test_lightforce_vibrato_phase.py`: (1) nothing resets it at a note -- the only stores to those cells
+in `$F0BF-$F4F5` are the update's six at `$F297-$F2B2`; (2) the fetch frame ends in `JMP $F4CA`, past the
+update, so the counter HOLDS on frame 0 (equal to the previous frame at all 16 onsets); (3) the update
+keeps running under the `$40` handler's fixed pitch, which overrides only the register write (counter
+04,03,02,01,00 on the four fixed frames), so the vibrato resumes where the counter would be, not at the
+note. Notes are 56 frames apart, 55 with the update running, the counter's period is 10: 55 mod 10 = 5,
+half a period, so consecutive notes begin in antiphase. (A record with no vibrato byte freezes the
+counter -- `$F27B LDA $F61D,Y / BNE / JMP $F329` -- which is why the first onset, after instrument $15,
+inherits counter 4.) Against the 16 onsets the conversion's `04E2 04E2 04F4 0506 04F4 04EB 04D9` is
+150 units off the even phase and 323 off the odd over frames 5..13 (summed |d|, 3784 over all 16; base
+7afbe58, -S2, startup_lag 6). **No fixed start phase fixes it**: in the counter's own units, matching
+either phase exactly scores 21 against the pair and every other start 29 or worse (the centre start
+Goattracker gives is among them), and Goattracker restarts its vibrato at the note and has no start
+phase to seed (the "Phase" bullet of `_classic_vibrato_entry`). Nothing is emitted; a per-note phase
+would need the counter simulated down the whole pattern timeline and a clone instrument per phase, for
+16 notes in the file's first 35 seconds.
 
 ### 7.gggggggg The pulse set lands the call after the gate: Ninja's "wrong width at the attack" was the reading
 

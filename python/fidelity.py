@@ -72,6 +72,7 @@ project has shipped the second believing the first twice.
 from __future__ import annotations
 
 import argparse
+import bisect
 import dataclasses
 import difflib
 import functools
@@ -4846,6 +4847,64 @@ def passband_agreement(orig: FilterState, ours: FilterState, nframes: int,
             "passband_agree": (agree / union) if union else None}
 
 
+# $D418 bits 4-6 as (value >> 4) & 7: 2 is band-pass alone.
+PASSBAND_BP = _PASSBAND["Bnd"]
+
+
+def _bp_note_offsets(trace, nframes: int) -> list[int]:
+    """Frames since the last attack, for every pure band-pass filtered frame.
+
+    The attack counted is the latest one (named or not) on a voice routed
+    into the filter on that frame ($D417 bits 0-2). A BP frame with no such
+    attack yet is skipped: it has no note to be relative to.
+    """
+    f = trace.filter
+    ctrl = register_timeline(f.ctrl_events, nframes)
+    band = register_timeline(f.passband_events, nframes)
+    atk = [sorted(v.attack_frames + v.unnamed_attack_frames) for v in trace]
+    out: list[int] = []
+    for fr, (r, b) in enumerate(zip(ctrl, band)):
+        if b != PASSBAND_BP:
+            continue
+        last = -1
+        for vi, frames in enumerate(atk):
+            if not (r >> vi) & 1:
+                continue
+            i = bisect.bisect_right(frames, fr)
+            if i:
+                last = max(last, frames[i - 1])
+        if last >= 0:
+            out.append(fr - last)
+    return out
+
+
+def passband_note_relative(orig, ours, nframes: int) -> dict:
+    """Band-pass frames compared by their distance from the voice's last attack.
+
+    `passband_agree` aligns on one global startup lag, so a drum blip that
+    sits at the right place inside its note is charged for every note whose
+    onset is off (Pandora: 8 of 364 hits at offset 0 against the original,
+    while the BP-minus-attack histograms match bin for bin). Counting the BP
+    frames from each side's OWN last attack needs no alignment at all.
+
+    Score: `sum(min) / sum(max)` of the two offset histograms, i.e. the
+    multiset Jaccard -- it falls for a missing blip, an invented one and one
+    at the wrong distance from its note alike. Ignores: which note, cutoff,
+    resonance, every passband other than band-pass alone (L+B is not a BP
+    blip), and a BP frame before any attack. `None` when neither side has
+    one. Read over frames 0..nframes-1 on both sides.
+    """
+    ho = Counter(_bp_note_offsets(orig, nframes))
+    hu = Counter(_bp_note_offsets(ours, nframes))
+    keys = set(ho) | set(hu)
+    inter = sum(min(ho[k], hu[k]) for k in keys)
+    union = sum(max(ho[k], hu[k]) for k in keys)
+    return {"passband_note_orig_frames": sum(ho.values()),
+            "passband_note_our_frames": sum(hu.values()),
+            "passband_note_agree_frames": inter,
+            "passband_note": (inter / union) if union else None}
+
+
 def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
                    lag: int | None = None) -> dict:
     """The global filter: whether we filter where the original does, and how far.
@@ -6431,6 +6490,17 @@ DIMENSIONS = (
     Dimension("passband_agree", "band", ("$D417", "$D418"), "fraction",
               "share of frames either side filters on which both select the "
               "same passband"),
+    # `band` aligns on ONE global startup lag, so a drum blip right inside its
+    # note is charged for every note whose onset sits off the lag (Pandora and
+    # Trans-Atlantic match the original within the note and score 0.88/0.85
+    # on `band`). This counts each side's pure band-pass frames from its OWN
+    # last attack on a routed voice and compares the two offset histograms
+    # (sum min / sum max): no alignment, so it reads the blip's place in the
+    # note and nothing about where the note landed. Pure BP only ($D418 bits
+    # 4-6 == 2); `-` when neither side has an anchored BP frame.
+    Dimension("passband_note", "bnote", ("$D417", "$D418"), "fraction",
+              "share of band-pass frames, counted from the last attack, "
+              "that either side has at an offset both have"),
     # **The first column here that measures *when* rather than *what*.** Every
     # dimension above compares content at aligned frames; none of them can see
     # two copies of the right music parting company, and this report said so
@@ -7644,6 +7714,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                     args.siddump, vib_keys, traced_calls))
             row.update(filter_compare(a.filter, best_dump.filter, nframes,
                                       lag=lag))
+            row.update(passband_note_relative(a, best_dump, nframes))
         if row.get("depth_refusal") == "gated":
             # Which of the player's two exclusions emptied the population,
             # and how big it was: `-` alone cannot say, and a reader of the
@@ -8114,6 +8185,12 @@ def report(rows: list[dict], args) -> str:
         "output reads 1.00x there and low here. Ignores cutoff, resonance, "
         "which voices are routed and the volume nibble. `-` on a run taken "
         "with `--vice` (no lag) or where neither side filters.",
+        "* **bnote** -- the band-pass frames only, each counted from the "
+        "last attack of a routed voice on its own side, then the two "
+        "offset histograms compared (sum of mins over sum of maxes). Needs "
+        "no startup lag, so it reads whether a drum blip sits in the right "
+        "place in its note where **band** charges it for the note's onset. "
+        "Pure band-pass only; `-` where neither side has one.",
         "",
         "* **depth** -- how far our vibrato *swings*, over the original's: "
         "the median peak-to-peak excursion of the frequency within a note, as "
@@ -8177,8 +8254,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | len | cov | osplit | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8220,7 +8297,8 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
-            f"{_fmt_pct(r.get('passband_agree'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
+            f"{_fmt_pct(r.get('passband_agree'))} | "
+            f"{_fmt_pct(r.get('passband_note'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{status} |")
 
@@ -10975,6 +11053,7 @@ def _run(p, args, workdir: Path) -> int:
         row.update(adsr_compare(da, db, nframes))
         row.update(pulse_compare(da, db, nframes))
         row.update(filter_compare(da.filter, db.filter, nframes))
+        row.update(passband_note_relative(da, db, nframes))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)
         if args.audio:

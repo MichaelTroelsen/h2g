@@ -132,6 +132,8 @@ from .patterns import MAX_PATTERNS, note_column
 GT_NOTES = 96
 _FIRST_NOTE, _LAST_NOTE = 0x60, 0xBC      # gcommon.h:48-49
 _CMD_SETWAVEPTR = 0x8                      # gcommon.h CMD_SETWAVEPTR
+_CMD_SETPULSEPTR = 0x9                     # gcommon.h CMD_SETPULSEPTR
+_CLONE_MODES = ("clone", "clonekeep")
 _WAVE_CMD = 0xF0                           # left $F0-$FE: command; $FF: jump
 _JUMP = 0xFF
 _KEEP = 0x80                               # right $80: no frequency change
@@ -538,6 +540,11 @@ def retarget_mixed_steps(song, sid, det,
                 edge += 1
             else:
                 plans[(b, k)] = ("clone", key, instr)
+        elif cmd == _CMD_SETPULSEPTR and 0 < instr <= len(song.instruments):
+            if k + 4 >= len(pat):
+                edge += 1
+            else:
+                plans[(b, k)] = ("clonekeep", key, instr)
         else:
             busy += 1
     if not plans:
@@ -567,28 +574,31 @@ def retarget_mixed_steps(song, sid, det,
             starts[key] = len(wave) + used + 1 + _offset_in(cache[key[0]], key[0])
             bodies[key] = body
             used += len(body)
-        cloned = Counter((p[2], p[1]) for p in plans.values() if p[0] == "clone")
+        cloned = Counter((p[2], p[1], p[0]) for p in plans.values()
+                         if p[0] in _CLONE_MODES)
         clones: Dict[tuple, int] = {}
         for ck in sorted(cloned, key=lambda c: (-cloned[c], c)):
             if ck[1] in starts and len(clones) < instr_room:
                 clones[ck] = len(song.instruments) + 1 + len(clones)
         dropped = [rc for rc, (mode, key, instr) in plans.items()
                    if key not in starts
-                   or (mode == "clone" and (instr, key) not in clones)]
+                   or (mode in _CLONE_MODES
+                       and (instr, key, mode) not in clones)]
         for rc in dropped:
             del plans[rc]
             noroom += 1
         edited: Dict[int, list] = {}
         for (b, k), (mode, key, instr) in plans.items():
             pat = edited.setdefault(b, list(song.patterns[b]))
-            pat[k + 2], pat[k + 3] = _CMD_SETWAVEPTR, starts[key]
-            if mode == "clone":
-                pat[k + 1] = clones[(instr, key)]
+            if mode != "clonekeep":
+                pat[k + 2], pat[k + 3] = _CMD_SETWAVEPTR, starts[key]
+            if mode in _CLONE_MODES:
+                pat[k + 1] = clones[(instr, key, mode)]
         for (b, k), (mode, key, instr) in plans.items():
             # The row after a clone names the instrument again, unless it
             # names one of its own (a clone row does, above).
-            if mode == "clone" and song.patterns[b][k + 5] == 0 \
-                    and plans.get((b, k + 4), ("",))[0] != "clone":
+            if mode in _CLONE_MODES and song.patterns[b][k + 5] == 0 \
+                    and plans.get((b, k + 4), ("",))[0] not in _CLONE_MODES:
                 edited[b][k + 5] = instr
         too_big = [b for b, pat in edited.items()
                    if packed_pattern_size(pattern_rows(pat)) > PACKED_PATTERN_LIMIT]
@@ -609,9 +619,12 @@ def retarget_mixed_steps(song, sid, det,
         return False
     for key in starts:
         wave.extend(bodies[key])
-    for (instr, key), number in sorted(clones.items(), key=lambda c: c[1]):
+    for (instr, key, mode), number in sorted(clones.items(),
+                                             key=lambda c: c[1]):
         rec = bytearray(song.instruments[instr - 1])
-        rec[2], rec[_VIBRATO_AT] = starts[key], 0
+        rec[2] = starts[key]
+        if mode == "clone":
+            rec[_VIBRATO_AT] = 0
         song.instruments.append(rec)
     for b, pat in edited.items():
         song.patterns[b][:] = pat

@@ -1746,7 +1746,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  pulse_span=1.0,
                  orig_pulse_phases=0, our_pulse_phases=0,
                  pulse_phase=1.0,
-                 passband_agree=melody, travel_ratio=1.0,
+                 passband_agree=melody, passband_note=melody, travel_ratio=1.0,
                  orig_ends_at=10.0, ours_ends_at=10.0,
                  length_delta=0.0, length_bounded=False,
                  # `cov`, from the same length probe as `length_delta`. A full

@@ -230,6 +230,23 @@ player writes them at its first note, and that leading zero otherwise reads as
 a spurious jump on all three voices of every file (Commando: 3.96x for a sweep
 that covers less). `$000` is 0% duty, so nothing audible is dropped.
 
+**band** and **bnote** are the two passband columns, and they disagree on
+purpose. **band** is lag-aligned frame agreement, so a drum blip that sits at
+the right place inside its note is still charged for every note whose onset
+is off the global startup lag. **bnote** counts each side's
+pure band-pass frames ($D418 bits 4-6 == 2) from that side's own last attack
+on a voice routed into the filter, and compares the two offset histograms:
+
+| key | `passband_note` (column **bnote**) |
+|---|---|
+| reads | `$D417`, `$D418`, and the attack frames of the routed voices |
+| score | `sum(min) / sum(max)` over the offsets of the two histograms; 1.00 is the same blips at the same distances from their notes |
+| falls for | a blip missing, invented, or at the wrong distance from its note |
+| ignores | which note, cutoff, resonance, any passband but band-pass alone (L+B is not a blip), a BP frame before any attack |
+| `-` | neither side has an anchored band-pass frame |
+| `--json` | `passband_note_orig_frames`, `passband_note_our_frames`, `passband_note_agree_frames` |
+| test | `python/tests/test_band_note_relative.py` |
+
 **aud** and **loud** are the only two columns in the report that read no SID
 register at all. Every other one goes through `siddump`; these two render both
 sides to WAV with `sidplayfp` and compare the audio, so they see what a

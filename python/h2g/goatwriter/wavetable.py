@@ -349,6 +349,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             held = _two_stage_entries(
                 wave, wave, only[1], multiplier, attack_note=only[0],
                 budget=budget, written=no_test_restart, start=start,
+                hold_attack=hold_attack,
                 restore_call=_counter_gate_restore_call(
                     sid, det, i, multiplier, no_test_restart))
             if held is not None:

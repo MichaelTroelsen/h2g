@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.540 — 2026-10-14
+
+- runqueue cycle 24
+
 ## 0.5.539 — 2026-10-14
 
 - runqueue cycle 23

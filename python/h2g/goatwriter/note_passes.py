@@ -83,13 +83,21 @@ def _track_start(start: Optional[Tuple[int, ...]], ti: int) -> int:
     36 players that write an init index, 166 subtunes) finds the index in all
     three slots of 108 of them and on voice 0 alone in 32 (a jingle that uses
     one voice, or a first event that had already named another), but the
-    slots still hold the file image in 26: subtune 0 of
-    One_on_One_Jordan_vs_Bird and Powerplay_Hockey (whose `A = 0` branches
-    round the music init) and 24 later subtunes of IK_plus, I_Ball,
-    One_on_One, Sanxion, Tarzan and Thundercats, which never run the loop. A
-    voice there holds whatever the last tune left, which the file cannot say;
-    the start is wrong for it exactly where a row precedes the pattern's
-    first named instrument."""
+    slots still hold the file image in 26 (a count that predates
+    `_reconcile_instrument_index`): the 24 later subtunes of IK_plus, I_Ball,
+    One_on_One, Sanxion, Tarzan and Thundercats never run the loop. A voice
+    there holds whatever the last tune left, which the file cannot say; the
+    start is wrong for it exactly where a row precedes the pattern's first
+    named instrument.
+
+    **One_on_One and Powerplay subtune 0 are NOT in that list any more.** The
+    two were an artefact of reading another player's array (`3F 42 88` /
+    `00 01 01`); the tune player's own array holds `0F 0F 0F` at frame 0 of
+    subtune 0 in both (`tests/test_init_instrument.py::
+    test_siddump_finds_the_init_index_in_every_slot_at_frame_0`). Nor can a
+    converted byte depend on the later subtunes' image in those two: presets
+    emit ONE subtune for each (`subtunes` 1) and One_on_One parks silence
+    (`pre_instrument_silence`), so it takes no start at all."""
     if start is None:
         start = _ENTRY_START.get()
     return start[ti % 3] if start and ti % 3 < len(start) else 1
@@ -1490,7 +1498,8 @@ def _attack_hold_records(sid: SidFile, det: Detection, instr_used: int,
     program (the restore, right for the long notes) and these get a second
     one for `_attack_hold_pass` to point the short notes at.
 
-    Only `$44` records without `$80`: the two-stage path is the one that
+    Only `$44` records without `$80`, and records that are exactly `$40`
+    (`fixed_attack_only`, Lightforce 6): the two-stage path is the one that
     emits the fixed pitch on such a record (`_wavetable_entries`), and
     `_wavetable_layout` drops any record whose held block comes out the same.
     """
@@ -1507,8 +1516,10 @@ def _attack_hold_records(sid: SidFile, det: Detection, instr_used: int,
         if base + 7 >= len(sid.data):
             break
         effect = sid.data[base + 7]
+        if not sid.data[base + det.vibrato_offset]:
+            continue
         if ((effect & 0x44) == 0x44 and not effect & EFFECT_SFX_DRUM_MASK
-                and sid.data[base + det.vibrato_offset]):
+                or fixed_attack_only(sid, det, i) is not None):
             out.append(i)
     return out
 
