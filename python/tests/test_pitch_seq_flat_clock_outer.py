@@ -44,9 +44,11 @@ READ = {
     "Bangkok_Knights": (0, 2, 94, 1),
     "BMX_Kidz": (1, 2, 107, 2),
     "Chain_Reaction": (0, 2, 0, 0),
+    "Dragons_Lair_Part_II": (2, 2, 1, 0),     # init-primed outer cell
     "Flash_Gordon": (1, 2, 4, 0),
     "I_Ball": (0, 2, 0, 0),
     "IK_plus": (0, 2, 0, 0),
+    "Kings_of_the_Beach_ingame": (0, 2, 1, 1),    # init-primed outer cell
     "Lightforce": (0, 2, 6, 0),
     "Mr_Meaner": (0, 2, 0, 0),
     "Nineteen": (1, 2, 62, 1),
@@ -68,8 +70,6 @@ READ = {
 # Detect the block with an undivided counter and are NOT read, and why.
 DECLINED = {
     "Delta_Mix-E-Load_loader": "init JSRs the player entry: frame 0 is a plain call",
-    "Dragons_Lair_Part_II": "init stores the outer cell",
-    "Kings_of_the_Beach_ingame": "init stores the outer cell",
     "Knucklebusters": "a song event stores the outer and speed cells",
     "Go_Go_Dash": "the phase cell is never written: a constant",
     "Lakers_vs_Celtics": "the phase cell is never written: a constant",

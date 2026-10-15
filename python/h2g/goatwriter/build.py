@@ -471,6 +471,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
               named_firstwave: bool = False,
+              pitch_tie_phase: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -816,6 +817,32 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     def bit7_rows(pats: List[List[int]]) -> dict:
         return _gw_note_passes.split_bit7_rows(
             note_bit7_rows(pats, known_bit7, decoded, ghosts), split_copies)
+    # Bit $10's phase on the legato ties (`pitch_seq_tie_plan`): a tie
+    # restarts no phase cell in the original, but the clone it is respelled
+    # on restarts its record's block, which carries ONE phase. The plan
+    # copies patterns (and writes repeats out) so each tie row is fetched in
+    # one state, and tags the rows whose state is not the record's own; the
+    # blocks are laid out below and the clones pointed at them. Here, before
+    # the orderlists are written, for the same reason the entry split is;
+    # under the legato clones' own gates (the -S2 decoy included), and not
+    # beside a split whose edits are keyed by pattern number.
+    tie_tags: dict = {}
+    if (pitch_tie_phase and legato and pitch_seq and fmt == FORMAT_GTS5
+            and det.pitch_seq is not None and duty_split is None
+            and phase_split is None and ilv_routing is None):
+        tie_rows = legato_tie_rows(patterns, bit7_rows(patterns))
+        if (tie_rows and multiplier > 1
+                and _gw_note_passes.legato_slip_decoy(
+                    patterns, tracks, instr_used, instr_used + 1) is None):
+            tie_rows = set()
+        own_phases = _gw_arpeggio.pitch_seq_phases(sid, det, tracks, patterns)
+        tie_plan = (_gw_arpeggio.pitch_seq_tie_plan(
+            sid, det, tracks, patterns, tie_rows, lead, instr_used,
+            own_phases, log=log) if tie_rows and own_phases else None)
+        if tie_plan is not None:
+            tracks, patterns = tie_plan.tracks, tie_plan.patterns
+            split_copies.update(tie_plan.copies)
+            tie_tags = tie_plan.tags
     # The counter-started fall's notes run over repeated orderlist positions
     # (a long rest is `$D5 00`), whose visits it has to write differently:
     # unrolled here, before the orderlists are written, since it changes
@@ -1042,6 +1069,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 lead, arp_phases, arp_tie_rows, pitch_phases,
                 arp_gate_phases, plan_clones, plan_distinct),
             arp_phases, plan_distinct, plan_clones)
+    if tie_tags:
+        # One block per (record, phase tuple) a tagged tie lands on.
+        tie_blocks = sorted(set(tie_tags.values()))
     attack_holds = _attack_hold_records(sid, det, instr_used, lead, effects,
                                         two_stage)
     if attack_holds:
@@ -1446,6 +1476,35 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 live_clones, tie_distinct, log, block_start=block_start,
                 respelled=retarget)
             still -= phase_kept
+        if tie_tags:
+            # The pitch-sequence ties (`pitch_seq_tie_plan`): each tagged
+            # row restarts the block of the phase it lands on, where the
+            # block was laid out and is not the record's own. The record
+            # the row lands on is re-read here, the passes since having
+            # renamed columns.
+            laid = dict(zip(tie_blocks, tie_block_starts))
+            entry_held = _gw_note_passes._entry_instruments(tracks, patterns)
+            for pn in sorted({p for p, _r in tie_tags}):
+                if pn >= len(patterns):
+                    continue
+                pat = patterns[pn]
+                held = entry_held.get(pn, set())
+                live = next(iter(held)) if len(held) == 1 else 0
+                for r in range(len(pat) // 4):
+                    if pat[4 * r] == 0xFF:
+                        break
+                    if pat[4 * r + 1]:
+                        live = pat[4 * r + 1]
+                    tag = tie_tags.get((pn, r))
+                    if tag is None or (pn, r) not in still:
+                        continue
+                    g, tup = tag
+                    start = laid.get((g, tup), 0)
+                    own_start = (wave_starts[g - 1]
+                                 if 0 < g <= len(wave_starts) else 0)
+                    if (start and start != own_start
+                            and record_of.get(live) == record_of.get(g)):
+                        retarget[(pn, r)] = start
         # In the "record" dialect a tie into the instrument the channel
         # already holds moves no pulse (the fetch writes the record's live,
         # swept value), so that tie's clone keeps the running pulse program:

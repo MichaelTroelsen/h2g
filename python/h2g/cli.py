@@ -269,6 +269,15 @@ def main(argv=None) -> int:
              "overrides it. Per song (a --presets entry's named_firstwave); "
              "off leaves every conversion byte-identical.")
     parser.add_argument(
+        "--pitch-tie-phase", action="store_true",
+        help="point each legato tie on a bit-$10 record at the wavetable "
+             "block of the phase cell's state on the tie's fetch call, as "
+             "the original's global cell runs on through it, instead of the "
+             "record's one block (patterns are copied, repeats written out). "
+             "Needs the legato clones and a pitch-sequence clock read from "
+             "the file. Per song (a --presets entry's pitch_tie_phase); off "
+             "leaves every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -685,6 +694,7 @@ def main(argv=None) -> int:
                           ("--tie-restart", "tie_restart"),
                           ("--aligned-firstwave", "aligned_firstwave"),
                           ("--named-firstwave", "named_firstwave"),
+                          ("--pitch-tie-phase", "pitch_tie_phase"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--filter", "filters"),
@@ -797,6 +807,7 @@ def main(argv=None) -> int:
                       tie_restart=args.tie_restart,
                       aligned_firstwave=args.aligned_firstwave,
                       named_firstwave=args.named_firstwave,
+                      pitch_tie_phase=args.pitch_tie_phase,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       filters=args.filters,

@@ -100,6 +100,20 @@ def _arp_block(source: List[tuple], offsets: List[int],
     held = next((w for w in reversed(body) if w >= 0x10), None)
     if held is None:
         return None
+    # **The tail starts on a frame boundary, or the frame the body ends in is
+    # split.** Call `c` is charged to frame `(c + hold) // hold`, so calls
+    # `j * hold .. j * hold + hold - 1` are ONE frame and a sample of any of
+    # them (which one depends on the row's residue) must read one step. A body
+    # that ends mid-frame -- Lion_Heart's `41 / 01 / 41` is 4 calls at -S3 --
+    # left that frame's first call on the body's step (head-shifted) and its
+    # others on the tail's, so a note whose tick 0 fell on residue 0 or 2 read
+    # the cycle's first raise a frame early against residue 1 (the one the
+    # shift was measured at). The rest of the frame holds the body's last step.
+    while call % hold:
+        left.append(held)
+        right.append(note(max(0, (call + 1 + shift) // hold
+                              - ARP_HEAD_FRAMES)))
+        call += 1
     tail = start + len(left)
     for _ in range(len(offsets) * hold):
         left.append(held)

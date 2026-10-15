@@ -2215,6 +2215,29 @@ across the 49 multispeed rows with melody and sequence flat; most of the gate
 and wave gains come from the implied gate-off firstwave alone, and gate fell on
 4 of 89 rows (Samantha_Fox -0.053). No song adopts it yet.
 
+## `--pitch-tie-phase` (the legato tie that lands on the phase it is fetched in)
+
+A legato tie on a bit-$10 record (the 3-step pitch sequence on a global phase
+cell) is respelled as a note on a legato clone, and the clone restarts its
+record's wavetable, whose one block carries ONE phase. The original's tie
+restarts no phase cell, so the octave step falls on the row its global cell
+says (one row in three on Star_Paws' 2-frame rows) and the clone put it on every
+row. With the option `goatwriter.pitch_seq_tie_plan` reads each tie row's state
+from the file's own clock, copies patterns and writes repeated orderlist entries
+out so every row is fetched in one state, and points each tagged clone at the
+block laid out for that state. Needs the legato clones (the `note_flag` family),
+`pitch_seq`, GTS5 and a clock `_pitch_seq_any_clock` reads; inert elsewhere.
+
+Off by default and per song (a `--presets` entry's `pitch_tie_phase`, listed in
+`presets.EXCLUDED_FROM_ALWAYS`); with it off every conversion is byte-identical.
+HISTORICAL at 4833cff + the change, forced at `-t 180` over the corpus: 2 of 89
+files move. Star_Paws GT 15 reversals 952 -> 408 (original 414), the file's
+`vib` 1.101 -> 1.002, `tie_agreement` 0.521 -> 0.513, `aud` 0.8974 -> 0.8977,
+`travel` 0.969 -> 1.447 (the voice-1 half of the old figure is a measurement
+artefact; see docs/H2G-CONVERSION-METHOD.md). Nineteen: `vib` 0.981 -> 0.984,
+`travel` 0.756 -> 0.744, `tie_agreement` 0.361 -> 0.355. No song adopts it yet:
+the `travel` and `tie_agreement` moves are a listening decision.
+
 ## `--rest-wave-silence` (the rest that parks a waveform)
 
 Status bit 6 is a rest. A Goattracker `KEYOFF` clears the *gate* and nothing

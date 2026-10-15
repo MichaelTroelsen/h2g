@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.552 — 2026-10-15
+
+- runqueue cycle 32 at 4833cff: Nemesis sweep length, Last_V8 C128 anchor, init-primed outer clock, arp residue
+
 ## 0.5.551 — 2026-10-15
 
 - I_Ball adopts two_stage and pitch_seq from a --fidelity re-search

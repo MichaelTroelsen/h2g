@@ -13326,6 +13326,40 @@ lead of 2 calls found by experiment) reproduced `X..X..` exactly on the first
 12 rows of the first note and retargeted 115 of 200 rows; it was not
 merged.
 
+**Bit-$10 ties restart the block of the phase they land on**
+(`pitch_tie_phase`, `star-paws-bit10-tie-phase-blocks`; off by default and per
+song, `presets.EXCLUDED_FROM_ALWAYS`; figures are historical -- Star_Paws,
+-t 180, presets, 4833cff + the change, forced on, 2026-10-15).
+`goatwriter.pitch_seq_tie_plan` reads each legato tie row's state from the
+clock the attacks already use (`_pitch_seq_tie_grid`: the row's fetch call in
+`_pitch_seq_fetched`, `_pitch_seq_frames_after` the tuple; the lead is the
+attack's own, `multiplier` calls -- not found by experiment this time, the
+`+12` landing on the right row at -S2 followed from `_pitch_seq_phased_entries`
+unchanged). A tie row played in more than one state cannot name one block, so
+the plan copies the pattern per spelling and writes a repeated orderlist entry
+out where its plays disagree (`_expand_repeats`, as `pitch_seq_phase_split_plan`
+does for attacks), before the orderlists are written: on Star_Paws 375 tagged
+rows, 23 pattern copies, 15 orderlist bytes. A row landing on the record's own
+tuple carries no tag; the others become `tie_blocks` of
+`_wavetable_layout` (the same `record_entries(phase=tuple)` a phase clone's
+block comes from), and `legato_tie_clones` points each tagged row's clone at
+its block through `row_kind`/`phased`, the path the classic restart family
+already uses for arpeggio residues. Result: GT 15 reversals 952 -> 408
+(original 414), the file's reversal ratio 1.101 -> 1.002, the first note's
+54 rows agreeing with the original's `X..X..` on 54 (18 before, the clones
+putting the `+12` on all 54), octave frames 208/203
+-> 69/68 (original 70/68); `cut`, `aud` (0.8974 -> 0.8977), `loud` and `melody`
+unmoved, `tie_agreement` 0.5213 -> 0.5134, `our_ties` 12,427 -> 12,094. Voice
+0's travel rises 356,056 -> 805,164 against the original's 938,967 with no
+300-frame window off by more than 40,000 (four were), and the file's `travel`
+reads 0.969 -> 1.447: its other half, voice 1's 553,696, is the cutoff
+artefact above, so the 0.969 was cancellation and 1.447 is that artefact alone
+plus voice 0's remaining 14%. Forced over the corpus (presets, byte-hash
+against 4833cff): 89 compared, 2 move -- Star_Paws and Nineteen (GT 4
+reversals 0.997 -> 1.010, `travel` 0.756 -> 0.744, `tie_agreement` 0.361 ->
+0.355); Commando byte-identical, and every file byte-identical with the option
+off. Pinned by `tests/test_pitch_tie_phase.py`. Not adopted by any song.
+
 **`travel` is read per voice, and Star_Paws' voice 1 is a threshold, not a
 movement** (`travel-column-voice-split`; figures are historical -- Star_Paws,
 -t 180, under presets, 40cc8e5, 2026-10-15). `compare()` carries
@@ -16651,6 +16685,9 @@ for 99 more between two strikes 193 frames apart, so the gap between notes is no
 sweep's length there (the cause was not traced; the reset at $E0D1 is per fetch, and
 what ends the sweep early is not read here).
 
+*Traced since, by nemesis-filter-sweep-ends-early: see § 7.NEW (the next note's record gates it; the median gap
+was the shortfall).*
+
 ### 7.llllllll A legato-tie clone that opens on a waveform takes firstwave 0
 
 From task `note-flag-legato-clone-firstwave-gate` (merged at v0.5.529). A clone of a
@@ -16711,3 +16748,28 @@ four voices lose notes to a voice that gains more. Over 600 s Monty's total fall
 shipped preset moves (89 compared, 0 moved); under forced `pulse_phase` 4 files move: Gremlins,
 Human_Race, Monty_on_the_Run, Rasputin. Human_Race s4v1 stays 0 of 264: its limit is the pulse
 table, not the pattern table.
+
+### 7.NEW A stop-majority classic filter record sweeps the stops' travel, not the median gap
+
+v0.5.550 + this change (nemesis-filter-sweep-ends-early; the orchestrator numbers the section). Nemesis_the_Warlock's
+filter sweep is record 2 (+2 a frame, accumulator `$E6DD,X` reset to `$20` at every fetch, `$E0D1`), added to `$D416`
+at `$E3AD` every frame the voice's record is current. What gates the sweep is the voice's NEXT NOTE: the fetch at
+`$E0BB` loads the note's instrument into `$E500,X`, and `$E3AD` is reached only for a record whose status byte
+(`$E648`, loaded at `$E1D3`) has bit 5 -- so the sweep ends where the next note is an unfiltered record, and holds its
+last value until the next strike. The original therefore sweeps 128 / 95 / 64 / 32 frames by the bar, strikes 129
+frames apart (traced with `siddump -w e500,..,e6dd,..,e648`, not read from the code alone). That is per occurrence;
+Goattracker's filter program is global, so one length per record is a compromise.
+
+`classic_sweep_calls` already read the gap to the voice's next note and `_best_sweep_length` minimised the absolute
+error over them -- the weighted median. For Nemesis' record 2 the 105 gaps in one pass are 32 calls x 54, 64 x 34,
+96 x 4, 128 x 13, 91 of them ending on an unfiltered record: the median is 32 and `cutoff_sweep` read 0.500 (travel
+2.28M of 4.56M). Where MORE THAN HALF of a record's gaps are stops the length is now the smallest one at which
+`sum(max(g - L, 0) for the filtered-follower gaps) + sum(g - L for the stops) <= 0`, i.e. total travel equal to the
+player's: 57 calls, `cutoff_sweep` 0.887 (4.05M). Not gated to a majority, the same rule moved Sanxion 1.100 -> 1.364
+and Dragons_Lair_Part_II 0.835 -> 0.736, and so did the stops' mean (Sanxion 1.188, Thundercats 0.789, Dragons_Lair
+0.619), a half-weighted shortfall (Sanxion 1.276, Dragons_Lair 0.699) and balance with the sweep capped at the next
+filtered strike on any voice (Sanxion 1.364 again): where most gaps lead into another filtered strike the player's
+sweeps are not the whole gap -- not traced, the bit-0 skip of the filter block (`$E2F4`) is the first candidate
+(`classic-filter-status-bit0-skips-filter`). Measured at 4833cff, presets, -t 180, 23 files: only Nemesis moves in the
+corpus byte-hash (89 compared, 1 moved); Deep_Strike and Thundercats are byte-identical. The per-occurrence repair is
+`classic-filter-stop-on-unfiltered-follower`.

@@ -306,6 +306,25 @@ def _orig_freq(sid: SidFile, index: int) -> Optional[int]:
     return sid.data[at] | sid.data[at + 1] << 8
 
 
+def anchor_bias(vib: Optional[SkydiveVibrato]) -> int:
+    """How far above the original's own frequency for the note the voice
+    starts, where a relative-note-0 step puts it: `anchor - base`.
+
+    The original's store is `high(note) - k`, over the low byte of the note
+    in ITS table; a fall of `$100 * k` from Goattracker's note reads a high
+    byte up wherever the vibrato tick that follows it carries the low byte
+    over (Last_V8_C128_version, note 76: the original's $57AC against
+    Goattracker's $57BA, and a tick of +$53 takes $56BA to $570D, where
+    $56AC reaches only $56FF). Zero where the original's table is not known
+    (`window_vibrato` then has anchor and base equal) or the interval is
+    not a small one.
+    """
+    if vib is None or vib.anchor is None:
+        return 0
+    bias = vib.anchor - vib.base
+    return bias if abs(bias) < 0x100 else 0
+
+
 def window_vibrato(sid: SidFile, shift: Optional[int], note: int,
                    counter: int) -> Optional[SkydiveVibrato]:
     """The vibrato a window on Goattracker note index `note` writes, or None.
@@ -380,7 +399,8 @@ def skydive_writes(window: int, phase: int, high: int) -> int:
     return min(max(0, (window - phase + 1) // 2), high)
 
 
-def skydive_speed(k: int, multiplier: int = 1) -> Optional[Tuple[int, int]]:
+def skydive_speed(k: int, multiplier: int = 1,
+                  bias: int = 0) -> Optional[Tuple[int, int]]:
     """Store k's speed-table entry `(hi, lo)`, per PLAY CALL at -S{multiplier}.
 
     The block moves the frequency `$100 * k` in one of the original's frames
@@ -390,8 +410,13 @@ def skydive_speed(k: int, multiplier: int = 1) -> Optional[Tuple[int, int]]:
     frame"). None where that is not a whole number of frequency units, or
     reaches `$8000`, which gplay.c:543-551 and player.s `mt_setspeedparam`
     (`bmi mt_calculatedspeed`) read as a note-relative speed instead.
+
+    `bias` is added to the frame's movement before it is divided: how far
+    Goattracker's frequency for the note sits above the original's own
+    (`anchor_bias`), so a fall measured from Goattracker's note lands where
+    the original's would.
     """
-    per_call, rem = divmod(k * 0x100, max(1, multiplier))
+    per_call, rem = divmod(k * 0x100 + bias, max(1, multiplier))
     if rem or not 0 <= per_call < 0x8000:
         return None
     return per_call >> 8, per_call & 0xFF
@@ -931,12 +956,13 @@ def _lap_restart(track: List[int]) -> Optional[int]:
 
 
 def _program_order(key):
-    """Sort key for a (window, vibrato) program key: the vibrato is None or
-    a dataclass, which do not compare."""
-    want, vib = key
+    """Sort key for a (window, vibrato) program key, which a held row's key
+    extends with the anchor bias: the vibrato is None or a dataclass, which
+    do not compare."""
+    want, vib = key[0], key[1]
     return (want, vib is not None,
             (vib.counter, vib.base, vib.step, vib.start) if vib is not None
-            else ())
+            else (), key[2:])
 
 
 @dataclass
@@ -1236,9 +1262,9 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 raise OverflowError
             return row_of(entry)
 
-        def speed_frame(k: int) -> int:
+        def speed_frame(k: int, bias: int = 0) -> int:
             # The compact program's one step a frame: the -S1 rate.
-            entry = skydive_speed(k)
+            entry = skydive_speed(k, bias=bias)
             if entry is None:
                 raise OverflowError
             return row_of(entry)
@@ -1251,7 +1277,24 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         def key_of(want, vib):
             return (want, vib if (want, vib) in carried else None)
 
+        def squeezes(want, key):
+            return (compact and want[2] and key[1] is None and multiplier > 1)
+
+        # A compact held program falls from Goattracker's note, so it is
+        # keyed on how far that sits above the original's own. Windows on
+        # different notes share one program (the table has no room for one
+        # a note), and the program takes the largest of their biases: a fall
+        # too deep by the difference to the others' is a few units of the low
+        # byte, where one too shallow lets a vibrato tick carry over.
+        group_bias: Dict[tuple, int] = {}
+        for pr, want in taken.items():
+            if squeezes(want, key_of(want, row_vib.get(pr))):
+                group_bias[want] = max(group_bias.get(want, 0),
+                                       anchor_bias(row_vib.get(pr)))
         row_keys = {pr: key_of(want, row_vib.get(pr))
+                    + (group_bias.get(want, 0)
+                       if squeezes(want, key_of(want, row_vib.get(pr)))
+                       else 0,)
                     for pr, want in taken.items()}
         entries: List[Tuple[int, int]] = []
         starts: Dict[tuple, int] = {}
@@ -1264,7 +1307,9 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 squeeze = (compact and key[0][2] and key[1] is None
                            and multiplier > 1)
                 prog = skydive_program(
-                    *key[0], speed_frame if squeeze else speed_index,
+                    *key[0],
+                    (lambda k, bias=key[2]: speed_frame(k, bias))
+                    if squeeze else speed_index,
                     multiplier, vib=key[1], speed_row=speed_row,
                     **({"compact": True} if squeeze else {}))
                 placed_rows.update(

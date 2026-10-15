@@ -634,6 +634,14 @@ EXCLUDED_FROM_ALWAYS = {
     # Not in FIDELITY_TOGGLES, as `aligned_firstwave` is not. A song entry
     # `"named_firstwave": true`.
     "named_firstwave",
+    # `pitch_tie_phase`: a legato tie on a bit-$10 record restarts the block
+    # of the phase it lands on (`goatwriter.pitch_seq_tie_plan`). Off by
+    # default and per song: it copies patterns and writes repeats out, so it
+    # moves bytes on every file whose legato ties land on a bit-$10 record,
+    # and its measured effect is one file's so far (Star_Paws). Not in
+    # FIDELITY_TOGGLES, as `named_firstwave` is not. A song entry
+    # `"pitch_tie_phase": true`.
+    "pitch_tie_phase",
 }
 
 

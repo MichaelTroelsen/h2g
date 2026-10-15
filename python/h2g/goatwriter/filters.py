@@ -919,14 +919,50 @@ def _best_sweep_length(gaps: List[tuple]) -> Optional[int]:
     note does not restart or replace the program -- an unfiltered record, or
     the end of the orderlist. The sum of both errors is convex and piecewise
     linear with its knots at the gaps, so the minimum is at one of them
-    (the smaller on a tie)."""
+    (the smaller on a tie).
+
+    **WHERE MOST OF THE GAPS ARE STOPS, THAT MINIMUM IS THE WRONG ONE.** The
+    absolute error is minimised at the weighted median, and a record that
+    mostly ends on an unfiltered follower has a right-skewed spread of gaps:
+    the median sits at the short mode and the conversion sweeps half what the
+    player does. Nemesis' record 2 has 54 gaps of 32 calls, 34 of 64, 4 of
+    96 and 13 of 128 (91 of 105 end on an unfiltered follower): the median is
+    32 and `cutoff_sweep` read 0.500. For such a record the length is the
+    smallest one at which the travel the player made and ours did not (the
+    longer gaps' shortfall) is paid for by the travel ours makes past the
+    stops, `sum(max(g - L, 0) for the gaps that end filtered) + sum(g - L for
+    the stops) <= 0`: the sweeps' total matches the player's, which is what
+    `cutoff_sweep` scores (0.500 -> 0.887, measured at v0.5.550). Held to a
+    stop MAJORITY because the same rule on every record moved Sanxion 1.100
+    -> 1.364 and Dragons_Lair_Part_II 0.835 -> 0.736, and so did each other
+    global variant tried (stops' mean, half-weighted shortfall, a cap at the
+    next strike on any voice): where most gaps lead into another filtered
+    strike the player's sweeps are evidently not the whole gap. Why is not
+    traced; the filter block at Nemesis' $E3AD is skipped on some status
+    bits (`classic-filter-status-bit0-skips-filter`)."""
     best = None
     for length in sorted({g for g, _ in gaps}):
         cost = sum(max(g - length, 0) + (max(length - g, 0) if stop else 0)
                    for g, stop in gaps)
         if best is None or cost < best[0]:
             best = (cost, length)
-    return best[1] if best else None
+    if best is None:
+        return None
+    if 2 * sum(1 for _, stop in gaps if stop) <= len(gaps):
+        return best[1]
+
+    def shortfall(length: int) -> int:
+        return sum((g - length) if stop else max(g - length, 0)
+                   for g, stop in gaps)
+
+    lo, hi = 1, max(g for g, _ in gaps)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if shortfall(mid) <= 0:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
 
 
 def classic_sweep_calls(tracks: List[List[int]], patterns: List[List[int]],

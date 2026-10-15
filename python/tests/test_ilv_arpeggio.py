@@ -130,7 +130,11 @@ def test_the_step_is_a_rate_and_is_scaled_by_the_multiplier():
     for mult in (1, 2, 3, 4):
         left, _ = G._arp_block(SOURCE, [0, 5, 11], mult, 10)
         body = 3            # the source's own entries, before the terminator
-        assert len(left) == body + 3 * mult + 1, mult
+        # ...and the entries that finish the frame the body ends in: the
+        # source is 1 + 3 + 1 = 5 calls, so the tail starts on a frame
+        # boundary (tests/test_arp_residue_audit.py)
+        pad = -5 % mult
+        assert len(left) == body + pad + 3 * mult + 1, mult
 
 
 def test_the_jump_returns_to_the_TAIL_and_the_phase_across_it_is_exact():
@@ -141,7 +145,9 @@ def test_the_jump_returns_to_the_TAIL_and_the_phase_across_it_is_exact():
     start = 10
     left, right = G._arp_block(SOURCE, [0, 5, 11], 2, start)
     assert left[-1] == G.WAVE_JUMP
-    tail = start + 3                      # past the source's three entries
+    # past the source's three entries (5 calls) and the one that finishes the
+    # frame they end in
+    tail = start + 3 + 1
     assert right[-1] == tail
     # The tail is a WHOLE cycle, so the frame after its last entry is
     # congruent with its first: read as a ring (the jump joins the last entry

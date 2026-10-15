@@ -75,7 +75,8 @@ def test_a_record_whose_notes_all_restart_it_sweeps_the_longest_gap():
 def test_stops_pull_the_length_down_to_where_the_player_stopped():
     """SABOTAGE TARGET: drop the overshoot term and every length becomes the
     longest gap, i.e. Sanxion's 6-call sweep runs 127 again."""
-    assert _best_sweep_length([(6, True)] * 5 + [(128, False)]) == 6
+    assert _best_sweep_length([(6, True)] * 5 + [(6, False)] * 5
+                              + [(128, False)]) == 6
     assert _best_sweep_length([(20, True)]) == 20
 
 

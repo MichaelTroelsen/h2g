@@ -12,7 +12,7 @@ from typing import (List, Optional, Tuple)
 from ..detect import (Detection, NIBBLE_ARP_PERIOD_OPCODE_SHAPE,
                       NibbleArpPeriod, PITCH_SEQ_AT_PHASE, PITCH_SEQ_SHAPES)
 from ..search import (search_file)
-from ..sidfile import (SidFile)
+from ..sidfile import (SidFile, _OPLEN)
 from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         EFFECT_PITCH_SEQ_MASK, FIXED_ARP_GATED_INC,
                         FIXED_ARP_PARITY_MASK, FIXED_ARP_RESET_WINDOW,
@@ -23,7 +23,7 @@ from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         TEMPO_DUTY_MAX_CLONE, WAVE_JUMP, WAVE_MAX_DELAY,
                         WAVE_NOTE_BASE)
 from .primitives import (_fixed_arp_block, _gate_calls, _wave_hold_byte)
-from .note_passes import (clone_number_ceiling)
+from .note_passes import (clone_number_ceiling, _entry_instruments)
 from .tempo import (outer_gate_skip)
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -358,7 +358,9 @@ class PitchSeqClock:
     Every cell's initial value is the file's own byte; reloads are the
     immediates. `outer`/`inner` are the row clock's two counters (the outer
     gate's cell and the speed gate's), whose reloads are per subtune and come
-    from `find_song_speeds` (`skip`, `frames - 1`).
+    from `find_song_speeds` (`skip`, `frames - 1`) -- or, where the init
+    primes the outer cell (`primed`), from the init run itself
+    (`init_rates`, `_pitch_seq_rates`).
     """
     divider: int            # initial byte of the divider cell
     divider_reload: int
@@ -368,6 +370,13 @@ class PitchSeqClock:
     #                         the player has no outer gate (every call runs
     #                         the row clock -- `_pitch_seq_flat_clock`)
     inner: int              # initial byte of the speed gate's cell
+    primed: bool = False    # the init stores the subtune's skip into `outer`
+    #                         (and the gate's reload immediate), so the first
+    #                         outer value is the skip, not the file's byte
+    init_rates: tuple = ()  # primed only: per subtune the (frames, skip) the
+    #                         INIT leaves in the cells, None where unread --
+    #                         the player indexes its tables by what its init
+    #                         does with the subtune number, not by the number
 
 
 # `_pitch_seq_flat_clock`'s pieces, Mega_Apocalypse's spelling ($4AEA,
@@ -597,6 +606,270 @@ def _init_runs_player_entry(sid: SidFile, phase_at: int) -> Optional[bool]:
     return False
 
 
+PITCH_SEQ_REACH_LIMIT = 4096     # instructions the init walk visits at most
+_INIT_BRANCHES = (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)
+
+
+def _init_reach(sid: SidFile) -> set:
+    """The offsets of the instructions the PSID init can execute.
+
+    A recursive descent from the init address: `JMP` and `JSR` are followed
+    (a `JSR` also falls through), a branch goes both ways, and `RTS`, `RTI`,
+    `BRK`, an indirect `JMP` and an undocumented opcode end a path. It
+    answers "is this instruction part of the init", which a file-wide scan
+    for a byte pattern cannot: Knucklebusters stores its outer and speed
+    cells too, from a song event, and the same bytes sit there.
+    """
+    data = sid.data
+    seen: set = set()
+    todo = [sid.to_offset(sid.init_addr)]
+    while todo and len(seen) < PITCH_SEQ_REACH_LIMIT:
+        off = todo.pop()
+        while 0 <= off < len(data) and off not in seen:
+            op = data[off]
+            n = int(_OPLEN[op])
+            if n == 0 or off + n > len(data):
+                break
+            seen.add(off)
+            if op in (0x60, 0x40, 0x00, 0x6C):
+                break
+            if op in (0x4C, 0x20):
+                target = sid.to_offset(data[off + 1] | data[off + 2] << 8)
+                todo.append(target)
+                if op == 0x4C:
+                    break
+            elif op in _INIT_BRANCHES:
+                rel = data[off + 1] - 256 if data[off + 1] > 127 else data[off + 1]
+                todo.append(off + 2 + rel)
+            off += n
+    return seen
+
+
+def _init_primes_outer(sid: SidFile, outer: bytes,
+                       imm_addr: int) -> Optional[int]:
+    """The address of the table the init loads the outer gate's skip from, or
+    None where the init does not prime the outer cell with it.
+
+    The init loads one byte from a table, indexed by the subtune, and stores
+    it twice -- into the outer cell and into the operand of the gate's
+    `LDA #imm` reload, in either order:
+
+        Dragons_Lair_Part_II  CC25  LDA $C4F7,X / STA $C06A / STA $C502
+        Kings_of_the_Beach    977F  LDA $9437,X / STA $9440 / STA $90CC
+
+    so the cell's first value is that subtune's skip, and so is every
+    reload after it. Both stores must lie on a path the init executes
+    (`_init_reach`).
+    """
+    data = sid.data
+    reach = _init_reach(sid)
+    want = {bytes(outer), bytes([imm_addr & 0xFF, imm_addr >> 8])}
+    for p in sorted(reach):
+        if (p + 9 <= len(data) and data[p] == 0xBD and data[p + 3] == 0x8D
+                and data[p + 6] == 0x8D and p + 3 in reach and p + 6 in reach
+                and {bytes(data[p + 4:p + 6]), bytes(data[p + 7:p + 9])}
+                == want):
+            return data[p + 1] | data[p + 2] << 8
+    return None
+
+
+PITCH_SEQ_INIT_STEPS = 50000     # instructions the init interpreter runs at most
+
+# The subset of the 6502 `_init_cells` runs. {opcode: (register, mode)}.
+_INIT_LOADS = {0xA9: ("A", "imm"), 0xA5: ("A", "zp"), 0xAD: ("A", "abs"),
+          0xBD: ("A", "absx"), 0xB9: ("A", "absy"),
+          0xA2: ("X", "imm"), 0xA6: ("X", "zp"), 0xAE: ("X", "abs"),
+          0xBE: ("X", "absy"),
+          0xA0: ("Y", "imm"), 0xA4: ("Y", "zp"), 0xAC: ("Y", "abs"),
+          0xBC: ("Y", "absx")}
+_INIT_STORES = {0x85: ("A", "zp"), 0x8D: ("A", "abs"), 0x9D: ("A", "absx"),
+           0x99: ("A", "absy"), 0x86: ("X", "zp"), 0x8E: ("X", "abs"),
+           0x84: ("Y", "zp"), 0x8C: ("Y", "abs")}
+_INIT_COMPARES = {0xC9: ("A", "imm"), 0xC5: ("A", "zp"), 0xCD: ("A", "abs"),
+             0xE0: ("X", "imm"), 0xE4: ("X", "zp"), 0xEC: ("X", "abs"),
+             0xC0: ("Y", "imm"), 0xC4: ("Y", "zp"), 0xCC: ("Y", "abs")}
+_INIT_ALU = {0x69: ("ADC", "imm"), 0x65: ("ADC", "zp"), 0x6D: ("ADC", "abs"),
+        0x7D: ("ADC", "absx"), 0xE9: ("SBC", "imm"), 0xE5: ("SBC", "zp"),
+        0xED: ("SBC", "abs"), 0xFD: ("SBC", "absx"),
+        0x29: ("AND", "imm"), 0x25: ("AND", "zp"), 0x2D: ("AND", "abs"),
+        0x09: ("ORA", "imm"), 0x05: ("ORA", "zp"), 0x0D: ("ORA", "abs"),
+        0x49: ("EOR", "imm"), 0x45: ("EOR", "zp"), 0x4D: ("EOR", "abs")}
+# {opcode: (flag, value branched on)} -- BPL BMI BVC(-) BVS(-) BCC BCS BNE BEQ
+_INIT_BRANCH_ON = {0x10: ("N", False), 0x30: ("N", True), 0x90: ("C", False),
+              0xB0: ("C", True), 0xD0: ("Z", False), 0xF0: ("Z", True)}
+
+
+def _init_cells(sid: SidFile, subtune: int) -> Optional[tuple]:
+    """(writes, read) of the PSID init run on `subtune`, or None.
+
+    A 6502 interpreter for the instructions an init uses to set a player's
+    cells up -- loads, stores, compares, `ADC`/`SBC`, the logic ops, the
+    register moves, branches, `JMP`/`JSR`/`RTS` -- and for nothing else: the
+    first opcode outside that set, a read of an address neither written nor
+    inside the file image (the SID's own registers, the zero page), or
+    `PITCH_SEQ_INIT_STEPS` instructions without an `RTS` returns None, so a
+    cell is never read off a run that did not happen. Instruction bytes are
+    fetched through the writes as well, since an init patches its own
+    operands (Dragons_Lair_Part_II's `STA $AF3D`). Decimal mode is not
+    modelled; no init in the corpus sets it.
+
+    `writes` is {address: value} of every store; `read(address)` is a
+    byte as the player finds it after the init -- a write, else the image.
+    The call is A = `subtune`, X = Y = 0, as the PSID header specifies.
+    """
+    data = sid.data
+    mem: dict = {}
+
+    def read(addr: int) -> int:
+        addr &= 0xFFFF
+        if addr in mem:
+            return mem[addr]
+        off = sid.to_offset(addr)
+        if 0 <= off < len(data) and sid.to_address(off) == addr:
+            return data[off]
+        raise LookupError(addr)
+
+    reg = {"A": subtune & 0xFF, "X": 0, "Y": 0}
+    flag = {"N": False, "Z": False, "C": False}
+    stack: list = []
+    pc = sid.init_addr
+
+    def setnz(v: int) -> int:
+        v &= 0xFF
+        flag["N"], flag["Z"] = bool(v & 0x80), v == 0
+        return v
+
+    def operand(mode: str) -> tuple:
+        """(effective address or None for imm, the operand byte's address)"""
+        b1 = read(pc + 1)
+        if mode == "imm":
+            return None, pc + 1
+        if mode == "zp":
+            return b1, None
+        a = b1 | read(pc + 2) << 8
+        if mode == "abs":
+            return a, None
+        return (a + (reg["X"] if mode == "absx" else reg["Y"])) & 0xFFFF, None
+
+    try:
+        for _ in range(PITCH_SEQ_INIT_STEPS):
+            op = read(pc)
+            n = int(_OPLEN[op])
+            if n == 0:
+                return None
+            nxt = (pc + n) & 0xFFFF
+            if op in _INIT_LOADS:
+                r, mode = _INIT_LOADS[op]
+                ea, imm = operand(mode)
+                reg[r] = setnz(read(imm if ea is None else ea))
+            elif op in _INIT_STORES:
+                r, mode = _INIT_STORES[op]
+                ea, _ = operand(mode)
+                mem[ea] = reg[r]
+            elif op in _INIT_COMPARES:
+                r, mode = _INIT_COMPARES[op]
+                ea, imm = operand(mode)
+                v = read(imm if ea is None else ea)
+                flag["C"] = reg[r] >= v
+                setnz(reg[r] - v)
+            elif op in _INIT_ALU:
+                name, mode = _INIT_ALU[op]
+                ea, imm = operand(mode)
+                v = read(imm if ea is None else ea)
+                a = reg["A"]
+                if name == "ADC":
+                    t = a + v + flag["C"]
+                    flag["C"] = t > 0xFF
+                elif name == "SBC":
+                    t = a - v - (not flag["C"])
+                    flag["C"] = t >= 0
+                else:
+                    t = {"AND": a & v, "ORA": a | v, "EOR": a ^ v}[name]
+                reg["A"] = setnz(t)
+            elif op in _INIT_BRANCH_ON:
+                f, want = _INIT_BRANCH_ON[op]
+                if flag[f] == want:
+                    rel = read(pc + 1)
+                    nxt = (pc + 2 + (rel - 256 if rel > 127 else rel)) & 0xFFFF
+            elif op == 0x4C:
+                nxt = read(pc + 1) | read(pc + 2) << 8
+            elif op == 0x20:
+                stack.append(nxt)
+                nxt = read(pc + 1) | read(pc + 2) << 8
+            elif op == 0x60:
+                if not stack:
+                    return mem, read
+                nxt = stack.pop()
+            elif op == 0x18:
+                flag["C"] = False
+            elif op == 0x38:
+                flag["C"] = True
+            elif op == 0xAA:
+                reg["X"] = setnz(reg["A"])
+            elif op == 0x8A:
+                reg["A"] = setnz(reg["X"])
+            elif op == 0xA8:
+                reg["Y"] = setnz(reg["A"])
+            elif op == 0x98:
+                reg["A"] = setnz(reg["Y"])
+            elif op in (0xE8, 0xCA):
+                reg["X"] = setnz(reg["X"] + (1 if op == 0xE8 else -1))
+            elif op in (0xC8, 0x88):
+                reg["Y"] = setnz(reg["Y"] + (1 if op == 0xC8 else -1))
+            elif op == 0x0A:
+                flag["C"] = bool(reg["A"] & 0x80)
+                reg["A"] = setnz(reg["A"] << 1)
+            elif op == 0x4A:
+                flag["C"] = bool(reg["A"] & 1)
+                reg["A"] = setnz(reg["A"] >> 1)
+            elif op != 0xEA:
+                return None
+            pc = nxt
+    except LookupError:
+        return None
+    return None
+
+
+def _init_rates(sid: SidFile, outer: bytes, imm_addr: int,
+                reload_cell: bytes) -> tuple:
+    """Per subtune the (frames, skip) the init leaves, None where unread.
+
+    `skip` is what the init stored into the outer cell AND the gate's
+    reload immediate (they must agree: that is what 'primed' means), and
+    `frames` is the speed gate's reload cell plus one -- both read off the
+    init run for that subtune (`_init_cells`), because the tables are indexed
+    by what the init makes of the subtune number: Dragons_Lair_Part_II's
+    dispatch sends subtune 0 to entry 9 and subtune 1 to entry 7.
+    """
+    cell = outer[0] | outer[1] << 8
+    speed = reload_cell[0] | reload_cell[1] << 8
+    out = []
+    for g in range(max(sid.subtunes, 1)):
+        ran = _init_cells(sid, g)
+        rate = None
+        if ran is not None:
+            mem, read = ran
+            try:
+                skip, imm = read(cell), read(imm_addr)
+                if skip == imm and skip:
+                    rate = (read(speed) + 1, skip)
+            except LookupError:
+                pass
+        out.append(rate)
+    return tuple(out)
+
+
+def _pitch_seq_rates(clock: PitchSeqClock, speeds, group: int) -> tuple:
+    """(frames, skip) subtune `group`'s clock runs at. A primed clock takes
+    them from its own init run (`_init_rates`); the others from
+    `find_song_speeds`. (None, None) where unread."""
+    if clock.primed:
+        got = (clock.init_rates[group] if group < len(clock.init_rates)
+               else None)
+        return got if got else (None, None)
+    return speeds.frames_for(group), speeds.skip_for(group)
+
+
 def _pitch_seq_flat_clock(sid: SidFile,
                           det: Detection) -> Optional[PitchSeqClock]:
     """The UNDIVIDED bit-$10 clock: Mega_Apocalypse's zero-page speed gate
@@ -627,6 +900,17 @@ def _pitch_seq_outer_flat_clock(sid: SidFile,
     the outer cell, and no writer of the outer, speed-counter or phase cell
     but the gate's own -- a file whose init stores a counter has a first value
     this does not read. The cells' initial values are the file's own bytes.
+
+    **One init store is read: the primer** (`_init_primes_outer`). Dragons_
+    Lair_Part_II (`LDA $C4F7,X / STA $C06A / STA $C502`) and Kings_of_the_
+    Beach_ingame (`LDA $9437,X / STA $9440 / STA $90CC`) load the subtune's
+    skip from a table and store it into the outer cell and the gate's reload
+    immediate, on a path the PSID init runs. The outer cell then has a third
+    writer, the first outer value is that subtune's skip (`primed`), and each
+    subtune's (frames, skip) is read off the init run (`_init_rates`) -- the
+    tables are indexed by what the init makes of the subtune number. A file
+    whose init cannot be run by `_init_cells` is declined. Knucklebusters
+    stores the cells from a song event and stays declined.
     """
     seq = det.pitch_seq
     if seq is None or seq.frames_per_step != 1 or seq.pairs < 0:
@@ -666,18 +950,29 @@ def _pitch_seq_outer_flat_clock(sid: SidFile,
                    g.group(2)[1], 0xD0])
     if data.find(fetch, at, at + 16) < 0:
         return None
-    for cell in (outer, inner):
-        if _abs_writers(data, cell) != 2:    # the gate's DEC and reload STA
-            return None
+    # The gate's DEC and reload STA; a third writer is allowed only where it
+    # is the init priming the cell with the skip (`_init_primes_outer`).
+    primed = _init_primes_outer(sid, outer, sid.to_address(m.start() + 6))
+    if _abs_writers(data, outer) != (3 if primed is not None else 2):
+        return None
+    if _abs_writers(data, inner) != 2:
+        return None
     cells = []
     for cell in (outer, inner, bytes([lo, hi])):
         off = sid.to_offset(cell[0] | cell[1] << 8)
         if not 0 <= off < len(data):
             return None
         cells.append(data[off])
+    rates = ()
+    if primed is not None:
+        rates = _init_rates(sid, outer, sid.to_address(m.start() + 6),
+                            g.group(2))
+        if not any(rates):
+            return None                  # no subtune's init could be run
     return PitchSeqClock(divider=0, divider_reload=0, phase=cells[2],
                          phase_reload=data[reload_at + 6], outer=cells[0],
-                         inner=cells[1])
+                         inner=cells[1], primed=primed is not None,
+                         init_rates=rates)
 
 
 def _pitch_seq_clock(sid: SidFile, det: Detection) -> Optional[PitchSeqClock]:
@@ -795,6 +1090,8 @@ def _pitch_seq_calls(clock: PitchSeqClock, frames: int, skip: int):
     """
     state = _pitch_seq_advance(clock, (clock.divider, clock.phase))
     outer, inner = clock.outer, clock.inner
+    if clock.primed:
+        outer = skip                     # the init stored the skip into it
     while True:
         seen = state
         if outer is None:                # no outer gate: every call counts
@@ -855,10 +1152,13 @@ def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     gives each minority state a clone of its own; this stays the record's.
 
     Empty wherever no clock is read (`_pitch_seq_any_clock`): Food_Feud's
-    divided one, Mega_Apocalypse's zero-page one and the 24 classic
+    divided one, Mega_Apocalypse's zero-page one and the 26 classic
     outer-gated files `_pitch_seq_outer_flat_clock` reads (each checked with
     `siddump -w` on the outer, speed and phase cells over every subtune that
-    runs the gate, 60 s: tests/test_pitch_seq_flat_clock_outer.py).
+    runs the gate, 60 s: tests/test_pitch_seq_flat_clock_outer.py; the two
+    whose init primes the outer cell, Dragons_Lair_Part_II and Kings_of_the_
+    Beach_ingame, over all subtunes at 20 s:
+    tests/test_pitch_seq_init_primed.py).
     """
     clock = _pitch_seq_any_clock(sid, det)
     if clock is None:
@@ -871,7 +1171,7 @@ def pitch_seq_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         return {}                        # a split subtune shifted the numbering
     votes: dict = {}
     for g in range(groups):
-        frames, skip = speeds.frames_for(g), speeds.skip_for(g)
+        frames, skip = _pitch_seq_rates(clock, speeds, g)
         if not _pitch_seq_rate_read(clock, frames, skip, g):
             continue
         notes = []
@@ -943,7 +1243,7 @@ def pitch_seq_note_phases(sid: SidFile, det: Detection,
     out: dict = {}
     tuples: dict = {}
     for g in range(len(tracks) // 3):
-        frames, skip = speeds.frames_for(g), speeds.skip_for(g)
+        frames, skip = _pitch_seq_rates(clock, speeds, g)
         if not _pitch_seq_rate_read(clock, frames, skip, g):
             continue
         laid = []                            # (ti, pos, play, {k: row})
@@ -975,6 +1275,220 @@ def pitch_seq_note_phases(sid: SidFile, det: Detection,
                         tuples[state] = _pitch_seq_frames_after(clock, state)
                     res[k] = tuples[state]
     return out
+
+
+def _pitch_seq_tie_grid(sid: SidFile, det: Detection,
+                        tracks: List[List[int]],
+                        patterns: List[List[int]], rows: set) -> dict:
+    """{(track, orderlist position, play): (pattern, {row index: phase
+    tuple})} -- for every play of a pattern, the phase tuple each of its
+    `rows` ((pattern, row index) pairs, the legato tie rows) is fetched on.
+
+    A tie is a row the player fetches like any other and restarts no phase
+    (`pitch_seq_phases`' docstring): the cell after it reads whatever the
+    global clock says, so the state on its fetch call is as static as a
+    note's attack state, and `_pitch_seq_frames_after` turns it into the
+    same tuple a note's phase clone is made for. Empty wherever
+    `pitch_seq_phases` is (no clock, no row length)."""
+    clock = _pitch_seq_any_clock(sid, det)
+    if clock is None:
+        return {}
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if speeds is None or len(tracks) // 3 > max(sid.subtunes, 1):
+        return {}
+    tuples: dict = {}
+    out: dict = {}
+    for g in range(len(tracks) // 3):
+        frames, skip = speeds.frames_for(g), speeds.skip_for(g)
+        if not _pitch_seq_rate_read(clock, frames, skip, g):
+            continue
+        laid = []                    # (place, pattern, {row index: grid row})
+        need = 0
+        for ti in range(3 * g, 3 * g + 3):
+            row, seen = 0, Counter()
+            for pos, p in _orderlist_occurrences(tracks[ti]):
+                if p >= len(patterns):
+                    continue
+                pat = patterns[p]
+                play = seen[pos]
+                seen[pos] += 1
+                ties = {}
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if (p, r // 4) in rows:
+                        ties[r // 4] = row
+                        need = max(need, row + 1)
+                    row += 1
+                laid.append(((ti, pos, play), p, ties))
+        fetched = _pitch_seq_fetched(clock, frames, skip, need)
+        for place, p, ties in laid:
+            res = {}
+            for k, row in ties.items():
+                if row >= len(fetched):
+                    continue
+                state = fetched[row]
+                if state not in tuples:
+                    tuples[state] = _pitch_seq_frames_after(clock, state)
+                res[k] = tuples[state]
+            out[place] = (p, res)
+    return out
+
+
+def pitch_seq_tie_phases(sid: SidFile, det: Detection,
+                         tracks: List[List[int]],
+                         patterns: List[List[int]], rows: set) -> dict:
+    """{(pattern, row index): {phase tuple, ...}} -- every phase tuple a tie
+    of `rows` is played on, one per place the row is played. A row with more
+    than one has no one block to restart (`pitch_seq_tie_plan` copies the
+    pattern so each play has its own)."""
+    out: dict = {}
+    for p, res in _pitch_seq_tie_grid(sid, det, tracks, patterns,
+                                      rows).values():
+        for k, tup in res.items():
+            out.setdefault((p, k), set()).add(tup)
+    return out
+
+
+@dataclass
+class PitchTiePlan:
+    """What `pitch_seq_tie_plan` decided: the orderlists and patterns with
+    their copies, `copies` {copy number: source pattern} and `tags`
+    {(pattern, row index): (record GT number, phase tuple)} for every tie
+    whose block is not its record's own."""
+    tracks: List[List[int]]
+    patterns: List[List[int]]
+    copies: dict
+    tags: dict
+
+
+def pitch_seq_tie_plan(sid: SidFile, det: Detection,
+                       tracks: List[List[int]], patterns: List[List[int]],
+                       rows: set, lead: int, instr_used: int, own: dict,
+                       log=None) -> Optional[PitchTiePlan]:
+    """Give each legato tie row of a bit-$10 record the phase block of the
+    state it is fetched in -- or None where nothing would change.
+
+    A legato clone restarts its record's wavetable at its first step
+    (gplay.c:363), and for a bit-$10 record that step carries the phase the
+    block was laid out at (`own`, `pitch_seq_phases`' value: the majority of
+    the record's NOTES). The original's tie restarts no phase cell: it
+    reads whatever the global clock says on the tie's fetch call, so the
+    octave after the landing is right only where that is the block's phase
+    (Star_Paws GT 15: reversals 952 on clones against 414 in the original,
+    399 on plain ties -- the program starts over on every tie row where the
+    original's phase cell runs on). `_pitch_seq_tie_grid` gives each place
+    its tuple; a row played on more than one has none to restart, so the
+    pattern is copied per spelling (a repeated entry whose plays disagree is
+    first written out, `_expand_repeats`: `pitch_seq_phase_split_plan`'s
+    shape) and each copy's rows are TAGGED with the record they land on and
+    the tuple. Rows landing on the record's own tuple carry no tag.
+
+    A play entered holding no one instrument, or a row whose record is not a
+    bit-$10 record with a phase, casts no tag. Called before the orderlists
+    are written (its repeats and copies repoint them), under
+    `legato_tie_clones`' own gates; the caller lays out one block per
+    distinct tagged (record, tuple) and points the clone at it."""
+    if det.pitch_seq is None or not rows or not own:
+        return None
+    data = sid.data
+    records = set()
+    for i in range(max(instr_used - lead, 0)):
+        at = det.instr_start + i * det.instr_stride + 7
+        if (at < len(data) and data[at] & EFFECT_PITCH_SEQ_MASK
+                and i + lead + 1 in own):
+            records.add(i + lead + 1)
+    if not records:
+        return None
+
+    def live_rows(tks, pats):
+        """{(pattern, row index): the record a tie row lands on}"""
+        entry = _entry_instruments(tks, pats)
+        live_of: dict = {}
+        for p, pat in enumerate(pats):
+            held = entry.get(p, set())
+            live = next(iter(held)) if len(held) == 1 else 0
+            for k in range(len(pat) // 4):
+                if pat[4 * k] == 0xFF:
+                    break
+                if pat[4 * k + 1]:
+                    live = pat[4 * k + 1]
+                if (p, k) in rows and live in records:
+                    live_of[(p, k)] = live
+        return live_of
+
+    def spellings(tks, pats):
+        live_of = live_rows(tks, pats)
+        grid = _pitch_seq_tie_grid(sid, det, tks, pats, set(live_of))
+        spelled = {}
+        for place, (p, res) in grid.items():
+            spelled[place] = tuple(sorted(
+                (k, live_of[(p, k)], tup) for k, tup in res.items()
+                if tup != own[live_of[(p, k)]]))
+        return spelled
+
+    tracks_in = tracks
+    spelled = spellings(tracks, patterns)
+    if not any(spelled.values()):
+        return None
+    # A repeated entry whose plays are spelled differently is written out as
+    # one entry per play, so each can name its own copy.
+    unroll: dict = {}
+    first_of: dict = {}
+    for (ti, pos, play), s in sorted(spelled.items()):
+        if play == 0:
+            first_of[(ti, pos)] = s
+        elif s != first_of.get((ti, pos)):
+            unroll.setdefault(ti, set()).add(pos)
+    if unroll:
+        wide = [(_expand_repeats(t, unroll[ti]) or t) if ti in unroll else t
+                for ti, t in enumerate(tracks)]
+        if wide != tracks:
+            tracks = wide
+            spelled = spellings(tracks, patterns)
+    # One spelling per orderlist position: its first play's.
+    by_pos: dict = {}
+    for (ti, pos, play), s in sorted(spelled.items()):
+        by_pos.setdefault((ti, pos), s)
+    by_pat: dict = {}
+    for (ti, pos), s in by_pos.items():
+        by_pat.setdefault(tracks[ti][pos], Counter())[s] += 1
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = [list(p) for p in patterns]
+    copy_of: dict = {}
+    copies: dict = {}
+    tags: dict = {}
+    for p, counts in sorted(by_pat.items()):
+        stay = max(counts, key=lambda s: (counts[s], not s, s))
+        for k, g, tup in stay:
+            tags[(p, k)] = (g, tup)
+        for s in sorted(counts):
+            if s == stay:
+                continue
+            n = len(new_patterns)
+            copy_of[(p, s)] = n
+            copies[n] = p
+            new_patterns.append(list(patterns[p]))
+            for k, g, tup in s:
+                tags[(n, k)] = (g, tup)
+    if len(new_patterns) > 208:              # patterns.MAX_PATTERNS
+        if log:
+            log("Pitch tie phase.........: the copies would pass 208 "
+                "patterns; not splitting")
+        return None
+    for (ti, pos), s in by_pos.items():
+        n = copy_of.get((tracks[ti][pos], s))
+        if n is not None:
+            new_tracks[ti][pos] = n
+    if not tags:
+        return None
+    if log:
+        grown = (sum(len(t) for t in new_tracks)
+                 - sum(len(t) for t in tracks_in))
+        log(f"Pitch tie phase.........: {len(tags)} tie row(s) restart the "
+            f"block of the phase they land on, {len(copies)} pattern "
+            f"copy(ies), {grown} orderlist byte(s) added")
+    return PitchTiePlan(new_tracks, new_patterns, copies, tags)
 
 
 def pitch_seq_outer_gated(sid: SidFile, det: Detection) -> bool:

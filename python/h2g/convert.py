@@ -267,7 +267,8 @@ def convert(sid_path: str, log: Logger = print,
             regrid_prepay: int = 0,
             regrid_park: bool = False,
             aligned_firstwave: bool = False,
-            named_firstwave: bool = False) -> bytes:
+            named_firstwave: bool = False,
+            pitch_tie_phase: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -439,6 +440,16 @@ def convert(sid_path: str, log: Logger = print,
     can only move the gate rise. `aligned_firstwave` overrides it; the real
     firstwave lists override it per instrument. Off by default and per song
     (presets.EXCLUDED_FROM_ALWAYS); byte-inert where it is off.
+
+    pitch_tie_phase gives each legato tie on a bit-$10 record the phase block
+    of the state it is fetched in (`goatwriter.pitch_seq_tie_plan`): the
+    original's tie restarts no phase cell, and the legato clone it is
+    respelled on restarts its record's wavetable, whose single block carries
+    ONE phase. Needs the legato clones (the note_flag family) and a bit-$10
+    clock read from the file (`pitch_seq`, GTS5); patterns are copied and
+    repeats written out so each tie row is fetched in one state. Off by
+    default and per song (presets.EXCLUDED_FROM_ALWAYS); byte-inert where it
+    is off.
 
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
@@ -1215,6 +1226,7 @@ def convert(sid_path: str, log: Logger = print,
                          gate_off_firstwave_instruments=gate_off,
                          gatetimer_trim=1 if aligned_firstwave else 0,
                          named_firstwave=named_firstwave,
+                         pitch_tie_phase=pitch_tie_phase,
                          arps=ilv_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
