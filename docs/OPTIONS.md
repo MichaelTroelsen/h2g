@@ -2194,6 +2194,27 @@ original; Hollywood loses melody (3254 attacks both ways). Adopt per file from a
 trace (`edges.py`-style rise and fall census at the file's lag), not from this
 table.
 
+## `--named-firstwave` (the init call that names its pitch step)
+
+Every instrument's note-init call is spent on the record's waveform with the
+test bit set and the gate CLEAR (`goatwriter.instruments.named_testbit_firstwave`:
+`(w & $FE) | $08`, or `$09` where the record has no waveform select bit), instead
+of `$09`. siddump names nothing below waveform `$10`, so with `$09` the frame the
+init call occupies carries no nameable pitch, and an original whose arpeggio or
+vibrato step lands on that frame reads as a tie we lack. At `-S2` and above the
+init call's frame does carry a pitch step and this makes it nameable; **at `-S1`
+it cannot help**: `player.s` `mt_loadregswaveonly` writes no frequency on the
+init call, so only the gate rise moves.
+
+It implies a gate-off firstwave on every instrument (with no gatetimer trim);
+`--aligned-firstwave` overrides it. Off by default and per song (a `--presets`
+entry's `named_firstwave`, listed in `presets.EXCLUDED_FROM_ALWAYS`); with it
+off every conversion is byte-identical. HISTORICAL at 4c9dab5, forced at `-t 60`
+over the corpus (C:/t/firstwave-frame-carries-arp-step): +2074 same-frame ties
+across the 49 multispeed rows with melody and sequence flat; most of the gate
+and wave gains come from the implied gate-off firstwave alone, and gate fell on
+4 of 89 rows (Samantha_Fox -0.053). No song adopts it yet.
+
 ## `--rest-wave-silence` (the rest that parks a waveform)
 
 Status bit 6 is a rest. A Goattracker `KEYOFF` clears the *gate* and nothing

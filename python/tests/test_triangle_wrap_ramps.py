@@ -151,7 +151,11 @@ def test_the_shipped_tables_open_the_named_phases_the_sweeps_way():
         # are its holds -- voice 0's $F00 and voice 1's $E80, the width it
         # opens off by a step.
         "Devils_Galop.sid": {(10, 0xF00, hold_direction(0)): [0xF00] * 4,
-                             (10, 0xF00, hold_direction(-1)): [0xE80] * 4},
+                             # (voice 1's opening width stays for the attack
+                             # frame -- the shared layout's attack form --
+                             # then the width it holds)
+                             (10, 0xF00, hold_direction(-1)):
+                                 [0xF00, 0xF00, 0xE80, 0xE80]},
         # $E0 steps: the sweep's $800 $720 $640 $560. RETRACTED: "$800 $781
         # $702 $683", the clamp's 127 a call against the player's 224
         # (tests/test_spelled_triangle_steps.py).

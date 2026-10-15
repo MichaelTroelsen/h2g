@@ -86,7 +86,7 @@ from .hard_restart import (SINGLE_ROW_HARD_RESTART_TICKS,  # noqa: F401
                            _hard_restart_ticks)
 from .instruments import (_build_header, _field_bytes, _instruments_used,
                           _padded_name_bytes, gate_off_firstwave,
-                          record_envelope,
+                          named_testbit_firstwave, record_envelope,
                           _table_length_byte, _write_instruments)  # noqa: F401
 from .appending import (append_song, _latched_after, _parse_song,
                         _pattern_plays, _pin_start_instruments, _place_region,
@@ -151,10 +151,12 @@ from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _wave_alternate_entries, _wave_block_calls)  # noqa: F401
 from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     build_pulse_phase_table, _chained_phases, _lay_out_pulse,
-                    _lay_pulse_phase_pass, _lay_pulse_phase_table, _cost, _score,
-                    _leg_ramps, HOLD, hold_direction, hold_steps, is_hold,
+                    _lay_attack_or_plain, _lay_pulse_phase_pass,
+                    _lay_pulse_phase_table, _cost, _score,
+                    _leg_ramps, HOLD, HOLD_WAIT, hold_direction, hold_steps, hold_wait, hold_rest, is_hold,
                     packed_pattern_size, pattern_rows, _union_groups,
                     _union_kind, _phase_cycle, _phase_turns,
+                    _minority_cycles,
                     _phase_block, _phase_sweep_params, pulse_bounds_sims,
                     _pulse_layout, _pulse_lo_program, pulse_phase_sims,
                     _pulse_program, pulse_reseed_gated, _pulse_tri_program,

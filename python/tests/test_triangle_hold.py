@@ -73,12 +73,16 @@ def test_a_delay_changes_the_ticks_a_voice_reads_not_the_hold():
     two steps first decides the steps each reads away from the width at the
     fetch: voice 1 first (counters 0, 0), voice 1 down and voice 0 back;
     voice 0 first (voice 1's counter at 1), voice 0 up and voice 1 back."""
-    want = {(0, 0): (0, -1), (0, 1): (+1, 0), (1, 0): (0, -1), (1, 1): (0, -1)}
-    for counters, (k0, k1) in want.items():
+    # Each also carries the ticks its opening width stays on the register
+    # before its first step (`hold_wait`): (k, wait) per voice.
+    want = {(0, 0): ((0, 0), (-1, 0)), (0, 1): ((+1, 0), (0, 1)),
+            (1, 0): ((0, 1), (-1, 0)), (1, 1): ((0, 1), (-1, 1))}
+    for counters, ((k0, w0), (k1, w1)) in want.items():
         got = _pair(delay=2, counters=counters)
         [(_, _, v0), (_, _, v1)] = got
         assert v0[4][1][0] == v1[4][1][0] == 0xA00, (counters, got)
-        assert (v0[4][1][1], v1[4][1][1]) == (hold_direction(k0), hold_direction(k1)),             (counters, got)
+        assert (v0[4][1][1], v1[4][1][1]) == (hold_direction(k0, w0),
+                                              hold_direction(k1, w1)), (counters, got)
 
 
 def test_two_voices_stepping_the_same_way_are_not_a_hold():
@@ -110,9 +114,10 @@ def test_a_voice_alone_on_its_record_sweeps():
 # The table
 # --------------------------------------------------------------------------
 
-def _block(want: set, share: bool, step: int = 0x80, speed: int = 0x40):
+def _block(want: set, share: bool, step: int = 0x80, speed: int = 0x40,
+           multiplier: int = 2):
     rows, index = _phase_block(0, 1, want, 0x880, speed, LO, HI, False,
-                               step, share=share)
+                               step, share=share, multiplier=multiplier)
     return rows, index
 
 
@@ -174,8 +179,11 @@ def test_devils_galops_instrument_10_is_planned_as_holds():
     first notes' $E00 (k = +1, +2). No ($F00, up) or ($F00, down) remain."""
     from test_pulse_phase_union import _table_calls
     phases = _table_calls("Devils_Galop.sid")[0][5]
-    assert phases[10] == {(0xE00, hold_direction(1)), (0xE00, hold_direction(2)),
-                          (0xF00, hold_direction(-1)), (0xF00, hold_direction(0))}, phases[10]
+    # (An opening also names how many ticks the original keeps it on the
+    # register before the held width -- `hold_direction`'s `wait`; see
+    # tests/test_hold_attack_frame.py.)
+    assert {(w, hold_steps(d)) for w, d in phases[10]} == {
+        (0xE00, 1), (0xE00, 2), (0xF00, -1), (0xF00, 0)}, phases[10]
     assert all(is_hold(d) for _, d in phases[10] | phases[11])
 
 

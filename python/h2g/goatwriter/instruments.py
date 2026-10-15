@@ -171,6 +171,30 @@ def gate_off_firstwave(waveform: int) -> int:
     return fw if fw & 0xF0 and fw < 0xFE else FIRSTWAVE_TESTBIT
 
 
+def named_testbit_firstwave(waveform: int) -> int:
+    """The firstwave byte that keeps `FIRSTWAVE_TESTBIT`'s test bit and still
+    lets siddump NAME the frame: the record's waveform with the test bit set
+    and the gate CLEAR (`waveform & $FE | $08`), or `FIRSTWAVE_TESTBIT` where
+    no select bit exists or the result would be `$FE`, which Goattracker reads
+    as a gate command that leaves the waveform unwritten (gplay.c:355).
+
+    siddump prints a note, a tie or an attack only on a frame whose waveform
+    is `>= $10` (siddump.c:434-437), and `$09` selects none, so a pitch step
+    the firstwave frame carries (any -S2+ file: the previous call of the same
+    frame stepped it) reads as `751A ... ..` and the original's `(A-6 D1)`
+    tie there is charged to us (`fidelity.tie_compare`'s
+    `tie_orig_only_firstwave`). `$x8` is silent exactly as `$09` is -- the
+    test bit holds the oscillator in reset -- and its gate is CLEAR, so the
+    frame names a tie rather than an attack: a gate-ON byte >= $10 would
+    name the stale pitch as a ghost attack and leave the real one unnamed.
+    The gate-clear half is `gate_off_firstwave`'s; the test bit is the only
+    difference from it, and `FIRSTWAVE_TESTBIT`'s oscillator reset is what
+    it keeps.
+    """
+    fw = (waveform & 0xFE) | 0x08
+    return fw if waveform & 0xF0 and fw < 0xFE else FIRSTWAVE_TESTBIT
+
+
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_used: int, pulse_starts: List[int],
                        sustain_exact: bool = False,
@@ -190,7 +214,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_row_calls: dict | None = None,
                        gate_off_firstwave_instruments: tuple = (),
                        gatetimer_trim: int = 0,
-                       gate_clear_firstwave: bool = False) -> int:
+                       gate_clear_firstwave: bool = False,
+                       named_firstwave: bool = False) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -445,7 +470,10 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         if use_real_firstwave:
             firstwave = (data[base + 2] | 0x01) & 0xFF
         elif gt_number in gate_off_firstwave_instruments:
-            firstwave = gate_off_firstwave(data[base + 2])
+            # `named_firstwave` keeps the test bit on the same gate-clear
+            # byte, so the frame is nameable and still resets the oscillator.
+            firstwave = (named_testbit_firstwave if named_firstwave
+                         else gate_off_firstwave)(data[base + 2])
             if gatetimer_trim and firstwave != FIRSTWAVE_TESTBIT:
                 # `aligned_firstwave`: the init call is now one of the gate's
                 # off calls (it writes the record's waveform with the gate

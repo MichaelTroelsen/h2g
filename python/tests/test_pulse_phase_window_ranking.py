@@ -155,4 +155,7 @@ def test_human_races_window_reach_total_rises_and_subtune_zero_holds():
         assert reached[k] >= first_come[k], (k, reached)
     assert reached[(3, 0)] == 138 and reached[(4, 0)] > 0, reached
     assert sum(reached.values()) >= sum(first_come.values()), reached
-    assert sum(reached.values()) == 1171, reached
+    # 1171 until phase-seed-minority-lattice (records 18 and 23 chain, the
+    # table keeps 23 in 21's place): subtune 4 voice 0 173 -> 210, subtune 2
+    # voice 1 69 -> 63.
+    assert sum(reached.values()) == 1202, reached

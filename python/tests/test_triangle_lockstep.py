@@ -473,9 +473,13 @@ _REACH = {
     # handed over. Window total 899 -> 1171: subtune 3 voice 0 0 -> 138,
     # subtune 4 voice 0 0 -> 173, paid for by subtune 2 voice 1
     # 108 -> 69. Over 600 s the same layout reads 959 -> 1237.
+    # Re-pinned by phase-seed-minority-lattice: records 18 and 23 chain
+    # (their seed phase runs its own loop), the shipped table drops from 245
+    # rows to 197 and keeps 23 where it kept 21. Window total 1171 -> 1202:
+    # subtune 4 voice 0 173 -> 210, subtune 2 voice 1 69 -> 63.
     "Human_Race.sid": {(0, 0): (455, 457), (0, 1): (120, 120),
-                       (1, 1): (216, 216), (2, 1): (69, 120),
-                       (3, 0): (138, 138), (4, 0): (173, 386),
+                       (1, 1): (216, 216), (2, 1): (63, 120),
+                       (3, 0): (138, 138), (4, 0): (210, 386),
                        (4, 1): (0, 264)},
 }
 

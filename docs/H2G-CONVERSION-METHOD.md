@@ -13930,6 +13930,32 @@ a note an octave and more above the original's with or without the program. Last
 is tuned a hair differently from Goattracker's, so its windows on some notes
 read one high byte up whatever the encoding.
 
+**The 29 at frame 6407 are a pattern byte past the table, and now sound the
+right octave** (measured 2026-10-15 at 4c9dab5, siddump of subtune 0 to 600 s).
+Pattern `$12` (`$89F9`) is `BF 0D 7C 7F...`: instrument `$0D` (wave `$17`,
+record +5 = 1, skydive) on the note byte `$7C`. The fetch `ASL / TAY / LDA
+$843B,Y` has no bound, so Y = `$F8` reads `$8533/$8534` -- not table entries but
+two scratch variables, `$81BD STA $8533` (the effect byte of the record being
+run) and `$8272 STA $8534` (the pulse step, `$851A & $E0`). The original
+starts the note at `$6001` at all four fetches (frames 6400, 13312, 20224,
+27136; the C128 rip at 6401 and 13313) and then sweeps it: the vibrato's delta
+is `(next - base) >> 2` with `next` the frame counter, so the high bytes read
+`60 88 B0 D8` on the even frames while the skydive falls `5F 5E 5D...` on the
+odd ones. `past_table_notes` declined the cell (it is written) and the clamp
+sounded G#7 (`$DD0E`), 14 semitones over. `patterns.PLAYER_CELL_PITCH` records
+the measured `$6001` per rip, with the two writer sites it was measured
+under, and `player_cell_notes` maps the byte to the nearest entry of the
+player's own table (78, `$6270`, +43 cents) only if those sites are still
+exactly the cell's writers (`tests/test_player_cell_pitch.py`). Last_V8 and its
+C128 rip under presets, -t 180: melody 0.99947 -> 1.0, sequence 0.99958 -> 1.0,
+pitch_jaccard 0.9556 -> 1.0 (the G#7 is gone), travel_ratio 1.0945 -> 0.8667
+(1.1062 -> 0.8762): the over-travel the compact skydive recorded was in part
+this one note falling from G#7, and what is left is the sweep, which a
+Goattracker note cannot play. **The 29 frames still miss**: the skydive now
+falls from `$62` against the original's `$60`, two high bytes up for its whole
+length, so the high-byte count stays 184/238. A note cannot be tuned finer
+than the table, and the pitch is the one thing here that is not reproduced.
+
 Some cases are logged and not emitted:
 
 * Programs that do not fit the wavetable, after both rescues above.
@@ -16348,7 +16374,9 @@ read exact 99 to 286 of 369, within half a speed 121 to 355, within one speed 21
 to 369. What is left is speeds that do not divide the rate (Saboteur_II at `-S3`:
 6 of 39 exact, all within one speed). A one-nibble band (`hi == lo`) has one
 two-point jitter cycle per lattice point in the nibble and a shared loop holds only
-one, so a phase inside such a nibble joins the majority cycle, as the triangle's does.
+one, so a phase inside such a nibble joined the majority cycle, as the triangle's did
+(RETRACTED by task `phase-seed-minority-lattice`: a phase on another cycle now runs a
+loop of its own, below).
 
 **Frames against the original** (packed at `-S{mult}`, traced at `-m{mult}`, original
 at `-m1`, 180 s; the 48 frames after each paired attack; mean width error in the
@@ -16381,6 +16409,35 @@ planned width, which this task did not chase). Totals: reached 7909 to 7970, no
 command 3502 to 3438, **commanded but wrong 618 to 621** (178 to 173 without
 5_Title_Tunes). The lattice legs are a leg-shape change, so a reading at the attack
 is the wrong instrument for them; the turn census above is the one that measures.
+
+**A phase on another cycle than the record's runs a loop of its own**
+(`_minority_cycles`, task `phase-seed-minority-lattice`; figures at 4c9dab5 plus the
+change, presets with `pulse_phase` forced). A sweep that never wraps keeps its
+lattice for good, so Human_Race's records 18 and 23 (step `$E0`) seed at ($800, up)
+and cycle `$8E0..$E20` for ever while 17 of 18 (18 of 19) phases cycle `$840..$E60`.
+The seed's piece used to join the dominant loop and ran `$E90` where the player turns
+at `$E20`; the record's `_union_kind` was None (its leg could not land), so it chained
+nothing. Now the phases whose own cycle differs from `_phase_cycle`'s are laid as a
+piece that ramps to ITS cycle's edge and jumps into a private two-leg loop on that
+cycle (laid once per cycle, when a piece first needs it), and `_chained_phases` and
+`_union_kind` read the phases that join the shared loop only. Human_Race: both
+records "chained" and unioned, the shipped table 245 to 197 rows (the seed's loop is
+2 legs of 14 ticks and 2 jumps; the savings are the chained legs), records 1, 2, 4, 18
+and 23 swept (5 of 7; it kept 21 in 23's place), first-three-turns exact 351 of 354 to
+285 of 285 over the entries now kept. Commando's record 7, also a seed on the other
+lattice, is "chained": 185 to 117 rows, 88 of 90 to 90 of 90 exact.
+Thing_on_a_Spring 381 to 384 of 393 and Trans-Atlantic_Balloon_Challenge's two
+bounds-engine phases 1 of 2 to 2 of 2. Whole-corpus census (89 files, 4677 to 4608
+turns, the loss is Human_Race's swapped record): exact 91.6% to 91.7%, within half a
+speed 99.4% to 99.6%, within one speed 99.9% to 100%. Byte-hash under presets: 89
+converted, 0 refused, 1 moved (Commando.sid; the `Commando.sng` fixture is untouched);
+forced, 4 move (Commando, Human_Race, Thing_on_a_Spring,
+Trans-Atlantic_Balloon_Challenge). A tie for the dominant cycle goes to the lowest
+bottom and the other becomes the minority, so a two-phase record on two lattices lays
+both exactly (Trans-Atlantic: 147 to 155 rows). The greedy union adoption
+(`_lay_pulse_phase_table`) takes unions one group at a time: Human_Race's two unions
+together keep six records at 242 rows (cost 264 notes) where the one-at-a-time rule
+ships five (cost 437) -- measured, not changed here.
 
 ### 7.NEW A triangle step above 127 a call is spelled as set rows, not clamped
 

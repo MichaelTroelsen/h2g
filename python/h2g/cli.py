@@ -258,6 +258,17 @@ def main(argv=None) -> int:
              "Per song (a --presets entry's aligned_firstwave); off leaves "
              "every conversion byte-identical.")
     parser.add_argument(
+        "--named-firstwave", action="store_true",
+        help="spend every instrument's note-init call on the record's "
+             "waveform with the test bit and the gate CLEAR ($x8) instead of "
+             "$09, so siddump can name the pitch step that frame carries at "
+             "-S2 and above (it names nothing below $10) -- the original's "
+             "tie there stops being charged to us. At -S1 the init call "
+             "writes no pitch, so only the gate rise moves. Implies a "
+             "gate-off firstwave on every instrument; --aligned-firstwave "
+             "overrides it. Per song (a --presets entry's named_firstwave); "
+             "off leaves every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -673,6 +684,7 @@ def main(argv=None) -> int:
                           ("--tie", "tie"),
                           ("--tie-restart", "tie_restart"),
                           ("--aligned-firstwave", "aligned_firstwave"),
+                          ("--named-firstwave", "named_firstwave"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--filter", "filters"),
@@ -784,6 +796,7 @@ def main(argv=None) -> int:
                       tie=args.tie,
                       tie_restart=args.tie_restart,
                       aligned_firstwave=args.aligned_firstwave,
+                      named_firstwave=args.named_firstwave,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       filters=args.filters,

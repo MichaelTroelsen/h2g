@@ -1138,8 +1138,19 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
 HOLD = 8
 
 
-def hold_direction(steps: int) -> int:
-    return HOLD + steps
+# A hold can also say how long the opening width stays on the pulse register
+# before the held one replaces it (`hold_wait`, in original TICKS): the original
+# writes the opening width on the fetch tick and the held one after the
+# fetching voice's FIRST step, which its delay counter puts one or more
+# ticks later (`patterns._triangle_hold`). The wait is `HOLD_WAIT` times the
+# direction's quotient, steps the remainder (-6..23, `is_hold`'s `> 1` being
+# the low edge).
+HOLD_WAIT = 32
+
+
+def hold_direction(steps: int, wait: int = 0) -> int:
+    assert -HOLD < steps < HOLD_WAIT - HOLD and wait >= 0, (steps, wait)
+    return HOLD + steps + HOLD_WAIT * wait
 
 
 def is_hold(direction: int) -> bool:
@@ -1147,7 +1158,19 @@ def is_hold(direction: int) -> bool:
 
 
 def hold_steps(direction: int) -> int:
-    return direction - HOLD
+    return direction % HOLD_WAIT - HOLD
+
+
+def hold_wait(direction: int) -> int:
+    return direction // HOLD_WAIT
+
+
+def hold_rest(direction: int, multiplier: int) -> list:
+    """The rest row(s) a hold spends between its opening width and the held
+    one: `multiplier` play calls a tick, the fetch call having written the
+    opening width already."""
+    calls = (multiplier - 1) + hold_wait(direction) * multiplier
+    return [(calls, 0)] if calls else []
 
 
 class PulseVoiceCell:
@@ -1758,7 +1781,10 @@ def _phase_cycle(want_set: set, lo_v: int, hi_v: int,
     shifts the lattice on every lap: Commando's record 7 runs $840..$E60,
     not the $8E0..$E20 its seed's own walk does), so the cycle is the one
     most phases reach, ties to the lowest bottom. A phase on another cycle
-    keeps its own turn in its entry piece and joins this loop from there."""
+    (`_minority_cycles`) runs a private loop on its own: RETRACTED "keeps its
+    own turn in its entry piece and joins this loop from there" -- that loop
+    turns on the dominant cycle's widths, so the piece played the seed's
+    first leg and the dominant cycle after it."""
     if not step:
         return lo_v, hi_v
     tally: Dict[tuple, int] = {}
@@ -1771,6 +1797,36 @@ def _phase_cycle(want_set: set, lo_v: int, hi_v: int,
     if not tally:
         return lo_v, hi_v
     return min(tally, key=lambda c: (-tally[c], c))
+
+
+def _minority_cycles(want_set: set, cycle: tuple[int, int],
+                     step: Optional[int]) -> Dict[tuple, tuple[int, int]]:
+    """{phase: (bottom, top)} for the moving phases of `want_set` whose own
+    sweep repeats ANOTHER cycle than `cycle` (the dominant one,
+    `_phase_cycle`'s answer): the phases `_phase_block` lays a private
+    loop for. Empty with no `step` (the bounds without a lattice), and for
+    a hold, which moves nowhere.
+
+    A sweep that never wraps keeps its lattice for good: Human_Race's
+    records 18 and 23 (step $E0) seed at ($800, up), which cycles
+    $8E0..$E20 and always will, while 17 of 18 (18 of 19) phases entered
+    through a 12-bit wrap and settle on $840..$E60. One loop cannot turn on
+    both, so the shared loop is the dominant cycle's and these phases run
+    their own (`_phase_turns` reads the cycle off the sim, as `_phase_cycle`
+    does)."""
+    if not step:
+        return {}
+    out: Dict[tuple, tuple[int, int]] = {}
+    for (w, d) in want_set:
+        if is_hold(d):
+            continue
+        t = _phase_turns(w, d, step, cycle[0] >> 8, cycle[1] >> 8)
+        if t is None:
+            continue
+        cyc = (t[2], t[3]) if d < 0 else (t[1], t[2])
+        if cyc != cycle:
+            out[(w, d)] = cyc
+    return out
 
 
 def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int,
@@ -1792,8 +1848,9 @@ def _chained_phases(want_set: set, speed: int, lo_v: int, hi_v: int,
     lo_v, hi_v = _phase_cycle(want_set, lo_v, hi_v, step)
     if not (lo_v < hi_v and (hi_v - lo_v) % speed == 0):
         return set()
+    own = _minority_cycles(want_set, (lo_v, hi_v), step)
     return {(w, d) for (w, d) in want_set
-            if not is_hold(d) and lo_v <= w <= hi_v
+            if not is_hold(d) and (w, d) not in own and lo_v <= w <= hi_v
             and (w - lo_v) % speed == 0
             and _leg_ramps(w, d, lo_v, hi_v, wrap, step)
             == ((hi_v - w if d > 0 else w - lo_v), 0)}
@@ -1830,7 +1887,12 @@ def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
     # A hold is a set row, the held width and a stop, whatever the lattice:
     # it lands on nothing and chains nothing, so it takes no part in the
     # kind -- the phases that move decide it.
-    moving = {(w, d) for (w, d) in want_set if not is_hold(d)}
+    # A phase on another cycle (`_minority_cycles`) runs its own private
+    # loop and never joins this one, so it neither has to land on this
+    # loop's bound nor blocks the chain.
+    own = _minority_cycles(want_set, (lo_v, hi_v), step)
+    moving = {(w, d) for (w, d) in want_set
+              if not is_hold(d) and (w, d) not in own}
     if all(lands(w, d) for (w, d) in moving):
         return "chained"
     return (None if _chained_phases(want_set, speed, lo_v, hi_v, wrap, step)
@@ -1840,7 +1902,8 @@ def _union_kind(want_set: set, speed: int, lo_v: int, hi_v: int,
 def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                  lo_v: int, hi_v: int, wrap: bool,
                  step: Optional[int] = None,
-                 share: bool = False) -> tuple:
+                 share: bool = False, attack: bool = False,
+                 multiplier: int = 1) -> tuple:
     """(rows, phase_index) for one sweeping record whose block opens after
     table row `base`: the alternating loop plus one entry point per phase in
     `want_set`, `phase_index` mapping (num, width, direction) to the 1-based
@@ -1897,6 +1960,17 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     RETRACTED: "the loop's span only: bound to bound" -- true of the bounds
     engine's phase table too, until its records were handed their rate as
     the step.
+
+    **A phase on another cycle than the loop's runs a loop of its own**
+    (`_minority_cycles`; task `phase-seed-minority-lattice`). Human_Race's
+    records 18 and 23 seed at ($800, up), a sweep that never wraps and so
+    cycles $8E0..$E20 for ever, where 17 of 18 phases cycle $840..$E60: the
+    seed's piece ramps to ITS cycle's edge (`_leg_ramps` aimed there) and
+    jumps into a two-leg loop on that cycle, laid the first time a piece
+    needs it and shared by every phase of that cycle. It is on no chained
+    leg and never lands on the shared loop, so `_chained_phases` and
+    `_union_kind` read the other phases only: both records are "chained"
+    (kind None before) and the shipped table is 197 rows where it took 245.
 
     **A `speed` above the modulation byte (`SPELLED_SPEED_MIN`; Commando's
     `$E0` steps at `-S1`, 224 a call) is laid as set rows** (`_ramp_rows`):
@@ -1997,10 +2071,33 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         block += ramp(lo_v, span_ticks, +1)
         block += [(0xFF, down_head)]
 
+    # A phase on another cycle than the loop's (`_minority_cycles`) joins
+    # a loop of its OWN, laid once per cycle the first time a piece needs
+    # it: the shared loop's turns are not its turns, and the piece's last
+    # jump into it would play the dominant cycle from there on.
+    own = _minority_cycles(want_set, (lo_v, hi_v), step)
+    private: dict = {}
+
+    def private_loop(cycle: tuple) -> tuple:
+        if cycle not in private:
+            b, t = cycle
+            ticks = max(1, whole(dist(t, b)))
+            d_head = base + len(block) + 1
+            rows = ramp(t, ticks, -1)
+            u_head = d_head + len(rows) + 1
+            rows = rows + [(0xFF, u_head)] + ramp(b, ticks, +1)
+            rows += [(0xFF, d_head)]
+            block.extend(rows)
+            private[cycle] = (d_head, u_head)
+        return private[cycle]
+
     tails: dict = {}
     for (w, direction) in sorted(want_set):
         if (w, direction) in chained:
             continue
+        mine = own.get((w, direction))
+        if mine is not None:
+            loop_heads = private_loop(mine)
         at = base + len(block) + 1
         piece = [setrow(w)]
         if is_hold(direction):
@@ -2022,17 +2119,36 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                 if held not in tails:
                     tails[held] = base + len(block) + 1
                     block += [setrow(held), (0xFF, 0)]
-                phase_index[(num, w, direction)] = tails[held]
+                if attack and held != w:
+                    # `attack` (`_lay_attack_or_plain`, only where the
+                    # table has the rows): the opening off the held width
+                    # keeps the attack frame on the opening width as the
+                    # per-phase layout does -- `w`, one tick of nothing --
+                    # and then jumps (a jump costs no call, gplay.c's
+                    # pulse-table jump) to the shared `set held / FF 00`
+                    # pair: 3 rows an opening plus 2 a held width, where the
+                    # per-phase form takes 4 an opening and 2 more.
+                    phase_index[(num, w, direction)] = base + len(block) + 1
+                    block += (piece + hold_rest(direction, multiplier)
+                              + [(0xFF, tails[held])])
+                else:
+                    phase_index[(num, w, direction)] = tails[held]
             else:
                 phase_index[(num, w, direction)] = at
-                block += piece + [(1, 0), setrow(held), (0xFF, 0)]
+                block += (piece + hold_rest(direction, multiplier)
+                          + [setrow(held), (0xFF, 0)])
             continue
-        out, back = _leg_ramps(w, direction, lo_v, hi_v, wrap, step)
+        if mine is None:
+            out, back = _leg_ramps(w, direction, lo_v, hi_v, wrap, step)
+            heads = (down_head, up_head)
+        else:
+            out, back = _leg_ramps(w, direction, mine[0], mine[1], wrap, step)
+            heads = loop_heads
         n_out = whole(out)
         piece += ramp(w, n_out, direction)
         piece += ramp((w + direction * n_out * speed) & 0xFFF, whole(back),
                       -direction)
-        piece += [(0xFF, down_head if direction > 0 else up_head)]
+        piece += [(0xFF, heads[0] if direction > 0 else heads[1])]
         phase_index[(num, w, direction)] = at
         block += piece
     return block, phase_index
@@ -2151,9 +2267,9 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                 "table"))
     elif first[3] or first[4]:
         shared_log: list = []
-        shared = _lay_pulse_phase_table(sid, det, instr_used, pulse,
-                                        multiplier, phases, shared_log.append,
-                                        lead, True, **ukw)
+        shared = _lay_attack_or_plain(sid, det, instr_used, pulse,
+                                      multiplier, phases, shared_log.append,
+                                      lead, **ukw)
         # One order everywhere (`_score`): pointer 0 first, then degraded.
         if _score(shared) < _score(first):
             chosen, chosen_log = shared, shared_log
@@ -2171,10 +2287,16 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         trials = []
         for share in (False, True):
             trial_log: list = []
-            trial = _lay_pulse_phase_table(sid, det, instr_used, pulse,
-                                           multiplier, phases,
-                                           trial_log.append, lead, share,
-                                           reserve=True, **ukw)
+            if share:
+                trial = _lay_attack_or_plain(sid, det, instr_used, pulse,
+                                             multiplier, phases,
+                                             trial_log.append, lead,
+                                             reserve=True, **ukw)
+            else:
+                trial = _lay_pulse_phase_table(sid, det, instr_used, pulse,
+                                               multiplier, phases,
+                                               trial_log.append, lead, share,
+                                               reserve=True, **ukw)
             trials.append(((*_score(trial), len(trial[0])),
                            share, trial, trial_log))
         (rank, share, trial, trial_log) = min(trials, key=lambda t: t[:2])
@@ -2239,11 +2361,44 @@ def _score(t: tuple) -> tuple:
     return silent, dropped
 
 
+def _lay_attack_or_plain(sid: SidFile, det: Detection, instr_used: int,
+                         pulse: bool, multiplier: int, phases: dict, log,
+                         lead: int, reserve: bool = False,
+                         usage: Optional[List[int]] = None) -> tuple:
+    """The SHARED layout (`_lay_pulse_phase_table(share=True)`), with a hold
+    that opens off its held width playing the opening width on its attack
+    frame (`_phase_block`'s `attack`) wherever the table has the rows for it:
+    laid both ways, the attack form ships only if it is no worse by `_score`
+    -- it asks 3 rows an opening where the plain shared form asks none, so a
+    table that is full sheds a record for it, and then the plain form ships.
+    A song that plans no hold lays one layout, as before."""
+    ukw = {} if usage is None else {"usage": usage}
+
+    def lay(attack: bool, lg) -> tuple:
+        return _lay_pulse_phase_table(sid, det, instr_used, pulse,
+                                      multiplier, phases, lg, lead, True,
+                                      reserve=reserve, **ukw,
+                                      **({"attack": True} if attack else {}))
+    plain_log: list = []
+    plain = lay(False, plain_log.append)
+    best, best_log = plain, plain_log
+    if any(is_hold(d) for ws in phases.values() for (_, d) in ws):
+        att_log: list = []
+        att = lay(True, att_log.append)
+        if att[0] != plain[0] and _score(att) <= _score(plain):
+            best, best_log = att, att_log
+    if log:
+        for line in best_log:
+            log(line)
+    return best
+
+
 def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            pulse: bool, multiplier: int, phases: dict, log,
                            lead: int, share: bool,
                            reserve: bool = False,
-                           usage: Optional[List[int]] = None) -> tuple:
+                           usage: Optional[List[int]] = None,
+                           attack: bool = False) -> tuple:
     """One layout of `build_pulse_phase_table`: (entries, starts, index,
     dropped, silent, attempted, placed, dropped_notes, silent_notes). `share` picks `_phase_block`'s
     shared-ramp layout for every phase-tracked record, and may lay ONE
@@ -2268,14 +2423,14 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     if not share:
         return _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                      phases, log, lead, False, {}, reserve,
-                                     usage)
+                                     usage, attack)
 
     def score(t: tuple) -> tuple:
         return (*_score(t), len(t[0]))
     best_log: list = []
     best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                  phases, best_log.append, lead, True, {},
-                                 reserve, usage)
+                                 reserve, usage, attack)
     chosen: dict = {}
     for key, members in _union_groups(sid, det, instr_used, multiplier,
                                       phases, lead).items():
@@ -2284,7 +2439,7 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         trial_log: list = []
         trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                       phases, trial_log.append, lead, True,
-                                      trial_unions, reserve, usage)
+                                      trial_unions, reserve, usage, attack)
         if score(trial) < score(best):
             best, best_log, chosen = trial, trial_log, trial_unions
     if log:
@@ -2332,7 +2487,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                           pulse: bool, multiplier: int, phases: dict, log,
                           lead: int, share: bool, unions: dict,
                           reserve: bool = False,
-                          usage: Optional[List[int]] = None) -> tuple:
+                          usage: Optional[List[int]] = None,
+                          attack: bool = False) -> tuple:
     """One layout pass: (entries, starts, index, dropped, silent, attempted,
     placed, dropped_notes, silent_notes). The last two weigh each degraded
     record by the note rows it sounds (`usage`, `pulse_usage`; 1 a record
@@ -2346,6 +2502,13 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
     dropped = silent = 0
     dropped_w = silent_w = 0
     attempted = placed = 0
+
+    def hold_kw(want_set: set) -> dict:
+        # What a HOLD's rows need (`_phase_block`): said only for a record
+        # that plans one, so the others lay exactly as they did.
+        if not any(is_hold(d) for (_, d) in want_set):
+            return {}
+        return {"attack": attack, "multiplier": multiplier}
 
     def weight(i: int) -> int:
         if usage is None:
@@ -2475,7 +2638,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                 # the next member tries the union of what is left.
                 union = set().union(*group_left[key].values())
                 block, u_index = _phase_block(len(entries), 0, union,
-                                              *params, share=True)
+                                              *params, share=True,
+                                              **hold_kw(union))
                 if (len(entries) + len(block)
                         + held_back(i, skip=group_left[key])
                         <= _gw_constants.GT_MAX_TABLELEN):
@@ -2490,7 +2654,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                 starts.append(union_rows[(width, +1)])
                 continue
         block, phase_index = _phase_block(len(entries), num, want_set,
-                                          *params, share=share)
+                                          *params, share=share,
+                                          **hold_kw(want_set))
 
         if (len(entries) + len(block) + held_back(i)
                 > _gw_constants.GT_MAX_TABLELEN):

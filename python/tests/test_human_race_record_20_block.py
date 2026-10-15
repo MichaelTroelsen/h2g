@@ -8,6 +8,19 @@ this tree record 2 HAS one (the lockstep walk, the wrap ramps and the lattice
 legs moved it) and the records without are 20 and 23. The shipped table is
 245 of GT_MAX_TABLELEN (255) rows and places {1, 2, 4, 18, 21}.
 
+**RE-POINTED at task `phase-seed-minority-lattice` (4c9dab5 + that change).**
+Records 18 and 23 now chain and union (their seed phase runs its own loop), so
+the shipped table is 197 rows and places {1, 2, 4, 18, 23}; 20 and 21 are on a
+static width. The figures below are the old ones; the new ones sit beside
+each test: the whole plan asks 406 rows (the model's union groups are now
+{1, 2} and {18, 23}), 73 of the 128 subsets fit and 9 hold record 20 (the
+same best, {1, 4, 20} at 253 rows, 734 notes lost). The shipped set loses 437
+notes, and the better set that exists is now {1, 2, 4, 18, 21, 23} at 242 rows
+(264 lost), which the pass never reaches: `_lay_pulse_phase_table` adopts a
+union only if it improves the layout ON ITS OWN, and the two groups pay only
+together (first union alone 233 rows / {1, 2, 4, 18, 21}, 477 lost; second
+alone 197 / {1, 2, 4, 18, 23}, 437; none 237 / {1, 2, 4, 18, 23}, 437).
+
 What each test pins, in the order the argument goes:
 
 * record 20 has no same-sweep partner, so no union block can share its
@@ -83,8 +96,10 @@ def _forced():
 class _Model:
     """Row cost of keeping a SUBSET of the tracked records swept, the rest on
     their static width, as `_lay_pulse_phase_pass` (share=True) lays them:
-    the shared block of each kept record, one block over {1, 2} when both
-    are kept, and the standalone-program reuse for every static."""
+    the shared block of each kept record, one block over each union group
+    (`_union_groups`: {1, 2} and, since the seed phase of 18 and 23 runs its
+    own loop, {18, 23}) whose members are all kept, and the
+    standalone-program reuse for every static."""
 
     def __init__(self):
         from h2g.goatwriter import pulse as P
@@ -127,26 +142,36 @@ class _Model:
             rows += len(prog) + (loop is not None)
         return rows
 
-    def block_rows(self, keep) -> int:
+    def block_rows(self, keep, adopt=None) -> int:
+        """`adopt`: the union groups taken (lists of record numbers); all of
+        `_union_groups` by default."""
         P = self.P
         total, done = 0, set()
+        groups = [sorted(g) for g in P._union_groups(
+            self.sid, self.det, self.iu, self.mult, self.phases,
+            self.lead).values()]
+        if adopt is not None:
+            groups = [g for g in groups if g in adopt]
         for num in sorted(keep):
             if num in done:
                 continue
             _, ws, params, _ = self.tracked[num]
-            if num in (1, 2) and 1 in keep and 2 in keep:
-                union = self.tracked[1][1] | self.tracked[2][1]
-                total += len(P._phase_block(0, 0, union, *self.tracked[1][2],
+            group = next((g for g in groups if num in g
+                          and all(n in keep for n in g)), None)
+            if group:
+                union = set().union(*(self.tracked[n][1] for n in group))
+                total += len(P._phase_block(0, 0, union,
+                                            *self.tracked[group[0]][2],
                                             share=True)[0])
-                done |= {1, 2}
+                done |= set(group)
             else:
                 total += len(P._phase_block(0, num, ws, *params,
                                             share=True)[0])
                 done.add(num)
         return total
 
-    def rows(self, keep) -> int:
-        return self.base_rows(keep) + self.block_rows(keep)
+    def rows(self, keep, adopt=None) -> int:
+        return self.base_rows(keep) + self.block_rows(keep, adopt)
 
     def lost(self, keep) -> int:
         return sum(w for n, (_, _, _, w) in self.tracked.items()
@@ -168,18 +193,20 @@ def _model() -> _Model:
     return _CACHE["model"]
 
 
-_SHIPPED = {1, 2, 4, 18, 21}
+_SHIPPED = {1, 2, 4, 18, 23}
+_SHIPPED_UNIONS = [[18, 23]]
 
 
-def test_the_shipped_table_places_five_and_degrades_20_and_23():
-    """The starting point: 245 rows, {1, 2, 4, 18, 21} swept, 20 and 23 on a
-    static width, record 2 -- the title's second record -- among the swept."""
+def test_the_shipped_table_places_five_and_degrades_20_and_21():
+    """The starting point: 197 rows (245 before the seed phases ran their own
+    loop), {1, 2, 4, 18, 23} swept, 20 and 21 on a static width, record 2 --
+    the title's second record -- among the swept."""
     from h2g.goatwriter import constants as K
     _, _, (entries, starts, index) = _forced()
-    assert len(entries) == 245 <= K.GT_MAX_TABLELEN
+    assert len(entries) == 197 <= K.GT_MAX_TABLELEN
     swept = {num for (num, _, _) in index}
     assert swept == _SHIPPED
-    assert {20, 23}.isdisjoint(swept)
+    assert {20, 21}.isdisjoint(swept)
     assert any(num == 2 for (num, _, _) in index)
 
 
@@ -191,7 +218,9 @@ def test_record_20_sweeps_alone_so_no_union_can_share_its_loop():
     assert key[20] == (16, 2048, 3584, False, 32)
     assert all(key[n] != key[20] for n in key if n != 20)
     groups = P._union_groups(m.sid, m.det, m.iu, m.mult, m.phases, m.lead)
-    assert [sorted(v) for v in groups.values()] == [[1, 2]]
+    # {18, 23} since phase-seed-minority-lattice (their kind was None)
+    assert [sorted(v) for v in groups.values()] == [[1, 2], [18, 23]]
+    assert all(20 not in v for v in groups.values())
 
 
 def test_record_20_block_is_two_rows_a_phase():
@@ -214,14 +243,14 @@ def test_record_20_block_is_two_rows_a_phase():
     assert len(pp) == 250
 
 
-def test_the_whole_plan_asks_470_rows_of_255():
+def test_the_whole_plan_asks_406_rows_of_255():
     """Every tracked record swept: the model and the real unlimited pass
-    agree on 470, 215 past the table."""
+    agree on 406 (470 before 18 and 23 chained), 151 past the table."""
     from h2g.goatwriter import constants as K
     from h2g.goatwriter import pulse as P
     m = _model()
     assert m.base_rows(set()) == 16
-    assert m.rows(set(m.tracked)) == 470
+    assert m.rows(set(m.tracked)) == 406
     saved = K.GT_MAX_TABLELEN
     K.GT_MAX_TABLELEN = 100000
     try:
@@ -229,10 +258,11 @@ def test_the_whole_plan_asks_470_rows_of_255():
                                        m.phases, None, m.lead, True)
     finally:
         K.GT_MAX_TABLELEN = saved
-    assert (len(got[0]), got[3], got[4]) == (470, 0, 0)
-    assert 470 - saved == 215
-    # the model's row count of the shipped layout is the real one
-    assert m.rows(_SHIPPED) == 245
+    assert (len(got[0]), got[3], got[4]) == (406, 0, 0)
+    assert 406 - saved == 151
+    # the model's row count of the shipped layout is the real one (with the
+    # one union the pass adopts)
+    assert m.rows(_SHIPPED, _SHIPPED_UNIONS) == 197
 
 
 def test_no_set_holding_20_keeps_what_the_shipped_table_keeps():
@@ -240,11 +270,11 @@ def test_no_set_holding_20_keeps_what_the_shipped_table_keeps():
     holding 20 lose more notes to a static width than the shipped set."""
     m = _model()
     fits = list(m.fitting())
-    assert len(fits) == 66
+    assert len(fits) == 73      # 66 before 18 and 23 chained
     shipped_lost = m.lost(_SHIPPED)
-    assert shipped_lost == 477
+    assert shipped_lost == 437  # 477 before
     with20 = [(rows, S) for rows, S in fits if 20 in S]
-    assert len(with20) == 8
+    assert len(with20) == 9     # 8 before
     # none of them holds the five the shipped table holds
     assert all(not _SHIPPED <= S for _, S in with20)
     # and every one of them costs more notes than the shipped set
@@ -260,15 +290,33 @@ def test_no_set_holding_20_keeps_what_the_shipped_table_keeps():
 
 
 def test_a_better_set_exists_but_does_not_hold_record_20():
-    """Not adopted: {1, 2, 4, 18, 23} is 220 rows and loses 437 notes where
-    the index-order pass ships {1, 2, 4, 18, 21} at 477, because 21 (173
-    notes) takes the 86 rows 23 (213) needed. Record 20 (264 notes) is in
-    neither."""
+    """Not adopted: {1, 2, 4, 18, 21, 23} is 242 rows and loses 264 notes
+    (record 20's alone) where the pass ships {1, 2, 4, 18, 23} at 197 rows
+    and 437 -- it needs BOTH union groups, {1, 2} and {18, 23}, and
+    `_lay_pulse_phase_table` adopts a union only if the layout is better
+    with it ALONE (233 rows / 477 lost with {1, 2} alone, 197 / 437 with
+    {18, 23} alone, 237 / 437 with none). Record 20 (264 notes) is in
+    neither set. Was {1, 2, 4, 18, 23} at 220 rows against 477, because 21
+    took the rows 23 needed."""
     m = _model()
     fits = list(m.fitting())
     best = min(fits, key=lambda t: (m.lost(t[1]), t[0]))
-    assert best == (220, {1, 2, 4, 18, 23})
-    assert m.lost(best[1]) == 437
+    assert best == (242, {1, 2, 4, 18, 21, 23})
+    assert m.lost(best[1]) == 264
     assert 20 not in best[1]
     assert {n: m.tracked[n][3] for n in m.tracked} == {
         1: 48, 2: 132, 4: 813, 18: 216, 20: 264, 21: 173, 23: 213}
+    from h2g.goatwriter import pulse as P
+    groups = P._union_groups(m.sid, m.det, m.iu, m.mult, m.phases, m.lead)
+    by = {tuple(sorted(v)): k for k, v in groups.items()}
+
+    def laid(*members):
+        t = P._lay_pulse_phase_pass(
+            m.sid, m.det, m.iu, m.pulse, m.mult, m.phases, None, m.lead,
+            True, {by[g]: groups[by[g]] for g in members}, False,
+            _forced()[1]["usage"])
+        return len(t[0]), sorted({k[0] for k in t[2]}), P._cost(t)[0]
+    assert laid() == (237, [1, 2, 4, 18, 23], 437)
+    assert laid((1, 2)) == (233, [1, 2, 4, 18, 21], 477)
+    assert laid((18, 23)) == (197, [1, 2, 4, 18, 23], 437)
+    assert laid((1, 2), (18, 23)) == (242, [1, 2, 4, 18, 21, 23], 264)

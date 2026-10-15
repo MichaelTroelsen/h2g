@@ -22,6 +22,7 @@ from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
 from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
                          TEMPO_FASTEST_STEADY, hold_direction,
                          restarted_gate_calls)
+from .search import search_file
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -595,6 +596,69 @@ def sfx_dormant_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
             continue
         out[n] = min(range(ft.length),
                      key=lambda i: abs(log2(max(table[i], 1) / value)))
+    return out
+
+
+# A past-table landing cell that the player WRITES, but writes the same value
+# every time the byte is fetched, recorded as the measured pitch:
+#     {name: {byte: (pitch, writer addresses)}}
+# `past_table_notes` declines such a cell (a writer names it) and
+# `SFX_DORMANT_CELLS` needs the writers to be dormant, so the third reading is
+# recorded as data, per player, and `tests/test_player_cell_pitch.py`
+# re-derives every claim in it from the file's bytes and from siddump.
+#
+# The Last V8 (both rips): the pattern `$12` (`$89F9`) is `BF 0D 7C 7F...` --
+# instrument `$0D` (wave `$17`, record +5 = 1, skydive) on the byte `$7C`
+# (Y = `$F8`, `$843B + $F8 = $8533`). The cell is two scratch variables, not
+# a table entry: `$8533` is the effect byte `$81BD STA` copies from the
+# instrument record being run and `$8534` the pulse step `$8272 STA` leaves
+# (`$851A & $E0`). siddump of subtune 0 (watching `$850E,X` for a past-table
+# byte): the byte is fetched at frames 6400, 13312, 20224 and 27136 (the
+# song's 6912-frame loop) and `$8533/$8534` are `01 60` at each, so the
+# original starts the note at `$6001`; the C128 rip does the same at 6401 and
+# 13313. Subtunes 1 and 2 never fetch a byte at or above `$60`. The clamp
+# sounded G#7 (`$DD0E`) -- 14 semitones over the original. After the fetch
+# the player sweeps the voice (vibrato delta `(next - base) >> 2` with `next`
+# the frame counter, a triangle 0..3, so `60 88 B0 D8` high bytes) and the
+# skydive falls from the `$60`; the nearest entry (78, `$6270`) puts the note
+# in the right octave and no more than that.
+PLAYER_CELL_PITCH: Dict[str, Dict[int, Tuple[int, frozenset]]] = {
+    "The Last V8": {0x7C: (0x6001, frozenset({0x81BD, 0x8272}))},
+    "The Last V8 (C128 version)": {
+        0x7C: (0x6001, frozenset({0x81BD, 0x8272}))},
+}
+
+
+def player_cell_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
+    """`past_table_notes` for the cells `PLAYER_CELL_PITCH` records: a
+    past-table byte whose landing cell the player writes, measured to hold one
+    pitch at every fetch, is re-read as the nearest entry of the player's own
+    table to that pitch.
+
+    The record is re-checked against the file, and a byte is declined (left
+    to the clamp) unless the byte is past the table and below `$80`, and the
+    cell's writer sites (`cell_writer_sites`) are EXACTLY the recorded ones --
+    a writer the measurement did not account for, or a recorded one gone,
+    means a different player image."""
+    record = PLAYER_CELL_PITCH.get(sid.name)
+    ft = det.freq_table
+    if not record or ft is None:
+        return {}
+    data = sid.data
+    base = sid.to_offset(ft.addr)
+    table = [data[base + 2 * i] | (data[base + 2 * i + 1] << 8)
+             for i in range(ft.length)
+             if 0 <= base + 2 * i and base + 2 * i + 1 < len(data)]
+    if len(table) != ft.length or not any(table):
+        return {}
+    out: Dict[int, int] = {}
+    for n, (pitch, writers) in record.items():
+        if not ft.length <= n < 0x80 or pitch <= 0:
+            continue
+        if cell_writer_sites(sid, ft.addr + 2 * n) != writers:
+            continue
+        out[n] = min(range(ft.length),
+                     key=lambda i: abs(log2(max(table[i], 1) / pitch)))
     return out
 
 
@@ -1590,6 +1654,34 @@ def _build_raw_pattern(data: bytes, addr: int,
 DIGI_DURATION = 0xC0        # bit 7 and bit 6 set
 DIGI_END = 0x81
 DIGI_SET_INSTRUMENT = 0x80
+# Bit 5 of a $C0-$FF duration byte is the player's no-release flag (see
+# `_build_raw_pattern_digi`).
+DIGI_TIE = 0x20
+# The two readers of that flag, as they stand in Pygmies_Revenge ($11FE and
+# $1190). Both are present in all nine digi corpus files, with the flag's cell
+# at the same address in each (`digi_tie_family` checks that). Wildcards take
+# the cell addresses, which differ per file.
+#
+#     11FE  BD 4E 16  LDA $164E,X      ; the event's duration byte...
+#     1201  9D 51 16  STA $1651,X      ; ...latched into the flag cell
+#     1204  29 20     AND #$20
+#     1206  D0 0A     BNE $1212        ; bit 5 -> do not close the gate
+#     1208  BD 48 16  LDA $1648,X      ; the row counter
+#     120B  D0 05     BNE $1212        ; not the last frame
+#     120D  A9 FE     LDA #$FE
+#     120F  9D 5D 16  STA $165D,X      ; gate mask: the gate closes
+#
+#     1190  BD 51 16  LDA $1651,X      ; the PREVIOUS event's latched byte
+#     1193  29 20     AND #$20
+#     1195  8D 89 16  STA $1689
+#     ...
+#     11A9  AD 89 16  LDA $1689
+#     11AC  D0 3B     BNE $11E9        ; bit 5 -> the note start (pulse, AD,
+#                                      ;   SR) is skipped
+DIGI_TIE_HOLD_SHAPE = ("BD ?? ?? 9D ?? ?? 29 20 D0 ?? BD ?? ?? D0 ?? "
+                       "A9 FE 9D ?? ??")
+DIGI_TIE_START_SHAPE = ("BD ?? ?? 29 20 8D ?? ?? BD ?? ?? 8E ?? ?? "
+                        "0A 0A 0A 0A AA")
 DIGI_TWO_OPERAND = (0x82, 0x83)
 # $82 is a 16-bit pitch slide added to the voice frequency every frame. Off the
 # Cuff's handler stores the two operands ($1133) and its consumer ($134C) adds
@@ -1631,6 +1723,23 @@ DIGI_REST = 0x60
 DIGI_MAX_NOTE = 0x5C        # same ceiling the classic decoder clamps to
 
 
+@lru_cache(maxsize=None)
+def digi_tie_family(data: bytes) -> bool:
+    """True where the player carries the digi engine's no-release flag.
+
+    Both `DIGI_TIE_HOLD_SHAPE` (bit 5 keeps the gate open at the note's end)
+    and `DIGI_TIE_START_SHAPE` (the next note skips its start) must be there,
+    and the cell the first one latches the byte into must be the cell the
+    second one reads. Nine of nine digi corpus files pass; a player that fails
+    keeps the old reading, which drops the flag.
+    """
+    hold = search_file(data, DIGI_TIE_HOLD_SHAPE)
+    start = search_file(data, DIGI_TIE_START_SHAPE)
+    if hold < 0 or start < 0:
+        return False
+    return data[hold + 4:hold + 6] == data[start + 1:start + 3]
+
+
 def _digi_command(pending: tuple, steps: Optional[List[int]]) -> tuple:
     """(command, data) columns for a decoded $82 slide.
 
@@ -1649,6 +1758,8 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
                             slides: bool = False,
                             steps: Optional[List[int]] = None,
                             instr_base: int = 2,
+                            tie: bool = False,
+                            exits_tied: Optional[List[bool]] = None,
                             ) -> Optional[List[int]]:
     """Flat event stream for one digi-engine pattern, or None if out of range.
 
@@ -1661,6 +1772,24 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
     Effect $83 is parsed for its length and not translated; see DIGI_VIBRATO.
     Notes, instruments and timing are complete either way, and dropping an
     effect leaves a note playing plainly rather than corrupting the stream.
+
+    With `tie` (and only on a player `digi_tie_family` recognises), bit 5 of an
+    event's duration byte (`DIGI_TIE`) ties it into the note after it: the
+    player does not close the gate at its end ($1204 `BNE`) and the next note
+    start skips pulse, AD and SR ($11AC `BNE`), so that note is a frequency
+    change with no attack -- `CMD_TONEPORTA 00`. Dropped until this was read,
+    Pygmies_Revenge voice 0 struck 302 attacks in 180 s against the original's
+    233, the surplus being the notes the original ties (A-2 -> B-2 -> C-3 and
+    the like); the same read moves After_8, Mr_Meaner, Off_the_Cuff, Rikky and
+    Rock_Tells_the_Tale, whose voice-0 surplus was 129, 102, 96, 62 and 175
+    (all at -t 180, measured at 4c9dab5; historical).
+    The byte is sticky like the wait, and the flag is latched on a HOLD frame
+    ($11FE runs only there), so an event with `wait` 0 neither ties nor keeps
+    the gate: left as the old reading, which is also all that was measured. A
+    rest closes the gate on its own ($1184), so nothing ties across one.
+    `exits_tied` gets the state the pattern ends in, for `_apply_boundary_ties`.
+    A tied row's command column is taken, so a slide on the same event keeps
+    its HOLD rows (the classic decoder's split) and, with no hold row, wins.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -1668,7 +1797,9 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
     events: List[int] = []
     instrument = 0
     wait = 0
+    dur = 0                 # the sticky duration byte ($164E,X), bit 5 and all
     pending: Optional[tuple] = None
+    pending_tie = False     # the event before left the gate open (see below)
 
     while True:
         if addr <= 1 or addr >= len(data):
@@ -1677,9 +1808,12 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
 
         if b == DIGI_END:
             events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            if exits_tied is not None:
+                exits_tied.append(pending_tie)
             break
         if b >= DIGI_DURATION:
             wait = b & 0x1F
+            dur = b
             addr += 1
             continue
         if b == DIGI_SET_INSTRUMENT:
@@ -1711,6 +1845,8 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             return None
 
         cmd = _digi_command(pending, steps) if pending is not None else None
+        tied = (tie and pending_tie and b != DIGI_REST
+                and (cmd is None or wait >= 1))
         if b == DIGI_REST:
             # The player's rest closes the gate: $1184 does DEC $165D,X, taking
             # the mask just set to $FF at $10FF down to $FE -- the same value
@@ -1729,6 +1865,11 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             events += [note, instrument, 0x00, 0x00]
         if cmd is not None:
             events[-2], events[-1] = cmd
+        if tied:
+            # **A slide event that follows a tied note keeps the slide on its
+            # HOLD rows** (`wait >= 1` above): row 0 ties, as the classic
+            # decoder splits the one command column.
+            events[-2], events[-1] = CMD_TONEPORTA, 0x00
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
             if cmd is not None:
@@ -1746,10 +1887,17 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
                 events[-2], events[-1] = cmd
         pending = None
         addr += 1
+        # The next note arrives with the gate still open only when THIS event
+        # is a note with bit 5 on its duration byte and a hold frame of its
+        # own to latch it on (`wait >= 1`).
+        pending_tie = bool(tie and b != DIGI_REST and wait >= 1
+                           and dur & DIGI_TIE)
 
         # The terminator is only ever read as the byte after a note.
         if addr < len(data) and data[addr] == DIGI_END:
             events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            if exits_tied is not None:
+                exits_tied.append(pending_tie)
             break
 
     return events
@@ -2412,7 +2560,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     if det.pattern_dialect == "digi":
         return _build_raw_pattern_digi(data, addr, det.note_base,
                                        slides=slides, steps=steps,
-                                       instr_base=instr_base)
+                                       instr_base=instr_base,
+                                       tie=tie and digi_tie_family(data),
+                                       exits_tied=exits_tied)
     if det.pattern_dialect == "ilv":
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
@@ -2439,7 +2589,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               exits_tied=exits_tied,
                               rest_notes=past_table_rests(sid, det),
                               const_notes={**past_table_notes(sid, det),
-                                           **sfx_dormant_notes(sid, det)},
+                                           **sfx_dormant_notes(sid, det),
+                                           **player_cell_notes(sid, det)},
                               instr_transpose=(
                                   instr_transpose_table(data, det)
                                   if det.instr_transpose >= 0 else None),
@@ -6397,7 +6548,15 @@ def _triangle_hold(x: int, sim, recs: dict, cells: list, cur: list,
     unless they are fetching too. The routine writes the SID's pulse
     registers only on a tick it stepped, so a read is the width after one
     of `x`'s own steps and a tick its counter spends counting down reads
-    nothing."""
+    nothing.
+
+    **The opening width stays on the register until `x`'s first step**, one
+    tick after the fetch or more where its delay counter is still counting
+    (`delay` ticks apart in the worst case): the direction carries that
+    wait in TICKS (`goatwriter.hold_direction`'s `wait`), which the table
+    spends as a longer rest row before the held width (`_phase_block`
+    turns ticks into play calls with the multiplier). Devils_Galop's voice 1 reads $F00 for one
+    frame after an attack, or for two."""
     sharers = [y for y in (2, 1, 0) if cur[y] is not None
                and recs.get(cur[y][4] or lead[y]) is sim]
     if x not in sharers or len(sharers) < 2:
@@ -6414,18 +6573,21 @@ def _triangle_hold(x: int, sim, recs: dict, cells: list, cur: list,
         if y < x and not cur[y][5]:
             step(y)
     reads = []
-    for _ in range(2 * max(1, sim.delay) + 2):
+    first_tick = None
+    for t in range(2 * max(1, sim.delay) + 2):
         for y in sharers:
             before = rec.width
             step(y)
             if y == x and rec.width != before:
                 reads.append(rec.width)
+                if first_tick is None:
+                    first_tick = t
     if not reads or len(set(reads)) != 1:
         return None
     away = (reads[0] - opens + 0x800) % 0x1000 - 0x800
     if away % sim.step:
         return None
-    return hold_direction(away // sim.step)
+    return hold_direction(away // sim.step, first_tick or 0)
 
 
 def _walk_triangle_group(g: int, patterns: List[List[int]],

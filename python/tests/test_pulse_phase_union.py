@@ -164,6 +164,7 @@ def test_no_union_silences_a_record(monkeypatch):
                         (lo_v, hi_v))
     monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
                         distance // speed)
+    monkeypatch.setattr(P, "_minority_cycles", lambda want, cycle, step: {})
     groups = P._union_groups(sid, det, iu, mult, phases, lead)
     assert sorted(sorted(m) for m in groups.values()) == [[3, 7], [6, 20]]
     both = P._lay_pulse_phase_pass(sid, det, iu, pulse, mult, phases, None,
@@ -207,7 +208,11 @@ def test_unions_buy_rows_and_records():
         # Re-pinned at the lattice legs (was ((179, {1, 2, 4, 18, 23}),
         # (214, ...))): record 23's 61 rows no longer fit behind 21's 87, so
         # 21 is kept in its place (5 of 7 swept either way).
-        "Human_Race.sid": ((245, {1, 2, 4, 18, 21}), (200, {1, 2, 4, 18})),
+        # Re-pinned at phase-seed-minority-lattice (was ((245, {1, 2, 4, 18,
+        # 21}), (200, {1, 2, 4, 18}))): records 18 and 23 chain, their seed
+        # phase on its own loop, and union.
+        "Human_Race.sid": ((242, {1, 2, 4, 18, 21, 23}),
+                           (237, {1, 2, 4, 18, 23})),
     }
     for name, (with_u, without) in want.items():
         sid, det, iu, pulse, mult, phases, _, lead = _table_calls(name)[0]

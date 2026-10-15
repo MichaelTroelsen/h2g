@@ -71,6 +71,10 @@ def _the_clamp(monkeypatch):
                         (lo_v, hi_v))
     monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
                         distance // speed)
+    # ... and no private loops (`_minority_cycles`, task
+    # `phase-seed-minority-lattice`): the cycle an identity would make every
+    # phase a minority.
+    monkeypatch.setattr(P, "_minority_cycles", lambda want, cycle, step: {})
 
 
 def _capture(name: str) -> dict:

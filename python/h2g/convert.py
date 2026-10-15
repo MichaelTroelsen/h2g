@@ -266,7 +266,8 @@ def convert(sid_path: str, log: Logger = print,
             regrid_per_play: bool = False,
             regrid_prepay: int = 0,
             regrid_park: bool = False,
-            aligned_firstwave: bool = False) -> bytes:
+            aligned_firstwave: bool = False,
+            named_firstwave: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -421,6 +422,24 @@ def convert(sid_path: str, log: Logger = print,
     song (presets.EXCLUDED_FROM_ALWAYS): it moves the columns both ways, so
     adoption is a measurement per file.
 
+    named_firstwave lets the note-init call's frame carry the original's
+    pitch step in a way siddump can read. siddump names a tie, a note or an
+    attack only on a frame whose waveform is >= $10, and the testbit `$09`
+    every instrument writes there selects none -- so at -S2 and above, where
+    the previous call of the same frame has already stepped the arpeggio or
+    vibrato, the step is in the register and unreadable, and the original's
+    tie on that frame is charged to us (`tie_orig_only_firstwave`). With the
+    option every instrument's firstwave is `goatwriter.instruments.
+    named_testbit_firstwave`: the record's waveform with the test bit set
+    and the gate CLEAR (`waveform & $FE | $08`). Everything else is as
+    `gate_off_firstwave_instruments` over all instruments, which it implies
+    (the gatetimer is NOT trimmed, as
+    `aligned_firstwave` does). At -S1 the init call writes no pitch at all
+    (player.s `mt_loadregswaveonly`), so nothing is carried and the option
+    can only move the gate rise. `aligned_firstwave` overrides it; the real
+    firstwave lists override it per instrument. Off by default and per song
+    (presets.EXCLUDED_FROM_ALWAYS); byte-inert where it is off.
+
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
     columns to match; instrument 1 is always kept, because both players
@@ -510,6 +529,11 @@ def convert(sid_path: str, log: Logger = print,
     """
     if aligned_firstwave:
         no_test_restart = False
+        named_firstwave = False
+        gate_off_firstwave_instruments = tuple(sorted(
+            set(gate_off_firstwave_instruments)
+            | set(range(1, GT_TEMPO_INSTRUMENT))))
+    elif named_firstwave:
         gate_off_firstwave_instruments = tuple(sorted(
             set(gate_off_firstwave_instruments)
             | set(range(1, GT_TEMPO_INSTRUMENT))))
@@ -1190,6 +1214,7 @@ def convert(sid_path: str, log: Logger = print,
                          real_firstwave_instruments=real_firstwave_instruments,
                          gate_off_firstwave_instruments=gate_off,
                          gatetimer_trim=1 if aligned_firstwave else 0,
+                         named_firstwave=named_firstwave,
                          arps=ilv_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,

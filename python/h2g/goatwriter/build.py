@@ -470,6 +470,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               tie_restart: bool = False,
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
+              named_firstwave: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1202,7 +1203,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        gate_off_firstwave_instruments=tuple(
                            gate_off_firstwave_instruments),
                        gatetimer_trim=gatetimer_trim,
-                       gate_clear_firstwave=effects)
+                       gate_clear_firstwave=effects,
+                       named_firstwave=named_firstwave)
     written_instr = instr_used
     if duty_split is not None:
         # Each clone is its record's finished bytes with its own wavetable

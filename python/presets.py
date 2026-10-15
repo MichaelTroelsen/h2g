@@ -626,6 +626,13 @@ EXCLUDED_FROM_ALWAYS = {
     # at the file's lag, which no `fidelity_better` term reads. A song entry
     # `"aligned_firstwave": true`.
     "aligned_firstwave",
+    # `named_firstwave`: the init call's frame names the pitch step it carries
+    # (convert()'s docstring). Off by default and per song: it moves the gate
+    # rise onto the pitch's frame, which moves `gate` both ways, and at -S1 the
+    # init call carries no pitch at all, so only a multispeed song can gain.
+    # Not in FIDELITY_TOGGLES, as `aligned_firstwave` is not. A song entry
+    # `"named_firstwave": true`.
+    "named_firstwave",
 }
 
 

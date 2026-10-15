@@ -278,6 +278,7 @@
 {"id":"finish-runqueue-cycle-6-at-862f703","summary":"Cycle 6's five merged patches and two read-only results are recorded; the merged tree passes Commando, the byte-hash names exactly the 8 reported movers, and the suite's only failure left is test_output_sha awaiting the fidelity refresh."}
 {"id":"first-d418-passband-choice","summary":"The first LDA #imm/STA $D418 on seven filter files is the sfx drum's one-frame bandpass, not the player's mode; find_filter now passes over it. 7 files move (IK_plus, I_Ball, Nineteen, Pandora, Star_Paws, Thundercats, Trans-Atlantic)."}
 {"id":"first-note-before-instrument-census","summary":"Census only: under presets, 3 voice orderlists in 2 files (Dragons_Lair_Part_II, Gremlins) start on a note with no instrument column. No code change."}
+{"id":"firstwave-frame-carries-arp-step","summary":"Merged as an opt-in option, named_firstwave (CLI --named-firstwave): a test-bit firstwave ((w & $FE) | $08) lets the init call name the note so its frame can carry the original's arpeggio/vibrato step at -S2 and above (at -S1 the init call writes no pitch); no file moves under presets; forced at -t 60 it adds 2074 same-frame ties on the 49 multispeed rows with melody flat."}
 {"id":"firstwave-set-across-the-hold-zero-files","summary":null}
 {"id":"five-non-converting-files-share-one-stored-wave-key-and-detect-finds-no-hubbard-player","summary":null}
 {"id":"five-of-six-queue-tier-builders-have-never-produced-an-entry-against-real-data","summary":null}
@@ -286,6 +287,7 @@
 {"id":"five-title-tunes-hold-zero-refute","summary":null}
 {"id":"five-title-tunes-player2-extra-note","summary":"5_Title_Tunes player 2's extra note was already fixed at v0.5.510 (898b491); a pinning test was added. 0 files move."}
 {"id":"five-title-tunes-pulse-census","summary":null}
+{"id":"five-title-tunes-reach-zero","summary":"Answered, no change: 5_Title_Tunes' 'reach 0 of 448' was the probe pairing packed attacks by name and sampling at the attack frame; at -S1 the packed pulse set lands one frame later, and index-paired at f+1 the planned width is reached on 448 of 448."}
 {"id":"five-title-tunes-wave-90-note-end-frame","summary":null}
 {"id":"fix-7kkkkk-cue-stall-claim","summary":null}
 {"id":"fixed-arp-any-toneporta","summary":"fixed_arp_phases skips every CMD_TONEPORTA row, not only the 00 tie, as both players skip the waveptr init for any toneporta; 0 files move (no slide on a walked row in the corpus); pinned by test_fixed_arp_toneporta.py."}
@@ -357,6 +359,7 @@
 {"id":"hard-restart-frames-per-song-option","summary":null}
 {"id":"hard-restart-frames-vs-the-original-gap","summary":null}
 {"id":"hold-at-s1-is-bounded-by-the-target-player-and-the-open-question-is-whether-it-can-move-at-all","summary":"Already settled: _hard_restart_ticks' docstring refutes a movable -S1 hold with both alternatives priced (floor removed: 30 movers, nothing improves, gate falls; zero: relabels fetch as slot and breaks the schedule) and a 3840-call sweep pinned by test_the_emitted_gatetimer_is_never_zero; no edit."}
+{"id":"hold-attack-frame-on-the-shared-layout","summary":"Merged: under the shared pulse-phase layout a hold that opens off its held width is laid set-width / rest / jump to the shared held tail, so its attack frame plays the original's opening width; shipped only where it scores no worse (_lay_attack_or_plain); no file moves under presets (4 with pulse_phase forced)."}
 {"id":"hold-counts-slot-and-sparse-as-misses-while-its-census-calls-them-non-defects","summary":null}
 {"id":"hold-zero-note-length-loss","summary":null}
 {"id":"hooks-tests-collectable","summary":".claude/hooks collects under pytest: test_flag_guard.py and test_artefact_guard.py wrapped as collectable tests (7 passed); no python/ change."}
@@ -424,6 +427,7 @@
 {"id":"las-vegas-bit02-fall","summary":"Las_Vegas_Video_Poker's effect-bit-$02 fall (3 semitones every 4 counter steps) is detected and emitted as a pattern stair; subtune 8 level agreement 12/411 -> 301/411, LVVP the only mover."}
 {"id":"las-vegas-classic-vibrato-original-depth","summary":"User decision implemented: CLASSIC_DEPTH_CMP_TRIM trims Las_Vegas record 6 ($6B9A) cmp 12 -> 11 (3.46 -> 2.73 depths vs the original's 2.99, bend 1.027 -> 0.962); record 11 ($0AA0) left at 12 because trimming it costs voice-0 bend -11.4%. Las_Vegas_Video_Poker moves alone."}
 {"id":"las-vegas-voice1-delayed-cut-release","summary":"Merged: rest_ring.py rings a bit-6 rest with the held instrument's uncut SR a row before the KEYOFF and cuts with SETSR $00 on the last hold row; Las_Vegas voice-1 silent ties 1101 -> 669, adsr_exact .054 -> .088; 8 files move, 6 improve adsr_exact, Confuzion about neutral."}
+{"id":"last-v8-frame-6407-octave","summary":"Merged: pattern byte $7C indexes past Last_V8's 96-entry note table onto player scratch cells that hold $6001; PLAYER_CELL_PITCH records that pitch for the guarded writer sites; melody and sequence 1.0 on both rips, travel 1.09 -> 0.87."}
 {"id":"last-v8-pulse-lo-ora40-spelling","summary":"Partial, not merged: the ORA #$40 spelling is a real pulse-lo engine in 7 files; the A/B is mixed -- pulse-change counts approach the original on Chimera, Crazy_Comets and Game_Killer but move away on the target Last_V8 (13000 -> 18400 vs 9798) and Ninja."}
 {"id":"last-v8-pulse-voice-swap-check","summary":"Answered, no change: there is no voice swap; Last_V8's voice-1/2 count mismatch is two opposite-sign defects (an instrument-1 stair emitted as a ramp and the missing ORA #$40 pulse-lo engine) that nearly cancel."}
 {"id":"last-v8-skydive-encoding","summary":"Last_V8's skydive is now emitted: compact held program (3 rows a pair of frames) plus shared identical table-tail programs (60 rows freed), 252 of 255 rows; v0 high-byte agreement 74 -> 184 of 238; travel_ratio 0.957 -> 1.095 (over-travel)."}
@@ -611,6 +615,7 @@
 {"id":"phantom-record-two-stage-guard","summary":"Partial, not merged: instr_used does name unplayed records (W_A_R_Preview, Sanxion, Delta_Mix, Dragons_Lair); a named-record guard moves 24 files, several growing 2-10 bytes unexplained, and W_A_R_Preview's aud was not re-measured."}
 {"id":"phantom-subtunes-nemesis-thundercats","summary":null}
 {"id":"phase-block-legs-on-the-nibble-lattice","summary":"_phase_block's loop, chained legs and ramps now turn on the phases' lattice cycle (_phase_cycle): turn census exact 1701 -> 4151 of ~4.6k on 23 triangle files; 4 pulse_phase presets move (Commando.sid under presets only; Commando.sng exact)."}
+{"id":"phase-seed-minority-lattice","summary":"Merged: a phase whose own cycle is not the record's dominant lattice gets a private two-leg loop instead of breaking chaining for the whole record (_minority_cycles); only Commando moves under presets (aud .9353 -> .9356, travel 2.13 -> 1.95)."}
 {"id":"pitch-seq-divider-s1-rotation","summary":"_pitch_seq_entries' rotation now keys on calls per step (multiplier x frames_per_step), decided on a VICE per-call trace of a synthetic record: the old key named every -S1 attack C-6, the new one C-4 as at -S3; new synthetic test fails on the old key; corpus byte-hash moves 0 files; uncommitted."}
 {"id":"pitch-seq-flat-clock-other-files","summary":"Bit-$10 pitch-seq outer-gated flat clock read on 24 more files (siddump -w check: 0 failing) and two emission defects fixed (lead, delay form); 15 files move under presets with melody unchanged and reversal/tie A/B mixed."}
 {"id":"pitch-seq-global-phase-per-instrument","summary":"Food_Feud's divided bit-$10 phase is now read from its clock and carried per instrument by majority: under pitch_seq forced, voice-2 ties 3907 -> 5239 against the original's 5139 and 29F9 first moves land at +1 like the original; only Food_Feud|forced moves, no preset arm; six sabotages caught; uncommitted."}
@@ -678,6 +683,7 @@
 {"id":"pulse-tri-zp-change-count-overshoot","summary":"Samantha Fox's x1.25 pul-count overshoot is the outer gate's skipped frame, by construction, and not a pulse defect. Documented in _tri_speed and pinned by a new test; no bytes move; merged."}
 {"id":"pulse-tri-zp-voice3-overstep","summary":"Two more spellings of the status-bit-6 rest shape are detected and a rest now reseeds the pulse via CMD_SETPULSEPTR; Samantha_Fox, Spellbound and Mega_Apocalypse move (Mega_Apocalypse accepted by the orchestrator: gate/wave/tie/slides improve, bend 1.16 -> 1.27)."}
 {"id":"pulse-triangle-docstring-says-the-band-carries-over-and-it-does-not","summary":null}
+{"id":"pygmies-pitch-seq-melody","summary":"Merged: the digi decoder now honours the duration byte's bit-5 tie flag; voice attack counts match the original and melody rises on After_8 .93 -> .99, Rikky .94 -> .99, Off_the_Cuff .96 -> .99, Mr_Meaner .97 -> .99, Rock_Tells .84 -> .89; Pygmies_Revenge -.005 (no_test_restart stale-pitch naming now shows)."}
 {"id":"pygmies-revenge-gate-falls-against-the-flags-own-direction","summary":null}
 {"id":"radio-ace-cut-after-clear","summary":"The original moves its ILV cutoff 0 on frames with no voice routed; ours moved it there (Radio_ACE 564,224). A $00 route byte now routes nothing (ILV_ROUTE_NOTHING) and stops the sweep. 4 files move (Go_Go_Dash, Lion_Heart, Pacific_Coast, Radio_ACE)."}
 {"id":"raising-the-fidelity-window-to-180-needs-a-task-that-declares-both-artefacts","summary":null}
@@ -836,6 +842,7 @@
 {"id":"stale-worktrees-accumulate","summary":null}
 {"id":"staleness-guard-on-staged-output","summary":null}
 {"id":"star-paws-drum-attack-three-frames-late","summary":"Star_Paws' late drum attacks are an integrating clock error that regrid fixes once regrid works at -S2. The convert.py change moves 0 files under presets; it reaches Star_Paws only when presets.json adopts regrid for it, which is outside the task's touches (partial)."}
+{"id":"star-paws-freq-ffff-wrap","summary":"Answered with a pinned test: Star_Paws voice 1's $FFFF frames no longer occur at 4c9dab5 (0 on every voice in subtunes 0-2); cycle 20's top-note pin in past_table_wave removed them between fef37ef and 3512e76; tests/test_star_paws_top_wrap.py pins it; no converter change."}
 {"id":"star-paws-legato-vibrato-travel","summary":"Answered, no change: no Star_Paws vibrato record is cloned, so a legato clone's vibrato restart never arises; the remaining travel/reversal defect is the bit-$10 pitch-seq phase restart on GT15 (opened)."}
 {"id":"star-paws-regrid-leftover-debt","summary":"Star_Paws' regrid debt is lost to packed orderlist repeats (16.4 calls) and unplaceable bought rows (9); the new regrid_full_debt option pays it (drift_total -14.08 -> -1.87). Partial: off by default, 0 move under presets until presets.json adopts it."}
 {"id":"star-paws-residual-debt","summary":"New opt-in regrid_park (CLI --regrid-park): the deficit is paid through voice 1's one-pattern loop via a clone carrying compensating pairs; forced on, Star_Paws attack offset -12/+1 -> -1/+1, drift 0, hold 10 -> 7 of 11. Off by default and in no preset: nothing moves."}

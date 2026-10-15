@@ -26,9 +26,12 @@ bound-to-bound $800..$E00 (1536) that happened to be a whole number of
 speed-6 steps, so no phase sits on a chained leg any more and the record is
 "plain" (not None) -- the case this file was written for no longer arises on
 5_Title_Tunes. The mechanism it pinned (a None-kind record lays its
-per-phase block row for row) is pinned below on Human_Race's records 18 and
+per-phase block row for row) was pinned below on Human_Race's records 18 and
 23, whose seed phase sits on another lattice than their other phases: kind
-None, 14 chained phases that must not be chained. The per-phase figures:
+None, 14 chained phases that must not be chained. **Re-pointed again** at
+task `phase-seed-minority-lattice`: those two are "chained" now (the seed
+runs its own loop), so the mechanism is pinned on the records still None
+(Action_Biker 1, Monty_on_the_Run 16, Ninja 9, Gremlins 10). The per-phase figures:
 shared 149 rows against 172 (was 154 / 177). The 37 entries still play the
 per-phase widths.
 """
@@ -131,22 +134,23 @@ def test_a_none_kind_record_is_laid_as_its_own_per_phase_block():
 
 
 def test_a_none_kind_record_on_the_lattice_is_laid_per_phase_too():
-    """The None-kind mechanism on a real record again (the file's record 2
-    is "plain" since the lattice legs): Human_Race's records 18 and 23 open
-    on a seed phase ($800, up) whose sweep turns on $E20/$8E0 where every
-    other phase turns on $E60/$840, so 14 of their phases sit on a chained
-    leg and one cannot land -- kind None, and `share=True` lays the
-    per-phase block row for row."""
+    """The None-kind mechanism on real records again. Human_Race's records
+    18 and 23 used to be the example (a seed phase on another lattice kept
+    a chained leg from landing, kind None); they are "chained" now, the seed
+    laid as its own piece on its own loop (`_minority_cycles`, task
+    `phase-seed-minority-lattice`, tests/test_phase_seed_minority_lattice.py).
+    The records that are still None-kind at 4c9dab5 + that task -- some of
+    their phases sit on a chained leg and one cannot land -- are
+    Action_Biker's 1, Monty_on_the_Run's 16, Ninja's 9 and Gremlins' 10, and
+    for each `share=True` lays the per-phase block row for row."""
     from h2g.goatwriter import pulse as P
-    args = _table_calls("Human_Race.sid")[0]
-    sid, det, iu, pulse, mult, phases, _, lead = args
-    for num in (18, 23):
+    for name, num in (("Action_Biker.sid", 1), ("Monty_on_the_Run.sid", 16),
+                      ("Ninja.sid", 9), ("Gremlins.sid", 10)):
+        sid, det, iu, pulse, mult, phases, _, lead = _table_calls(name)[0]
         params = P._phase_sweep_params(sid, det, num - 1 - lead, mult)
         want = set(phases[num]) | {(params[0], +1)}
-        assert P._phase_cycle(want, params[2], params[3], params[5]) == (0x840, 0xE60)
-        assert P._phase_turns(0x800, +1, 0xE0, 8, 14)[:3] == (0xE20, 0x8E0, 0xE20)
-        assert len(P._chained_phases(want, *params[1:])) == 14, num
-        assert P._union_kind(want, *params[1:]) is None, num
+        assert P._chained_phases(want, *params[1:]), (name, num)
+        assert P._union_kind(want, *params[1:]) is None, (name, num)
         mk = lambda share: P._phase_block(  # noqa: E731
             10, num, want, params[0], *params[1:], share)
-        assert mk(True) == mk(False), num
+        assert mk(True) == mk(False), (name, num)

@@ -753,6 +753,10 @@ def _bound_to_bound(monkeypatch) -> None:
                         (lo_v, hi_v))
     monkeypatch.setattr(P, "_nearest_ticks", lambda distance, speed:
                         distance // speed)
+    # ... and no private loops for phases on another cycle
+    # (`_minority_cycles`; task `phase-seed-minority-lattice`): with the
+    # cycle an identity every phase would count as one.
+    monkeypatch.setattr(P, "_minority_cycles", lambda want, cycle, step: {})
 
 
 def _play_pulse_table(entries: list, ptr: int, calls: int) -> list:
@@ -816,7 +820,9 @@ _OVERFLOWING = {
     # (18, 23) until the lattice legs: record 23's 61 rows no longer fit
     # behind 21's 87 once the loops are shorter, so 21 is kept in its place
     # (5 of 7 swept either way; `test_pulse_phase_union.py` pins the rows).
-    "Human_Race.sid": (18, 21),
+    # (18, 23) again at phase-seed-minority-lattice: the two chain, the
+    # shipped table is 197 rows and keeps 23 in 21's place.
+    "Human_Race.sid": (18, 23),
 }
 
 
