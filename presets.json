@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.547 presets.py",
+  "generator": "h2g 0.5.548 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -314,7 +314,8 @@
       "subtunes": 10,
       "rows": 28729,
       "multiplier": 2,
-      "two_stage": true
+      "two_stage": true,
+      "initial_instrument": false
     },
     "Flash_Gordon.sid": {
       "max_rows": 94,
