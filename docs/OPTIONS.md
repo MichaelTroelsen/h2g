@@ -2679,6 +2679,18 @@ compensation does not reach that file's phase error at all, so there is no
 measured decision to record. The other three are damaged, which is the
 incompatibility below.
 
+**Sanxion adopts it since v0.5.553**, and the refusal above is historical:
+it was measured while Sanxion's preset carried `no_test_restart`, which it no
+longer does. At f28b063 under presets, `-t 180 --sound`, regrid off -> on:
+`melody` 1.00 -> 1.00 (4511 attacks on both sides, the original's 4511),
+`drift` per 1000 -9.17 -> -0.13 (`--pace` median -9.17 -> -0.33), `gate`
+.347 -> .375, `wave` .690 -> .727, `adsr_exact` .800 -> .878, `aud` .860 ->
+.870, `loud` .895 -> .898, `length_delta` -2.98 -> -0.48 s.
+The cost: `regrid_tempos` runs in `convert`, before `build_sng`'s
+attack-hold pass, so its pairs take the command column on 4 of Sanxion's 51
+short notes, which then lose the held attack pointer
+(`tests/test_attack_hold_row0.py` pins both counts).
+
 **Through v0.5.511 it could not reach a multispeed file at all**, whatever
 the flag said. `convert` compared `effective_frames` (frames per row) with the
 subtune's tempo value (CALLS per row, frames x multiplier), and the two are the
@@ -2942,7 +2954,7 @@ carry both, and FOUR of those seven are fine and ship `--regrid`:
 | carries both | `--regrid` |
 |---|---|
 | `Arcade_Classics`, `Rikky`, `Sigma_Seven`, `Wiz` | **adopted, measured** |
-| `One_on_One_Jordan_vs_Bird`, `Powerplay_Hockey_USA_vs_USSR`, `Sanxion` | refused |
+| `One_on_One_Jordan_vs_Bird`, `Powerplay_Hockey_USA_vs_USSR`, `Sanxion` | refused (Sanxion: historical, adopted since v0.5.553 without `no_test_restart`) |
 
 Refusing the option whenever `no_test_restart` is set would throw away four
 measured adoptions.

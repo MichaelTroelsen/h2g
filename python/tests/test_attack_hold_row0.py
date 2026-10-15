@@ -96,25 +96,45 @@ def test_a_one_row_pattern_takes_the_pointer():
     assert "column in use" not in log[0], log
 
 
-@needs_corpus
-def test_sanxions_row_0_short_notes_hold_c_sharp_6():
-    """End to end under the shipped presets: no short instrument-14 note is
-    refused for its column, and at least one row-0 note points at the held
-    block (four at v0.5.496: patterns $21, $22, $26, $27)."""
+def _sanxion_hold(regrid):
     import json
 
     import fidelity
-    import songview as SV
     from h2g.convert import convert
 
     doc = json.loads((REPO_ROOT / "presets.json").read_text())
     opts = dict(fidelity._preset_opts(doc, "Sanxion.sid"),
-                drop_unnamed_instruments=False)
+                drop_unnamed_instruments=False, regrid=regrid)
     log = []
     blob = convert(str(CORPUS / "Sanxion.sid"), log=log.append, **opts)
     line = [m for m in log if m.startswith("Attack pitch held")]
     assert len(line) == 1, log
-    assert "column in use" not in line[0], line
+    return blob, line[0]
+
+
+@needs_corpus
+def test_sanxions_regrid_costs_four_short_notes_their_column():
+    """Sanxion ships `regrid` since v0.5.553, and `regrid_tempos` runs in
+    `convert` before `build_sng`, so its CMD_SETTEMPO pairs take the command
+    column first: 4 of 51 short notes lose the held pointer. A counted cost
+    of the adoption (drift -9.17 -> -0.13/1000), not a property of this pass;
+    when the passes are ordered so the hold claims its rows first this
+    number falls and the pin must move with it."""
+    assert _sanxion_hold(True)[1] == ("Attack pitch held.......: 51 short "
+        "note(s) keep the $40 pitch (vibrato gate 3), 4 with the column in "
+        "use, 1 running on past their block")
+
+
+@needs_corpus
+def test_sanxions_row_0_short_notes_hold_c_sharp_6():
+    """End to end under the shipped presets with `regrid` off (its cost is
+    pinned above): no short instrument-14 note is refused for its column,
+    and at least one row-0 note points at the held block (four at v0.5.496:
+    patterns $21, $22, $26, $27)."""
+    import songview as SV
+
+    blob, line = _sanxion_hold(False)
+    assert "column in use" not in line, line
     song = SV.parse_sng(blob)
     row0 = [n for n, pat in enumerate(song.patterns)
             if 0x60 <= pat[0] <= 0xBC and pat[2] == CMD_SETWAVEPTR]
