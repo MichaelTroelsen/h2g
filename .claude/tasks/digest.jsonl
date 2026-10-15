@@ -657,6 +657,7 @@
 {"id":"presets-json-committed-form-does-not-match-its-generator","summary":null}
 {"id":"presets-research-12-moved-files","summary":null}
 {"id":"presets-search-written-to-an-empty-output-path-silently-drops-every-carried-setting","summary":null}
+{"id":"presets-two-stage-i-ball-star-paws","summary":"Re-searched both songs with presets.py --fidelity: I_Ball now takes two_stage AND pitch_seq (tie_ratio .636 -> .933, aud +.0002, wave .559 -> .556, loud -.001; two_stage alone only costs wave and aud); Star_Paws refuses two_stage again (sfx_drum, wave_program, pitch_seq unchanged)."}
 {"id":"promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled","summary":null}
 {"id":"prose-asserting-a-files-own-absence-is-checkable-and-three-instances-landed-in-one-cycle","summary":"All three self-describing falsehoods were already fixed; the one mechanisable shape (a module docstring naming a symbol it says the file does not call) is now checked tree-wide across python/ and .claude/skills/ with a positive control, 3 sabotages caught; test-only; uncommitted."}
 {"id":"prune-dead-wavetable-blocks","summary":"Partial, not merged: dropping wavetable blocks of unplayed records moves 71 files (65 program-equivalent); in the orchestrator's corpus A/B W_A_R_Preview aud fell .9337 -> .9219, Las_Vegas .8890 -> .8848 and BMX_Kidz .7683 -> .7654."}
