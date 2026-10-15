@@ -199,7 +199,13 @@ def test_the_corpus_last_row_ties_are_cloned_and_no_note_inherits_one(
     patterns, rows, tracks, (out, clones, declined) = seen[0]
     last_row = {(p, r) for p, r in rows
                 if patterns[p][4 * r + 4] == END}
-    assert len(last_row) == 2, last_row          # 42f3f4a: 2 in each file
+    # 42f3f4a: 2 in each file -- as distinct pattern CONTENT (instrument
+    # column ignored): a phase split's pattern copies (Trans-Atlantic's 24,
+    # pitch-seq-room-aware-phase-clones) are the same notes under another
+    # spelling and carry their own last-row ties.
+    def notes(p):
+        return tuple(b for i, b in enumerate(patterns[p]) if i % 4 != 1)
+    assert len({notes(p) for p, _r in last_row}) == 2, last_row
     assert declined == set()
     for p, r in last_row:
         assert out[p][4 * r + 1] in {c for _, c in clones}

@@ -67,7 +67,10 @@ def _opens_on_a_waveform(song, ins):
 def test_trans_atlantic_clones_leave_the_waveform_to_the_wavetable():
     song = _song("Trans-Atlantic_Balloon_Challenge.sid")
     pairs = _clones(song)
-    assert len(pairs) == 6
+    # 6 until v0.5.550, whose room-aware pitch-seq phase clones add two more
+    # legato clones (Trans-Atlantic gets 5 phase clones there); every one of
+    # the 8 still leaves its waveform to the wavetable.
+    assert len(pairs) == 8
     for clone, base in pairs:
         assert base.firstwave == G.FIRSTWAVE_TESTBIT
         assert _opens_on_a_waveform(song, clone)

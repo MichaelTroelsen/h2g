@@ -650,9 +650,15 @@ def _read_instrument_array(sid: SidFile, det: Detection, log: Logger,
 # as FOUR shifts: the stride-16 players (After_8, One_on_One, Powerplay, ...)
 # have 16-byte records, so `ASL x4`, and the 3-shift shape cannot match them.
 # One byte longer, so the table operand sits at +12/+13 instead of +11/+12.
-# Consulted ONLY by `_reconcile_instrument_index`, never as a first reading:
-# 7 corpus players match it alone and read no array today, and giving them one
-# would move files this shape was never meant to touch.
+# Consulted ONLY by `_reconcile_instrument_index`: to pick the tune player's
+# array out of a file with several players, and -- as a rescue, where the
+# 3-shift shape matched NOWHERE -- to read the array of the 7 stride-16
+# players (After_8, Kings_of_the_Beach_intro, Mr_Meaner, Off_the_Cuff,
+# Pygmies_Revenge, Rikky, Rock_Tells_the_Tale) that match this spelling alone.
+# Measured at 40cc8e5: the rescue moves no byte under presets (0 of 89) nor
+# with `initial_instrument` forced (0 of the 7), and the init it reads (`$0F`)
+# is what siddump finds in all three slots at frame 0 of subtunes 0-2, where
+# the file image (`$13 $09 $16`) is not.
 INSTRUMENT_INDEX_SHAPE_ASL4 = "BD ?? ?? 8E ?? ?? 0A 0A 0A 0A AA BD ?? ??"
 
 
@@ -677,11 +683,29 @@ def _reconcile_instrument_index(sid: SidFile, det: Detection, log: Logger,
     files with a match agree and are not touched. Where it is not, the first
     match whose table agrees (either spelling) supplies the array; and if none
     does, the reading is dropped, since it is evidence about another player.
+
+    **The rescue.** Where the 3-shift shape matched nowhere (`idx < 0`) nothing
+    was read, so there is nothing to second-guess: the first ASL4 load naming
+    the table supplies the array. That is After_8, Kings_of_the_Beach_intro,
+    Mr_Meaner, Off_the_Cuff, Pygmies_Revenge, Rikky and Rock_Tells_the_Tale;
+    no match naming the table leaves them as they were.
     """
-    if idx < 0 or det.instr_start < 0:
+    if det.instr_start < 0:
         return
     data = sid.data
     table = sid.to_address(det.instr_start)
+    if idx < 0:
+        # The rescue: the 3-shift shape matched nowhere, so nothing was read
+        # and there is no other player's reading to second-guess. The stride-16
+        # players (After_8, Mr_Meaner, ...) spell the multiply `ASL x4`; take
+        # the first such load whose second `LDA` names the table `detect`
+        # located. Consulted only here -- a first reading is never replaced.
+        for i in _search_all(data, INSTRUMENT_INDEX_SHAPE_ASL4, limit=16):
+            if _addr16(data, i + 12, i + 13) - 2 == table:
+                _read_instrument_array(sid, det, log,
+                                       _addr16(data, i + 1, i + 2))
+                return
+        return
     if _addr16(data, idx + 11, idx + 12) - 2 == table:
         return
     for shape, op in ((INSTRUMENT_INDEX_SHAPE, 11),
@@ -716,7 +740,8 @@ def _find_init_instrument(data: bytes, array: int) -> Optional[int]:
     whatever the file image of the array holds -- the image is a snapshot of
     whatever the ripper last played, and differs: Knucklebusters' image is
     `$1B $13 $0B` against an init that writes `$1B` to all three, Delta's
-    `$10 $12 $0F` against `$05`. 36 corpus players carry the idiom
+    `$10 $12 $0F` against `$05`. 36 corpus players carried the idiom (43
+    with the stride-16 rescue of `_reconcile_instrument_index`)
     (`tests/test_init_instrument.py` re-derives the list and checks each
     against a siddump of frame 0); the rest never store an immediate there,
     and the image stays the only reading. Not every subtune runs the loop

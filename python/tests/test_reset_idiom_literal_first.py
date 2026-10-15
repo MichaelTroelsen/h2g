@@ -236,12 +236,17 @@ def image_files():
 
 
 @needs_corpus
-def test_thirty_six_site_files_carry_an_image_and_thirty_four_differ(image_files):
-    assert len(image_files) == 36
+def test_forty_three_site_files_carry_an_image_and_forty_one_differ(image_files):
+    """36 and 34 at 6f346b6. The seven stride-16 players that spell the record
+    multiply `ASL x4` (After_8, Kings_of_the_Beach_intro, Mr_Meaner,
+    Off_the_Cuff, Pygmies_Revenge, Rikky, Rock_Tells_the_Tale) gained an image
+    from `_reconcile_instrument_index`'s rescue, and all seven differ from the
+    `$0F` literal (`$13 $09 $16`; Kings `$05 $05 $01`)."""
+    assert len(image_files) == 43
     differ = sorted(
         n for n, (_p, c, det) in image_files.items()
         if any(b != c.sites[0].imm for b in det.initial_instruments))
-    assert len(differ) == 34
+    assert len(differ) == 41
     assert sorted(set(image_files) - set(differ)) == ["ACE_II", "BMX_Kidz"]
 
 

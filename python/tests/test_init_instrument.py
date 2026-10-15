@@ -75,6 +75,12 @@ INIT = {
     "Tarzan.sid": 18, "Thanatos.sid": 4, "Thundercats.sid": 27,
     "Trans-Atlantic_Balloon_Challenge.sid": 6, "W_A_R.sid": 27,
     "W_A_R_Preview.sid": 27, "Wiz.sid": 27, "Zoolook.sid": 27,
+    # The seven stride-16 players that spell the record multiply `ASL x4` and
+    # match no 3-shift load: read by `_reconcile_instrument_index`'s rescue,
+    # and every one holds `0F 0F 0F` at frame 0 of subtunes 0-2 (siddump).
+    "After_8.sid": 15, "Kings_of_the_Beach_intro.sid": 15,
+    "Mr_Meaner.sid": 15, "Off_the_Cuff.sid": 15, "Pygmies_Revenge.sid": 15,
+    "Rikky.sid": 15, "Rock_Tells_the_Tale.sid": 15,
 }
 # Subtune 0 whose init never reaches the loop: its frame-0 slots are the
 # file image. EMPTY since `_reconcile_instrument_index`: the two names that used

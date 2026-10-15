@@ -986,17 +986,57 @@ def within_note_travel(v: Voice) -> int:
     The sparse write list is walked directly: between writes the register
     holds, so the frame-by-frame sum is the same number.
     """
+    return sum(abs(cur - prev) for _f, prev, cur in _travel_steps(v))
+
+
+def _travel_steps(v: Voice) -> list[tuple[int, int, int]]:
+    """`(frame, previous, new)` for every register step `within_note_travel`
+    counts; the sum of their magnitudes IS that figure. Split out so the
+    per-voice attribution (`travel_step_census`) reads the same steps rather
+    than re-deriving the rule."""
     skip: set[int] = set()
     for a in v.attack_frames:
         skip |= {a - 1, a, a + 1}
-    total = 0
+    steps = []
     for (_, prev), (f, cur) in zip(v.freq_events, v.freq_events[1:]):
         d = abs(cur - prev)
         if (not d or f in skip or f - 1 in skip
                 or d * TRAVEL_NOTE_STEP > max(prev, cur)):
             continue
-        total += d
-    return total
+        steps.append((f, prev, cur))
+    return steps
+
+
+def travel_step_census(v: Voice, top: int = 3) -> list[tuple[int, int, int]]:
+    """The `top` most-travelled distinct register steps of one voice, as
+    `(previous, new, count)` ordered by the distance they add (count x
+    |new - previous|). A voice whose travel is one repeated step -- a drum
+    program's fall -- reads as a single entry here."""
+    seen: dict[tuple[int, int], int] = {}
+    for _f, prev, cur in _travel_steps(v):
+        seen[(prev, cur)] = seen.get((prev, cur), 0) + 1
+    ranked = sorted(seen.items(), key=lambda kv: -kv[1] * abs(kv[0][1] - kv[0][0]))
+    return [(p, c, n) for (p, c), n in ranked[:top]]
+
+
+def describe_voice_travel(ov: Voice, nv: Voice) -> str:
+    """One `--diagnose` line: this voice's travel on each side, and what the
+    heaviest steps are. `compare()` sums the voices into `travel`, which can
+    cancel -- Star_Paws read 0.969 as 356,056 on voice 0 plus 553,696 on voice
+    1 against an original of 938,967 on voice 0 and none elsewhere (v0.5.548;
+    historical, re-measure before quoting)."""
+    ot, ut = within_note_travel(ov), within_note_travel(nv)
+    if not ot and not ut:
+        return "travel: none on either side"
+    ratio = f"{ut / ot:.2f}x" if ot else "- (the original does not travel)"
+    out = f"travel: original {ot:,}, ours {ut:,}, {ratio}"
+    for label, voice in (("original", ov), ("ours", nv)):
+        steps = travel_step_census(voice, 2)
+        if steps:
+            out += f"; {label}: " + ", ".join(
+                f"{n}x {p}->{c} (|{abs(c - p)}|, {abs(c - p) * TRAVEL_NOTE_STEP / max(p, c):.3f} of the 1/{TRAVEL_NOTE_STEP} cutoff)"
+                for p, c, n in steps)
+    return out
 
 
 def compare(orig: list[Voice], ours: list[Voice]) -> dict:
@@ -1029,6 +1069,12 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
             # both times; re-measure before quoting either.
             "orig_ties": a.ties,
             "our_ties": b.ties,
+            # Per voice because `travel` sums the voices and can cancel:
+            # Star_Paws read 0.969 as 356,056 on voice 0 plus 553,696 on
+            # voice 1 against an original of 938,967 on voice 0 alone
+            # (v0.5.548; historical). `--diagnose` prints the same split.
+            "orig_travel": within_note_travel(a),
+            "our_travel": within_note_travel(b),
         })
 
     weights = [max(v["orig_attacks"], 1) if (v["orig_attacks"] or v["our_attacks"])
@@ -1046,8 +1092,8 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     # exclusion is visible in the row the way `wave_tail_frames` is.
     ob_tail = sum(_bend_tail(v) for v in orig)
     ub_tail = sum(_bend_tail(v) for v in ours)
-    otv = sum(within_note_travel(v) for v in orig)
-    utv = sum(within_note_travel(v) for v in ours)
+    otv = sum(v["orig_travel"] for v in per_voice)
+    utv = sum(v["our_travel"] for v in per_voice)
     ot = sum(v.ties for v in orig)
     ut = sum(v.ties for v in ours)
     op = set().union(*(set(v["orig_pitches"]) for v in per_voice)) if per_voice else set()
@@ -7679,6 +7725,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides",
                   "orig_travel", "our_travel", "travel_ratio"):
             row.pop(k, None)
+        for pv in row.get("voices", ()):
+            pv.pop("orig_travel", None)
+            pv.pop("our_travel", None)
     best_dump = b
     if pinned:
         # A pinned pair is not searched: the counterpart was established by
@@ -10866,6 +10915,7 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
                    f"{100 * compare(a, b)['melody']:.0f}%:")
         for v, (ov, nv) in enumerate(zip(a, b)):
             out.append(f"    voice {v}: {classify_voice(ov, nv)}")
+            out.append(f"      {describe_voice_travel(ov, nv)}")
     return "\n".join(out) + "\n"
 
 

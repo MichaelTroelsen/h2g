@@ -20,8 +20,8 @@ from typing import Dict, List, Optional, Set, Tuple
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
 from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
-                         TEMPO_FASTEST_STEADY, hold_direction,
-                         restarted_gate_calls)
+                         TEMPO_FASTEST_STEADY, hold_direction, hold_steps,
+                         hold_wait, restarted_gate_calls)
 from .search import search_file
 from .sidfile import SidFile
 
@@ -6541,7 +6541,9 @@ def _triangle_hold(x: int, sim, recs: dict, cells: list, cur: list,
     (the rows being played, the fetch flag at index 5) -- by stepping a
     scratch copy of the record for as many ticks as both voices' counters
     take to repeat twice over, on the assumption that every voice sweeping
-    the record keeps sweeping it (the rows are not read ahead). Two voices
+    the record keeps sweeping it (the rows are not read ahead; where a
+    partner leaves inside the note `_hold_resume` says so afterwards, from
+    the reads the walk then sees). Two voices
     at least must sweep it: one voice alone holds a record only if its step
     is nil, which is not a hold the plan needs a word for. The current tick
     is finished first -- the voices after `x` in the loop still step in it,
@@ -6588,6 +6590,86 @@ def _triangle_hold(x: int, sim, recs: dict, cells: list, cur: list,
     if away % sim.step:
         return None
     return hold_direction(away // sim.step, first_tick or 0)
+
+
+# How many of a voice's reads after its hold must be the lone sweep's before
+# the hold is called ended (`_hold_resume`), and how many of them are checked
+# against it. One read is as likely a glitch of the partner's fetch tick.
+HOLD_RESUME_MIN_READS = 2
+HOLD_RESUME_PROBE = 3
+
+
+class _OpenHold:
+    """A hold the lockstep walk is still inside: the plan slot it wrote, the
+    record it sweeps with, and every read of the voice's own steps since the
+    fetch -- `(tick, width read, width the record is left on at the end of
+    that tick, the voice's direction, its counter)`."""
+
+    __slots__ = ("slot", "row", "instr", "sim", "code", "held", "start",
+                 "reads", "pending")
+
+    def __init__(self, slot: dict, row: int, instr: int, sim, code: int,
+                 held: int, start: int) -> None:
+        self.slot, self.row, self.instr, self.sim = slot, row, instr, sim
+        self.code, self.held, self.start = code, held, start
+        self.reads: list = []
+        self.pending: Optional[int] = None
+
+
+def _hold_resume(h: "_OpenHold") -> Optional[tuple]:
+    """`(n, w2, d2)` if the hold `h` ENDED while its note sounded: the voice
+    held its width for `n` ticks and its reads after that are the sweep of
+    the voice ALONE on the record from `(w2, d2)`, the state the last tick
+    of the hold left. None where the hold lasted to the note's end, or what
+    follows is not that sweep (a new partner steps the record too).
+
+    The partner that kept a record still can leave: Monty_on_the_Run's
+    instrument 11 on voice 0 reads $F00 for 150 frames and then $F80, $000,
+    $080 ... up the record's band, its partner having moved on to another
+    record. A table that holds to the voice's next command reads $F00 for
+    the whole note. Only a run of reads that never returns to the held
+    width counts (`HOLD_RESUME_MIN_READS`): a partner's fetch tick is one
+    tick of the record left unrestored, which Devils_Galop's voice 1 shows as
+    a read or two off the hold and then back on it, again and again -- not
+    an end, and not modelled. The voice's first read must be the held width
+    (the lookahead that planned the hold read it the same way). The check is
+    the sweep itself: the first `HOLD_RESUME_PROBE` reads after the hold,
+    ticks and widths, must be what `PulsePhaseSim` gives the voice alone."""
+    reads = h.reads
+    if not reads or reads[0][1] != h.held:
+        return None
+    last = max(i for i, rd in enumerate(reads) if rd[1] == h.held)
+    suffix = reads[last + 1:]
+    if len(suffix) < HOLD_RESUME_MIN_READS:
+        return None
+    tick, _, width, direction, counter = reads[last]
+    wait = hold_wait(h.code)
+    n = tick - h.start - wait
+    if n < 1:
+        return None
+    probe = suffix[:HOLD_RESUME_PROBE]
+    alone = h.sim.clone(PulseVoiceCell(direction, counter))
+    alone.width = width
+    seen = []
+    for t in range(tick + 1, probe[-1][0] + 1):
+        before = alone.width
+        alone.advance(1)
+        if alone.width != before:
+            seen.append((t, alone.width))
+    if seen != [(rd[0], rd[1]) for rd in probe]:
+        return None
+    return n, width, direction
+
+
+def _close_hold(h: "_OpenHold") -> None:
+    """The voice's note is over (it fetches again, or the walk ends): if its
+    hold ended on the way (`_hold_resume`), say so in the plan."""
+    then = _hold_resume(h)
+    if then is None:
+        return
+    instr, (width, _) = h.slot[h.row]
+    h.slot[h.row] = (instr, (width, hold_direction(
+        hold_steps(h.code), hold_wait(h.code), then)))
 
 
 def _walk_triangle_group(g: int, patterns: List[List[int]],
@@ -6672,6 +6754,8 @@ def _walk_triangle_group(g: int, patterns: List[List[int]],
     passes = {v: ({}, {}) for v in planned}
     cur = [next(rows[x], None) for x in range(3)]
     carry = 0
+    now = 0                          # original ticks walked in this group
+    open_holds: dict = {}
     while any(cur[v] is not None and cur[v][0] < 2 for v in planned):
         total = carry + tempo
         carry = total % calls_per_frame
@@ -6688,17 +6772,49 @@ def _walk_triangle_group(g: int, patterns: List[List[int]],
                     # (A note before any row names an instrument sweeps the
                     # lead-in record but is not planned: our side plays it
                     # on whatever Goattracker's channel holds.)
+                    # A hold goes on through the voice's rests and its
+                    # legato ties: neither reloads the pulse pointer (the
+                    # tie's command column is taken, so `apply_pulse_phase`
+                    # writes nothing there), and the table keeps holding.
+                    # A note of any other kind, or another record, ends it.
+                    tie = (x in passes and kind == "note"
+                           and patterns[tracks[3 * g + x][pos]][4 * r + 2]
+                           == CMD_TONEPORTA)
+                    hold = open_holds.get(x)
+                    if hold is not None and ((kind == "note" and not tie)
+                                             or hold.sim is not sim):
+                        _close_hold(open_holds.pop(x))
                     if kind == "note" and instr and x in passes and npass < 2:
                         held = _triangle_hold(x, sim, recs, cells, cur, lead)
-                        passes[x][npass].setdefault(pos, {})[r] = (
-                            instr, (sim.width, cells[x].direction
-                                    if held is None else held))
+                        slot = passes[x][npass].setdefault(pos, {})
+                        slot[r] = (instr, (sim.width, cells[x].direction
+                                           if held is None else held))
+                        if held is not None and not tie:
+                            open_holds[x] = _OpenHold(
+                                slot, r, instr, sim, held,
+                                (sim.width + hold_steps(held) * sim.step)
+                                & 0xFFF, now)
                     continue
                 if k < ticks:
+                    before = sim.width
                     sim.cell = cells[x]
                     sim.advance(1)
+                    hold = open_holds.get(x)
+                    if (hold is not None and hold.sim is sim
+                            and sim.width != before):
+                        hold.pending = sim.width
+            # The reads of this tick, with the state it left the record in:
+            # a voice after X in the loop has stepped it since X read.
+            for x, hold in open_holds.items():
+                if hold.pending is not None:
+                    hold.reads.append((now, hold.pending, hold.sim.width,
+                                       cells[x].direction, cells[x].counter))
+                    hold.pending = None
+            now += 1
         cur = [next(rows[x], None) if cur[x] is not None else None
                for x in range(3)]
+    for hold in open_holds.values():
+        _close_hold(hold)
     for v in planned:
         first, second = passes[v]
         _anchor_first_pass(g, v, 3 * g + v, first, second, restarts[v],

@@ -1148,9 +1148,27 @@ HOLD = 8
 HOLD_WAIT = 32
 
 
-def hold_direction(steps: int, wait: int = 0) -> int:
+# A hold can also END while its note still sounds: the partner that kept the
+# record still leaves (it fetches a note of another record, a rest), and the
+# voice sweeps on from where the hold left it
+# (`patterns._hold_resume`). The direction then carries the hold's length and
+# the phase the sweep resumes on, above `HOLD_THEN` so the low bits stay the
+# hold's own: `n` original ticks of the held width, then the sweep from
+# `(w2, d2)`. Still one integer, so a phase sorts and keys a table like any
+# other.
+HOLD_THEN = 1 << 16
+
+
+def hold_direction(steps: int, wait: int = 0,
+                   then: Optional[tuple] = None) -> int:
     assert -HOLD < steps < HOLD_WAIT - HOLD and wait >= 0, (steps, wait)
-    return HOLD + steps + HOLD_WAIT * wait
+    assert HOLD_WAIT * (wait + 1) <= HOLD_THEN, wait
+    base = HOLD + steps + HOLD_WAIT * wait
+    if then is None:
+        return base
+    n, w2, d2 = then
+    assert n >= 1 and 0 <= w2 < 0x1000 and d2 in (+1, -1), then
+    return base + HOLD_THEN * (1 + ((((n << 12) | w2) << 1) | (d2 < 0)))
 
 
 def is_hold(direction: int) -> bool:
@@ -1162,7 +1180,22 @@ def hold_steps(direction: int) -> int:
 
 
 def hold_wait(direction: int) -> int:
-    return direction // HOLD_WAIT
+    return direction % HOLD_THEN // HOLD_WAIT
+
+
+def hold_then(direction: int) -> Optional[tuple]:
+    """`(n, w2, d2)` of a hold that ends (`hold_direction`'s `then`), or None."""
+    code = direction // HOLD_THEN
+    if not code:
+        return None
+    code -= 1
+    return code >> 13, (code >> 1) & 0xFFF, -1 if code & 1 else +1
+
+
+def resume_phase(direction: int) -> Optional[tuple]:
+    """The `(width, direction)` phase a hold that ends sweeps on from."""
+    then = hold_then(direction)
+    return None if then is None else (then[1], then[2])
 
 
 def hold_rest(direction: int, multiplier: int) -> list:
@@ -1171,6 +1204,11 @@ def hold_rest(direction: int, multiplier: int) -> list:
     opening width already."""
     calls = (multiplier - 1) + hold_wait(direction) * multiplier
     return [(calls, 0)] if calls else []
+
+
+def _rest_rows(calls: int) -> list:
+    """`calls` play calls of nothing (a modulation row of speed 0)."""
+    return [(t, 0) for t in _split_ticks(calls)] if calls > 0 else []
 
 
 class PulseVoiceCell:
@@ -1903,7 +1941,7 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                  lo_v: int, hi_v: int, wrap: bool,
                  step: Optional[int] = None,
                  share: bool = False, attack: bool = False,
-                 multiplier: int = 1) -> tuple:
+                 multiplier: int = 1, resume: bool = False) -> tuple:
     """(rows, phase_index) for one sweeping record whose block opens after
     table row `base`: the alternating loop plus one entry point per phase in
     `want_set`, `phase_index` mapping (num, width, direction) to the 1-based
@@ -1971,6 +2009,21 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     leg and never lands on the shared loop, so `_chained_phases` and
     `_union_kind` read the other phases only: both records are "chained"
     (kind None before) and the shipped table is 197 rows where it took 245.
+
+    **A hold that ENDS (`resume`; `hold_then`, `patterns._hold_resume`).** The
+    partner that kept the record still can leave inside the note, and the
+    voice then sweeps on alone from the width the hold left (Monty_on_the_Run's
+    instrument 11 on voice 0 reads $F00 for 135 ticks and then climbs). Its
+    entry is `set w / rest / set held / rest / jump`: the opening width and
+    the wait as any hold, then the held width for `n` ticks less the set
+    row's own call, then a jump (no call) to the entry of the phase `(w2,
+    d2)` the sweep resumes on, whose set row plays on the call after the
+    `n` ticks. The jump may lie ahead, so it is filled in once every entry is
+    placed. Four to five rows an entry that nothing shares (the length is in
+    the key), and one more entry for `(w2, d2)`, which
+    `build_pulse_phase_table` adds to the record's phases for the layout
+    that asks for `resume` and ships only if it is no worse by `_score`.
+    Without `resume` the same direction is a plain hold, as before.
 
     **A `speed` above the modulation byte (`SPELLED_SPEED_MIN`; Commando's
     `$E0` steps at `-S1`, 224 a call) is laid as set rows** (`_ramp_rows`):
@@ -2092,6 +2145,7 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         return private[cycle]
 
     tails: dict = {}
+    fixups: list = []
     for (w, direction) in sorted(want_set):
         if (w, direction) in chained:
             continue
@@ -2101,6 +2155,29 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         at = base + len(block) + 1
         piece = [setrow(w)]
         if is_hold(direction):
+            then = hold_then(direction) if resume else None
+            if then is not None and (then[1], then[2]) in want_set:
+                # A hold that ENDS (`patterns._hold_resume`): the partner
+                # leaves after `n` ticks of the held width and the voice
+                # sweeps on from `(w2, d2)`, an entry of this same record.
+                # `w`, the wait, `held`, `n` ticks of it less the set row's
+                # own call, and a jump (no call) to that entry, whose first
+                # row is a set row on the next call. Never shared: the
+                # length is part of the key. The jump target may lie ahead
+                # of this row, so it is filled in below.
+                n, w2, d2 = then
+                held = (w + hold_steps(direction) * (step or 0)) & 0xFFF
+                first = (multiplier - 1) + hold_wait(direction) * multiplier
+                after = n * multiplier - 1
+                if held == w:
+                    rows = piece + _rest_rows(first + 1 + after)
+                else:
+                    rows = (piece + _rest_rows(first) + [setrow(held)]
+                            + _rest_rows(after))
+                phase_index[(num, w, direction)] = at
+                fixups.append((len(block) + len(rows), (num, w2, d2)))
+                block += rows + [(0xFF, 0)]
+                continue
             # A hold (`patterns._triangle_hold`): the voice opens on `w`
             # and reads `held` on every step after it, for as long as its
             # partner keeps the record still. Where it opens on the width
@@ -2151,6 +2228,8 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         piece += [(0xFF, heads[0] if direction > 0 else heads[1])]
         phase_index[(num, w, direction)] = at
         block += piece
+    for row, key in fixups:
+        block[row] = (0xFF, phase_index[key])
     return block, phase_index
 
 
@@ -2246,7 +2325,50 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     them, and counted as 12 they outweighed a record that sounds. Without
     `usage` every record weighs 1, the count it always was.
     """
+    ends = {num: {resume_phase(d) for (_, d) in ws
+                  if is_hold(d) and hold_then(d) is not None}
+            for num, ws in phases.items()}
+    if prefer_short or not any(ends.values()):
+        return _build_pulse_phase_table(sid, det, instr_used, pulse,
+                                        multiplier, phases, log, lead,
+                                        prefer_short, usage)[0]
+    # A hold that ends (`hold_then`) asks rows: the hold's own, and the entry
+    # of the sweep it hands over to. Laid both ways, it ships only if it is
+    # no worse by `_score` -- a table that is full sheds a record for it, and
+    # then the holds stay holds for the rest of their notes. Not on a
+    # compilation (`prefer_short`): the appended players need those rows.
+    plain_log: list = []
+    plain, plain_t = _build_pulse_phase_table(
+        sid, det, instr_used, pulse, multiplier, phases, plain_log.append,
+        lead, prefer_short, usage)
+    end_phases = {num: set(ws) | ends[num] for num, ws in phases.items()}
+    end_log: list = []
+    ended, ended_t = _build_pulse_phase_table(
+        sid, det, instr_used, pulse, multiplier, end_phases, end_log.append,
+        lead, prefer_short, usage, resume=True)
+    best, best_log = plain, plain_log
+    if (ended is not None and ended_t is not None
+            and (plain is None or (_score(ended_t) <= _score(plain_t)
+                                   and ended[0] != plain[0]))):
+        best, best_log = ended, end_log
+    if log:
+        for line in best_log:
+            log(line)
+    return best
+
+
+def _build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
+                             pulse: bool, multiplier: int,
+                             phases: dict, log=None,
+                             lead: int = 1,
+                             prefer_short: bool = False,
+                             usage: Optional[List[int]] = None,
+                             resume: bool = False) -> tuple:
+    """`build_pulse_phase_table`'s one pass: ((entries, starts, index) or
+    None, the chosen layout tuple), `resume` laying a hold that ends as the
+    hold and the sweep it hands over to (`_phase_block`'s `resume`)."""
     ukw = {} if usage is None else {"usage": usage}
+    ukw.update({"resume": True} if resume else {})
     first_log: list = []
     first = _lay_pulse_phase_table(sid, det, instr_used, pulse, multiplier,
                                    phases, first_log.append, lead, False,
@@ -2317,8 +2439,8 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         # Nothing survived: every record that had a phase plan degraded to a
         # static width. Let the caller revert the whole expansion, as before
         # this fallback existed.
-        return None
-    return entries, starts, index
+        return None, chosen
+    return (entries, starts, index), chosen
 
 
 def _union_groups(sid: SidFile, det: Detection, instr_used: int,
@@ -2364,7 +2486,8 @@ def _score(t: tuple) -> tuple:
 def _lay_attack_or_plain(sid: SidFile, det: Detection, instr_used: int,
                          pulse: bool, multiplier: int, phases: dict, log,
                          lead: int, reserve: bool = False,
-                         usage: Optional[List[int]] = None) -> tuple:
+                         usage: Optional[List[int]] = None,
+                         resume: bool = False) -> tuple:
     """The SHARED layout (`_lay_pulse_phase_table(share=True)`), with a hold
     that opens off its held width playing the opening width on its attack
     frame (`_phase_block`'s `attack`) wherever the table has the rows for it:
@@ -2378,7 +2501,8 @@ def _lay_attack_or_plain(sid: SidFile, det: Detection, instr_used: int,
         return _lay_pulse_phase_table(sid, det, instr_used, pulse,
                                       multiplier, phases, lg, lead, True,
                                       reserve=reserve, **ukw,
-                                      **({"attack": True} if attack else {}))
+                                      **({"attack": True} if attack else {}),
+                                      **({"resume": True} if resume else {}))
     plain_log: list = []
     plain = lay(False, plain_log.append)
     best, best_log = plain, plain_log
@@ -2398,7 +2522,8 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                            lead: int, share: bool,
                            reserve: bool = False,
                            usage: Optional[List[int]] = None,
-                           attack: bool = False) -> tuple:
+                           attack: bool = False,
+                           resume: bool = False) -> tuple:
     """One layout of `build_pulse_phase_table`: (entries, starts, index,
     dropped, silent, attempted, placed, dropped_notes, silent_notes). `share` picks `_phase_block`'s
     shared-ramp layout for every phase-tracked record, and may lay ONE
@@ -2423,14 +2548,14 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     if not share:
         return _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                      phases, log, lead, False, {}, reserve,
-                                     usage, attack)
+                                     usage, attack, resume)
 
     def score(t: tuple) -> tuple:
         return (*_score(t), len(t[0]))
     best_log: list = []
     best = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                  phases, best_log.append, lead, True, {},
-                                 reserve, usage, attack)
+                                 reserve, usage, attack, resume)
     chosen: dict = {}
     for key, members in _union_groups(sid, det, instr_used, multiplier,
                                       phases, lead).items():
@@ -2439,7 +2564,8 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         trial_log: list = []
         trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
                                       phases, trial_log.append, lead, True,
-                                      trial_unions, reserve, usage, attack)
+                                      trial_unions, reserve, usage, attack,
+                                      resume)
         if score(trial) < score(best):
             best, best_log, chosen = trial, trial_log, trial_unions
     if log:
@@ -2488,7 +2614,8 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
                           lead: int, share: bool, unions: dict,
                           reserve: bool = False,
                           usage: Optional[List[int]] = None,
-                          attack: bool = False) -> tuple:
+                          attack: bool = False,
+                          resume: bool = False) -> tuple:
     """One layout pass: (entries, starts, index, dropped, silent, attempted,
     placed, dropped_notes, silent_notes). The last two weigh each degraded
     record by the note rows it sounds (`usage`, `pulse_usage`; 1 a record
@@ -2508,7 +2635,10 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
         # that plans one, so the others lay exactly as they did.
         if not any(is_hold(d) for (_, d) in want_set):
             return {}
-        return {"attack": attack, "multiplier": multiplier}
+        kw = {"attack": attack, "multiplier": multiplier}
+        if resume:
+            kw["resume"] = True
+        return kw
 
     def weight(i: int) -> int:
         if usage is None:

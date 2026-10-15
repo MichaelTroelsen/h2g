@@ -977,11 +977,22 @@ def pitch_seq_note_phases(sid: SidFile, det: Detection,
     return out
 
 
+def pitch_seq_outer_gated(sid: SidFile, det: Detection) -> bool:
+    """Whether bit $10's clock is a classic outer-gated flat one
+    (`_pitch_seq_outer_flat_clock`'s family) -- the files whose per-note
+    phase clones are room-aware (`pitch_seq_phase_split_plan`)."""
+    if det.pitch_seq is None:
+        return False
+    clock = _pitch_seq_any_clock(sid, det)
+    return (clock is not None and clock.outer is not None
+            and clock.divider_reload == 0)
+
+
 def pitch_seq_phase_split_plan(sid: SidFile, det: Detection,
                                tracks: List[List[int]],
                                patterns: List[List[int]], lead: int,
                                instr_used: int, first_clone: int,
-                               distinct=None,
+                               distinct=None, displaces=None,
                                log=None) -> Optional[ArpPhaseSplit]:
     """Clone each bit-$10 record whose notes attack in more than one state
     of the divided phase counter, one clone per minority state within
@@ -1001,22 +1012,32 @@ def pitch_seq_phase_split_plan(sid: SidFile, det: Detection,
     wherever no clock is read, which is every file but Food_Feud and
     Mega_Apocalypse.
 
-    **None for the outer-gated flat clocks** (`_pitch_seq_outer_flat_clock`,
-    task pitch-seq-flat-clock-other-files). Their records get the majority
-    phase from `pitch_seq_phases` and no per-note clone: on the shipped
-    `pitch_seq` files the clones took the instrument slots, pattern copies
-    and wavetable room that already-adopted passes need -- 12 existing tests
-    failed (Star_Paws lost its entry-instrument split, Saboteur_II left 32
-    rows on cells that read past the table, Lightforce's and Shockway_Rider's
-    free-note passes moved), and Chain_Reaction's 19 clones all logged "has
-    no block of its own". Per-note phases there want a room-aware plan.
+    **Room-aware for the outer-gated flat clocks**
+    (`_pitch_seq_outer_flat_clock`, `pitch_seq_outer_gated`; tasks
+    pitch-seq-flat-clock-other-files and pitch-seq-room-aware-phase-clones).
+    Their clones took instrument slots, pattern copies and wavetable room
+    that already-adopted passes need, so with the clones on unconditionally
+    12 existing tests failed (Star_Paws lost its entry-instrument split,
+    Saboteur_II left 32 rows on cells that read past the table,
+    Lightforce's and Shockway_Rider's free-note passes moved), and
+    Chain_Reaction's 19 clones all logged "has no block of its own". Two
+    checks make them land only where there is room, both made by the caller
+    (`build`): `displaces(tracks, patterns)` says whether a pass that stands
+    down beside any phase split (the entry-instrument split, the free-note
+    respell) has work on this file -- then the plan is None -- and a dry
+    layout of the plan drops each clone the wavetable has no block for and
+    plans again (`nibble_gate_phase_split_plan`'s retry).
     """
     if det.pitch_seq is None:
         return None
     clock = _pitch_seq_any_clock(sid, det)
-    if clock is not None and clock.outer is not None and (
-            clock.divider_reload == 0):
-        return None                      # no per-note clones: see above
+    if (displaces is not None and pitch_seq_outer_gated(sid, det)
+            and displaces(tracks, patterns)):
+        if log:
+            log("pitch phase split: not splitting -- an entry-instrument "
+                "split or free-note respell has work on this file and "
+                "stands down beside a phase split")
+        return None
     phases = pitch_seq_phases(sid, det, tracks, patterns)
     if not phases:
         return None

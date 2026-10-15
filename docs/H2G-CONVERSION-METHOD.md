@@ -13017,6 +13017,25 @@ in those seven test files pass again. What the clones bought: Trans-Atlantic's
 melody 0.9768 -> 0.9996 and pitch_jaccard 0.857 -> 1.0 (gone without them).
 Per-note phases for these players want a room-aware plan.
 
+**Room-aware per-note clones (2026-10-15, task
+pitch-seq-room-aware-phase-clones, re-measured at 40cc8e5).** The clones are
+back for these clocks, behind two checks made in `build_sng` before the plan
+is accepted. (1) `_phase_split_displaces_passes`: the entry-instrument split
+and the free-note respell stand down beside ANY phase split, so a file on
+which either has work keeps the record's majority phase -- Star_Paws (entry
+split), Lightforce, Shockway_Rider, Saboteur_II and Nineteen (free notes) are
+declined, which is exactly the set of files whose tests failed with the clones
+on, bar Trans-Atlantic. The free-note question is asked of the pass itself
+(`free_note_has_work`: would any row land on a variant), not of its candidate
+rows: Trans-Atlantic has flagged rows but the pass declines both ("follows
+another instrument"), so its clones stay. (2) A dry `_wavetable_layout` of the
+plan, as `nibble_gate_phase_split_plan` does: a clone with no block of its own
+is dropped and the plan made again (Mr_Meaner: 7 clones planned, 4 dropped,
+3 kept). Under the shipped presets 7 files move: After_8, Chain_Reaction,
+Mr_Meaner, Rock_Tells_the_Tale, Thundercats, Trans-Atlantic_Balloon_Challenge,
+Zoolook (corpus byte-hash, 95 files, 89 converted, 6 refused, Commando
+identical). The melody/reversal effect of these seven is NOT re-measured here.
+
 Measured -t 180, base -> this change, 21 files whose bytes move with
 `pitch_seq` forced (15 of them under the shipped presets, which already carry
 it; melody unchanged on all 15). Reversal ratio nearer 1 on 5 of the 15
@@ -13306,6 +13325,30 @@ for attacks. A scratch prototype (clock, per-row tuple, one block per tuple, a
 lead of 2 calls found by experiment) reproduced `X..X..` exactly on the first
 12 rows of the first note and retargeted 115 of 200 rows; it was not
 merged.
+
+**`travel` is read per voice, and Star_Paws' voice 1 is a threshold, not a
+movement** (`travel-column-voice-split`; figures are historical -- Star_Paws,
+-t 180, under presets, 40cc8e5, 2026-10-15). `compare()` carries
+`orig_travel`/`our_travel` in each `voices` entry (the file figure is their
+sum, unchanged), and `--diagnose` prints a `travel:` line under each voice
+naming the heaviest steps and how close each is to the cutoff. Star_Paws reads
+938,967 | 0 | 0 for the original and 356,056 | 553,696 | 0 for the
+conversion. Voice 1 is the drum voice, and the 553,696 is 352 repetitions of
+ONE step, `14177 -> 12604` (1,573 units) at the fifth frame of every drum
+(`D400` writes at attack+4). The original's same step is `14176 -> 12384`, 1,792
+units: `within_note_travel` drops a step over `1/TRAVEL_NOTE_STEP` of the
+pitch as a note change, and 1,792 x 8 = 14,336 clears 14,176 (1.011) where
+1,573 x 8 = 12,584 does not clear 14,177 (0.888). So the original's fall is
+a note change and ours, landing 1.8% higher (12,604 against 12,384), is
+counted as a bend. Both sides play the same drum, and voices 1 and 2 move
+nothing the original's do not: every other non-onset step on voice 1 is at
+least 1.3 times the cutoff on both sides, and voice 2 counts 0 on both.
+Nothing is fixed: this is a measurement-rule boundary, and
+the file's 0.969 stays cancellation between a voice-0 shortfall (356,056 of
+938,967, the bit-$10 clone defect above) and this one voice-1 artefact. A
+drum fall landing on exactly 1/8 of the pitch would flip the same way in any
+file; `describe_voice_travel` prints the margin (`0.888 of the 1/8 cutoff`)
+so the next reader sees it. Pinned by `tests/test_travel_voice_split.py`.
 
 **The interleaved dialect's per-voice filter routing is written as `B`
 commands** (`ilv_filter_routing_plan`, `goatwriter/filters.py`; the

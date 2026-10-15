@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.550 — 2026-10-15
+
+- runqueue cycle 31 at 40cc8e5: room-aware pitch-seq clones, stride16 rescue, hold ends, travel per voice
+
 ## 0.5.549 — 2026-10-15
 
 - Dragons_Lair_Part_II records initial_instrument off

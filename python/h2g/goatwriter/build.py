@@ -497,6 +497,78 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # one -- behind `tie_restart`, because Commando is one of them.
     restart_kind = (_gw_note_passes.classic_tie_restart_family(sid, det)
                     if tie_restart and not legato else None)
+    def _entry_split_rows(tks: List[List[int]],
+                          pats: List[List[int]]) -> set:
+        """The rows `entry_instrument_split` is handed (see its call
+        below for why these): the legato tie rows, behind the -S2 decoy
+        where one is needed, and the free-note respell's rows."""
+        early_bit7 = (note_bit7_rows(pats, known_bit7, decoded, ghosts)
+                      if legato else
+                      {p: frozenset() for p in range(len(pats))})
+        rows = legato_tie_rows(pats, early_bit7)
+        if (rows and multiplier > 1
+                and _gw_note_passes.legato_slip_decoy(
+                    pats, tks, instr_used, instr_used + 1) is None):
+            rows = set()
+        # The free-note respell below walks the same way and declines the
+        # same "entered with two instruments" rows, so its rows are split
+        # for too -- under its own gates, and not behind the -S2 decoy: a
+        # free-note variant is no legato record, so gt2reloc has no slip to
+        # hand it. Only rows that could play a record with an attack to
+        # skip (`free_note_split_rows`): any other declines regardless.
+        if (legato and two_stage and effects
+                and _gw_note_passes.free_note_skips_two_stage(sid, det)):
+            # A record with no attack takes a pulse-only variant where the
+            # player's counter is read only behind the attack bits, so its
+            # rows are worth a split too (entry settled -> held == base).
+            pulse_ok = (_gw_note_passes.free_note_attack_bits(sid, det)
+                        is not None)
+            skippable = {g for g in range(lead + 1, instr_used + 1)
+                         if pulse_ok
+                         or _gw_note_passes.free_note_record_has_attack(
+                             sid, det, g - lead - 1)}
+            rows = rows | _gw_note_passes.free_note_split_rows(
+                pats, _gw_note_passes.free_note_rows(pats, early_bit7),
+                tks, skippable)
+        return rows
+
+    def _phase_split_displaces_passes(tks: List[List[int]],
+                                      pats: List[List[int]]) -> bool:
+        """True where a phase split would switch off a pass that has work
+        here. The entry-instrument split and the free-note respell both
+        stand down beside any phase split (their pattern copies and their
+        record-keyed rows cannot share the plan's renamed instrument
+        columns), so a file on which either would change a byte keeps the
+        record's majority phase rather than lose them: Star_Paws's
+        entry split, Lightforce's, Shockway_Rider's and Saboteur_II's
+        free notes (task pitch-seq-room-aware-phase-clones)."""
+        if (legato or restart_kind) and duty_split is None:
+            rows = _entry_split_rows(tks, pats)
+            if rows and _gw_note_passes.entry_split_has_work(
+                    tks, pats, rows):
+                return True
+        if (legato and two_stage and effects and duty_split is None
+                and _gw_note_passes.free_note_skips_two_stage(sid, det)):
+            # What the pass would hand to a variant: every record gets a
+            # start, whether or not its real one could be entered (that
+            # needs the finished wavetable) and whether or not the pulse
+            # counter is readable (`free_note_attack_bits`) -- this asks
+            # whether the pass is RELEVANT to the file, so it over-counts.
+            # The rows the pass declines for what they follow
+            # (`free_note_variants`) stay declined: Trans-Atlantic's.
+            starts, only = {}, set()
+            for g in range(lead + 1, instr_used + 1):
+                starts[g] = 1
+                if not _gw_note_passes.free_note_record_has_attack(
+                        sid, det, g - lead - 1):
+                    only.add(g)
+            bit7 = note_bit7_rows(pats, known_bit7, decoded, ghosts)
+            if _gw_note_passes.free_note_has_work(
+                    pats, _gw_note_passes.free_note_rows(pats, bit7), tks,
+                    starts, instr_used + 1, only):
+                return True
+        return False
+
     # Before the orderlists are written, because its pattern copies repoint
     # them; its instrument bytes wait for `apply_tempo_duty_edits`, last.
     duty_split = tempo_duty_split_plan(sid, det, tracks, patterns, effects,
@@ -527,16 +599,69 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # the arp's is a residue. No corpus file has both clocks.
     if (phase_split is None and duty_split is None and pitch_seq
             and fmt == FORMAT_GTS5 and det.pitch_seq is not None):
-        phase_split = _gw_arpeggio.pitch_seq_phase_split_plan(
-            sid, det, tracks, patterns, lead, instr_used, instr_used + 1,
-            distinct=_arp_phase_distinct(
-                sid, det, tracks, patterns, instr_used, effects, fmt, table,
+        pitch_distinct = _arp_phase_distinct(
+            sid, det, tracks, patterns, instr_used, effects, fmt, table,
+            multiplier, min_notes, lead, two_stage, sfx_drum,
+            wave_program, pitch_seq, note_rows, row_calls,
+            no_test_restart, voice_two_stage, instr_voices, gate_skip,
+            real_firstwave_instruments, wave_alternate=wave_alternate,
+            instr_row_calls=instr_row_calls)
+        # The outer-gated flat clocks' clones are room-aware: a dry layout
+        # of the plan names the clones the wavetable has no block for (they
+        # would be numbered, copied and renamed to play the record's own
+        # block, moving bytes and no sound), and the plan is made again
+        # without them. A clone that takes no entries moves no other's
+        # start, so once is enough. Food_Feud's and Mega_Apocalypse's
+        # plans are made once, as they always were.
+        room_aware = _gw_arpeggio.pitch_seq_outer_gated(sid, det)
+        no_room: set = set()
+        for _pass in range(2 if room_aware else 1):
+            held: List[str] = []
+            phase_split = _gw_arpeggio.pitch_seq_phase_split_plan(
+                sid, det, tracks, patterns, lead, instr_used,
+                instr_used + 1,
+                displaces=_phase_split_displaces_passes,
+                distinct=(lambda rec, res: (rec, res) not in no_room
+                          and pitch_distinct(rec, res)),
+                log=held.append if log else None)
+            if phase_split is None or not room_aware or _pass:
+                for line in held:
+                    log(line)
+                break
+            dry_starts: List[int] = []
+            _wavetable_layout(
+                sid, det, instr_used, effects, fmt, list(table),
                 multiplier, min_notes, lead, two_stage, sfx_drum,
                 wave_program, pitch_seq, note_rows, row_calls,
-                no_test_restart, voice_two_stage, instr_voices, gate_skip,
-                real_firstwave_instruments, wave_alternate=wave_alternate,
-                instr_row_calls=instr_row_calls),
-            log=log)
+                no_test_restart, voice_two_stage, instr_voices,
+                gate_skip, real_firstwave_instruments, arps,
+                arp_phases=(fixed_arp_phases(sid, det, tracks, patterns)
+                            if effects and det.arp_fixed_up else None),
+                arp_tie_rows=(fixed_arp_tie_rows(sid, det, tracks, patterns)
+                              if effects and det.arp_fixed_up else None),
+                pitch_phases=_gw_arpeggio.pitch_seq_phases(
+                    sid, det, tracks, patterns),
+                phase_clones=phase_split.clones,
+                phase_clone_starts=dry_starts,
+                wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls,
+                hold_travel=not (no_test_restart
+                                 or real_firstwave_instruments
+                                 or gate_off_firstwave_instruments),
+                note_pitches=note_pitches)
+            failed = {(rec, res) for (rec, _c, res), at
+                      in zip(phase_split.clones, dry_starts) if not at}
+            if not failed:
+                for line in held:
+                    log(line)
+                break
+            if log:
+                log(f"pitch phase split: {len(failed)} clone(s) the "
+                    "wavetable has no room for stay on their record: "
+                    + ", ".join(f"{rec:02X} {res}"
+                                for rec, res in sorted(failed)))
+            no_room |= failed
+            phase_split = None
     # The gated nibble counter's residue gets it too, in the same slot
     # (`nibble_gate_phase_split_plan`): each clone's third slot a
     # `GatePhase`, its block laid out at that residue's counter phase and
@@ -683,34 +808,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     split_rows: set = set()
     if ((legato or restart_kind) and duty_split is None
             and phase_split is None):
-        early_bit7 = (note_bit7_rows(patterns, known_bit7, decoded, ghosts)
-                      if legato else
-                      {p: frozenset() for p in range(len(patterns))})
-        split_rows = legato_tie_rows(patterns, early_bit7)
-        if (split_rows and multiplier > 1
-                and _gw_note_passes.legato_slip_decoy(
-                    patterns, tracks, instr_used, instr_used + 1) is None):
-            split_rows = set()
-        # The free-note respell below walks the same way and declines the
-        # same "entered with two instruments" rows, so its rows are split
-        # for too -- under its own gates, and not behind the -S2 decoy: a
-        # free-note variant is no legato record, so gt2reloc has no slip to
-        # hand it. Only rows that could play a record with an attack to
-        # skip (`free_note_split_rows`): any other declines regardless.
-        if (legato and two_stage and effects
-                and _gw_note_passes.free_note_skips_two_stage(sid, det)):
-            # A record with no attack takes a pulse-only variant where the
-            # player's counter is read only behind the attack bits, so its
-            # rows are worth a split too (entry settled -> held == base).
-            pulse_ok = (_gw_note_passes.free_note_attack_bits(sid, det)
-                        is not None)
-            skippable = {g for g in range(lead + 1, instr_used + 1)
-                         if pulse_ok
-                         or _gw_note_passes.free_note_record_has_attack(
-                             sid, det, g - lead - 1)}
-            split_rows = split_rows | _gw_note_passes.free_note_split_rows(
-                patterns, _gw_note_passes.free_note_rows(patterns, early_bit7),
-                tracks, skippable)
+        split_rows = _entry_split_rows(tracks, patterns)
         tracks, patterns, split_copies = (
             _gw_note_passes.entry_instrument_split(
                 tracks, patterns, split_rows, log=log, only=_split_only))

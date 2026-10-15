@@ -591,6 +591,22 @@ def entry_instrument_split(tracks: List[List[int]],
                            patterns: List[List[int]], rows: set,
                            limit: int = _SONG_MAX_PATTERNS, log=None,
                            only=None):
+    """`_entry_instrument_split`, the pass itself (see there)."""
+    return _entry_instrument_split(tracks, patterns, rows, limit, log, only)
+
+
+def entry_split_has_work(tracks: List[List[int]], patterns: List[List[int]],
+                         rows: set) -> bool:
+    """Whether `entry_instrument_split` would copy any pattern for `rows` --
+    the question `build` asks before a phase split is allowed to switch the
+    split off. Not the pass's public name, so it is no call of the pass."""
+    return bool(_entry_instrument_split(tracks, patterns, rows)[2])
+
+
+def _entry_instrument_split(tracks: List[List[int]],
+                            patterns: List[List[int]], rows: set,
+                            limit: int = _SONG_MAX_PATTERNS, log=None,
+                            only=None):
     """Copy each pattern a clone respell (`_respell_on_clones`) would decline
     as "entered with two instruments" once per instrument it is entered
     with, and repoint every orderlist position at the copy for the
@@ -1228,6 +1244,27 @@ def free_note_variants(patterns: List[List[int]], rows: set,
                        last_number: int = 0, log=None,
                        pulse_only: Set[int] = frozenset(),
                        no_variant: Optional[dict] = None):
+    """`_free_note_variants`, the pass itself (see there)."""
+    return _free_note_variants(patterns, rows, tracks, starts, first_number,
+                               last_number, log, pulse_only, no_variant)
+
+
+def free_note_has_work(patterns: List[List[int]], rows: set,
+                       tracks: Optional[List[List[int]]],
+                       starts: dict, first_number: int,
+                       pulse_only: Set[int] = frozenset()) -> bool:
+    """Whether `free_note_variants` would respell any of `rows` onto a
+    variant -- not the pass's public name, so it is no call of the pass."""
+    return bool(_free_note_variants(patterns, rows, tracks, starts,
+                                    first_number, 0, None, pulse_only)[1])
+
+
+def _free_note_variants(patterns: List[List[int]], rows: set,
+                        tracks: Optional[List[List[int]]],
+                        starts: dict, first_number: int,
+                        last_number: int = 0, log=None,
+                        pulse_only: Set[int] = frozenset(),
+                        no_variant: Optional[dict] = None):
     """Respell each of `rows` (`free_note_rows`) on a variant of the
     instrument it plays whose wavetable starts at the second stage
     (`starts`: GT number -> `free_note_wave_start`) and whose pulse pointer
