@@ -300,7 +300,9 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     pattern split, `expanding_vibrato_split`, copied 13 patterns of the
     plan-free file and commanded their hold rows; 6aa0447e2cf5 since the
     loops' sharing, `_expanding_vibrato_loop_share`, gave the rows the
-    split had left on their `4xy` a neighbour's loop)."""
+    split had left on their `4xy` a neighbour's loop; f68b08b44061 since
+    a remainder's block jumps onto the speed's F4 entry,
+    `_expanding_vibrato_loop_cost`)."""
     import hashlib
     import h2g.goatwriter.build as B
     # Mega's tied landings are legato clones since ca85ac7's
@@ -314,7 +316,7 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "76c21db5a76a"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "f68b08b44061"
 
 
 @needs_corpus

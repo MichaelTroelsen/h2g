@@ -38,6 +38,43 @@ def _split_ticks(ticks: int) -> List[int]:
     return steps or [1]
 
 
+# A triangle step above this per CALL is spelled as one set-width row per
+# call (`_ramp_rows`) instead of being clamped to `GT_MAX_PULSE_SPEED`: the
+# clamp slows the sweep by raw/127, and 134 is where that passes 5%
+# (a step of 128 sweeps 0.8% slow, which no column can see). Measured with
+# `_tri_table_speed` over the corpus under presets: Commando records 0, 6
+# and 22, Gerry_the_Germ 17 and 59, Zoids 0 and 14, Gremlins 54 and 56.
+SPELLED_SPEED_MIN = GT_MAX_PULSE_SPEED + 7
+
+
+def _setrow(width: int) -> tuple:
+    """A pulse-table "set width" row (left `$8x`, right the low byte)."""
+    return ((0x80 | (width >> 8)) & 0xFF, width & 0xFF)
+
+
+def _ramp_rows(at: int, ticks: int, direction: int,
+               speed: int) -> List[tuple]:
+    """`ticks` calls of a sweep from width `at`, `direction` +1 or -1, at
+    `speed` a call -- the rows that play them.
+
+    A modulation row carries a SIGNED byte (readme.txt:887-889,
+    gplay.c:889-899), so `GT_MAX_PULSE_SPEED` is the most one call can move
+    the width, and the player's `$E0` steps reach 224. Above it the sweep is
+    SPELLED: one set-width row per call, each the width the sweep has on that
+    call. A set row spends the call it is read on setting the width and does
+    not modulate it (gplay.c:874-879; player.s `mt_setpulse` jumps to
+    `mt_nextpulsestep` past `mt_pulsemod`), so a row per call plays exactly
+    the widths a modulation row of `speed` would, with no clamp -- at the
+    price of one table row a call instead of one a leg."""
+    if ticks <= 0:
+        return []
+    if speed <= GT_MAX_PULSE_SPEED:
+        spd = speed if direction > 0 else (0x100 - speed) & 0xFF
+        return [(t, spd) for t in _split_ticks(ticks)]
+    return [_setrow((at + direction * speed * k) & 0xFFF)
+            for k in range(1, ticks + 1)]
+
+
 def _pulse_triangle(width: int, low: int, high: int, speed: int,
                     step: Optional[int] = None) -> tuple[List[tuple], int]:
     """A triangle between two high nibbles, opening at the record's own width.
@@ -161,25 +198,27 @@ def _lattice_legs(width: int, speed: int, first_top: int, bottom: int,
     rounding never accumulates; the loop is one down leg and one up leg of
     the same count, so it returns exactly to where it started. Where the
     first top is not the cycle's (`_tri_turns`), the first descent is laid
-    before the loop and the loop opens on the ascent instead."""
-    def legs(ticks: int, spd: int) -> List[tuple]:
-        return [(t, spd) for t in _split_ticks(ticks)]
-    down_spd = (0x100 - speed) & 0xFF
-    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
+    before the loop and the loop opens on the ascent instead. A `speed`
+    above the modulation byte is a spelled step (`_ramp_rows`): every leg is
+    then one set row a call, and a lattice leg is exact."""
+    entries = [_setrow(width)]
     first = _nearest_ticks((first_top - width) & 0xFFF, speed)
     if first:
-        entries += legs(first, speed)
+        entries += _ramp_rows(width, first, +1, speed)
     at = (width + first * speed) & 0xFFF
     down = max(1, _nearest_ticks((at - bottom) & 0xFFF, speed))
+    low = (at - down * speed) & 0xFFF
     if first_top == top:
         loop = len(entries)
-        entries += legs(down, down_spd) + legs(down, speed)
+        entries += _ramp_rows(at, down, -1, speed)
+        entries += _ramp_rows(low, down, +1, speed)
         return entries, loop
-    entries += legs(down, down_spd)
-    at = (at - down * speed) & 0xFFF
+    entries += _ramp_rows(at, down, -1, speed)
+    at = low
     up = max(1, _nearest_ticks((top - at) & 0xFFF, speed))
     loop = len(entries)
-    entries += legs(up, speed) + legs(up, down_spd)
+    entries += _ramp_rows(at, up, +1, speed)
+    entries += _ramp_rows((at + up * speed) & 0xFFF, up, -1, speed)
     return entries, loop
 
 
@@ -433,12 +472,22 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
       or is dominated by an instrument that does not sweep. Same family as the
       effect-bit-`$10` case in CLAUDE.md, where a globally-counted mechanism
       could not go in a per-note table and the honest answer was to say so.
-    * **A step above 127 cannot be expressed at all.** A Goattracker pulse
-      speed is a signed byte (readme.txt:887-889, gplay.c:889-899), so the most
-      the width can move is 127 per *call*. `rate & $E0` reaches 224, and at
-      `-S1` a step that large is emitted at 127 and sweeps ~1.8x slow. The span
-      stays right because the tick count is recomputed from the speed actually
-      emitted -- the same trade the other two engines make.
+    * **A modulation row cannot carry a step above 127, so the triangle
+      engine SPELLS one** (`_ramp_rows`, `_tri_table_speed`). A Goattracker
+      pulse speed is a signed byte (readme.txt:887-889, gplay.c:889-899), so
+      the most one row moves the width is 127 per *call*, and `rate & $E0`
+      reaches 224. A set-width row spends its call setting the width and does
+      not modulate it (gplay.c:874-879), so one set row per call plays the
+      widths a faster row would have: a step the clamp would slow by more than
+      5% (`SPELLED_SPEED_MIN`) is laid as set rows, at the price of a table
+      row a call. RETRACTED: "A step above 127 cannot be expressed at all ...
+      sweeps ~1.8x slow" -- true of a modulation row, which is what this
+      engine emitted for Commando's records 0 and 6, Zoids' 0 and 14 and
+      Gerry_the_Germ's 17 until the change that spelled them. The bounds
+      engine (`_pulse_program`) still clamps: 194 of its records on 19 corpus
+      files have a rate over 134 a call at their multiplier (census at
+      1172704, `pulse._bounds_record`), most at `-S1`, and spelling them is
+      a separate change with a table budget of its own.
     * The player turns around when the high nibble *equals* a bound, on the
       first width of its step lattice inside that nibble, and the legs here
       turn there too (`_pulse_triangle`'s `step`, `_tri_turns`) -- to the
@@ -461,8 +510,8 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     step, delay = _tri_step_delay(det, data[rec + 6])
     if step == 0:                    # rate 0, or a rate that is delay-only
         return None
-    speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid),
-                       tick_ratio)
+    speed = _tri_table_speed(step, delay, multiplier, outer_gate_skip(sid),
+                             tick_ratio)
     width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
     return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
                            step)
@@ -471,7 +520,12 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
 def _tri_speed(step: int, delay: int, multiplier: int,
                gate_skip: Optional[int],
                tick_ratio: Optional[Fraction] = None) -> int:
-    """The GT pulse speed (per CALL) of a triangle sweep stepping `step`
+    """`_tri_call_speed` clamped to what a modulation row can carry
+    (`GT_MAX_PULSE_SPEED`). The program builders use `_tri_table_speed`,
+    which spells a step the clamp would slow by more than 5%; this is the
+    clamped figure, for what still needs one.
+
+    The GT pulse speed (per CALL) of a triangle sweep stepping `step`
     every `delay` of the original's TICKS -- shared by `_pulse_tri_program`
     and `_phase_sweep_params`, so a note with no CMD_SETPULSEPTR sweeps at
     the rate of one that has one.
@@ -546,15 +600,37 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     the tempo deliberately evens out everywhere else; read `pspan` and the
     per-frame travel instead. `tests/test_pulse_tri_gate_hold.py` pins it.
     """
+    return min(GT_MAX_PULSE_SPEED,
+               _tri_call_speed(step, delay, multiplier, gate_skip, tick_ratio))
+
+
+def _tri_call_speed(step: int, delay: int, multiplier: int,
+                    gate_skip: Optional[int],
+                    tick_ratio: Optional[Fraction] = None) -> int:
+    """How far a triangle sweep stepping `step` every `delay` ticks moves the
+    width in one of OUR play calls, rounded and at least 1 -- `_tri_speed`
+    before its clamp (see there for the clock)."""
     if not gate_skip:
         if tick_ratio is not None:
             calls = max(1, multiplier) * tick_ratio
-            return min(GT_MAX_PULSE_SPEED,
-                       max(1, round(step / (delay * calls))))
-        return min(GT_MAX_PULSE_SPEED,
-                   max(1, round(step / (delay * max(1, multiplier)))))
+            return max(1, round(step / (delay * calls)))
+        return max(1, round(step / (delay * max(1, multiplier))))
     calls = Fraction(max(1, multiplier) * (gate_skip + 1), gate_skip)
-    return min(GT_MAX_PULSE_SPEED, max(1, round(step / (delay * calls))))
+    return max(1, round(step / (delay * calls)))
+
+
+def _tri_table_speed(step: int, delay: int, multiplier: int,
+                     gate_skip: Optional[int],
+                     tick_ratio: Optional[Fraction] = None) -> int:
+    """The per-call speed a triangle program is LAID at: `_tri_speed`, except
+    that a step the clamp would slow by more than 5% (`SPELLED_SPEED_MIN`)
+    keeps its true speed, and `_ramp_rows` spells it as set rows. Only a
+    delay-1 step on a one-call tick gets there (`$E0` and `$C0`, 224 and 192
+    a call at `-S1`), so the speed is the step itself and the lattice stays
+    exact. `$E0` steps at `-S1` used to sweep at 127 against 224, 1.8x slow:
+    Commando's records 0 and 6, Zoids' 0 and 14, Gerry_the_Germ's 17."""
+    raw = _tri_call_speed(step, delay, multiplier, gate_skip, tick_ratio)
+    return raw if raw >= SPELLED_SPEED_MIN else min(GT_MAX_PULSE_SPEED, raw)
 
 
 def _tri_step_delay(det: Detection, rate: int) -> tuple[int, int]:
@@ -1523,14 +1599,17 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
     the phase table, whichever engine the file carries, or None where it does
     not sweep. `wrap` says whether distances cross $FFF at every width (the
     bounds engine) or only where the equality turn says so (the triangle
-    engine); `step` is the triangle's own per-tick step, which decides that
-    (`_leg_ramps`), and None for the bounds engine. RETRACTED: "`wrap` says
-    whether distances cross $FFF (the bounds engine) or clamp (the triangle
-    engine)" -- the triangle's sweep crosses $FFF too, from any phase
-    outside its band.
+    engine); `step` is the sweep's own per-play step -- the triangle's
+    packed step, the bounds engine's whole rate byte -- which is the lattice
+    both engines turn on (`_phase_cycle`, `_leg_ramps`). RETRACTED: "`wrap`
+    says whether distances cross $FFF (the bounds engine) or clamp (the
+    triangle engine)" -- the triangle's sweep crosses $FFF too, from any
+    phase outside its band. RETRACTED: "`step` ... None for the bounds
+    engine" -- its records aimed the phase table at `lo_v`/`hi_v` while
+    `_pulse_program` already turned on the lattice.
 
-    `lo_v`/`hi_v` are the BOUNDS, for both engines. The triangle's loop does
-    not turn on them: `_phase_block` and its helpers replace them with the
+    `lo_v`/`hi_v` are the BOUNDS, for both engines. Neither engine's loop
+    turns on them: `_phase_block` and its helpers replace them with the
     lattice cycle the phases walk (`_phase_cycle`), keyed on `step`.
 
     The two engines reach the same table shape from different record bytes:
@@ -1548,7 +1627,7 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
             return None
         step, delay = _tri_step_delay(det, d[rec + 6])
         width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
-        speed = _tri_speed(step, delay, multiplier, outer_gate_skip(sid))
+        speed = _tri_table_speed(step, delay, multiplier, outer_gate_skip(sid))
         return (width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8,
                 False, step)
     rec = _bounds_record(sid, det, i)
@@ -1556,7 +1635,7 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
         return None
     width, rate, lo, hi = rec
     speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / max(1, multiplier))))
-    return width, speed, lo << 8, hi << 8, True, None
+    return width, speed, lo << 8, hi << 8, True, rate
 
 
 def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
@@ -1566,9 +1645,10 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
     head of the other leg -- in width units, aimed at `hi_v` going up and
     `lo_v` going down.
 
-    The bounds engine's distance is modulo $1000 at every width
-    (`_pulse_triangle_wrapped`), and it never comes back. The triangle
-    engine's is the distance its sweep actually TRAVELS, on its own step
+    Without a `step` the bounds engine's distance is modulo $1000 at every
+    width (`_pulse_triangle_wrapped`), and it never comes back; every
+    shipped record now has one (`_phase_sweep_params`). With it, BOTH
+    engines' is the distance their sweep actually TRAVELS, on its own step
     lattice, to the first width whose high nibble EQUALS the bound it is
     heading for (`PulsePhaseSim.advance`, the routine's `CMP #$0E / BNE`),
     measured to the same edge the in-band ramp has always aimed at: arrival
@@ -1597,12 +1677,15 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
     turn the sim stores no such value (it turns ON the step that reaches the
     nibble), and the clamp emptied the ramps of the phases outside the band.
 
-    **`lo_v` / `hi_v` are the loop's EDGES, which for the triangle engine
-    are the cycle's turns, not its bounds** (`_phase_cycle`): the sweep
-    turns on the first width of its step lattice inside the bound's nibble,
-    so Game_Killer's record 3 loops $8E0..$E20 where the bounds say
-    $800..$E00. The bounds engine passes its bounds, and its results are
-    the ones above. Aimed at a lattice edge the arrival can sit on either
+    **`lo_v` / `hi_v` are the loop's EDGES, which with a `step` are the
+    cycle's turns, not its bounds** (`_phase_cycle`): the sweep turns on the
+    first width of its step lattice inside the bound's nibble, so
+    Game_Killer's record 3 loops $8E0..$E20 where the bounds say
+    $800..$E00. The bounds engine's records carry a step too (their rate),
+    and walk the same arithmetic (`PulseBoundsSim.advance`) with the
+    distances taken modulo $1000 where the nibble is below the other's;
+    only a call with no `step` gets its bounds and the modular results
+    above. Aimed at a lattice edge the arrival can sit on either
     side of it, so the overshoot is SIGNED: an arrival short of the edge
     climbs on to it, one past it comes back to it (the old `back`), and
     the same holds going down -- a phase ON the low nibble whose first step
@@ -1610,9 +1693,9 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
     ($E00, up) steps up and comes back. Measured to the edge for the shared
     loop to continue from.
     """
-    if wrap:
-        return ((hi_v - w) & 0xFFF if d > 0 else (w - lo_v) & 0xFFF), 0
     if not step:
+        if wrap:
+            return ((hi_v - w) & 0xFFF if d > 0 else (w - lo_v) & 0xFFF), 0
         return (max(0, hi_v - w) if d > 0 else max(0, w - lo_v)), 0
     bound = (hi_v if d > 0 else lo_v) >> 8
     x, travel = w, 0
@@ -1622,6 +1705,8 @@ def _leg_ramps(w: int, d: int, lo_v: int, hi_v: int, wrap: bool,
         if x >> 8 == bound:
             break
     else:                            # never reaches the nibble: no turn
+        if wrap:
+            return ((hi_v - w) & 0xFFF if d > 0 else (w - lo_v) & 0xFFF), 0
         return (max(0, hi_v - w) if d > 0 else max(0, w - lo_v)), 0
     # `over` is SIGNED: x and the edge are both in the bound's nibble, and
     # the edge is the bound itself only for the old callers. Aimed at a
@@ -1660,8 +1745,9 @@ def _phase_cycle(want_set: set, lo_v: int, hi_v: int,
                  step: Optional[int]) -> tuple[int, int]:
     """(bottom, top): the widths the loop of a triangle record's phase block
     turns on -- the cycle most of its phases end up repeating, as the
-    sweep itself runs it (`_phase_turns`) -- or (lo_v, hi_v) for the
-    bounds engine (no `step`) and for a set that reaches no turn.
+    sweep itself runs it (`_phase_turns`) -- or (lo_v, hi_v) for a call
+    with no `step` and for a set that reaches no turn. The bounds engine's
+    records pass their rate as `step` and are read the same way.
 
     The sweep turns on the first width of its step lattice whose high
     nibble EQUALS the bound, so the cycle is NOT bound to bound:
@@ -1794,27 +1880,40 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     itself (the two players follow one jump per call, gplay.c:865-869 before
     the step and player.s `mt_nextpulsestep` after it).
 
-    **The triangle engine's loop and legs turn on the sweep's lattice**
-    (`_phase_cycle`; `step` is what says which engine). The player turns on
+    **The loop and legs turn on the sweep's lattice** (`_phase_cycle`; a
+    `step` says so, and both engines hand one in). The player turns on
     the first width of its step lattice whose high nibble EQUALS the bound,
     so the loop is bottom..top of THAT cycle -- Game_Killer's record 3 runs
     $8E0..$E20, 1344 a leg, where the bounds say $800..$E00 and this loop
     spanned 1518 -- the chained legs run between the same two widths, and an
     entry piece ramps to the edge of the cycle its phase joins. Every
-    triangle tick count is the one whose arrival is NEAREST the sweep's
-    distance at the emitted speed (`_nearest_ticks`), where the bounds
-    engine's is the whole ticks below it. Census under forced `pulse_phase`
+    tick count is the one whose arrival is NEAREST the sweep's
+    distance at the emitted speed (`_nearest_ticks`), where a call with no
+    `step` takes the whole ticks below it. Census under forced `pulse_phase`
     (turns of the first three legs of every shipped index entry, against
     `PulsePhaseSim`): 1851 of 4503 within half a speed before, 4647 of 4704
     after, 1701 exact before and 4151 after (the rest are speeds that do
     not divide the step, and the clamped speeds of $E0 steps at `-S1`).
     RETRACTED: "the loop's span only: bound to bound" -- true of the bounds
-    engine, and of this one before the lattice.
+    engine's phase table too, until its records were handed their rate as
+    the step.
+
+    **A `speed` above the modulation byte (`SPELLED_SPEED_MIN`; Commando's
+    `$E0` steps at `-S1`, 224 a call) is laid as set rows** (`_ramp_rows`):
+    the loop, the chained legs and every entry piece become one set row a
+    call, at the widths the sweep has. The lattice arithmetic above then
+    runs at the true speed, so the legs are exact where the clamp's were
+    1.8x slow; the cost is a row a call, so the shared layout (`share=True`,
+    one chain a leg) is what fits such a record once the per-phase one does
+    not. Under presets (the table `convert` asks for) Commando's goes 129
+    -> 185 rows and ships shared, Zoids' 85 -> 155, and Gerry_the_Germ's
+    241 -> 149 shared (its per-phase layout no longer fits and would degrade
+    one record).
     """
     # The triangle engine's loop turns where the sweep does (`_phase_cycle`),
     # not on its bounds, and every leg is the tick count nearest the
-    # sweep's own distance (`_nearest_ticks`) where the bounds engine's is
-    # the whole ticks below it. Everything below -- `_leg_ramps`, the chained
+    # sweep's own distance (`_nearest_ticks`) where a call with no `step`
+    # takes the whole ticks below it. Everything below -- `_leg_ramps`, the chained
     # legs, `_union_kind` -- reads these edges, and re-deriving them from
     # an edge returns the same edge.
     lo_v, hi_v = _phase_cycle(want_set, lo_v, hi_v, step)
@@ -1823,16 +1922,14 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         # The loop's span only: an entry piece's ramps are `_leg_ramps`, which
         # says why the triangle's no longer clamps.
         return (a - b) & 0xFFF if wrap else max(0, a - b)
-    up_spd, down_spd = speed, (0x100 - speed) & 0xFF
 
     def whole(distance: int) -> int:
         return _nearest_ticks(distance, speed) if step else distance // speed
 
-    def ramp(ticks: int, spd: int) -> List[tuple]:
-        return [(t, spd) for t in _split_ticks(ticks)] if ticks > 0 else []
+    def ramp(at: int, ticks: int, d: int) -> List[tuple]:
+        return _ramp_rows(at, ticks, d, speed)
 
-    def setrow(w: int) -> tuple:
-        return ((0x80 | (w >> 8)) & 0xFF, w & 0xFF)
+    setrow = _setrow
 
     # Chained only where EVERY phase lands on its bound -- `_union_kind`'s
     # "chained", the precondition the pass-through argument above rests
@@ -1854,7 +1951,7 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     phase_index: dict = {}
     block: List[tuple] = []
     if chained:
-        def leg(points: List[int], start: int, end: int, spd: int):
+        def leg(points: List[int], start: int, end: int, d: int):
             """One chained leg from `start` to `end` through `points`:
             (rows, {width: row offset}, head offset)."""
             rows: List[tuple] = []
@@ -1868,19 +1965,19 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                     continue
                 if head is None:
                     head = len(rows)
-                rows += ramp(abs(t - c) // speed - 1, spd)
+                rows += ramp(c, abs(t - c) // speed - 1, d)
                 at[t] = len(rows)
                 rows.append(setrow(t))
                 c = t
             if head is None:
                 head = len(rows)
-            rows += ramp(abs(end - c) // speed, spd)
+            rows += ramp(c, abs(end - c) // speed, d)
             return rows, at, head
 
         ups = sorted(w for (w, d) in chained if d > 0)
         downs = sorted((w for (w, d) in chained if d < 0), reverse=True)
-        up_rows, up_at, up_h = leg(ups, lo_v, hi_v, up_spd)
-        down_rows, down_at, down_h = leg(downs, hi_v, lo_v, down_spd)
+        up_rows, up_at, up_h = leg(ups, lo_v, hi_v, +1)
+        down_rows, down_at, down_h = leg(downs, hi_v, lo_v, -1)
         up0 = base + 1
         down0 = up0 + len(up_rows) + 1
         up_head, down_head = up0 + up_h, down0 + down_h
@@ -1894,10 +1991,10 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         # to the other. Every phase entry ramps to its bound and joins here.
         span_ticks = max(1, whole(dist(hi_v, lo_v)))
         down_head = base + 1
-        down = [(t, down_spd) for t in _split_ticks(span_ticks)]
+        down = ramp(hi_v, span_ticks, -1)
         up_head = down_head + len(down) + 1
         block = down + [(0xFF, up_head)]
-        block += [(t, up_spd) for t in _split_ticks(span_ticks)]
+        block += ramp(lo_v, span_ticks, +1)
         block += [(0xFF, down_head)]
 
     tails: dict = {}
@@ -1931,14 +2028,11 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
                 block += piece + [(1, 0), setrow(held), (0xFF, 0)]
             continue
         out, back = _leg_ramps(w, direction, lo_v, hi_v, wrap, step)
-        if direction > 0:
-            piece += ramp(whole(out), up_spd)
-            piece += ramp(whole(back), down_spd)
-            piece += [(0xFF, down_head)]
-        else:
-            piece += ramp(whole(out), down_spd)
-            piece += ramp(whole(back), up_spd)
-            piece += [(0xFF, up_head)]
+        n_out = whole(out)
+        piece += ramp(w, n_out, direction)
+        piece += ramp((w + direction * n_out * speed) & 0xFFF, whole(back),
+                      -direction)
+        piece += [(0xFF, down_head if direction > 0 else up_head)]
         phase_index[(num, w, direction)] = at
         block += piece
     return block, phase_index

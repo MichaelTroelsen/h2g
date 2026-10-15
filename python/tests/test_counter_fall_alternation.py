@@ -290,7 +290,12 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     """No note taken -> the bytes the swell alone gives. 3dd7d6f19319 at
     0d0f6ec; f5958c98a448 since the swell's pattern split, which moves this
     sha and nothing else: with the split off too it is 3dd7d6f19319 again
-    (`test_with_the_split_and_the_alternation_off_mega_converts_as_it_did`)."""
+    (`test_with_the_split_and_the_alternation_off_mega_converts_as_it_did`);
+    bb50807c38f5 since a remainder's loop block ends in a jump onto the
+    speed's F4 entry instead of carrying a pair of its own
+    (`_expanding_vibrato_loop_cost`): the wavetable layout and the pointers
+    into it move, and the program every row runs does not
+    (`test_remainder_blocks_run_what_a_loop_of_their_own_ran`)."""
     import hashlib
     import h2g.goatwriter.note_passes as NP
     # Mega's tied landings are legato clones since ca85ac7's
@@ -301,7 +306,7 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "5c80923f655a"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "bb50807c38f5"
     assert any("not emitted" in m for m in lines), lines
 
 

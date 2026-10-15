@@ -286,7 +286,9 @@ def test_the_least_used_swing_goes_onto_the_nearest_loop_of_its_remainder():
 def test_a_swing_never_moves_onto_a_loop_with_another_remainder():
     delay = ((2, 0xE0),)
     plan = _plan((delay, (3, 8)), ((), (3, 8)), ((), (3, 8)), ((), (3, 9)))
-    alias, _m, _o = _expanding_vibrato_loop_share(plan, 5)
+    # (3, 8) costs 3 (the remainder's block and the one F4/FF pair it
+    # carries), (3, 9) 2: room 4 asks for one merge.
+    alias, _m, _o = _expanding_vibrato_loop_share(plan, 4)
     assert alias == {((), (3, 9)): ((), (3, 8))}
     # nothing to merge with: the blocks stay and the caller finds them full
     alone = _plan((delay, (3, 8)), ((), (3, 9)))
@@ -310,8 +312,10 @@ def test_an_absolute_and_a_note_relative_entry_are_compared_on_the_note():
 
 @needs_corpus
 def test_mega_apocalypse_no_swell_loop_is_dropped_for_a_full_table():
-    """Pattern 15 split, 56 loops want 126 entries of a table with 99 to
-    give: 14 of them share a neighbour's, and every row keeps a loop."""
+    """Pattern 15 split, 56 loops want 109 entries (a remainder's block
+    jumps onto the speed's loop, 126 when each carried its own) of a table
+    with 101 to give: 4 of them share a neighbour's, and every row keeps a
+    loop."""
     lines = []
     _fid, sng = _mega(lines.append)
     swell = [m for m in lines if m.startswith("Expanding vibrato loops")]
@@ -341,4 +345,4 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "f869f55046f6"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "673c96a235f3"

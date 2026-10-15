@@ -648,9 +648,19 @@ def test_the_triangle_starts_where_the_record_does_not_at_a_bound():
     """Every note restarts the program (gplay.c:375-379), so the entry width is
     the duty cycle every attack is heard on. The record's own is the only value
     the player is ever known to open on; a bound would invent one."""
-    entries, loop = _tri(0xE0)
+    entries, loop = _tri(0x40)
     assert entries[0] == (0x8A, 0xC0), "set $AC0, the record's own width"
     assert loop == 2, "the jump returns to the descent, past the first ascent"
+    # A spelled step ($E0 is 224 a call at -S1, `_ramp_rows`) is a set row a
+    # call: the ascent is rows 1..loop-1 and the descent starts at the loop.
+    # Re-pinned from `_tri(0xE0)` and `loop == 2`, which were the clamp's one
+    # modulation row for the ascent.
+    entries, loop = _tri(0xE0)
+    assert entries[0] == (0x8A, 0xC0), "set $AC0, the record's own width"
+    assert loop == 5 and all(l >= 0x80 for l, _ in entries)
+    widths = [((l & 0x0F) << 8) | r for l, r in entries]
+    assert widths[1:loop] == [0xBA0, 0xC80, 0xD60, 0xE40], "up to the turn"
+    assert widths[loop] < widths[loop - 1], "the loop opens on the descent"
 
 
 def test_the_step_is_the_high_three_bits_and_the_delay_the_low_five():
@@ -669,13 +679,18 @@ def test_the_step_is_divided_by_the_call_rate_like_every_other_rate():
     assert _tri(0x40, mult=2)[0][1][1] == 0x20
 
 
-def test_a_step_past_the_signed_byte_is_capped_and_the_span_recomputed():
-    """A Goattracker pulse speed is a signed byte, so 224 a frame cannot be
-    said at all. What must not follow is a wrong span: the tick counts are
-    computed from the speed actually emitted, so the band stays right and only
-    the rate is slow."""
+def test_a_step_past_the_signed_byte_is_spelled_and_the_span_is_the_players():
+    """A Goattracker pulse speed is a signed byte, so a MODULATION row cannot
+    say 224 a frame: it was capped at 127 and the sweep ran 1.8x slow. It is
+    spelled as one set-width row a call now (`_ramp_rows`; the widths are
+    pinned call for call in tests/test_spelled_triangle_steps.py). RETRACTED:
+    `entries[1][1] == GT_MAX_PULSE_SPEED`, "224 a frame cannot be said". The
+    band stays the player's: the top is the first width in nibble E."""
     entries, loop = _tri(0xE0)
-    assert entries[1][1] == GT_MAX_PULSE_SPEED, "224 a frame cannot be said"
+    assert entries[1][0] >= 0x80, "a set row, not a capped modulation row"
+    assert not any(0 < l < 0x80 and r == GT_MAX_PULSE_SPEED for l, r in entries)
+    # a step the clamp costs 5% or less ($80, 128 a call) is capped, as it was
+    assert _tri(0x80)[0][1][1] == GT_MAX_PULSE_SPEED
     lo, hi = _walk(entries)
     assert (TRI_HI << 8) - hi < GT_MAX_PULSE_SPEED, "the ascent stops at the top"
     assert lo >= TRI_LO << 8, "and the descent at the bottom"
@@ -686,6 +701,10 @@ def _walk(entries):
     pos = ((entries[0][0] & 0x0F) << 8) | entries[0][1]
     seen = [pos]
     for t, s in entries[1:]:
+        if t >= 0x80:                       # a set row spends its call setting
+            pos = ((t & 0x0F) << 8) | s
+            seen.append(pos)
+            continue
         for _ in range(t):
             pos += s if s < 0x80 else s - 0x100
             seen.append(pos)
@@ -1488,7 +1507,13 @@ def test_the_phase_table_serves_a_bounds_engine_record():
     """A planned phase gets its set/ramp/join entry, the record's own start
     pointer is its (seed, up) entry -- so a note WITHOUT a command reseeds,
     exactly as the player does -- and the ramp is measured to the record's
-    own high nibble at the rate divided by the multiplier."""
+    own high nibble at the rate divided by the multiplier.
+
+    The up-ramp runs to the first width of the rate's lattice inside nibble F
+    (`PulseBoundsSim.advance`'s equality turn; task
+    `bounds-phase-block-lattice-step`), $F28 from $2B0 in 38 steps of $54.
+    RETRACTED: "(0xF00 - 0x2B0) // 0x54" ticks = 37 -- it aimed at the bound
+    $F00 itself, up to a whole step short of the player's turn."""
     sid = _sid([_record(0x80, 0x00, rate=0x54)], [0xF0])
     det = _det(1)
     phases = {2: {(0x2B0, +1), (0x2C0, -1)}}
@@ -1499,7 +1524,11 @@ def test_the_phase_table_serves_a_bounds_engine_record():
     at = index[(2, 0x2B0, +1)]
     assert entries[at - 1] == (0x82, 0xB0)
     assert entries[at][1] == 0x54, "the ramp speed is not the rate"
-    assert sum(t for t, s in entries[at:at + 3] if s == 0x54) == (0xF00 - 0x2B0) // 0x54
+    x, steps = 0x2B0, 0
+    while x >> 8 != 0xF:                 # the player's rule, walked independently
+        x, steps = (x + 0x54) & 0xFFF, steps + 1
+    assert (x, steps) == (0xF28, 38)
+    assert sum(t for t, s in entries[at:at + 3] if s == 0x54) == steps
     down = index[(2, 0x2C0, -1)]
     assert entries[down - 1] == (0x82, 0xC0)
     assert entries[down][1] == (0x100 - 0x54) & 0xFF, "the descent is not -rate"
@@ -1511,13 +1540,22 @@ def test_the_phase_table_serves_a_bounds_engine_record():
 
 def test_a_wrapped_band_measures_its_ramps_modulo_fff_in_the_table():
     """Bounds $02 with seed $080: the ascent to nibble 0 runs through $FFF,
-    so the up-ramp is ($000 - $080) mod $1000 ticks, not zero."""
+    so the up-ramp is a modular distance, not zero. It runs to the player's
+    turn on the rate's lattice, $07C (30 steps of +132 to $FF8, one more wraps
+    to $07C: Kings of the Beach ingame's record 4), $FFC away from the seed;
+    at the emitted speed $7F that is the nearest whole tick count, 32 (task
+    `bounds-phase-block-lattice-step`). RETRACTED: "($000 - $080) mod $1000
+    // $7F" = 31 ticks -- the bound, not the turn."""
     sid = _sid([_record(0x80, 0x00, rate=0x84)], [0x02])
     got = build_pulse_phase_table(sid, _det(1), 2, True, 1, {2: {(0x080, +1)}}, lead=1)
     entries, starts, index = got
     at = index[(2, 0x080, +1)]
     ticks = sum(t for t, s in entries[at:at + 40] if s == 0x7F)
-    assert ticks == ((0x000 - 0x080) & 0xFFF) // 0x7F, ticks
+    x, steps = (0x080 + 0x84) & 0xFFF, 1     # the seed is IN nibble 0: step first
+    while x >> 8 != 0:                   # the player's rule, walked independently
+        x, steps = (x + 0x84) & 0xFFF, steps + 1
+    assert (x, steps) == (0x07C, 31)
+    assert ticks == (2 * ((x - 0x080) & 0xFFF) + 0x7F) // (2 * 0x7F) == 32, ticks
 
 
 @needs_corpus

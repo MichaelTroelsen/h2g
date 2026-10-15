@@ -152,7 +152,10 @@ def test_the_shipped_tables_open_the_named_phases_the_sweeps_way():
         # opens off by a step.
         "Devils_Galop.sid": {(10, 0xF00, hold_direction(0)): [0xF00] * 4,
                              (10, 0xF00, hold_direction(-1)): [0xE80] * 4},
-        "Commando.sid": {(7, 0x800, -1): [0x800, 0x781, 0x702, 0x683]},
+        # $E0 steps: the sweep's $800 $720 $640 $560. RETRACTED: "$800 $781
+        # $702 $683", the clamp's 127 a call against the player's 224
+        # (tests/test_spelled_triangle_steps.py).
+        "Commando.sid": {(7, 0x800, -1): [0x800, 0x720, 0x640, 0x560]},
     }
     for name, want in cases.items():
         entries, _, index = _shipped_table(name)

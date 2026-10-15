@@ -64,9 +64,13 @@ is emitted instead is the schedule at a handful of SIZES (`ALTERNATION_LEVELS`):
   replace the loop. The size changes only on a row after one that ended on
   the step back (a size changed under a dip would step back by another
   amount than it fell);
-* the first counter lap only. The counter wraps at 256 and the original sits
-  still, dipped, for the 31 frames of the next lap before the threshold; the
-  loop runs on at its last size, to the next note.
+* the counter's laps past the first are `counter_fall_laps`': the original
+  HOLDS the lap's last dip until the vibrato gate and then stores again from
+  the threshold, its count going on. A lap end with a hold program (there is
+  room for two) points its rows at a short `[tie] F2 n / jump` into a still
+  loop and ties back at the gate; the others keep the loop going at its last
+  size, through the gap, into the next lap's dips (sizes `n` modulo 256
+  folded to 1..127, the direction not kept).
 
 Sizes are the optimal clustering in log space of the dip counts the rows are
 at (`quantize_levels`), as many as the wavetable leaves the swell's loops.
@@ -463,8 +467,19 @@ def unroll_fall_repeats(sid: SidFile, det: Detection,
         real_firstwave)
     want: Dict[int, Set[int]] = {}
     for s in segs:
-        if by_number[s.number] or s.ok:
+        # A no-vibrato fall's rows differ from visit to visit; so do an
+        # alternating note's PAST ITS FIRST LAP (`counter_fall_laps`: the
+        # hold and the dips of lap 2 and on), which the shorter ones never
+        # reach.
+        if s.ok:
             continue
+        if by_number[s.number]:
+            length = (s.end - s.start) * s.frames
+            dips = (alternation_dips(length, _thr[s.number], s.fetches)
+                    if length > COUNTER_FALL_WRAP and ALTERNATION_UNROLL
+                    else None)
+            if dips is None or len(dips) < ALTERNATION_MIN_DIPS:
+                continue
         for p, r, _t, pos, _k in rows[s.track][s.start:s.end]:
             if visits.get((s.track, pos), 1) > 1:
                 want.setdefault(s.track, set()).add(pos)
@@ -498,6 +513,20 @@ ALTERNATION_MIN_DIPS = 1
 # run after) cannot then fit stay `4xy` rows: 10 sizes fill Mega_Apocalypse's
 # table to 254 of 255 with every swell loop in, 12 lose 105 swell rows.
 ALTERNATION_LEVELS = 8
+# The rows the alternation may take in all (dip loops, entries, lap-end holds
+# with their still loop). The swell's loops (`_expanding_vibrato_loops`, which
+# fill what is left) merge onto fewer loops as the table gets short, and four
+# pins hold the two ends: `test_tie_restart_mega.py` wants 42 loops or more,
+# `test_counter_fall_alternation.py` wants the 7 dip sizes the first lap's
+# phase needs (95 of the original's 103 lows; 6 sizes give 80). Mega_Apocalypse
+# at 1172704 (historical): 29 rows with the one shared hold = 7 sizes, one
+# entry, 43 loops with 18 swings merged (43 and 13 before the holds, which took
+# 23 rows); a second hold (4 more rows) leaves 5-6 sizes and 42-44 loops.
+ALTERNATION_ROWS = 29
+# Whether a note that outlasts the counter's first lap gets the repeats it
+# runs over unrolled (`unroll_fall_repeats`), so that its later laps' rows can
+# differ from visit to visit.
+ALTERNATION_UNROLL = True
 
 
 @dataclass(frozen=True)
@@ -509,6 +538,11 @@ class AltRow:
     delay: int
     n: int              # the dip size the row is at (mean of its dips)
     after_balanced: bool  # the row before ended on a step back
+    fresh: bool = False  # the first row of a run after a hold (no entry)
+    tied: bool = False   # an 'X' row whose program ties to the note first
+    # Kinds 'X' (the row holds the lap's last dip: `n` its count, `delay` the
+    # tick it is on), 'H' (a row held) and 'Q' (the row the vibrato gate
+    # falls in) are `counter_fall_laps`'.
 
 
 def alternation_dips(length: int, threshold: int,
@@ -526,7 +560,8 @@ def alternation_dips(length: int, threshold: int,
     return real[1:]
 
 
-def alternation_rows(dips: List[int], lag: int, frames: int) -> List[AltRow]:
+def alternation_rows(dips: List[int], lag: int, frames: int,
+                     mags: Optional[List[int]] = None) -> List[AltRow]:
     """The rows a note's dips and steps back fall on.
 
     A dip is at call `j + lag` and its step back on the next call, so from
@@ -541,9 +576,10 @@ def alternation_rows(dips: List[int], lag: int, frames: int) -> List[AltRow]:
     balanced = True
     for e in range(c0 // frames, last // frames + 1):
         first = e * frames
-        ds = [(c - c0) // 2 + 1 for c in range(max(first, c0),
-                                                min(first + frames, last))
+        ds = [(c - c0) // 2 + 1 if mags is None else mags[(c - c0) // 2]
+              for c in range(max(first, c0), min(first + frames, last))
               if (c - c0) % 2 == 0]
+        ds = [d for d in ds if d]
         if first < c0:
             kind, delay = 'E', c0 - first
         else:
@@ -613,7 +649,8 @@ def alternation_loop(level: int, speed_index, base: int
     return [(cmd, speed_index(s)), (WAVECMD_TIE, 0), (GT_WAVE_JUMP, base)]
 
 
-def alternation_asks(segs, rows, patterns, thresholds, own, room):
+def alternation_asks(segs, rows, patterns, thresholds, own, room,
+                     gates=None):
     """({(track, position): {repeat index: {row: key}}}, levels, declined,
     notes) for the alternating notes `segs`.
 
@@ -627,43 +664,102 @@ def alternation_asks(segs, rows, patterns, thresholds, own, room):
     the size can follow the note's own dip count -- but only on a row after
     one that ended on a step back: a size changed under a dip would step
     back by another amount than it fell.
+
+    With `gates` ({GT instrument: the vibrato gate}) a note that outlasts
+    the counter's first lap gets the rest of its laps (`counter_fall_laps`):
+    `('alt', 'X', count, tick, tied)` the program that dips to the lap's
+    last count and holds, `('alt', 'H')` a row held and `('alt', 'Q')` the row
+    the vibrato gate falls in -- as many programs as `ALTERNATION_HOLD_ROWS`
+    pays for, the most used first, the rest of the lap ends left to the loop.
     """
+    from . import counter_fall_laps as _laps
     declined: Dict[str, int] = {}
-    plans = []
+    live = []
     for s in segs:
         dips = alternation_dips((s.end - s.start) * s.frames,
                                 thresholds[s.number], s.fetches)
         if dips is None:
-            declined["a fetch frame on a store"] = \
-                declined.get("a fetch frame on a store", 0) + 1
+            declined["a fetch frame on a store"] =                 declined.get("a fetch frame on a store", 0) + 1
             continue
         if len(dips) < ALTERNATION_MIN_DIPS:
             declined["too few dips"] = declined.get("too few dips", 0) + 1
             continue
-        plans.append((s, alternation_rows(dips, s.lag, s.frames)))
-    if not plans:
+        live.append(s)
+    if not live:
         return {}, [], declined, 0
 
+    def usable_for(s):
+        lap = rows[s.track]
+
+        def usable(e: int) -> bool:
+            if s.start + e >= s.end:
+                return False
+            p, r, _t, _pos, _rep = lap[s.start + e]
+            cmd = (patterns[p][4 * r + 2], patterns[p][4 * r + 3])
+            return ((cmd[0] == CMD_VIBRATO or cmd == (0, 0))
+                    and e * s.frames >= own[s.number])
+        return usable
+
+    def plan(holds):
+        out = []
+        for s in live:
+            ars = _laps.alternation_note_rows(
+                (s.end - s.start) * s.frames, thresholds[s.number],
+                None if gates is None else gates.get(s.number), s.fetches,
+                s.lag, s.frames, usable_for(s), s.end - s.start, holds)
+            out.append((s, ars))
+        return out
+
+    # The holds: every one that could be made, the most used first, as far
+    # as the rows they may take go.
+    funded: Set[tuple] = set()
+    if gates:
+        uses: Dict[tuple, int] = {}
+        for _s, ars in plan(None):
+            for ar in ars:
+                if ar.kind == 'X':
+                    k = (ar.n, ar.delay, ar.tied)
+                    uses[k] = uses.get(k, 0) + 1
+        spent = _laps.STILL_ROWS
+        for key in sorted(uses, key=lambda k: (-uses[k],
+                                               _laps.hold_rows(*k), k)):
+            cost = _laps.hold_rows(*key)
+            if spent + cost <= _laps.ALTERNATION_HOLD_ROWS:
+                spent += cost
+                funded.add(key)
+    plans = plan(funded)
+
     def build(k: int):
-        levels = quantize_levels([ar.n for _s, ars in plans for ar in ars],
-                                 k)
+        levels = quantize_levels([ar.n for _s, ars in plans for ar in ars
+                                  if ar.kind in ('E', 'D', 'S')], k)
         asks: Dict[tuple, Dict[int, Dict[int, tuple]]] = {}
         used: Set[int] = set()
         entries: Set[tuple] = set()
+        holds_used: Set[tuple] = set()
         for s, ars in plans:
             lap = rows[s.track]
+            usable = usable_for(s)
             cur: Optional[int] = None
             for ar in ars:
                 if s.start + ar.e >= s.end:
                     break
                 p, r, _t, pos, rep = lap[s.start + ar.e]
-                cmd = (patterns[p][4 * r + 2], patterns[p][4 * r + 3])
-                usable = ((cmd[0] == CMD_VIBRATO or cmd == (0, 0))
-                          and ar.e * s.frames >= own[s.number])
-                if not usable:
+                if not usable(ar.e):
+                    continue
+                if ar.kind in ('X', 'H', 'Q'):
+                    cur = None
+                    key = (('alt', 'X', ar.n, ar.delay, ar.tied)
+                           if ar.kind == 'X' else ('alt', ar.kind))
+                    if ar.kind == 'X':
+                        holds_used.add((ar.n, ar.delay, ar.tied))
+                    asks.setdefault((s.track, pos), {}).setdefault(
+                        rep, {})[r] = key
                     continue
                 want = levels[nearest_level(levels, ar.n)]
-                if cur is None:
+                if ar.fresh and cur is None:
+                    cur = want
+                    key = ('alt', ar.kind, cur)
+                elif cur is None:
                     delay = (ar.delay if ar.kind == 'E'
                              else 0 if ar.kind == 'D' else 1)
                     if delay >= s.frames:
@@ -680,19 +776,33 @@ def alternation_asks(segs, rows, patterns, thresholds, own, room):
                     entries.add(key)
                 asks.setdefault((s.track, pos), {}).setdefault(
                     rep, {})[r] = key
-        cost = 3 * len(used) + 2 * len(entries)
+        cost = (3 * len(used) + 2 * len(entries)
+                + (_laps.STILL_ROWS + sum(_laps.hold_rows(*h)
+                                          for h in holds_used)
+                   if holds_used else 0))
         return asks, sorted(used), cost
 
+    cap = min(room, ALTERNATION_ROWS)
     k = ALTERNATION_LEVELS
     while True:
         asks, used, cost = build(k)
-        if cost <= room or k <= 1:
+        if cost <= cap or k <= 1:
             break
         k -= 1
+    if cost > cap and funded:
+        # The holds do not fit with even one size: the loops alone.
+        funded = set()
+        plans = plan(funded)
+        k = ALTERNATION_LEVELS
+        while True:
+            asks, used, cost = build(k)
+            if cost <= cap or k <= 1:
+                break
+            k -= 1
     if cost > room:
-        declined["wavetable full"] = len(plans)
+        declined["wavetable full"] = len(live)
         return {}, [], declined, 0
-    return asks, used, declined, len(plans)
+    return asks, used, declined, len(live)
 
 
 def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -860,8 +970,11 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         room = (GT_MAX_TABLELEN - wave_used
                 - sum(len(counter_fall_entries(k, lambda h: 1))
                       for k in good))
+        vg = det.vibrato_gate
+        gates = ({n: vg.gate_for(n - lead - 1) for n in by_number}
+                 if vg is not None and vg.form == "counter" else None)
         asks, alt_levels, more, alt_notes = alternation_asks(
-            alt_ready, rows, patterns, thresholds, own, room)
+            alt_ready, rows, patterns, thresholds, own, room, gates)
         for why, n in more.items():
             alt_declined[why] = alt_declined.get(why, 0) + n
         disagree = 0
@@ -894,10 +1007,25 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
 
     programs: Dict[tuple, int] = {}
     entries: List[Tuple[int, int]] = []
-    for key in good:
-        block = counter_fall_entries(key, speed_index)
-        programs[key] = wave_used + len(entries) + 1
-        entries += block
+    holds_made = sorted({k for k in alt_taken.values() if k[1] == 'X'})
+    blocks = [(key, counter_fall_entries(key, speed_index)) for key in good]
+    if holds_made:
+        # The lap-end holds' rows are paid for here: longest first, a program
+        # ends in a stop, so one that is the TAIL of a program already laid
+        # (`[wait][F2][stop]` inside `[F2][wait][F2][stop]`) is that tail,
+        # with no rows of its own. Only this plan's own rows are looked in:
+        # the table's others may be dropped after. Without a hold the
+        # programs are laid in order, one each, as they always were.
+        blocks.sort(key=lambda kb: -len(kb[1]))
+    for key, block in blocks:
+        at = (next((i for i in range(len(entries) - len(block) + 1)
+                    if entries[i:i + len(block)] == block), None)
+              if holds_made else None)
+        if at is None:
+            programs[key] = wave_used + len(entries) + 1
+            entries += block
+        else:
+            programs[key] = wave_used + at + 1
     # One three-row loop a dip size; a dip row points at its first row, a
     # step-back row at its second, and the entry is a delay and a jump.
     loop_at: Dict[int, int] = {}
@@ -910,6 +1038,17 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         programs[key] = wave_used + len(entries) + 1
         entries += [(_gw_skydive.SKYDIVE_NOOP + key[3] - 1, GT_WAVE_NO_NOTE),
                     (GT_WAVE_JUMP, loop_at[key[2]])]
+    # The holds (`counter_fall_laps`): the still loop every held row points
+    # into, and a program a lap end.
+    if holds_made:
+        from . import counter_fall_laps as _laps
+        base = wave_used + len(entries) + 1
+        entries += _laps.still_loop(speed_index, base)
+        programs[('alt', 'Q')], programs[('alt', 'H')] = base, base + 1
+        for key in holds_made:
+            programs[key] = wave_used + len(entries) + 1
+            entries += _laps.hold_program(key[2], key[3], speed_index,
+                                          base + 1, key[4])
     keys_taken = {**keys_taken, **alt_taken}
 
     # pattern -> {writes: [(track, position), ...]}, then one copy per
@@ -982,6 +1121,9 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         + ((f", {alt_notes} emitted on {len(alt_levels)} dip size(s) "
             f"{alt_levels}, {alt_written} row(s)") if alt_written
            else (", not emitted" if alternating else ""))
+        + (f", {len(holds_made)} lap-end hold program(s) "
+           f"{[(k[2], k[3], k[4]) for k in holds_made]}"
+           if holds_made else "")
         + (f" ({', '.join(f'{n} {why}' for why, n in alt_declined.items() if n)})"
            if any(alt_declined.values()) else ""))
     return CounterFallPlan(patterns=out, tracks=new_tracks, entries=entries)

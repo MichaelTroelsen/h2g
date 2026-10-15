@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.546 — 2026-10-15
+
+- runqueue cycle 29 at 1172704: spelled E0 triangle steps, bounds lattice step, Mega loop jump and laps
+
 ## 0.5.545 — 2026-10-15
 
 - fidelity bend excludes the released-out tail

@@ -2578,29 +2578,48 @@ def _expanding_vibrato_loop_swing(entry: tuple, gt_note: int) -> float:
     return (cmp_value + 2) * max(1, speed)
 
 
+def _expanding_vibrato_loop_cost(keys) -> int:
+    """Wavetable entries the loops `(remainder, entry)` in `keys` take.
+
+    A loop is `F4 idx / FF -> F4`: two entries, and the F4 entry is the one
+    every pointer to that speed lands on. A row behind a remainder does not
+    need a loop of its own: its block is the remainder and ONE jump to the
+    F4 entry of the speed's loop, which the jump reaches on the call after
+    the remainder's last step exactly as the loop's own `FF` would
+    (gplay.c:709-712 follows a jump the moment the pointer steps onto it).
+    So a speed with only a bare loop costs 2; a speed with remainders costs
+    each block `len(remainder) + 1` and the one F4/FF pair, which the first
+    block carries (and a bare loop of that speed then costs nothing)."""
+    by_entry: dict = {}
+    for rest, entry in keys:
+        by_entry.setdefault(entry, []).append(rest)
+    total = 0
+    for rests in by_entry.values():
+        behind = [r for r in rests if r]
+        total += (sum(len(r) + 1 for r in behind) + 1) if behind else 2
+    return total
+
+
 def _expanding_vibrato_loop_share(plan: list, room: int) -> tuple:
     """`(alias, merged, off)`: which swing loops share a block when the
     wavetable has `room` entries for them and the rows in `plan`
-    (`(pattern, row, remainder, entry, notes)`) would take more.
+    (`(pattern, row, remainder, entry, notes)`) would take more
+    (`_expanding_vibrato_loop_cost`).
 
-    A loop is `F4 idx / FF -> F4` behind the row's remainder: two entries
-    and the remainder. Mega_Apocalypse with its pattern 15 split wants 56 of
-    them, 282 entries for a table with 99, and the rest of the table is
-    spoken for. While the blocks do not fit, the loop whose rows lose the
-    least moves them onto another loop with the SAME remainder -- the cost
-    of a row is how far, in log space, its swing lands from the one
-    `_expanding_vibrato_loop_entry` chose, taken on the row's own notes --
-    per entry freed. `alias` maps `(remainder, entry)` of a loop given up
-    to the one that took its rows (followed to the end); empty where
-    everything fits, which leaves the rows exactly as they were. `off` is
-    the mean relative change in swing over the rows moved. A row's notes
-    are the notes its entry was chosen on anywhere in the walk."""
+    Mega_Apocalypse with its pattern 15 split wants 56 of them and the rest
+    of the table is spoken for. While the blocks do not fit, the loop whose
+    rows lose the least moves them onto another loop with the SAME
+    remainder -- the cost of a row is how far, in log space, its swing lands
+    from the one `_expanding_vibrato_loop_entry` chose, taken on the row's
+    own notes -- per entry freed. `alias` maps `(remainder, entry)` of a
+    loop given up to the one that took its rows (followed to the end);
+    empty where everything fits, which leaves the rows exactly as they
+    were. `off` is the mean relative change in swing over the rows moved. A
+    row's notes are the notes its entry was chosen on anywhere in the
+    walk."""
     groups: dict = {}
     for _b, _r, rest, entry, notes in plan:
         groups.setdefault((rest, entry), []).append((entry, notes))
-
-    def size(key):
-        return len(key[0]) + 2
 
     def cost(rows, entry):
         total = 0.0
@@ -2611,17 +2630,22 @@ def _expanding_vibrato_loop_share(plan: list, room: int) -> tuple:
         return total
 
     alias: dict = {}
-    if sum(size(k) for k in groups) <= room:
+    if _expanding_vibrato_loop_cost(groups) <= room:
         return alias, 0, 0.0
     held = {k: list(v) for k, v in groups.items()}
-    while sum(size(k) for k in held) > room:
+    while _expanding_vibrato_loop_cost(held) > room:
+        whole = _expanding_vibrato_loop_cost(held)
         best = None
         for i in held:
+            freed = whole - _expanding_vibrato_loop_cost(
+                [k for k in held if k != i])
+            if freed <= 0:
+                continue
             here = cost(held[i], i[1])
             for j in held:
                 if j == i or j[0] != i[0]:
                     continue
-                score = (cost(held[i], j[1]) - here) / size(i)
+                score = (cost(held[i], j[1]) - here) / freed
                 if best is None or score < best[0]:
                     best = (score, i, j)
         if best is None:
@@ -2801,32 +2825,53 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
     # go onto the nearest loop of the same remainder that does.
     alias, shared, off = _expanding_vibrato_loop_share(
         plan, GT_MAX_TABLELEN - len(out))
+    # Each row's (remainder, speed index) once the sharing is applied.
     moved = 0
+    rows: list = []
     for b, r, rest, entry, _notes in plan:
-        pat = patterns[b]
         if (rest, entry) in alias:
             moved += 1
             entry = alias[(rest, entry)][1]
-        idx = _speed_index(speed_table, entry)
-        if not idx:
+        rows.append((b, r, rest, _speed_index(speed_table, entry)))
+    # One F4/FF pair per speed; a remainder's block ends in a jump onto it
+    # (`_expanding_vibrato_loop_cost`), so the first block of a speed
+    # carries the pair, a remainder's before a bare one when there is any.
+    order: dict = {}
+    for _b, _r, rest, idx in rows:
+        if idx:
+            order.setdefault(idx, {}).setdefault(rest, None)
+    loop_at: dict = {}      # speed index -> the F4 entry (1-based)
+    for idx, rests in order.items():
+        for rest in sorted(rests, key=lambda x: not x):
+            if not rest and idx in loop_at:
+                starts[(rest, idx)] = loop_at[idx]
+                continue
+            if idx in loop_at:
+                block = list(rest) + [(GT_WAVE_JUMP, loop_at[idx])]
+            else:
+                block = list(rest) + [(WAVECMD_BASE + CMD_VIBRATO, idx),
+                                      (GT_WAVE_JUMP,
+                                       len(out) + len(rest) + 1)]
+            if len(out) + len(block) > GT_MAX_TABLELEN:
+                starts[(rest, idx)] = None
+                continue
+            first = len(out) + 1
+            loop_at.setdefault(idx, len(out) + len(rest) + 1)
+            starts[(rest, idx)] = first if rest else loop_at[idx]
+            out += block
+    for b, r, rest, idx in rows:
+        start = starts.get((rest, idx)) if idx else None
+        if start is None:
             full += 1
             continue
-        start = starts.get((rest, idx))
-        if start is None:
-            block = list(rest) + [(WAVECMD_BASE + CMD_VIBRATO, idx),
-                                  (GT_WAVE_JUMP, len(out) + len(rest) + 1)]
-            if len(out) + len(block) > GT_MAX_TABLELEN:
-                full += 1
-                continue
-            start = starts[(rest, idx)] = len(out) + 1
-            out += block
+        pat = patterns[b]
         pat[r + 2] = CMD_SETWAVEPTR
         pat[r + 3] = start
         converted += 1
     if log and (converted or taken or disagree or looping or full or early
                 or tied):
         log(f"Expanding vibrato loops.: {converted} row(s) on "
-            f"{len(starts)} wavetable loop(s)"
+            f"{sum(v is not None for v in starts.values())} wavetable loop(s)"
             + (f", {taken} with the column in use" if taken else "")
             + (f", {disagree} the contexts disagree on" if disagree else "")
             + (f", {looping} on a looping program or a long delay"

@@ -2631,7 +2631,8 @@ reloads a pulse pointer whenever its instrument is triggered
 *signed byte* (`readme.txt:887-889`), so at `-S1` the width cannot move more
 than 127 a call where the player moves 224. The band still comes out right
 because the tick counts are recomputed from the speed actually emitted; only
-the rate is slow, by 1.76x.
+the rate is slow, by 1.76x. RETRACTED for the triangle engine by section 7.NEW (a step above
+127 a call): its legs are now spelled as one set row a call and run at the player's rate.
 
 #### The column that could not see it
 
@@ -12580,6 +12581,25 @@ build is 22267 bytes (`f5958c98a448`, before the sharing 22281,
 `425fd3fbd1c1`, with 14 rows past the table's end); with the split off as
 well it is `3dd7d6f19319` again, so that sha moved for the split alone.
 
+**A remainder's block jumps onto the speed's loop instead of carrying one of
+its own** (`_expanding_vibrato_loop_cost`; historical figures, taken at
+1172704). A row behind a remainder pointed at `rest / F4 idx / FF -> F4`, the
+F4/FF pair repeated for every remainder. The pair is the same for a speed
+whatever the remainder, and a jump is followed the moment the pointer steps
+onto it (gplay.c:709-712), so the remainder's last step is followed on the next
+call by the speed's F4 entry exactly as the loop's own `FF` would: the block
+is the remainder and one `FF -> F4`, and the first block of a speed (a
+remainder's before a bare loop's, which then costs nothing) carries the pair.
+Mega_Apocalypse: 56 loops want 109 entries, not 126, of the 101 the table has
+left, so 4 loops merge (6 rows moved, mean under 1% off in size; before 13 and
+17 rows, mean 2%), 1279 rows keep a loop, none for a full table. The 60 calls
+every row runs were walked in both trees: 1268 rows identical, the 11 that
+differ are rows the old sharing had moved off their own speed and that now
+keep it. With the alternation and the split off, where nothing was merged,
+all 1061 rows run the same 60 calls and the wavetable is 232 entries, not 245.
+`ALTERNATION_LEVELS` was dry-run: 6 sizes leave 3 merges, 4 sizes none, at the
+cost of dip sizes the alternation is measured on; not adopted.
+
 Measured (siddump, -t 180, presets, v0.5.527 + this change; `fidelity.py`
 row, `pernote` probe): Mega_Apocalypse 12 + 1 pattern copies (.sng 20652 ->
 22388 bytes, wavetable 255 of 255); the pass writes 1066 -> 1343 `4xy` rows,
@@ -15836,10 +15856,8 @@ free -- so what is emitted is the schedule at a handful of SIZES
   (`quantize_levels`: 1, 2, 8, 15, 30, 54, 90 on Mega). Eight is the most the
   swell's own loops leave: 10 fill the table to 254 of 255 with every swell
   loop in, 12 lose 105 swell rows to "table full".
-- The counter's first lap only (the stores of `j < 256`). The counter is a
-  byte; the original sits dipped and still until the counter is back at the
-  threshold, and starts again at 287. Ours runs on at the last size to the
-  next note. A note with a fetch frame on a store is declined (none is, in the
+- The first lap is the loops above; the laps past it are the next section.
+  A note with a fetch frame on a first-lap store is declined (none is, in the
   corpus: GT 10's fetches are at multiples of 96).
 
 **What moved.** Measured at 0d0f6ec plus this change, `-t 180`, presets, with
@@ -15871,12 +15889,126 @@ free -- so what is emitted is the schedule at a handful of SIZES
   is on the original's (above). Open: why ours has half the original's
   cycles on the 12-frame `$01` notes.
 
-**Not done.** The gap and the lap after it (the original holds its dipped
-pitch still for 31 frames, then resumes at the stores' own count); the vibrato
-on the even frames; record 12's notes of 1-2 dips are emitted too (`aud` is
-0.8853 with them, 0.8844 with only the 4 notes of 32 dips or more, 0.8825 with
-6 or more -- the opposite of what the short notes' small dips suggested).
-`tests/test_counter_fall.py`, `tests/test_counter_fall_alternation.py`.
+**The second lap: a hold at the lap end** (`goatwriter/counter_fall_laps.py`,
+`tests/test_counter_fall_laps.py`). The counter is a byte. At frame 255 of the
+288-frame note the last store has put the voice `$4E - 112` (`DE20`) and
+nothing writes the frequency again until the counter is back at the record's
+vibrato gate -- 19 on record 9, the table `$54A8,Y` that holds the swell
+still -- so the voice HOLDS the dip for 20 frames (255-274), the vibrato starts
+again from the note at 275, and the odd frames store again from the threshold
+(287) with the count going on: 113, 114 ... A count past 127 is a dip UP
+(`$4E - 225` is `$6D`), the byte being 16 bits. Measured on the original with
+`siddump -v1` at 1172704 (historical): the 288-frame note's hold reads `DE20`
+on all 20 frames; the 576-frame note at frame 13728 holds `DE` at frames
+255-274 and `6D` at 511-530 (count 225), its stores resuming at 287 and 543.
+Ours kept alternating at the first lap's last size through the gap (or, where
+the swell took the rows after the first lap, stopped): 1 of the 40 frames of
+the 288-frame note's hold and the 576-frame note's first had the original's
+high byte.
+
+- **A lap end gets a program** (`alternation_note_rows`, kinds `X`, `H`, `Q`).
+  The row holding the lap's last dip points at `[tie] F2 n / jump`, `n` the
+  store count modulo 256 (`F1 256 - n` from 129 up; 128, `$8000`, is not said
+  by a speed row and is not held). What goes before the dip depends on its
+  tick: one tick after a step back the voice is still dipped and needs a tie
+  (`F3 00`); two ticks in, two still calls (it is on its note); two ticks in
+  with no dip loop before the row (a later lap's, the later laps being off) a
+  wait and a tie, the swell's offset being on the voice. The key is `(count,
+  tick, tied)`. Every row after it, to the gate, points into the **still
+  loop**; the row the gate falls in (or the first after it: late, never early)
+  at the loop's first row, a tie.
+- **The still loop** is `F3 00 / F2 0 / jump to the F2`: three rows, shared. A
+  stopped program is not enough: `CMD_SETWAVEPTR` leaves the channel's command
+  as it was (gplay.c:405-417 clears it only on an empty column), the swell's
+  `4xy` rows have left it on VIBRATO, and the continuous effect runs on every
+  tick the wavetable is not executing a command. `F2` of a speed row of zero is
+  a wavetable command on every call that moves nothing. **The speed row must be
+  a real one**: parameter 0 in the packed player reads `mt_speedlefttbl - 1`
+  (player.s `mt_setspeedparam`), where gplay.c takes it to mean speed 0.
+- **Which holds are made: one.** Each is 2-4 wavetable rows and the table has
+  none to spare. Mega_Apocalypse has 10 lap ends in all (the 288- and
+  576-frame notes' and the 1920-frame note's seven): `(112, 1)` three times
+  (the first lap's end of each, one program), `(225, 2)` twice, three single
+  ones, and two that end on a row whose command column holds the pattern's
+  tempo command, which no pointer can take. `ALTERNATION_HOLD_ROWS` (6: the
+  still loop and the shared program) pays for the most used first; the second
+  lap's (4 rows, tied) would take two of the first lap's 7 dip sizes, and 6
+  sizes give 80 of the original's 103 lows instead of 95
+  (`test_packed_the_dips_fall_on_the_originals_frames`). With room for it
+  (`ALTERNATION_HOLD_ROWS` 10, `ALTERNATION_ROWS` 40) the 576-frame note's
+  second hold is the original's too, 20 more frames. A lap end that is not
+  held keeps the first lap's loop going through the gap and the swell's
+  rows after it, as before.
+- **The rows are paid for out of record 16's.** Programs of the no-vibrato
+  falls (`counter_fall_entries`) end in a stop, so a short one that is the
+  tail of a long one costs nothing: with a hold in the plan they are laid
+  longest first and the tail is shared (three rows on Mega: `[wait][F2 0E]
+  [stop]` is the end of `[F2 0E][wait][F2 0E][stop]`). Without a hold they
+  are laid in order as they always were.
+- **The later laps' dips are not emitted** (`ALTERNATION_LATER_LAPS`, off).
+  Written and measured: a fresh run from the next lap's first whole row, sizes
+  `n` modulo 256 folded to 1..127, the direction not kept (the loops are
+  down-loops; a dip up is a dip down of the same size). On, the 576-frame
+  note's reversals are the original's 480 (288 off, 296 before) and its held
+  frames the same, but the swell's pass then has 128 rows fewer to convert
+  and keeps 39 loops where `test_tie_restart_mega.py` pins 42 and
+  `test_expanding_vibrato_split.py` pins a table that has to share
+  (`on the nearest loop that fits`), so it is left off. Measured at 1172704
+  (historical), `ALTERNATION_ROWS` 29, `ALTERNATION_HOLD_ROWS` 9.
+- **The later laps are in repeated positions** (a `$DF` plays one pattern 16
+  times for the 1920-frame note), each visit asking for different rows, so a
+  note that outlasts a lap has its repeats unrolled with the no-vibrato falls'
+  (`unroll_fall_repeats`, `ALTERNATION_UNROLL`): 2 orderlists over 3
+  positions, not 2, and the first lap's end of the 640-row note is held too
+  (20 of its 20 frames, 0 before). The swell's pass can then convert rows it
+  could not (1396 rows against 1279): see below.
+
+**What moved.** Measured at 1172704 plus this change, `-t 180`, presets, with
+`--sound` (historical).
+
+- Corpus byte-hash under presets: 95 files, 89 converted, 6 refused (the same
+  six in both arms), 89 compared, 1 moved: Mega_Apocalypse `0f3df64f08a2` ->
+  `d09c99923ef7`. Commando is unchanged. The .sng grows 22847 -> 23272 bytes
+  (patterns 91 -> 94, one orderlist 125 -> 139, speed rows 51 -> 56).
+- Packed through gt2reloc and siddump, 300 s: the 20 held frames of the
+  288-frame note and the 20 of the 576-frame note's first carry the original's
+  high byte, **40 of 40** (1 of 40 before). Reversals: the 288-frame note 232
+  -> 228 (original 227), the 576-frame note 296 -> 291 (original 480).
+- File level (`-t 180` reaches the 288-frame note only): `aud` 0.8842 ->
+  0.8864, `loud` 0.8403 -> 0.8404, `bend_ratio` 1.703 -> 1.671,
+  `travel_ratio` 1.200 -> 1.190, `tie_agreement` 0.6779 -> 0.6785; against:
+  reversals 4595 -> 4597 (`reversal_ratio` 1.0305 -> 1.0310, original 4459),
+  `tie_ratio` 0.9496 -> 0.9481. `melody`, `sequence`, `depth_ratio` unchanged.
+- **The swell keeps its loops.** Its pass (`_expanding_vibrato_loops`)
+  converted 1279 rows on 43 loops before, with 13 swings merged (17 rows moved
+  onto the nearest loop); now 1396 rows on 43 loops, 18 swings merged (47
+  rows moved), no "table full", the table at 255 of 255 (254 before). Its room
+  goes 101 -> 98 rows (the holds' 6, less 3 saved from record 16's programs)
+  and it wants 61 loop shapes where it wanted 56, for the rows it can now
+  convert. The three pins on it (`test_tie_restart_mega.py`'s 42 loops,
+  `test_expanding_vibrato_split.py`'s two) and the first lap's (7 sizes, 95 of
+  103 lows) pass unedited.
+- **The 1920-frame note's later laps move, for the worse by one count.** The
+  rows of the repeated position the swell could not convert (`32 the contexts
+  disagree on`) now are, so the first lap's loop no longer runs on there
+  "at the last size": reversals in frames 2-1150 are 422 against the
+  original's 982 (1117 before), in 1150-1920 172 against 257 (630 before).
+  The original dips on every lap; ours has no dips past the first.
+
+**Not done.** The later laps' dips (above), which the swell's pins forbid
+at this table size; the second lap's hold (4 rows); the hold's direction;
+laps 3 and 6 of the 1920-frame note, which end on a tempo row. The
+1920-frame note is read to its end by the model (840 stores) and the original
+is not: at frame 1153 the voice's high byte settles at `$59` with a drum
+blip (`C#6`, waveform `81`) every 6 frames to the end of the note, and there is
+no store after that; nothing here reads why. Also open: the swell's restart
+each lap (the original's vibrato starts small again at the gate, `4DBD 4D4A`
+at frames 20 and 276, ours takes the row's amplitude); the vibrato on the even
+frames; record 12's notes of 1-2 dips are emitted too (`aud` is 0.8853 with
+them, 0.8844 with only the 4 notes of 32 dips or more, 0.8825 with 6 or more --
+the opposite of what the short notes' small dips suggested).
+`tests/test_counter_fall.py`, `tests/test_counter_fall_alternation.py`,
+`tests/test_counter_fall_laps.py`.
 
 ### 7.NEW Effect bit `$40` alone: the fixed attack pitch on a record with no `$04`
 
@@ -16169,13 +16301,14 @@ record 7 seeds `$800` and its own walk cycles `$8E0..$E20`, but its 16 phases cy
 `$840..$E60`; Human_Race's records 18 and 23 are the other way round, 17 of 18 phases
 on `$840..$E60` and the seed phase on `$8E0..$E20`. Every consumer of the old edges
 reads the cycle instead (`_phase_block`, `_chained_phases`, `_union_kind`), keyed on
-`step`, so the bounds engine (no `step`) is byte-identical. `_union_groups` adds the
+`step`, so a call with none is byte-identical (the bounds engine's was, until the
+last paragraph of this section). `_union_groups` adds the
 cycle to its key: one union is one loop, and Gremlins' records 3 and 7 (same step,
 speed and bounds) turn on `$8E0..$E20` and `$8C0..$E00`, so they no longer share.
 
 **The legs.** Every triangle tick count is the one whose arrival is nearest the
 sweep's distance at the emitted speed (`_nearest_ticks`, as the static program's),
-where the bounds engine's is the whole ticks below it. `_leg_ramps` aims at the
+where a call with no `step` takes the whole ticks below it. `_leg_ramps` aims at the
 cycle's edge with a SIGNED overshoot: an arrival short of the edge climbs on to it,
 one past it comes back (the old `back`), and the same going down, which the bounds
 could not do because the low nibble's first lattice width was always on the far side
@@ -16192,9 +16325,30 @@ entry point as gplay.c:872-902 plays them, against `PulsePhaseSim`; 23 triangle 
 The extra entries are records the shared layout now keeps (Last_V8 and its C128
 version place all four records in 245 / 244 rows with no reserve; they were 223 / 224
 with instrument 9 degraded). What is left over is speeds that do not divide the step
-and the `$E0` steps clamped at 127 (Commando, Zoids, Gerry_the_Germ 18). Kept sets:
+and the `$E0` steps clamped at 127 (Commando, Zoids, Gerry_the_Germ 18). (The clamped steps are spelled since section 7.NEW
+(a step above 127 a call).) Kept sets:
 no file loses a record; Human_Race keeps 21 where it kept 23 (5 of 7 either way), and
 Gremlins goes from 168 to 248 rows (records 3 and 7 no longer union), still 4 of 5.
+
+**The per-record-bounds engine's phase table takes the same step** (task
+`bounds-phase-block-lattice-step`; figures at 1172704 plus the change).
+`_phase_sweep_params` returned `step=None` for those records, so `_phase_cycle`
+handed back the bounds, `_leg_ramps` took the modulo-`$1000` distance to them and
+`_phase_block` laid the loop on `lo << 8` / `hi << 8`, while the static program
+already turned on the rate's lattice (section 7.nnnnnn). It now returns the rate
+as the step, and `_leg_ramps` takes the lattice walk for a wrapped record as it
+does for the triangle's (the modular distance remains for a call with no step, and
+for a step that never reaches the nibble). Nothing in `presets.json` sets
+`pulse_phase` on a bounds file, so the shipped byte-hash does not move: 89
+converted, 0 refused, 0 moved. Forced, 14 files move (ACE_II, Auf_Wiedersehen_Monty,
+Flash_Gordon, Food_Feud, I_Ball, Lightforce, Nineteen, Pandora, Saboteur_II,
+Sanxion, Shockway_Rider, Sigma_Seven, Trans-Atlantic_Balloon_Challenge, W_A_R) and
+the first three turns of their 123 shipped index entries, against `PulseBoundsSim`,
+read exact 99 to 286 of 369, within half a speed 121 to 355, within one speed 217
+to 369. What is left is speeds that do not divide the rate (Saboteur_II at `-S3`:
+6 of 39 exact, all within one speed). A one-nibble band (`hi == lo`) has one
+two-point jitter cycle per lattice point in the nibble and a shared loop holds only
+one, so a phase inside such a nibble joins the majority cycle, as the triangle's does.
 
 **Frames against the original** (packed at `-S{mult}`, traced at `-m{mult}`, original
 at `-m1`, 180 s; the 48 frames after each paired attack; mean width error in the
@@ -16227,6 +16381,67 @@ planned width, which this task did not chase). Totals: reached 7909 to 7970, no
 command 3502 to 3438, **commanded but wrong 618 to 621** (178 to 173 without
 5_Title_Tunes). The lattice legs are a leg-shape change, so a reading at the attack
 is the wrong instrument for them; the turn census above is the one that measures.
+
+### 7.NEW A triangle step above 127 a call is spelled as set rows, not clamped
+
+From task `speed-clamped-e0-triangle-steps`, opened by section 7.iiiiiiii (Commando, Zoids
+and Gerry_the_Germ 18 turned on the right widths at the wrong rate). Figures taken at
+1172704 plus this change, presets, packed at `-S1`, original at `-m1`, unless said otherwise.
+
+**The defect.** A Goattracker pulse speed is a signed byte (`readme.txt:887-889`,
+`gplay.c:889-899`), so one modulation row moves the width at most 127 a call, and the
+triangle's `$E0` step is 224 a tick. At `-S1` with delay 1 a call is a tick, so
+`_tri_speed` emitted 127 and the sweep ran 1.76 times slow. Nine sweeping triangle records
+reach the clamp by more than 5% under presets (`pulse._tri_call_speed` over the first 64
+record slots of every triangle file, so a slot the song never plays is counted):
+Commando 0, 6 (224) and 22 (192); Gerry_the_Germ 17 (224) and 59 (160); Zoids 0 and 14
+(224); Gremlins 54 and 56 (160). The Gremlins pair moves no byte (below). Five records at
+128 (Crazy_Comets 30 and 38, Geoff_Capes 50, Gremlins 61 and 63) clamp by 0.8% and are
+left alone.
+
+**The spelling** (`pulse._ramp_rows`, `_tri_table_speed`). A set-width row spends its call
+setting the width and does not modulate it (`gplay.c:874-879`; `player.s` `mt_setpulse`
+jumps to `mt_nextpulsestep` past `mt_pulsemod`), so ONE SET ROW PER CALL plays the widths
+a faster modulation row would have. Above `SPELLED_SPEED_MIN` (134, where the clamp costs
+5%) a ramp is laid as set rows at `start + k * speed`; `_lattice_legs` and `_phase_block`
+(the loop, the chained legs, every entry piece's out and back ramp) thread the start
+width through, and below the threshold every row is the modulation row it was. A fast
+speed is always the step itself (delay 1 on a one-call tick), so the lattice arithmetic of
+section 7.iiiiiiii runs at the true speed and the legs are exact. The price is a row a
+call: a leg of `$8E0..$E20` is six rows, not one. Table rows under presets, per-phase
+layout against the shared chain: Commando 129 -> 185 (the per-phase layout would put six
+records on pointer 0, so the shared chain ships), Zoids 85 -> 155 (still per phase),
+Gerry_the_Germ 241 -> 149 (the per-phase layout would degrade one record, so the shared
+chain ships).
+
+**Turn census** (the first three turns of every index entry played from its entry point as
+`gplay.c:872-902` plays them, against `PulsePhaseSim`; `turncensus.py`, forced
+`pulse_phase`): exact turns Commando 4 -> 88 of 90, Zoids 2 -> 42 of 42, Gerry_the_Germ
+129 -> 163 of 165 (all its records). The two Commando turns still off are ($800, up), a
+phase on another lattice that the loop's first set row snaps onto the cycle's.
+
+**Frames against the original** (180 s, the 48 frames after each paired attack, the
+tolerance of the clamped speed for both runs so the figures compare; the base reproduces
+the 1038 and 443 quoted in section 7.iiiiiiii): notes whose original sweep TURNS inside
+the window agree on Commando 1038 -> 3788 of 4728, Zoids 443 -> 1826 of 1944, and over
+all the traced voices (Commando, Zoids, and Gerry_the_Germ's six subtune groups) 3167 ->
+9910 of 12108 (26.2% -> 81.8%), mean width error 432.8 -> 59.5. Notes that do not turn:
+2721 -> 2904 of 3072. Gerry_the_Germ subtune 1 (no record 17) is unchanged at 709 of 744.
+
+**Corpus byte-hash** (`fidelity._preset_opts`, base against this tree, each in its own
+process): converted 89, refused 0, compared 89, moved 3 -- Commando.sid,
+Gerry_the_Germ.sid, Zoids.sid. Forced `pulse_phase`: the same three. `Commando.sng` (the
+fixture) is byte-identical.
+
+**What it does not do.** The per-record-bounds engine (`_pulse_program`) still clamps: 194
+of its records on 19 files have a rate over 134 a call at their multiplier (After_8,
+I_Ball, IK_plus, Lakers_vs_Celtics, Nemesis_the_Warlock, Nineteen, Pandora, Pygmies_Revenge,
+Rikky, Sanxion, Sigma_Seven, Tarzan, Wiz, ...), most at `-S1`. Spelling them multiplies
+their table cost by the leg length in calls, against a 255-row table that also holds every
+other record, so it is its own task. The alternative the opening note named, `-S2`,
+halves the per-call step to 112 and would fit one modulation row, but the multiplier is
+the whole song's (it doubles the play rate and moves every other column); set rows keep
+the rate.
 
 ### 7.jjjjjjjj A rest's silencing `CMD_SETSR $00` keeps its place when the tempo takes row 0: Mega_Apocalypse's "travel under ADSR $0000"
 
