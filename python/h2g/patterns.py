@@ -6543,8 +6543,40 @@ def _walk_triangle_group(g: int, patterns: List[List[int]],
                            phases, writes, log)
 
 
+# The window a listener (and `fidelity.py`) judges a conversion in, seconds.
+# `apply_pulse_phase` spends its scarce pattern copies on the notes that
+# sound inside it first.
+PULSE_PHASE_WINDOW_SECONDS = 180.0
+PULSE_PHASE_FRAMES_PER_SECOND = 50.0
+
+
+def _row_start_rows(track: List[int], patterns: List[List[int]]) -> Dict[int, int]:
+    """Orderlist position -> the row index (from the track's start) at which
+    that position's pattern begins. Positions that are not a pattern
+    reference (a transpose, the restart marker) take no rows; the walk
+    stops at the restart marker, the end of what plays first time through.
+    """
+    starts: Dict[int, int] = {}
+    at = 0
+    for pos, b in enumerate(track):
+        if b == GT_ORDER_RESTART:
+            break
+        if b >= MAX_PATTERNS or b >= len(patterns):
+            continue
+        starts[pos] = at
+        pat = patterns[b]
+        rows = len(pat) // 4
+        for r in range(rows):
+            if pat[4 * r] == GT_END_PATTERN:
+                rows = r
+                break
+        at += rows
+    return starts
+
+
 def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
-                      writes: list, index: dict, log=None) -> int:
+                      writes: list, index: dict, log=None,
+                      row_seconds: Optional[List[float]] = None) -> int:
     """Write the planned CMD_SETPULSEPTR commands, always into copies.
 
     One clone per distinct (pattern, command vector), shared across every
@@ -6552,12 +6584,30 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
     command column is already taken keeps its command (the tempo pass ran
     first and a subtune's clock outranks one note's phase); the skip is
     counted and logged rather than silent.
+
+    **Which clones survive a full pattern table.** The table holds
+    `MAX_PATTERNS`; a plan that fits is written in plan order, exactly as
+    before. A plan that does NOT fit used to lose its tail -- the tracks
+    handed over last, i.e. the later subtunes -- whatever those notes were
+    worth. With `row_seconds` (the seconds one row of group `g` lasts,
+    `row_seconds[g]`; convert.py derives it from the clock the walk ran
+    on) each clone is ranked by the command rows it serves that START
+    inside `PULSE_PHASE_WINDOW_SECONDS` of its own subtune's beginning
+    (every slot sharing the clone adds its own), then by the rows it serves
+    in all, then by plan order. A clone costs one pattern whatever it
+    serves, so taking the largest first maximises the in-window rows the
+    capacity buys. The play time is an ESTIMATE -- rows times the subtune's
+    constant row length; a tempo that changes mid-song is not followed.
+    A row whose command column is taken serves nothing. Without
+    `row_seconds` there is no clock to rank by and the plan order stands.
     """
-    clones: dict = {}
-    written = skipped = 0
+    def usable(src: List[int], vector) -> bool:
+        return not all(src[4 * r + 2] == CMD_SETPULSEPTR and src[4 * r + 3] == e
+                       for r, e in vector)
+
+    slots = []
     for (ti, pos, rows) in writes:
-        track = tracks[ti]
-        target = track[pos]
+        target = tracks[ti][pos]
         if target >= len(patterns):
             continue
         vector = tuple(sorted(
@@ -6566,14 +6616,52 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
             if (num, ph[0], ph[1]) in index))
         if not vector:
             continue
+        slots.append((ti, pos, target, vector))
+
+    keep = None
+    if row_seconds is not None:
+        starts: Dict[int, Dict[int, int]] = {}
+        score: dict = {}
+        order: dict = {}
+        for (ti, pos, target, vector) in slots:
+            src = patterns[target]
+            if not usable(src, vector):
+                continue
+            key = (target, vector)
+            order.setdefault(key, len(order))
+            if ti not in starts:
+                starts[ti] = _row_start_rows(tracks[ti], patterns)
+            g = ti // 3
+            secs = row_seconds[g] if g < len(row_seconds) else None
+            inside = served = 0
+            for r, _ in vector:
+                if src[4 * r + 2] != 0:
+                    continue
+                served += 1
+                if secs is not None and pos in starts[ti] and (
+                        (starts[ti][pos] + r) * secs
+                        < PULSE_PHASE_WINDOW_SECONDS):
+                    inside += 1
+            have = score.get(key, (0, 0))
+            score[key] = (have[0] + inside, have[1] + served)
+        room = MAX_PATTERNS - len(patterns)
+        if len(score) > room:
+            ranked = sorted(score, key=lambda k: (-score[k][0], -score[k][1],
+                                                  order[k]))
+            keep = set(ranked[:max(0, room)])
+
+    clones: dict = {}
+    written = skipped = 0
+    for (ti, pos, target, vector) in slots:
+        track = tracks[ti]
         src = patterns[target]
         # already carrying exactly this vector (a shared clone reused)
-        if all(src[4 * r + 2] == CMD_SETPULSEPTR and src[4 * r + 3] == e
-               for r, e in vector):
+        if not usable(src, vector):
             continue
         key = (target, vector)
         if key not in clones:
-            if len(patterns) >= MAX_PATTERNS:
+            if len(patterns) >= MAX_PATTERNS or (
+                    keep is not None and key not in keep):
                 if log:
                     log("Pulse phase.............: pattern table full, a "
                         "phase clone was dropped")

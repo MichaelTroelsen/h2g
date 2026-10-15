@@ -1119,7 +1119,14 @@ def convert(sid_path: str, log: Logger = print,
                     usage=pulse_usage(tracks, new_patterns, lead))
             if plan and table:
                 entries, starts, index = table
-                apply_pulse_phase(new_patterns, tracks, writes, index, log)
+                # Seconds one row of each group lasts on the clock the walk
+                # ran on (`tempo` calls of `calls_per_frame` per frame, 50
+                # frames a second): what ranks the pattern copies by when
+                # their notes sound if the table cannot hold them all.
+                apply_pulse_phase(
+                    new_patterns, tracks, writes, index, log,
+                    row_seconds=[max(1, t) / (50.0 * calls_per_frame)
+                                 for t in walk_tempos])
                 pulse_plan = (entries, starts)
             else:
                 # Nothing shipped: the expansion collect may have made is

@@ -26,10 +26,18 @@ instrument column has run, so this cannot disagree with any of them):
   A pattern only funk subtunes play is respelled in place; one a longer
   subtune plays as well is copied and the funk orderlists repointed.
 
-**Instrument 1 is never split.** Every voice starts on it without any
-pattern naming it (`gplay.c:62`, `player.s:621`), so a funk voice opening on
-rests runs under the record and no pattern column can move it; a record with
-an implicit use in a funk subtune keeps its low gatetimer for everyone.
+**A record a funk voice opens on is split the other way round.** Every voice
+starts on instrument 1 without any pattern naming it (`gplay.c:62`,
+`player.s:621`), so a funk voice opening on rests runs under the record and no
+pattern column can move it. The record then keeps its low gatetimer for the
+funk side, and the longer subtunes' NAMED uses of it take a CLONE with their
+own gatetimer. (A longer voice that also opens on it stays on the low record,
+which is no worse than before.) The obvious alternative -- name a clone on the
+funk voice's row 0 and raise the record -- is wrong: the orderlist's restart
+re-enters that pattern, so row 0 would force the clone on every loop where the
+original keeps whatever instrument the voice ended on. Measured on
+Gerry_the_Germ subtune 2 at 5194 frames: vibrato depth $001F in the original
+and in the unsplit conversion, $007D with row 0 naming the clone.
 
 Nothing is touched unless the file has a funk subtune AND a longer one, and
 a record whose gatetimer is not exactly what the funk row would have given it
@@ -114,6 +122,7 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
     out = bytearray(blob)
     raised: List[int] = []
     split: List[int] = []
+    reverse: Dict[int, int] = {}            # record -> gatetimer of its clone
     for k in range(1, count + 1):
         users = explicit.get(k, set()) | implicit.get(k, set())
         if not users:
@@ -125,78 +134,103 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
         longer = users - funk
         if not longer:
             continue
+        if implicit.get(k, set()) & funk:
+            # A funk voice opens on this record with no pattern naming it, so
+            # the funk side cannot move. The longer subtunes' NAMED uses can:
+            # they take a clone with their own gatetimer, and the original
+            # stays low for the funk voice (and for any longer voice that
+            # also opens on it, which is no worse than before).
+            named = explicit.get(k, set()) - funk
+            if named:
+                t = ticks_for(min(rows[s] for s in named))
+                if t != cur:
+                    reverse[k] = t
+            continue
         target = ticks_for(min(rows[s] for s in longer))
         if target == cur:
             continue
         if not users & funk:
             raised.append(k)
-        elif not implicit.get(k, set()) & funk:
+        else:
             split.append(k)
 
-    # The clone numbers and the patterns the funk subtunes need respelled.
+    # The clone numbers, and the patterns that must be respelled or copied:
+    # `fmap` moves a funk subtune's uses, `lmap` a longer subtune's.
     new_patterns: List[bytes] = []
-    clone_of = {k: count + 1 + i for i, k in enumerate(split)}
-    repoint: Dict[int, int] = {}            # funk pattern -> its copy
-    respell: Set[int] = set()
-    if split:
+    cloned = split + sorted(reverse)
+    clone_of = {k: count + 1 + i for i, k in enumerate(cloned)}
+    fmap = {k: clone_of[k] for k in split}
+    lmap = {k: clone_of[k] for k in reverse}
+    # (is a funk subtune, pattern) -> its copy; pattern -> map applied in place
+    repoint: Dict[tuple, int] = {}
+    respell: Dict[int, Dict[int, int]] = {}
+    if cloned:
         for p, ss in played.items():
-            if not ss & funk or p >= len(pats):
+            if p >= len(pats):
                 continue
             start, nrows = pats[p]
-            if not any(blob[start + r * 4 + 1] in clone_of
-                       for r in range(nrows)):
-                continue
-            if ss <= funk:
-                respell.add(p)
-            else:
-                repoint[p] = len(pats) + len(repoint)
-        if (count + len(split) > _MAX_RECORDS
+            names = {blob[start + r * 4 + 1] for r in range(nrows)}
+            for is_funk, moves, here in ((True, fmap, ss & funk),
+                                         (False, lmap, ss - funk)):
+                if not here or not names & set(moves):
+                    continue
+                if here == ss:
+                    respell[p] = moves
+                else:
+                    repoint[(is_funk, p)] = len(pats) + len(repoint)
+        if (count + len(cloned) > _MAX_RECORDS
                 or len(pats) + len(repoint) > MAX_PATTERNS):
             if log:
-                log(f"Funk gatetimers.........: declined, {len(split)} "
-                    f"record(s) to split would need {count + len(split)} "
+                log(f"Funk gatetimers.........: declined, {len(cloned)} "
+                    f"record(s) to split would need {count + len(cloned)} "
                     f"instruments and {len(pats) + len(repoint)} patterns")
-            split, clone_of, repoint, respell = [], {}, {}, set()
+            split, reverse, cloned = [], {}, []
+            clone_of, fmap, lmap, repoint, respell = {}, {}, {}, {}, {}
 
-    if not (raised or split):
+    if not (raised or cloned):
         return bytes(blob)
 
-    # The clones carry the OLD gatetimer; the original record is raised.
+    # A funk-side clone carries the OLD gatetimer and the original record is
+    # raised; a longer-side clone carries the raised one and the original
+    # stays.
     clones = bytearray()
-    for k in split:
+    for k in cloned:
         rec = recs + (k - 1) * _RECORD_LEN
-        clones += blob[rec:rec + _RECORD_LEN]
+        clone = bytearray(blob[rec:rec + _RECORD_LEN])
+        if k in reverse:
+            at = _GATETIMER_AT
+            clone[at] = (clone[at] & ~_GATETIMER_MASK & 0xFF) | reverse[k]
+        clones += clone
     for k in raised + split:
         at = recs + (k - 1) * _RECORD_LEN + _GATETIMER_AT
         longer = (explicit.get(k, set()) | implicit.get(k, set())) - funk
         target = ticks_for(min(rows[s] for s in longer))
         out[at] = (out[at] & ~_GATETIMER_MASK & 0xFF) | (target & _GATETIMER_MASK)
 
-    def respelled(p: int) -> bytes:
+    def respelled(p: int, moves: Dict[int, int]) -> bytes:
         start, nrows = pats[p]
         body = bytearray(blob[start:start + nrows * 4])
         for r in range(nrows):
             k = body[r * 4 + 1]
-            if k in clone_of:
-                body[r * 4 + 1] = clone_of[k]
+            if k in moves:
+                body[r * 4 + 1] = moves[k]
         return bytes(body)
 
-    for p in respell:
+    for p, moves in respell.items():
         start, nrows = pats[p]
-        out[start:start + nrows * 4] = respelled(p)
+        out[start:start + nrows * 4] = respelled(p, moves)
     copies = sorted(repoint.items(), key=lambda kv: kv[1])
-    for p, _n in copies:
-        new_patterns.append(bytes([pats[p][1]]) + respelled(p))
+    for (is_funk, p), _n in copies:
+        new_patterns.append(bytes([pats[p][1]])
+                            + respelled(p, fmap if is_funk else lmap))
     for ti, (off, order) in enumerate(tracks):
-        if ti // 3 not in funk:
-            continue
         for i, p in _pattern_entries(order):
-            if p in repoint:
-                out[off + i] = repoint[p]
+            if (ti // 3 in funk, p) in repoint:
+                out[off + i] = repoint[(ti // 3 in funk, p)]
 
     # Reassemble: records grow (before the tables), patterns grow (at the end).
     res = bytearray(out[:instr_at])
-    res.append(count + len(split))
+    res.append(count + len(cloned))
     res += out[recs:tables_at]
     res += clones
     res += out[tables_at:patt_at]
@@ -218,5 +252,11 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
                                      for k in split)
                          + f"), {len(respell)} pattern(s) respelled and "
                          f"{len(copies)} copied")
+        if reverse:
+            parts.append(f"{len(reverse)} record(s) a funk voice opens on "
+                         "without naming it kept low, the longer subtunes' "
+                         "named uses moved to a clone ("
+                         + ", ".join(f"${k:02X}->${clone_of[k]:02X}"
+                                     for k in sorted(reverse)) + ")")
         log("Funk gatetimers.........: " + "; ".join(parts))
     return bytes(res)

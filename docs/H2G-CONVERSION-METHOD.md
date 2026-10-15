@@ -16369,3 +16369,30 @@ melody 0.9292 -> 0.9986, sequence 0.9495 -> 0.9992 (110 frames at entry 95 again
 108 at `$FD2E`; none at `$DD0E` where the clamp had them); Kentilla 0.9822 -> 1.0, Wiz 0.9482 ->
 0.9763, Proteus 0.9499 -> 0.9988; Dragons_Lair_Part_II, International_Karate, Master_of_Magic and
 Star_Paws move bytes and no displayed figure. 8 files move in all.
+
+### 7.NEW Pattern copies for a pulse-phase plan go to the notes that sound first
+
+`apply_pulse_phase` writes each phase into a COPY of its pattern, and the pattern table holds
+`MAX_PATTERNS` (208). A forced `pulse_phase` plan on Human_Race, Rasputin and Gremlins asks for
+more copies than fit, and the old rule (plan order, so the first tracks handed over) gave them
+all to subtune 0 and let subtunes 3 and 4 go whatever their notes were worth. When the plan does
+not fit, each clone is now ranked by the command rows it serves that START inside the 180 s
+window of their own subtune (every slot sharing a clone adds its rows; a row whose command column
+is taken serves nothing), then by the rows it serves in all, then by plan order. A copy costs one
+pattern whatever it serves, so the largest first maximises the in-window rows the capacity buys.
+A plan that fits is written in plan order, byte for byte as before. convert.py passes
+`row_seconds` (the walk's `tempo / (50 * calls_per_frame)` per group); without it the plan order
+stands.
+
+The play time is an ESTIMATE: rows times the subtune's constant row length, so a tempo that
+changes mid-song is not followed, and PAL's 50 frames a second is assumed.
+
+Measured under forced `pulse_phase` (`tests/test_triangle_lockstep._reach`, reached notes, base
+-> new), 180 s window: Human_Race 899 -> 1171 (s3v0 0 -> 138, s4v0 0 -> 173, s2v1 108 -> 69),
+Monty_on_the_Run 462 -> 582 (s0v2 0 -> 32, s2v0 0 -> 88), Rasputin 268 -> 271 (s0v0 268 -> 263,
+s1v0 0 -> 8), Gremlins 57 -> 224 (s0v2 57 -> 0, s1v0 0 -> 224). No file's window total falls;
+four voices lose notes to a voice that gains more. Over 600 s Monty's total falls 1055 -> 996
+(s0v0 994 -> 815) -- the longer window rewards the early clones the 180 s ranking gave up. No
+shipped preset moves (89 compared, 0 moved); under forced `pulse_phase` 4 files move: Gremlins,
+Human_Race, Monty_on_the_Run, Rasputin. Human_Race s4v1 stays 0 of 264: its limit is the pulse
+table, not the pattern table.

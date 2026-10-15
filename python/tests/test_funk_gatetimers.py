@@ -13,7 +13,8 @@ on the finished bytes:
   2. a record played in both is split -- the original keeps its number and is
      raised, a clone with the low gatetimer takes the funk subtunes' uses;
   3. a pattern a longer subtune plays too is copied, not respelled;
-  4. instrument 1 (opened on without a pattern naming it) is never split.
+  4. instrument 1 (opened on without a pattern naming it) is never split on
+     the funk side; the longer subtunes' named uses of it move instead.
 
 Gerry_the_Germ lost 1.2-3.1 points of `gate` on subtunes 0/1/3/6, Human_Race
 1 on subtune 1 and Auf_Wiedersehen_Monty 1.2 on subtune 0 to this, with the
@@ -121,10 +122,11 @@ def test_a_pattern_a_longer_subtune_plays_too_is_copied_not_respelled():
     assert song.tracks[0][0] == 0 and song.tracks[3][0] == 4
 
 
-def test_an_implicit_use_in_a_funk_subtune_keeps_the_record_low_for_everyone():
+def test_an_implicit_use_in_a_funk_subtune_keeps_the_record_low_for_it():
     """A voice opening on rests runs under instrument 1 with no pattern naming
-    it, so no column can move it to a clone -- while a record beside it that
-    the same subtune names is split as usual."""
+    it, so no column can move the FUNK side to a clone. The longer subtunes'
+    named uses move instead (tests/test_funk_gatetimers_implicit.py); a record
+    beside it that the same subtune names is split as usual."""
     p0 = [[0x60, 1, 0, 0], [0x60, 3, 0, 0]]         # subtune 0 names 1 and 3
     p1 = [[0x60, 0, 0, 0], [0x60, 3, 0, 0]]         # subtune 1 opens on 1
     filler = [[0x60, 4, 0, 0]]
@@ -135,16 +137,21 @@ def test_an_implicit_use_in_a_funk_subtune_keeps_the_record_low_for_everyone():
     assert gt(out, 1) == 1                          # instrument 1: untouched
     assert cols[1] == [0, 5]                        # row 0 stays, 3 -> clone 5
     assert (gt(out, 3), gt(out, 5)) == (2, 1)
+    # ... and the 3-call subtune's own naming of 1 goes to clone 7 (4 is also
+    # played in both, so its clone is 6), raised.
+    assert cols[0] == [7, 3] and gt(out, 7) == 2
 
 
-def test_an_implicit_use_in_the_funk_subtune_declines_only_that_record():
-    # Record 1 is also named in the 3-call subtune; it must stay low.
+def test_an_implicit_use_in_the_funk_subtune_still_frees_the_longer_naming():
+    # Record 1 is named in the 3-call subtune and opened on by the funk one:
+    # the funk voice keeps record 1, the 3-call subtune's naming takes clone 3.
     p0 = [[0x60, 1, 0, 0]]
     p1 = [[0x60, 0, 0, 0]]
     blob = sng([[0] + END, [0] + END, [0] + END, [1] + END, [1] + END, [1] + END],
                [p0, p1], [record(1), record(1)])
     out = split_funk_gatetimers(blob, [3, FUNK_ROW_CALLS], ticks_for)
-    assert out == blob
+    _song, cols = named(out)
+    assert cols == [[3], [0]] and (gt(out, 1), gt(out, 3)) == (1, 2)
 
 
 @pytest.mark.parametrize("rows", [[3, 3], [2, 2], [3, 3, 2], [3]])

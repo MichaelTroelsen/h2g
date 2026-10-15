@@ -467,9 +467,16 @@ _REACH = {
                               (0, 2): (871, 871)},
     # The cost: subtune 0 voice 1 is new, subtunes 2-4 lose what the
     # walk before shipped (120/120, 138/138 and 80/386 reached there).
+    # Re-pinned by pulse-phase-window-aware-ranking: the pattern copies go
+    # to the clones serving the most rows that start inside the 180 s
+    # window (`patterns.apply_pulse_phase`), not to the first tracks
+    # handed over. Window total 899 -> 1171: subtune 3 voice 0 0 -> 138,
+    # subtune 4 voice 0 0 -> 173, paid for by subtune 2 voice 1
+    # 108 -> 69. Over 600 s the same layout reads 959 -> 1237.
     "Human_Race.sid": {(0, 0): (455, 457), (0, 1): (120, 120),
-                       (1, 1): (216, 216), (2, 1): (108, 120),
-                       (3, 0): (0, 138), (4, 0): (0, 386), (4, 1): (0, 264)},
+                       (1, 1): (216, 216), (2, 1): (69, 120),
+                       (3, 0): (138, 138), (4, 0): (173, 386),
+                       (4, 1): (0, 264)},
 }
 
 

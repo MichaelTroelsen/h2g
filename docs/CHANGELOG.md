@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.544 — 2026-10-15
+
+- runqueue cycle 28 at 9c15f95: funk implicit-record split, pulse-phase window ranking
+
 ## 0.5.543 — 2026-10-15
 
 - runqueue cycle 27 at 9a0a452: rest ring for bit-6 rests, LVVP single-row hard restart, bend stair-blind
