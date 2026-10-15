@@ -1582,11 +1582,13 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **75 zero / 14 drifting of 89 rows** (95
-    traced, 89 measured, all 89 with a fit; re-graded at v0.5.528 against
-    that refresh's `build/fidelity.json`, where Arcade_Classics' drift went
-    +0.1 -> 0 (held DIGI, moved by the cycle-11 corpus-wide changes, not
-    targeted) -- it read 74 / 15 from v0.5.520 (Bump_Set_Spike to 0,
+  * **The drift split at 180 s is **74 zero / 15 drifting of 89 rows** (95
+    traced, 89 measured, all 89 with a fit; re-graded at v0.5.548 against
+    that refresh's `build/fidelity.json`, where After_8's drift went
+    0 -> -0.13/1000 (held DIGI, moved by cycle 30's digi bit-5 tie fix,
+    which raised its melody .93 -> .99; not targeted) -- it read 75 / 14
+    from v0.5.528, where Arcade_Classics' drift went +0.1 -> 0 (held DIGI,
+    moved by the cycle-11 corpus-wide changes, not targeted), 74 / 15 from v0.5.520 (Bump_Set_Spike to 0,
     `bump-set-spike-ntsc-gate`), 73 / 16 from v0.5.517 (Rasputin to 0), 72 / 17 from v0.5.513, 69 / 20 from v0.5.495,
     whose refresh gave the last two rows a fit, 68 / 19 / 87 from v0.5.489
     and 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86 at 60 s (v0.5.495,
