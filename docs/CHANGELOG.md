@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.548 — 2026-10-15
+
+- adopt pulse_phase for Confuzion
+
 ## 0.5.547 — 2026-10-15
 
 - runqueue cycle 30 at 4c9dab5: digi bit-5 tie, Last_V8 player-cell pitch, minority phase lattice, named firstwave option

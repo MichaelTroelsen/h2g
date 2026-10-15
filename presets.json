@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.546 presets.py",
+  "generator": "h2g 0.5.547 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -244,7 +244,8 @@
       "subtunes": 1,
       "rows": 15886,
       "multiplier": 1,
-      "force_park": true
+      "force_park": true,
+      "pulse_phase": true
     },
     "Crazy_Comets.sid": {
       "max_rows": 94,
@@ -702,7 +703,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 25111,
+      "bytes": 25488,
       "subtunes": 1,
       "rows": 12339,
       "multiplier": 5,

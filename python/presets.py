@@ -260,12 +260,13 @@ EXCLUDED_FROM_ALWAYS = {
     #   files the option reaches (5_Title_Tunes, Commando, Confuzion,
     #   Geoff_Capes, Gerry_the_Germ, Zoids): **0 of 6 took it**. Run again
     #   with the shipped seven PLUS pulse_phase: **0 of 6** again.
-    # * **AND IT WOULD DESTROY FOUR MEASURED ADOPTIONS.** `main()` carries a
+    # * **AND IT WOULD DESTROY FIVE MEASURED ADOPTIONS.** `main()` carries a
     #   previous entry's per-song decisions across a `--fidelity` run only
     #   `if k not in FIDELITY_TOGGLES` -- membership is what makes the search
-    #   AUTHORITATIVE for a key. `pulse_phase` is adopted by hand on four of
-    #   the six (5_Title_Tunes, Commando, Gerry_the_Germ, Zoids), so promoting
-    #   it would replace four yeses with a no on the next regeneration. That
+    #   AUTHORITATIVE for a key. `pulse_phase` is adopted by hand on five of
+    #   the six (5_Title_Tunes, Commando, Gerry_the_Germ, Zoids, and Confuzion
+    #   since v0.5.547: pphase .647 -> .941, every other column flat), so promoting
+    #   it would replace five yeses with a no on the next regeneration. That
     #   is the same failure this file records four times already, one line
     #   down in the `regrid` entry and again in `carried_entry`.
     # * **THE COST ARGUMENT IS REFUTED, so do not reach for it.** An eighth
