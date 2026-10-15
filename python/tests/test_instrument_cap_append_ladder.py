@@ -10,9 +10,13 @@ and pulse rows. A change that adds two instruments to that file therefore
 loses player 4 (`global-triangle-vibrato-tick0`: 65 > 63).
 
 The rung runs only where every other level left a player out, so a file that
-appends everything keeps its bytes. The corpus has no such file at the shipped
-cap, so the cap is squeezed here (55: the natural 62 does not fit, the
-dropped 48 does) to make the rung observable.
+appends everything keeps its bytes. Since the global triangle vibrato's
+tick-0 correction (tick0-retake-on-append-ladder) 5_Title_Tunes is such a file
+AT the shipped cap: its players' shared records no longer merge, the ladder
+alone needs 66 > 63, and the rung brings it to 48. The "natural" reference is
+therefore the same conversion at a cap raised to 70, where the ladder alone
+fits and the rung is idle; before the correction it was the shipped cap with
+a squeeze to 55 to make the rung observable.
 """
 import json
 import pathlib
@@ -29,7 +33,8 @@ from corpus import CORPUS, needs_corpus  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIVE = "5_Title_Tunes.sid"
-SQUEEZED_CAP = 55
+SQUEEZED_CAP = 63           # the shipped cap; 66 without the rung
+NATURAL_CAP = 70            # the rung is idle where the ladder alone fits
 RUNG = ("unnamed instruments dropped from the appended players")
 
 
@@ -67,7 +72,7 @@ def _convert(cap=None, rung=True, **over):
 
 @pytest.fixture(scope="module")
 def natural():
-    return _convert()
+    return _convert(cap=NATURAL_CAP)
 
 
 @pytest.fixture(scope="module")
@@ -93,14 +98,14 @@ def test_a_file_that_appends_everything_never_reaches_the_rung(natural):
     assert _players_line(lines) == (
         "Players.................: 4 of 4 further player(s) appended as "
         "subtunes 1..4 (without pulse_phase)")
-    assert any("Appended 4:" in l and "carries 63 instruments" in l
+    assert any("Appended 4:" in l and "carries 66 instruments" in l
                for l in lines), [l for l in lines if l.startswith("Appended")]
 
 
 @needs_corpus
 def test_the_cap_binds_without_the_rung(squeezed_no_rung):
     _sng, lines = squeezed_no_rung
-    assert "*** 4 NOT APPENDED: 63 instruments > 55 ***" in lines
+    assert "*** 4 NOT APPENDED: 66 instruments > 63 ***" in lines
     assert _players_line(lines).startswith(
         "Players.................: 3 of 4 further player(s) appended")
 
@@ -173,7 +178,7 @@ def test_the_rung_writes_the_same_registers_for_every_subtune():
     import fidelity as F
     if not pathlib.Path(F.SIDDUMP).exists() or not pathlib.Path(F.GT2RELOC).exists():
         pytest.skip("siddump or gt2reloc not available here")
-    natural_sng, _ = _convert()
+    natural_sng, _ = _convert(cap=NATURAL_CAP)
     squeezed_sng, _ = _convert(cap=SQUEEZED_CAP)
     assert natural_sng != squeezed_sng
     wd = pathlib.Path(tempfile.mkdtemp(prefix="instrument_cap_ladder_"))

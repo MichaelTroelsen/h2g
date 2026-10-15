@@ -224,8 +224,9 @@ def test_monty_respells_exactly_its_unflagged_ties(monty):
     # 164 since tied slides (a slide event after a bit-5 note) spell their tie
     # on row 0 (tests/test_tied_slide.py): 150 before, +14, none of them
     # respelled -- the clone count below is unchanged.
-    assert len(_tie_rows(old)) == 164
-    assert len(_tie_rows(new)) == 164 - 33
+    # (165 since classic_filter_stop copied a pattern holding one of them.)
+    assert len(_tie_rows(old)) == 165
+    assert len(_tie_rows(new)) == 165 - 33
     assert any("33 tie row(s) on 2 legato clone(s)" in l for l in lines)
     n_old = len(old.instruments)
     assert len(new.instruments) == n_old + 2

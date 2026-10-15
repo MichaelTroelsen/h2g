@@ -1529,7 +1529,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
            f"placed program's tail"
            + (f", {tie_mixed} row(s) mixed or occupied" if tie_mixed else "")
            + (f", declined: {tie_skipped}" if tie_skipped else "")
-           if tie_asks else ""))
+           if tie_asks or tie_skipped else ""))
     return SkydivePlan(patterns=out, entries=entries,
                        base=shared[0] if shared else None,
                        starts=shared[1] if shared else None)

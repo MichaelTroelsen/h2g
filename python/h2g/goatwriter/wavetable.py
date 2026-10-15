@@ -15,7 +15,8 @@ from .constants import (DEFAULT_FORMAT, DRUM_DEEPEN_MARGIN,
                         WAVE_NOISE_GATEOFF, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .instruments import (_table_length_byte)
 from .primitives import (_arp_relative, _first_frame_lead, _gate_calls,
-                         _note_freq, _rate_shift, _wave_hold_byte)
+                         _note_freq, _rate_shift, _record_row_calls,
+                         _wave_hold_byte)
 from .arpeggio import (fixed_arp_duty_entries, gateoff_nibble_arp_budget_pair,
                        gateoff_nibble_arp_entries, _half_cycle,
                        nibble_arp_counter_test, nibble_arp_entries,
@@ -1498,39 +1499,6 @@ def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
         return None
     return max(0, (note_rows - 2) * row_calls
                - _gate_calls(max(1, multiplier), gate_skip))
-
-
-
-def _record_row_calls(instr_row_calls: Optional[dict], gt_number: int,
-                      default: int) -> int:
-    """The row, in play calls, `_drum_duration_steps` sizes record `gt_number` by.
-
-    The row of the START subtune where it plays the record
-    (`tracks.InstrumentRowCalls.start_rows`), else the shortest row over the
-    subtunes that do (the dict itself), else `default`, the file's.
-
-    **A per-subtune value in a global structure is read by every subtune**, and
-    this is the one place the drum's wavetable cannot be made per subtune: the
-    record is one block and the sweep one length. Bump_Set_Spike's `$0F0C` is
-    played at 10 calls a row in subtune 0 and 8 in subtune 1; the shortest
-    (8) gave the start subtune 13 steps where its own rows leave room for 17,
-    `$3DC` against the original's `$500` (figures at v0.5.524). The shortest row is the right bound
-    for the gatetimer, where a value too large stops the song
-    (`tracks.instrument_row_calls`), and the wrong one here, where a sweep too
-    long runs on by `(note_rows - 2) * (the rows' difference)` calls -- 4
-    against a final unit of 8 on Bump_Set_Spike, so inside its note -- and a
-    sweep too short ends early in every note of the tune. The tune is the
-    start subtune (`_noise_tick_frames`, for the same choice about the same
-    table); the other subtunes' sweeps are what pays.
-
-    Cloning the record per row length would be exact and Bump_Set_Spike has no
-    room for it: its wavetable is 255 of 255, and `nibble_gate_phase_split`
-    already reports its three clones without a place.
-    """
-    start = getattr(instr_row_calls, "start_rows", None)
-    if start and gt_number in start:
-        return start[gt_number]
-    return (instr_row_calls or {}).get(gt_number, default)
 
 
 def _noise_tick_frames(sid: SidFile, det: Detection) -> int:

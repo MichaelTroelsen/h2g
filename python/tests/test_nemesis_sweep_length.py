@@ -84,12 +84,16 @@ def test_a_record_with_no_stops_is_the_longest_gap_as_before():
 
 
 @needs_corpus
-def test_nemesis_sweeps_57_calls_in_the_conversion():
-    """At the seam, under the shipped presets: record 2's modulation row."""
+def test_nemesis_sweeps_128_calls_in_the_conversion():
+    """At the seam, under the shipped presets: record 2's modulation rows.
+    128 (a $7F row and a 1) since `classic_filter_stop` stops the sweep on the
+    unfiltered followers, so the stop-majority travel match (57) is not
+    needed: the length is the longest gap."""
     import fidelity as F
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     blob = convert(str(CORPUS / "Nemesis_the_Warlock.sid"), log=lambda m: None,
                    **F._preset_opts(doc, "Nemesis_the_Warlock.sid"))
     ftbl = parse_sng(blob).tables["FTBL"]
-    assert (57, 2) in ftbl and (32, 2) not in ftbl, ftbl
+    assert ((127, 2) in ftbl and (1, 2) in ftbl
+            and (57, 2) not in ftbl and (32, 2) not in ftbl), ftbl

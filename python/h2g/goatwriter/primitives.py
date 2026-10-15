@@ -411,3 +411,40 @@ def fixed_arp_mask(sid: SidFile, det: Detection) -> Optional[tuple]:
         return None
     at, lead = blk
     return sid.data[at + lead + 8], sid.data[at + lead + 9]
+
+
+def _record_row_calls(instr_row_calls: Optional[dict], gt_number: int,
+                      default: int) -> int:
+    """The row, in play calls, an APPROXIMATION sizes record `gt_number` by.
+
+    Two readers: `wavetable._drum_duration_steps` (the drum sweep's length) and
+    `vibrato._vibrato_layout` (the global-triangle vibrato's tick-0 correction,
+    which is a function of the row). Both are quantities one record carries
+    for every subtune and neither is a safety bound.
+
+    The row of the START subtune where it plays the record
+    (`tracks.InstrumentRowCalls.start_rows`), else the shortest row over the
+    subtunes that do (the dict itself), else `default`, the file's.
+
+    **A per-subtune value in a global structure is read by every subtune**, and
+    this is the one place the drum's wavetable cannot be made per subtune: the
+    record is one block and the sweep one length. Bump_Set_Spike's `$0F0C` is
+    played at 10 calls a row in subtune 0 and 8 in subtune 1; the shortest
+    (8) gave the start subtune 13 steps where its own rows leave room for 17,
+    `$3DC` against the original's `$500` (figures at v0.5.524). The shortest row is the right bound
+    for the gatetimer, where a value too large stops the song
+    (`tracks.instrument_row_calls`), and the wrong one here, where a sweep too
+    long runs on by `(note_rows - 2) * (the rows' difference)` calls -- 4
+    against a final unit of 8 on Bump_Set_Spike, so inside its note -- and a
+    sweep too short ends early in every note of the tune. The tune is the
+    start subtune (`_noise_tick_frames`, for the same choice about the same
+    table); the other subtunes' sweeps are what pays.
+
+    Cloning the record per row length would be exact and Bump_Set_Spike has no
+    room for it: its wavetable is 255 of 255, and `nibble_gate_phase_split`
+    already reports its three clones without a place.
+    """
+    start = getattr(instr_row_calls, "start_rows", None)
+    if start and gt_number in start:
+        return start[gt_number]
+    return (instr_row_calls or {}).get(gt_number, default)

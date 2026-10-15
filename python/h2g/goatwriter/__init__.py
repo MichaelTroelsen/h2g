@@ -194,6 +194,8 @@ from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _instruments_named_per_voice, _run_length_rows,
                       _sfx_bandpass_block, sfx_bandpass_plan,
                       sfx_drum_hit_lattice, _write_filtertable)  # noqa: F401
+from .classic_filter_stop import (apply_stops, classic_filter_stops,
+                                    _stop_row)  # noqa: F401
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _entry_instruments, entry_instruments_start,
                           init_entry_start, _track_start,

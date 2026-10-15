@@ -42,6 +42,7 @@ from . import rest_reseed as _gw_rest_reseed
 from . import rest_park as _gw_rest_park
 from . import rest_ring as _gw_rest_ring
 from . import filters as _gw_filters
+from . import classic_filter_stop as _gw_classic_filter_stop
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
@@ -871,6 +872,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # position is not a stride either.
     classic_clearing: set = set()
     sweep_lengths: dict = {}
+    stop_sites: dict = {}
     if filters:
         classic_clearing = _classic_clearing_instruments(
             sid, det, tracks, patterns, 1 if compact_instruments else 2)
@@ -879,9 +881,16 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if filter_ptrs:
             # The classic sweep lasts the voice's note, not $7F calls: sized
             # from the orderlists once the records that filter are known.
-            sweep_lengths = classic_sweep_calls(
-                tracks, patterns, set(filter_ptrs), lead + 1,
-                row_calls, instr_row_calls)
+            # Where the voice moves to an unfiltered record the sweep is
+            # stopped by an `A 00` (`classic_filter_stop`), so those gaps
+            # no longer bound the length.
+            sweep_lengths, stop_sites, stop_stats = (
+                _gw_classic_filter_stop.classic_filter_stops(
+                    tracks, patterns, set(filter_ptrs), lead + 1,
+                    row_calls, instr_row_calls))
+            if log and stop_stats["wanted"]:
+                log("Classic filter stop.....: "
+                    + ", ".join(f"{n} {k}" for k, n in stop_stats.items()))
             filter_entries, filter_ptrs = _filter_entries(
                 sid, det, instr_used, lead, multiplier, classic_clearing,
                 sweep_calls=sweep_lengths)
@@ -931,7 +940,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                row_calls=row_calls, effects=effects,
                                gate_skip=(_gw_tempo.outer_gate_skip(sid)
                                           if _gw_call_phase.entry_gate(sid)
-                                          else None))
+                                          else None),
+                               instr_row_calls=instr_row_calls)
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.
@@ -1753,6 +1763,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 tracks, patterns, ptr_of, hold_voice, log=log)
             for at, track in zip(track_at, tracks):
                 out[at:at + len(track)] = bytes(track)
+    # The classic sweep's stops, `A 00` on the note where a sweeping voice
+    # moves to an unfiltered record. After every pass that fills a command
+    # column, like the fetch holds above: it takes only what nobody wanted.
+    if stop_sites and filter_ptrs:
+        patterns, tracks, _stopped = _gw_classic_filter_stop.apply_stops(
+            tracks, patterns, stop_sites, log=log)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
     if fmt == FORMAT_GTS5:
         # Fourth table (STBL), stored only in GTS3+. A GTS2 file has none: its
         # loader builds one while reading, both from each instrument's vibrato

@@ -176,16 +176,19 @@ def test_a_table_the_sized_sweeps_overflow_is_the_old_table():
 
 
 @needs_corpus
-def test_sanxions_sweep_is_six_calls_in_the_conversion():
-    """At the seam, under the shipped presets: the original's sweep runs 6
-    frames before its record gives way."""
+def test_sanxions_sweep_is_its_longest_gap_in_the_conversion():
+    """At the seam, under the shipped presets: record 1's gaps are 6 and 12
+    calls, and since `classic_filter_stop` stops the sweep where the voice
+    moves to an unfiltered record the length is the longest gap, 12 (it was 6
+    while those stops were the compromise; the original's own sweep is 5
+    frames whatever the gap, which `cutoff_sweep` 1.100 -> 1.162 pays for)."""
     import fidelity as F
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     blob = convert(str(CORPUS / "Sanxion.sid"), log=lambda m: None,
                    **F._preset_opts(doc, "Sanxion.sid"))
     ftbl = parse_sng(blob).tables["FTBL"]
-    assert (6, 28) in ftbl and (FILT_MODULATE, 28) not in ftbl, ftbl
+    assert (12, 28) in ftbl and (FILT_MODULATE, 28) not in ftbl, ftbl
 
 
 def test_commando_is_untouched():

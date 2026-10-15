@@ -139,7 +139,9 @@ def test_5_title_tunes_appends_every_player_with_its_sweeps(five_calls):
     level = [l for l in lines if l.startswith("Players.................: ")
              and "further" in l]
     assert level == ["Players.................: 4 of 4 further player(s) "
-                     "appended as subtunes 1..4 (without pulse_phase)"], level
+                     "appended as subtunes 1..4 (without pulse_phase, "
+                     "unnamed instruments dropped from the appended "
+                     "players)"], level
     assert len(A._parse_song(sng).tables[1]) <= 255
 
 

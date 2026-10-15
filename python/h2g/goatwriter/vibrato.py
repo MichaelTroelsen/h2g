@@ -14,7 +14,7 @@ from .constants import (FIXED_ARP_PARITY_MASK, FORMAT_GTS5, GT_MAX_VIB_SHIFT,
                         GT_WAVE_FIRST_CMD, GT_WAVE_JUMP, GT_WAVE_LAST_CMD,
                         GT_WAVE_LAST_DELAY, GT_WAVE_NO_NOTE,
                         SPEED_NOTE_RELATIVE, VIBRATO_CMP_BIAS, VIBRATO_DELAY)
-from .primitives import (_counter_gate_call, _rate_shift)
+from .primitives import (_counter_gate_call, _rate_shift, _record_row_calls)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 
@@ -880,7 +880,8 @@ def _vibrato_delay(det: Detection, multiplier: int,
     return min(0xFF, max(1, TRIANGLE_VIBRATO_GATE * multiplier))
 
 
-def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
+def _triangle_vibrato_entry(byte: int, multiplier: int,
+                            row_calls: int = 0) -> Optional[tuple]:
     """Speed-table entry for the global-triangle dialect's shift-count byte.
 
     The player (detect._find_triangle_vibrato, 25 corpus files) does
@@ -949,15 +950,57 @@ def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
     which does not track pitch the way this player does, so the depth is
     traded for the pitch-tracking. The period is NOT traded: `cmp` keeps the
     original's rate exactly, as above.
+
+    **Tick 0.** The packed player runs no continuous effect on the first call
+    of a row (`REALTIMEOPTIMIZATION`, player.s `mt_wavedone`: `lda
+    mt_chncounter,x / beq`), so of a `row_calls`-call row only `row_calls - 1`
+    calls step the counter -- on a 2-call CMD_FUNKTEMPO row, one in two. The
+    original's counter steps every frame. Uncorrected, a half-period of
+    `cmp + 2` EFFECT calls lasts `row_calls / (row_calls - 1)` times longer in
+    real time: 5_Title_Tunes subtune 1 (2-call rows, -S1) ran its triangle
+    at half the original's rate, and since Goattracker's excursion is fixed by
+    `cmp` and `speed` alone, its travel per frame halved too (`bend` 0.68).
+    So `half` is scaled by `(row_calls - 1) / row_calls` -- the classic
+    mapping's correction, `_classic_vibrato_entry` -- and the shift is then
+    taken from the excursion law with the `cmp` actually emitted, in one
+    rounding,
+
+        rshift = byte + 1 + round(log2((cmp + 2) / PEAK))
+
+    which is `_triangle_rate_shift` wherever `cmp + 2 == 4 * multiplier`, and
+    otherwise pays back the depth the shorter half-period took. Paying it
+    back on top of the uncorrected shift instead rounds twice and is worse
+    wherever the two differ: -S2 3-call rows get 5/3 of the excursion where
+    this form gives 5/6. At 2-call rows, -S1, that is `cmp` 0 and the shift
+    one less: the period is the original's and the excursion keeps the
+    format's 4/3. At 3-call rows (-S1) `cmp + 2` is 3 and the excursion is
+    the player's exactly; at -S2's 4-call rows it is 6, and both period and
+    excursion are the player's exactly. The held calls themselves cannot be
+    given back: on tick 0 the frequency does not move, so ours steps on
+    effect calls only, in steps `row_calls / (row_calls - 1)` times larger.
+
+    `row_calls` follows `_classic_vibrato_entry`'s convention -- 0 and 1 do
+    not compensate, and the result is then byte-identical to the uncorrected
+    mapping. `_vibrato_layout` passes the record's own row where it is
+    attributed (`primitives._record_row_calls`: the START subtune's, else the
+    shortest -- see there for why not the minimum alone), else the file's.
     """
     if not byte or byte >= TRIANGLE_VIBRATO_MAX_SHIFT:
         # The player's own `BEQ past`, and its own way of switching a record
         # off: a shift this large leaves nothing of the 16-bit interval. No
         # player in the family masks the byte -- Last_V8 stores 81.
         return None
-    half = TRIANGLE_VIBRATO_PERIOD // 2
-    cmp_value = min(0x7F, max(0, half * multiplier - VIBRATO_CMP_BIAS))
-    rshift = min(byte + 1 + _triangle_rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    half = TRIANGLE_VIBRATO_PERIOD // 2 * multiplier
+    if row_calls < 2:
+        cmp_value = min(0x7F, max(0, half - VIBRATO_CMP_BIAS))
+        rshift = min(byte + 1 + _triangle_rate_shift(multiplier),
+                     GT_MAX_VIB_SHIFT)
+        return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+    half = half * (row_calls - 1) / row_calls
+    cmp_value = min(0x7F, max(0, round(half) - VIBRATO_CMP_BIAS))
+    depth = round(math.log2((cmp_value + VIBRATO_CMP_BIAS)
+                            / TRIANGLE_VIBRATO_PEAK))
+    rshift = min(max(byte + 1 + depth, 0), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
@@ -1054,7 +1097,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     speed_table: List[tuple], log=None,
                     lead: int = 1, vibrato_command: bool = False,
                     row_calls: int = 0, effects: bool = False,
-                    gate_skip: Optional[int] = None) -> dict:
+                    gate_skip: Optional[int] = None,
+                    instr_row_calls: Optional[dict] = None) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
 
     `gate_skip` is the reload `O` of an outer gate that is the play routine's
@@ -1099,11 +1143,16 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     at the same place -- a note-relative speed-table entry and a vibdelay --
     and the derivation of each is in its own function.
 
-    `row_calls` is passed to the classic and the LFO-table engines. The packed
-    player's tick-0 effect skip (see _classic_vibrato_entry) applies to
-    *every* vibrato it runs; the global-triangle entry is still uncorrected
-    (global-triangle-vibrato-tick0, not merged: it splits 5_Title_Tunes'
-    shared instrument records past the 63 cap).
+    `row_calls` is passed to all three engines. The packed player's tick-0
+    effect skip (see _classic_vibrato_entry) applies to *every* vibrato it
+    runs. The global-triangle entry takes the record's own row,
+    `instr_row_calls` keyed by Goattracker number (`i + lead + 1`, as
+    `_write_instruments` keys it), falling back to `row_calls`. **Which row is
+    the start subtune's where it plays the record, not the minimum**: the
+    entry is a function of the row, not a safety bound, and the minimum
+    over-corrected a record the tune plays at 4-call rows and a funk subtune
+    at 2 (Human_Race instrument 1, `vib` 1.251 against 1.004); see
+    _triangle_vibrato_entry.
 
     GTS5 only. A GTS2 file stores no speed table -- its loader packs the
     vibrato into a single instrument byte and calls makespeedtable itself
@@ -1116,18 +1165,20 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     mult = max(1, multiplier)
     if det.vibrato_offset is not None:
         offset = det.vibrato_offset
-        entry_of = lambda b: _classic_vibrato_entry(
+        entry_of = lambda b, i: _classic_vibrato_entry(
             b, mult, row_calls, gate_skip=gate_skip, dwell=det.vibrato_dwell,
             depth_extra=det.vibrato_shift_extra)
         engine = "bound/shift"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset
-        entry_of = lambda b: _table_vibrato_entry(
+        entry_of = lambda b, i: _table_vibrato_entry(
             b, det.table_vibrato, mult, row_calls)
         engine = "LFO table"
     elif det.triangle_vibrato is not None:
         offset = det.triangle_vibrato
-        entry_of = lambda b: _triangle_vibrato_entry(b, mult)
+        entry_of = lambda b, i: _triangle_vibrato_entry(
+            b, mult, _record_row_calls(instr_row_calls, i + lead + 1,
+                                       row_calls))
         engine = "global triangle"
     else:
         return {}
@@ -1153,7 +1204,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                 and data[effect] & 0x04):
             overwritten += 1
             continue
-        entry = entry_of(data[base])
+        entry = entry_of(data[base], i)
         if engine == "bound/shift":
             entry = _depth_trimmed(getattr(sid, "name", ""), i, entry)
         if entry is None:

@@ -287,7 +287,13 @@ def _corpus_convert(name: str, forced: bool = False):
 
     def spy(blob, sid, det, log=None):
         after = real(blob, sid, det, log)
-        seen.append((bytes(blob), bytes(after), sid, det))
+        # `_append_players` retries a compilation with the mixed split OFF
+        # and may discard the attempt; those calls leave steps relative on
+        # purpose and are not views of the finished file. Since the unnamed-
+        # records rung (tick0-retake-on-append-ladder) 5_Title_Tunes is
+        # attempted that way before the rung adopts a split-on result.
+        if W.SPLIT_MIXED:
+            seen.append((bytes(blob), bytes(after), sid, det))
         return after
 
     C.pin_past_table_wave_notes = spy
@@ -434,4 +440,9 @@ def test_5_title_tunes_keeps_every_subtune_without_compact_instruments():
     lines: list = []
     blob = convert(str(path), log=lines.append, **kw)
     assert len(_parse_song(blob).tracks) // 3 == 5
-    assert any("mixed wave steps left relative" in m for m in lines)
+    # The tick-0 vibrato correction splits the appended players' shared
+    # records (66 > 63 without the rung); the unnamed-records rung brings the
+    # file to 48, so the mixed split no longer has to be given up.
+    assert not any("mixed wave steps left relative" in m for m in lines)
+    assert any("unnamed instruments dropped from the appended players" in m
+               for m in lines)

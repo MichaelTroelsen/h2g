@@ -6643,6 +6643,89 @@ at `-S9`, read that record 1.27x -> 0.63x, and cannot see which side of the
 original either is. The period is untouched: it stays the original's, exactly.
 Figures historical (head 862f703); `tests/test_triangle_rate_shift.py`.
 
+#### Tick 0, and what the mapping cannot give back
+
+The mapping (`_triangle_vibrato_entry`) left out the packed player's tick-0
+skip (`REALTIMEOPTIMIZATION`: no continuous effect on a row's first call), so
+on a `row_calls`-call row the oscillator stepped on `row_calls - 1` calls of
+every `row_calls` and ran `row_calls / (row_calls - 1)` times slow. On
+5_Title_Tunes subtune 1, a 2-call CMD_FUNKTEMPO row at -S1, that is half the
+original's rate, and its travel halved with it. The entry now takes the classic
+mapping's correction: `cmp + 2 = round(4 x multiplier x (row_calls - 1) /
+row_calls)`, then `rshift = byte + 1 + round(log2((cmp + 2) / 3))` in one
+rounding. At 2-call rows that is `cmp` 0 and one shift less (period exact, the
+format's 4/3 depth kept); at -S1 3-call rows the excursion becomes the player's
+exactly, and at -S2 4-call rows period and excursion both are. At
+`row_calls < 2` it is `_triangle_rate_shift`, byte for byte.
+
+Measured at -t 180 under presets, every subtune of the 25 triangle files (260
+runs a side, taken at f28b063 with the per-record row below, figures
+historical), uncorrected -> corrected: 5_Title_Tunes s1 `bend` 0.600 -> 1.103,
+`vib` 0.841 -> 1.042; s4 `bend` 0.595 -> 0.994, `vib` 0.931 -> 1.021;
+Gerry_the_Germ s2 `vib` 0.762 -> 0.935; Human_Race s4 `vib` 0.816 -> 0.836.
+Over the subtunes with melody >= 0.5, mean `|log2|` of `vib` 0.381 -> 0.309
+(n=71: 51 closer, 9 same, 11 further) and of `depth` 0.372 -> 0.122 (n=58: 47
+closer, 10 further); `bend` 0.300 -> 0.267 and `travel` 0.676 -> 0.695 (36
+closer, 29 further). Melody moves only on Gerry_the_Germ's SFX subtunes, all
+below 0.05.
+
+**It costs 5_Title_Tunes instrument slots, and the append ladder's last rung
+gives them back.** Its players 1 (2-call rows) and 2 (3-call) shared
+byte-identical records, merged when the players are appended; their vibrato
+entries now differ, so they no longer merge. The ladder alone then needs 66
+instruments of Goattracker's 63 under presets (68 with `compact_instruments`
+off) and player 4 -- subtune 4 -- is not appended. `_append_players`' last
+rung (`instrument-cap-append-ladder`) drops each appended view's unnamed
+records before the merge, which brings the file to 48 (50 with compact off),
+so all four players are kept and the mixed wave-step split no longer has to
+be given up (before the correction compact-off needed it at 63 of 63). The
+Players line carries ", unnamed instruments dropped from the appended
+players" (`tests/test_tick0_on_append_ladder.py`). Figures at f28b063,
+historical.
+
+**What it cannot do is step every frame.** On tick 0 the packed player does not
+touch the frequency at all, so at 2-call rows ours moves on alternate frames in
+double steps (5_Title_Tunes s1 voice 1: `52CD 5408 5408 52CD 52CD 5192 ...`
+against the original's `52BC 535A 53F8 5496 5496 53F8 ...`). No speed-table
+entry can change that; only packing without the skip (`gt2reloc -R0`) would,
+and that double-corrects every portamento `patterns._scaled_step` already
+compensates.
+
+#### Which row a shared record is corrected for
+
+The correction is a function of the row, and a record is one speed-table
+pointer for every subtune that plays it. `tracks.instrument_row_calls` is the
+MINIMUM row over those subtunes -- right for the gatetimer, where a value too
+large stops the song, and wrong here, where nothing stops and the entry is
+only closer or further. Given the minimum, a record played at 2-call rows in a
+funk subtune and 4-call rows in the tune got the 2-call entry (`cmp` 0) in
+both, and the tune's triangle ran fast: Human_Race
+subtune 0, whose instrument 1 (every voice's start instrument, so every
+subtune plays it) is also played in the 2-call subtune 4, read `vib` 0.868
+before the correction and 1.251 after it.
+
+So the entry takes `_record_row_calls`, the drum sweep's choice
+(`InstrumentRowCalls.start_rows`): the row of the START subtune where it plays
+the record, else the shortest row, else the file's. Human_Race s0 `vib`
+1.251 -> 1.004, `depth` 1.244 -> 1.001, `bend` 1.403 -> 1.024; subtune 4's
+`vib` stays 0.282 (its other records are its own, at 2). Of the 25 triangle
+files the choice moves exactly one -- a record has to be played at rates whose
+entries differ (at -S1 every row from 3 to 7 gives `cmp` 1, so only the 2-call
+row differs; at -S2 5 against 6, and 4 against 6 or 12, do) AND be played by
+the start subtune: Gerry
+(start subtune 6, which does not play instrument 1), Phantoms (start row 4 =
+the minimum) and Rasputin (no start subtune) keep their entries.
+
+Cloning the record per row length would be exact, and the funk split
+(`funk_gatetimers`) already does it for the gatetimer on the finished bytes;
+it is not done for the vibrato because the corpus does not pay for it. Six
+records in four files span entries: instrument 1 of Gerry, Human_Race and
+Phantoms (implicit in some subtune, so no pattern column can move it:
+`funk_gatetimers` never splits it either), and three played explicitly at both
+rates (Phantoms' 11, Rasputin's 1 and 10) whose entries differ by one `cmp` step
+(4 against 5). Figures taken at d29fbb5 + the tick-0 correction, historical;
+`tests/test_vibrato_record_row.py`.
+
 ### 7.bbb A listening session, and six metrics it overruled
 
 Everything above this point was measured. This section is what happened when
@@ -16773,3 +16856,43 @@ sweeps are not the whole gap -- not traced, the bit-0 skip of the filter block (
 (`classic-filter-status-bit0-skips-filter`). Measured at 4833cff, presets, -t 180, 23 files: only Nemesis moves in the
 corpus byte-hash (89 compared, 1 moved); Deep_Strike and Thundercats are byte-identical. The per-occurrence repair is
 `classic-filter-stop-on-unfiltered-follower`.
+
+### 7.NEW The classic filter sweep stops on the note where the voice moves to an unfiltered record
+
+v0.5.552 + this change (classic-filter-stop-on-unfiltered-follower; the orchestrator numbers the section). The player
+sweeps a voice's cutoff only while the voice's record filters (`$E3AD`, reached for a record whose status byte has bit
+5; Nemesis, 7.NEW above), so the sweep ends on the voice's next note when that note's record is unfiltered, and the
+cutoff holds. An unfiltered record's instrument loads no filter pointer (player.s `mt_skipfilt`), so Goattracker's
+one global program ran on past that note, and `_best_sweep_length` had to pick ONE length per record that erred
+least over the occurrences that stop and the ones that do not.
+
+`goatwriter.classic_filter_stop` removes the compromise. `CMD_SETFILTERPTR` with data 0 stops the program where it
+stands (gplay.c:459 `filterptr = newcmddata`, nothing steps at 0; player.s `mt_tick0_a` stores it in `mt_filtstep+1`;
+gt2reloc's `exectable` leaves at a 0 pointer), the cutoff left where it was, which is what the player does. It is
+written on the unfiltered follower's note row where that row's command column is free, else the first free row
+after it before the next note and with no slide or vibrato started on the way (`_stop_row`); never over an occupied
+column, never under a running command. Where a pattern is played at several positions wanting different rows it is
+copied per set (the rule `free_running_fetch_holds` follows), and a position whose plays disagree on a row (a
+repeated pattern whose first row follows a filtered note only on the second play) gets nothing there. It is the last
+pass that fills a command column, in `build_sng` after the fetch holds. A gap whose stop has a place no longer
+counts as a stop in `_best_sweep_length`, so a record's length is the longest of its gaps: overshooting a gap
+into a filtered strike was never an error (the next program replaces it) and overshooting into an unfiltered one is
+now stopped.
+
+**Measured** (`cutoff_sweep`, ours/original travel; presets, -t 180, the 22 files of the previous sizing change;
+base f28b063 to this change): Nemesis_the_Warlock 0.887 to 1.019 (record 2 now sweeps 128 calls, the longest gap, where
+it swept 57), Deep_Strike 0.893 to 1.085, Dragons_Lair_Part_II 0.835 to 0.915, Knucklebusters 1.272 to 1.268; away from
+1 by a hundredth or less: Lightforce 1.147 to 1.150, Food_Feud 1.101 to 1.103, Nineteen 0.451 to 0.449; and Sanxion
+1.100 to 1.162. The same lengths WITHOUT the stops (the placement switched off) read Nemesis 1.942 (8728 cutoff
+changes against the original's 4533), Deep_Strike 1.226 and Dragons_Lair 1.145, which is what the `A 00` removes:
+with them 4617, 1829 and 2235 changes. 17 files' bytes move, all of them among the previous change's 20; no other
+column moves on any.
+
+**Sanxion is the open part.** Its record 1 has gaps of 6 calls (657 times, 221 of them into an unfiltered record) and
+12 (113 times), the old length was the 6, and the original's sweep is 5 steps (`$1C` a frame, `$1C..$8C`) at the
+frames 585-589, 603-607, 622-626, 628-632 whatever the gap to the next note, 12 frames included. Nothing in the
+orderlists says why it stops after 5; the accumulator reaching bit 7 is the candidate (`$8C` is the first value past
+`$80`), not tested here, so the gap is not the length for this record and the longest gap now overshoots the 12-call
+cases. Two narrower rules (the old length for every record whose stops are not a majority; the old length
+everywhere, only the stops added) bring Sanxion to 1.042, push Dragons_Lair_Part_II to 0.748 and leave Deep_Strike
+(0.892), so they move the error between files rather than remove it.
