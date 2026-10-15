@@ -228,6 +228,9 @@ class Voice:
     tie_frames: list[int] = field(default_factory=list)
     # Summed magnitude of every frequency move siddump printed as a bend.
     bend: int = 0
+    # (frame, magnitude) for each of those bends, so `_bend_travel` can drop
+    # the ones printed in a released-out tail (`_bend_tail`).
+    bend_events: list[tuple[int, int]] = field(default_factory=list)
     slides: int = 0
     # (frame, value) for every frame siddump shows the register written.
     # siddump prints a value only when it changed, so between events the
@@ -380,6 +383,7 @@ def parse_dump(text: str) -> Trace:
                 # rather than a note, and printed how far. Summing its own
                 # number is what `bend` is; see _bend_travel.
                 voices[v].bend += int(m.group(2), 16)
+                voices[v].bend_events.append((frame, int(m.group(2), 16)))
 
         glob = cells[5]  # ' FCut RC Typ V ', or dots for the unwritten fields
         for text_slice, width, events in (
@@ -898,8 +902,51 @@ def _bend_travel(v: Voice) -> int:
     it judged the voice to be on the same note, which is the definition this
     dimension wants. Taking its number instead of re-deriving one removes both
     failures and the whole class they belong to.
+
+    **Bend printed under a closed gate after the release has run out is not
+    counted** (`_bend_tail`), on either side -- the rule `wave` applies to a
+    latched waveform (v0.5.480). The frequency register keeps moving after
+    the envelope is silent, and siddump prints that movement like any other.
+    IK_plus record 13 ($00C9) at -t 600: a 49-frame note followed by a 387-frame
+    bit-6 rest. The original parks wave $08 / ADSR $0000 there, ours keeps wave
+    $10 with its vibrato running, and siddump printed bend lines on about two
+    frames in three. That silent tail was the whole of the file's 1.27x
+    bend_ratio; with it excluded the ratio is 0.96 (C:/t/ik-00c9-vibrato-overbend,
+    tailbend.py). The vibrato itself is shallower than the original's, not
+    deeper.
     """
-    return v.bend
+    return v.bend - _bend_tail(v)
+
+
+def _bend_tail(v: Voice) -> int:
+    """The part of `v.bend` printed in the gate-closed, released-out tail.
+
+    Same test as `wave_compare`'s tail: the gate is clear, and the frames since
+    it dropped are at least `_release_frames` of the release nibble in force.
+    Like `wave`'s `since_off`, a voice whose gate has never been raised counts
+    from frame 0. A voice whose bends were not parsed from a dump (no
+    `bend_events`) has no tail to subtract.
+    """
+    if not v.bend_events:
+        return 0
+    wf, ad = sorted(v.wf_events), sorted(v.adsr_events)
+    i = j = tail = 0
+    off: int | None = 0
+    adsr = 0
+    for f, d in v.bend_events:
+        while i < len(wf) and wf[i][0] <= f:
+            frame, val = wf[i]
+            if val & WF_GATE:
+                off = None
+            elif off is None:
+                off = frame
+            i += 1
+        while j < len(ad) and ad[j][0] <= f:
+            adsr = ad[j][1]
+            j += 1
+        if off is not None and f - off >= _release_frames(adsr & 0x0F):
+            tail += d
+    return tail
 
 
 # A frequency step bigger than this fraction of the pitch is a NOTE change, not
@@ -995,6 +1042,10 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     ua = sum(v["our_attacks"] for v in per_voice)
     ob = sum(_bend_travel(v) for v in orig)
     ub = sum(_bend_travel(v) for v in ours)
+    # What `_bend_travel` left out as released-out tail, per side, so the
+    # exclusion is visible in the row the way `wave_tail_frames` is.
+    ob_tail = sum(_bend_tail(v) for v in orig)
+    ub_tail = sum(_bend_tail(v) for v in ours)
     otv = sum(within_note_travel(v) for v in orig)
     utv = sum(within_note_travel(v) for v in ours)
     ot = sum(v.ties for v in orig)
@@ -1028,6 +1079,8 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "orig_bend": ob,
         "our_bend": ub,
         "bend_ratio": (ub / ob) if ob else None,
+        "orig_bend_tail": ob_tail,
+        "our_bend_tail": ub_tail,
         # ... and the same travel read off the frequency register itself,
         # which does not depend on siddump's choice between its bend and tie
         # forms -- see within_note_travel. Reported as `travel`.
@@ -6121,7 +6174,11 @@ DIMENSIONS = (
               "row, which siddump prints as a tie or an attack, never as a "
               "bend): a conversion that renders an original's bend as such "
               "a stair reads 0.00x here however faithful it is. Read "
-              "`travel` beside it, which counts those steps"),
+              "`travel` beside it, which counts those steps. Bend printed "
+              "under a closed gate after the release has run out is NOT "
+              "counted, on either side (the `wave` tail rule): it moves a "
+              "register nobody hears. The excluded amounts are in the row as "
+              "orig_bend_tail / our_bend_tail"),
     # The same travel read off the frequency register instead of siddump's
     # printed bends: a tie adds to it, a stepped sweep counts as fully as a
     # glided one. `bend` beside it is what siddump chose to print.

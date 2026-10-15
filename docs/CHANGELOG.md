@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.545 — 2026-10-15
+
+- fidelity bend excludes the released-out tail
+
 ## 0.5.544 — 2026-10-15
 
 - runqueue cycle 28 at 9c15f95: funk implicit-record split, pulse-phase window ranking

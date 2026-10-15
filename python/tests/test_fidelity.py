@@ -2634,6 +2634,57 @@ def test_bend_is_parsed_from_the_bend_lines_not_the_frequency_column():
     assert voices[0].slides == 2
 
 
+def _bend_tail_voice():
+    # A note at release nibble 9 (_release_frames 38) gated off at frame 10;
+    # a vibrato keeps moving the frequency silently afterwards.
+    v = fidelity.Voice()
+    v.wf_events = [(0, 0x11), (10, 0x10)]
+    v.adsr_events = [(0, 0x00C9)]
+    v.bend_events = [(5, 7), (20, 11), (10 + 38, 13), (200, 17)]
+    v.bend = sum(d for _, d in v.bend_events)
+    return v
+
+
+def test_bend_in_the_released_out_tail_is_not_travel():
+    # Gate up (frame 5) and release still sounding (frame 20) are counted;
+    # from the frame the release runs out (10 + 38) on, the movement is
+    # inaudible and is not. IK_plus's 1.27x bend_ratio was this tail.
+    v = _bend_tail_voice()
+    assert fidelity._release_frames(9) == 38
+    assert fidelity._bend_tail(v) == 13 + 17
+    assert fidelity._bend_travel(v) == 7 + 11
+
+
+def test_compare_reports_the_excluded_tail_per_side():
+    orig = [_bend_tail_voice(), fidelity.Voice(), fidelity.Voice()]
+    ours = [_bend_tail_voice(), fidelity.Voice(), fidelity.Voice()]
+    ours[0].bend_events.append((300, 1000))
+    ours[0].bend += 1000
+    out = fidelity.compare(orig, ours)
+    assert out["bend_ratio"] == 1.0, "the extra tail bend is not charged"
+    assert (out["orig_bend_tail"], out["our_bend_tail"]) == (30, 1030)
+
+
+def test_a_regated_note_ends_the_tail():
+    v = _bend_tail_voice()
+    v.wf_events.append((150, 0x11))       # a new note before frame 200
+    v.adsr_events.append((150, 0x00C9))
+    assert fidelity._bend_tail(v) == 13
+    assert fidelity._bend_travel(v) == 7 + 11 + 17
+
+
+def test_parsed_bends_carry_their_frames():
+    dump = chr(10).join([
+        "|     0 | 1000  C-4 41  41 0000 800 | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+        "|     1 | 100A (+ 000A) .. .... ... | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+    ])
+    got = fidelity.parse_dump(dump)
+    voices = got[0] if isinstance(got, tuple) else got
+    assert voices[0].bend_events == [(1, 10)]
+
+
 def test_a_held_note_contributes_no_travel():
     v = fidelity.Voice()
     assert fidelity._bend_travel(v) == 0
