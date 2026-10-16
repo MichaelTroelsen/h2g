@@ -749,6 +749,7 @@
 {"id":"rebuild-build-instrmap-which-predates-the-conversion-changes-it-documents","summary":null}
 {"id":"record-beside-prune-inert-that-the-always-block-is-not-its-subject","summary":"Agent recorded beside prune_inert that `always` is outside its subject, re-measured 0-of-89 per-song entries for the four flags, and pinned it with four tests; orchestrator confirmed the two-file footprint and 78 passing tests in the worktree."}
 {"id":"record-the-gate-term-task-in-the-run-log","summary":null}
+{"id":"record-the-mechanism-in-docs-lessons-md","summary":"docs/LESSONS.md records the from-zero attack stall as reSID's one-clock decay window (A=0, D!=0, R=0 hold; ~520 lines, 1 of 9 phases) and retracts adsr-attack-delay-fix-candidates' 'mechanism stays unnamed' line, with the rig's badline and threshold corrections."}
 {"id":"record-the-per-flag-live-set-beside-presets-fixed","summary":"Recorded each always-block flag's live-file count from the 50a6178 census as a LIVE_ON table beside FIXED in presets.py (two flags live on 0 files, two on all 89), with a test that every boolean FIXED flag carries an entry; both sabotages fail by name, 75 passed, presets.json untouched."}
 {"id":"redispatch-three-read-only-with-ids-stated","summary":null}
 {"id":"refresh-command-depth-census","summary":"The FIDELITY.md refresh command now writes the depth census, and flag_guard actually refuses a refresh missing any census flag -- it previously checked only --sound despite CLAUDE.md saying otherwise; uncommitted."}
