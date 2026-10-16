@@ -1822,8 +1822,8 @@ The drum's fire block writes more than noise. Nineteen `$948A`: `$48 → $D40F`,
 `LDY #$1F / STY $D418` takes the passband back. On the sfx-drum files that
 filter, **1109-1487 routed frames a file are that bandpass** (`-t 180`, v0.5.516,
 historical) and `--sfx-drum` emitted none of them. Needs `--sfx-drum`, `--filter`
-and `--format gts5`. **Off by default, and measured to lose on the one column
-that can see it** — see below. `detect.find_sfx_drum_bandpass` reads the pair
+and `--format gts5`. **Off by default; per song, adopted by `presets.py --fidelity`
+where `bnote` rises (it loses on `band`, the lag-aligned column)** — see below. `detect.find_sfx_drum_bandpass` reads the pair
 only where it sits directly behind the drum's `SFX_DRUM_SHAPE` match.
 
 **The blip lives in the drum record's own filter program.** Goattracker has one
@@ -1884,6 +1884,16 @@ on the original's frame in only 16-27% of hits on Nineteen, I_Ball and
 Trans-Atlantic and 2% on Pandora (3-4 frames early on voice 3; `-t 60`, after
 the global startup lag). A column that
 reads the blip relative to its note would score it; this one cannot.
+**`bnote` is that column** (`fidelity.passband_note_relative`, no lag): off → on,
+I_Ball 0.000 → 0.950, Nineteen 0.000 → 0.965, Pandora 0.000 → 0.972,
+Trans-Atlantic 0.000 → 0.999, Thundercats 0.000 → 0.024 (`-t 180` under presets;
+historical). `presets.fidelity_better` reads it as an acceptance-only term, and
+`tune_by_fidelity` asks about the flag once, of the walk's winner, where
+`sfx_drum` won and the flag moves bytes (`tests/test_bnote_criterion.py`). A
+one-song search selected it on all five and on none of Monty_on_the_Run, the
+control with no band-pass frames; melody and sequence move by under 0.005 on
+any of the five, and `aud` moves by under 0.01 (up, on I_Ball and
+Nineteen; `-t 180 --sound`).
 **A known residual:** the loop runs until the next filtered note loads its
 pointer, while a rest silences the drum's wavetable first, so a few BP frames
 land on rests (Nineteen `-t 40`: 2 of 235).

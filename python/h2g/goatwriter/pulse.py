@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from bisect import (bisect_right)
+from contextlib import contextmanager
 from dataclasses import (dataclass)
 from fractions import (Fraction)
 from functools import lru_cache
@@ -73,6 +74,73 @@ def _ramp_rows(at: int, ticks: int, direction: int,
         return [(t, spd) for t in _split_ticks(ticks)]
     return [_setrow((at + direction * speed * k) & 0xFFF)
             for k in range(1, ticks + 1)]
+
+
+# A triangle record that holds a width this many original FRAMES or more is
+# laid as a held stair (`_stair_legs`) where the table has room, instead of a
+# continuous slew at the mean rate (`_pulse_layout`'s trial pass). Frames, not
+# our calls: at -S9 every delay-1 step is 10 calls, and a stair there holds
+# one frame -- what the slew already shows the SID (Game_Killer's pulse_phase
+# fell 0.786 -> 0.714 under a 8-CALL threshold).
+STAIR_MIN_FRAMES = 8
+
+# Whether `_pulse_layout` may spend table rows on stairs at all. OFF for a
+# compilation and for its appended players (`convert` sets it): their pulse
+# tables are MERGED into one of 255 rows, and rows spent on a stair cost the
+# ladder its `pulse_phase` level (5_Title_Tunes' players 1-4 then append
+# without sweeps -- tests/test_instrument_cap_append_ladder.py).
+STAIR_ENABLED = True
+
+
+@contextmanager
+def stair_enabled(on: bool):
+    global STAIR_ENABLED
+    before, STAIR_ENABLED = STAIR_ENABLED, on
+    try:
+        yield
+    finally:
+        STAIR_ENABLED = before
+
+
+def _stair_rows(at: int, count: int, direction: int, step: int,
+                calls: int) -> List[tuple]:
+    """`count` lattice steps from width `at`: per step one set-width row (it
+    spends its own call, gplay.c:874-879) and a speed-0 hold row for the
+    other `calls - 1`, so each width sounds `calls` calls like the player's
+    own `delay` ticks."""
+    rows: List[tuple] = []
+    for k in range(1, count + 1):
+        rows.append(_setrow((at + direction * step * k) & 0xFFF))
+        rows += [(t, 0) for t in _split_ticks(calls - 1)]
+    return rows
+
+
+def _stair_legs(width: int, step: int, calls: int, first_top: int,
+                bottom: int, top: int) -> tuple[List[tuple], int]:
+    """`_lattice_legs` as a held stair: the same lattice, the same turns, but
+    every width is HELD `calls` calls and stepped by the player's own `step`
+    -- a slew at the mean rate moves the width every call where the player
+    moves it once a `delay` (Last_V8's record 1: rate $79, step 96 every 26
+    ticks, 2 a call at -S2)."""
+    entries = [_setrow(width)]
+    entries += [(t, 0) for t in _split_ticks(calls - 1)]
+    first = _nearest_ticks((first_top - width) & 0xFFF, step)
+    entries += _stair_rows(width, first, +1, step, calls)
+    at = (width + first * step) & 0xFFF
+    down = max(1, _nearest_ticks((at - bottom) & 0xFFF, step))
+    low = (at - down * step) & 0xFFF
+    if first_top == top:
+        loop = len(entries)
+        entries += _stair_rows(at, down, -1, step, calls)
+        entries += _stair_rows(low, down, +1, step, calls)
+        return entries, loop
+    entries += _stair_rows(at, down, -1, step, calls)
+    at = low
+    up = max(1, _nearest_ticks((top - at) & 0xFFF, step))
+    loop = len(entries)
+    entries += _stair_rows(at, up, +1, step, calls)
+    entries += _stair_rows((at + up * step) & 0xFFF, up, -1, step, calls)
+    return entries, loop
 
 
 def _pulse_triangle(width: int, low: int, high: int, speed: int,
@@ -287,6 +355,7 @@ def _pulse_triangle_wrapped(width: int, low: int, high: int,
 def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                    multiplier: int,
                    tick_ratios: Optional[Mapping[int, Fraction]] = None,
+                   stair: bool = False,
                    ) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
 
@@ -337,7 +406,7 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
         if det.pulse_tri_hi >= 0:
             program = _pulse_tri_program(
                 sid, det, i, multiplier,
-                tick_ratio=(tick_ratios or {}).get(i))
+                tick_ratio=(tick_ratios or {}).get(i), stair=stair)
             if program is not None:
                 return program
         return static, None
@@ -414,6 +483,7 @@ def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
 def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
                        multiplier: int,
                        tick_ratio: Optional[Fraction] = None,
+                       stair: bool = False,
                        ) -> tuple[List[tuple], int] | None:
     """The triangle engine's entries, or None if this record does not sweep.
 
@@ -510,9 +580,17 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     step, delay = _tri_step_delay(det, data[rec + 6])
     if step == 0:                    # rate 0, or a rate that is delay-only
         return None
-    speed = _tri_table_speed(step, delay, multiplier, outer_gate_skip(sid),
-                             tick_ratio)
+    gate = outer_gate_skip(sid)
+    speed = _tri_table_speed(step, delay, multiplier, gate, tick_ratio)
     width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
+    if stair and tick_ratio is None:
+        # Calls the player holds a width for: `delay` ticks of our calls.
+        calls = round(delay / _tri_call_speed_ratio(multiplier, gate))
+        frames = delay if not gate else Fraction(delay * (gate + 1), gate)
+        if frames >= STAIR_MIN_FRAMES:
+            turns = _tri_turns(width, step, det.pulse_tri_lo, det.pulse_tri_hi)
+            if turns is not None:
+                return _stair_legs(width, step, calls, *turns)
     return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
                            step)
 
@@ -612,6 +690,15 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     """
     return min(GT_MAX_PULSE_SPEED,
                _tri_call_speed(step, delay, multiplier, gate_skip, tick_ratio))
+
+
+def _tri_call_speed_ratio(multiplier: int,
+                          gate_skip: Optional[int]) -> Fraction:
+    """Original ticks per one of OUR play calls (`_tri_call_speed`'s divisor
+    without the delay): the reciprocal of calls per tick."""
+    if not gate_skip:
+        return Fraction(1, max(1, multiplier))
+    return Fraction(gate_skip, max(1, multiplier) * (gate_skip + 1))
 
 
 def _tri_call_speed(step: int, delay: int, multiplier: int,
@@ -1062,6 +1149,21 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                for i in range(nrec)]
     entries, starts, dropped, silent, shared = _lay_out_pulse(
         programs, statics, lead, share=False)
+    if not dropped and pulse and STAIR_ENABLED:
+        # A slow triangle step laid as a held stair costs rows, so it is
+        # tried record by record against the table that already fits, and a
+        # record whose stair would push anything out keeps its slew.
+        for i in range(nrec):
+            alt = _pulse_program(sid, det, i, pulse, multiplier,
+                                 tick_ratios, stair=True)
+            if alt == programs[i]:
+                continue
+            trial = programs[:i] + [alt] + programs[i + 1:]
+            t_entries, t_starts, t_dropped, _, _ = _lay_out_pulse(
+                trial, statics, lead, share=False)
+            if not t_dropped:
+                programs = trial
+                entries, starts = t_entries, t_starts
     if dropped:
         entries, starts, dropped, silent, shared = _lay_out_pulse(
             programs, statics, lead, share=True)

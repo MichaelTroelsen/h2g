@@ -174,6 +174,8 @@ from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     PulseBoundsSim, PulsePhaseSim, PulseVoiceCell,
                     _speed_counter, _split_ticks, _tri_speed, _tri_step_delay,
                     _tri_turns, _nearest_ticks, _lattice_legs,
+                    STAIR_MIN_FRAMES, STAIR_ENABLED, stair_enabled, _stair_rows, _stair_legs,
+                    _tri_call_speed_ratio,
                     track_set_tick_ratios, CLOCK_WINDOW_ROWS, ClockNote,
                     _clock_notes,
                     triangle_start, TriangleStart, _write_pulsetable)  # noqa: F401

@@ -60,6 +60,9 @@ def _run(monkeypatch, tmp_path, blob_for, melody_for, pack_ok=lambda b: True):
         "sound_run_agreement": lambda *a, **k: {"sound_run_agreement": 0.5},
         "gate_compare": lambda *a, **k: {"gate": 0.5},
         "pulse_compare": lambda *a, **k: {"pulse_phase": None},
+        # The eleventh state element (`bnote`) reads `trace.filter`, which the
+        # fake dumps do not have.
+        "passband_note_relative": lambda *a, **k: {"passband_note": None},
     }
     for k, v in stubs.items():
         monkeypatch.setattr(F, k, v)

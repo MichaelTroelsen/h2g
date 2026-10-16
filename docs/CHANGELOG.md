@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.565 — 2026-10-16
+
+- runqueue cycle 40 merge
+
 ## 0.5.564 — 2026-10-16
 
 - adopt regrid_full_debt on Pandora, IK_plus, Nineteen; keep shipped preset shapes

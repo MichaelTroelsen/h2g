@@ -8,6 +8,7 @@ from .detect import (Detection, PlayerView, detect, player_view,
                      rest_wave_rewrite_records, wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
 from .goatwriter import note_passes as _gw_note_passes
+from .goatwriter import pulse as _gw_pulse_stair
 from .goatwriter import wave_eor as _gw_wave_eor
 from .goatwriter import skydive as _gw_skydive
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
@@ -1222,6 +1223,13 @@ def convert(sid_path: str, log: Logger = print,
     pristine = (copy.deepcopy(tracks), copy.deepcopy(new_patterns))
 
     def _build(tracks, new_patterns, gate_off, log, reserve):
+        # Stairs spend pulse rows a compilation's merge needs (see
+        # `pulse.STAIR_ENABLED`).
+        with _gw_pulse_stair.stair_enabled(
+                not isinstance(sid, PlayerView) and len(det.players) < 2):
+            return _build_sng(tracks, new_patterns, gate_off, log, reserve)
+
+    def _build_sng(tracks, new_patterns, gate_off, log, reserve):
         return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                          speed_table=speed_table, effects=effects,
                          pulse=pulse, multiplier=multiplier,

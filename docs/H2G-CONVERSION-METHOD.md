@@ -13367,6 +13367,25 @@ turned on the player's widths before, 68 exactly and 111 within half a speed
 after. The phase-entry table (`_phase_block`) kept the bound edges until
 section 7.iiiiiiii, which turns its loop and legs on the same lattice.
 
+**A slow triangle steps as a stair, not a ramp** (since v0.5.565,
+`last-v8-instr1-stair-as-ramp`). A record whose delay holds each width for
+many frames was emitted at its mean rate, a `(127, 2)` slew that moves the
+width every call: Last_V8 record 1 (rate `$79`, step 96, delay 26 ticks, 52
+calls at -S2) changed its width on every call where the player holds it 26
+frames. `_stair_rows` lays each lattice width as a set-width row plus a hold
+row of `calls - 1` calls, on the same `_tri_turns` lattice. A record takes the
+stair only where its delay is at least `STAIR_MIN_FRAMES` (8) frames, not
+under `tri_clock`'s tick ratios, and only while the file's whole pulse table
+still fits (`_pulse_layout` keeps `dropped == 0`); compilations and appended
+players never take it (their merged 255-row table). Record 1 grows 18 -> 82
+rows. Pulse changes at `-t 180`, ours before -> after (original): Last_V8
+13000 -> 7805 (9798), Last_V8_C128 13000 -> 7805 (9782), Monty_on_the_Run
+10390 -> 8432 (3472), Thing_on_a_Spring 11218 -> 10836 (5056), Devils_Galop
+10635 -> 9116 (2624); every one moves toward the original, `pulse_span`
+moves under .004 and `aud` under .001. The corpus byte-hash under presets
+moves those five plus Action_Biker and Gremlins, whose columns do not move.
+`tests/test_pulse_stair.py`.
+
 **The per-record-bounds engine turns on the same lattice** (`_pulse_program`,
 `_pulse_triangle_wrapped`). Its sweep (`PulseBoundsSim`, Saboteur_II
 `$F297-$F2F0`) is the same add, 12-bit mask and equality test with the record's

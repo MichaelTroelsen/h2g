@@ -11,6 +11,8 @@ index `$26` = `$09C4`), measured on the original with siddump-rt at -m1:
     frame 897  04E2   the played note
     898-901    09C4   the fixed pitch, 4 frames
     902 ...    04D1 04E2 04F3 0504   the vibrato, from the played note
+                                      (even onset; the odd onsets, 953 and
+                                      1065 ..., open 0504 04F3 04E2 04D1)
 
 `_two_stage_entries` emitted that pitch only inside the `$04` block, so a
 `$40`-only record fell to the plain shape and never sounded it. 16 onsets of
@@ -187,7 +189,8 @@ def test_the_handler_counter_is_the_two_stage_counter_in_every_file():
 def test_the_original_plays_the_fixed_pitch_for_the_frame_count():
     """The measurement the emission rests on: Lightforce's first record-6
     note (voice 3, frame 897) is the played note, then `$09C4` for exactly
-    the record's 4 frames, then the vibrato from the played note."""
+    the record's 4 frames, then the vibrato from the played note (the even
+    onset; the odd onsets open differently, see the module docstring)."""
     out = subprocess.run([str(RT), str(CORPUS / "Lightforce.sid"), "-a0",
                           "-t20"], capture_output=True, text=True).stdout
     freq, cur = {}, "0000"
@@ -199,5 +202,6 @@ def test_the_original_plays_the_fixed_pitch_for_the_frame_count():
         if f and f[0] != "....":
             cur = f[0]
         freq[int(parts[1])] = cur
+    # 902 is the even onset's vibrato; the odd onset (953) opens 0504 at 958.
     assert [freq[n] for n in range(897, 903)] == [
         "04E2", "09C4", "09C4", "09C4", "09C4", "04D1"]

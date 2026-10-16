@@ -540,7 +540,9 @@ EXCLUDED_FROM_ALWAYS = {
     "sfx_drum",
     # The drum's one frame of bandpass, carried in the filter program of each
     # drum record that also filters (`goatwriter.sfx_bandpass_plan`). Per song
-    # and NOT searched, and measured to lose on the column that can see it:
+    # and, until the `bnote` column existed, NOT searched; since then one pass
+    # over the winner (`tune_by_fidelity`, THE BAND-PASS PASS), not a toggle.
+    # Measured to lose on `band`, the lag-aligned column:
     # forced on over the five files it moves (I_Ball, Nineteen, Pandora,
     # Thundercats, Trans-Atlantic; -t 180 under presets, v0.5.516 + this
     # change) `passband_agree` falls on all five (0.818 -> 0.734, 0.830 ->
@@ -550,7 +552,9 @@ EXCLUDED_FROM_ALWAYS = {
     # phase never occurs (Trans-Atlantic and Pandora's BP-minus-attack
     # histograms are equal bin for bin), so the loss is the drum's note-onset
     # alignment, which a lag-aligned union charges twice. An option waiting on a
-    # note-relative column, not on a better emitter. Historical figures.
+    # note-relative column, not on a better emitter. Historical figures (that
+    # column is bnote: 0.95-1.00 with the option on, four of the five; 0.000
+    # with it off).
     "sfx_drum_bandpass",
     # The byte-code wave program: 29 files carry the interpreter, and it is what
     # carries Trans-Atlantic's snare -- all 43 notes now sound noise in their
@@ -996,6 +1000,12 @@ HARD_RESTART_SEARCH = (3, 4, 5)
 # with the default bound is exactly the same emitted gatetimer.
 HARD_RESTART_ENABLERS = ("max_hard_restart", "wide_hard_restart")
 
+# What `tune_by_fidelity` decides OUTSIDE the toggle walk, in a pass of its own
+# over the walk's winner. A run that searched must not carry these from the old
+# artefact (`main`): the search re-derives them, and a carried True would
+# survive a search that said no. A new pass of that shape joins this tuple.
+SEARCHED_AFTER_THE_WALK = ("hard_restart_frames", "sfx_drum_bandpass")
+
 CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
     k for k in sorted(EXCLUDED_FROM_ALWAYS) if k not in FIDELITY_TOGGLES)
 # Seven toggles is 127 combinations a song, each a convert, a pack and two
@@ -1112,7 +1122,7 @@ def fidelity_better(cand: tuple, ref: tuple,
                     margin: float = FIDELITY_MARGIN) -> bool:
     """Is `cand` a better-playing (melody, sequence, attacks, noise) than `ref`?
 
-    Seven one-sided questions and two vetoes. Any one question is enough to
+    Nine one-sided questions and two vetoes. Any one question is enough to
     accept, which is a sound acceptance rule and an unsound *replacement*
     rule -- see `gave_back`, and CLAUDE.md.
 
@@ -1390,6 +1400,23 @@ def fidelity_better(cand: tuple, ref: tuple,
         return state[9] if len(state) > 9 else None
     moves_pulse_phase = _closer(phases(cand), phases(ref), 1.0, margin)
 
+    # **Puts the band-pass blip where the original puts it, counted from the
+    # note it belongs to.** The ninth term, and the first to read
+    # $D417/$D418 at all: `passband_agree` (`band`) is lag-aligned and so
+    # falls for a correct blip whose note onset is off by a frame, which is
+    # why the option that restores the sfx drum's blip loses on it and wins
+    # here. `passband_note_relative` is a multiset Jaccard of the two offset
+    # histograms, so it falls for a missing blip, an invented one and one at
+    # the wrong distance alike, and it is None unless one side has a pure
+    # band-pass frame -- an absent dimension recommends nothing. Acceptance
+    # only, never a veto, for the reason the pulse term above gives; and the
+    # `band` column is deliberately NOT consulted, because it is the
+    # measurement this term exists to outvote.
+    def bnotes(state):
+        return state[10] if len(state) > 10 else None
+    n_c, n_r = bnotes(cand), bnotes(ref)
+    moves_bnote = n_c is not None and n_r is not None and n_c > n_r + margin
+
     def worse(c, r) -> bool:
         return c is not None and r is not None and c < r - margin
 
@@ -1402,7 +1429,7 @@ def fidelity_better(cand: tuple, ref: tuple,
     return keeps_notes and not gave_back and bool(
         plays_more or finds_noise or moves_oscillation
         or moves_noise_pitch or opens_right or holds_right or gates_right
-        or moves_pulse_phase)
+        or moves_pulse_phase or moves_bnote)
 
 
 def _oscillation_lost(cand: float | None, ref: float | None,
@@ -1459,6 +1486,24 @@ def _inert_frames(sid_path, base: dict, out: dict) -> bool:
         b = convert(str(sid_path), log=lambda m: None, **base, **FIXED, **without)
     except Exception:                                # noqa: BLE001
         return False                                 # cannot prove it inert
+    return hashlib.sha1(a).hexdigest() == hashlib.sha1(b).hexdigest()
+
+
+def _bandpass_inert(sid_path, base: dict, out: dict) -> bool:
+    """True when `sfx_drum_bandpass` changes not one byte of `out`'s conversion.
+
+    The same byte-identity argument as `_inert_frames`: identical bytes score
+    identically, so the candidate could not be accepted. Exceptions read as
+    "not proven inert", and `play` then declines the candidate itself.
+    """
+    import hashlib
+
+    try:
+        a = convert(str(sid_path), log=lambda m: None, **base, **FIXED, **out)
+        b = convert(str(sid_path), log=lambda m: None, **base, **FIXED,
+                    **dict(out, sfx_drum_bandpass=True))
+    except Exception:                                # noqa: BLE001
+        return False
     return hashlib.sha1(a).hexdigest() == hashlib.sha1(b).hexdigest()
 
 
@@ -1672,7 +1717,15 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 # score alike, while `pphase` is how many distinct duty cycles
                 # a note OPENS on, which is the deficit `_pulse_tri_program`
                 # documents and the one `pulse_phase` exists to fix.
-                F.pulse_compare(orig, dump, nf).get("pulse_phase"))
+                F.pulse_compare(orig, dump, nf).get("pulse_phase"),
+                # **The eleventh: band-pass blips counted from their own
+                # note (`bnote`).** `passband_agree` aligns on one global lag
+                # and charges the sfx drum's blip twice where a note's onset
+                # is off, so `sfx_drum_bandpass` LOSES on it on every file it
+                # moves while the blips sit at the original's distance from
+                # their notes (bnote 0.000 -> 0.95-1.00 on four of five).
+                # Needs no lag. None when neither side has a band-pass frame.
+                F.passband_note_relative(orig, dump, nf).get("passband_note"))
 
     # Fix `ours_sub` before any scoring, on the default conversion, by the same
     # rule `_measure` uses: the window is the traced subtune and one either
@@ -1729,6 +1782,19 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # leaves the conversion identical cannot have been what any measurement
     # preferred. One conversion per selected flag, no traces.
     out = prune_inert(sid_path, base, out)
+
+    # THE BAND-PASS PASS. `sfx_drum_bandpass` is not in FIDELITY_TOGGLES: it
+    # needs `sfx_drum` and moves the bytes of 5 corpus files, so a toggle would
+    # double the walk (127 -> 255 combinations) to decide 5 songs. Asked once,
+    # of the winner, where it is live: the candidate is `out` plus the flag,
+    # skipped where that converts to the same bytes (the flag is inert, or
+    # `sfx_drum` is absent), and otherwise scored like any other candidate --
+    # by `moves_bnote`, the only term that can see it (see `fidelity_better`).
+    if out.get("sfx_drum") and not _bandpass_inert(sid_path, base, out):
+        extra = dict(out, sfx_drum_bandpass=True)
+        cand = play(extra)
+        if cand is not None and fidelity_better(cand, ref):
+            ref, out = cand, extra
 
     # THE INTEGER PASS. Run against the boolean winner rather than against the
     # default, because the two interact: `hard_restart_frames` raises `want`
@@ -2034,7 +2100,7 @@ def main(argv=None) -> int:
             if args.fidelity:
                 keep = {k: v for k, v in (carried.get(path.name) or {}).items()
                         if k not in FIDELITY_TOGGLES
-                        and k != "hard_restart_frames"}
+                        and k not in SEARCHED_AFTER_THE_WALK}
                 if keep:
                     found.update(keep)
             for key in FIDELITY_VETOED.get(path.name, ()):

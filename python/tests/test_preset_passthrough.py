@@ -381,6 +381,9 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
         "startup_lag": lambda a, b: (0, 0),
         "pitch_motion_compare": lambda *a, **k: {"reversal_ratio": 1.0},
         "onset_agreement": lambda *a, **k: {"onset_frame_agreement": 0.5},
+        # The eleventh state element (`bnote`) reads `trace.filter`, which the
+        # plain-list voices above do not have.
+        "passband_note_relative": lambda *a, **k: {"passband_note": None},
     }
     saved = {k: getattr(F, k) for k in stubs}
     old_convert, old_freq, old_load = P.convert, P.find_freq_table, P.load_sid

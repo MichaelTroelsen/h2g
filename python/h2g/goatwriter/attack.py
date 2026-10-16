@@ -104,7 +104,10 @@ def fixed_attack_only(sid: SidFile, det: Detection,
     frame 897 voice 3; C:/t/fixed-attack-pitch-40-only-records/tr40.py):
     `04E2` (the played note), then `09C4` for 4 frames -- Lightforce's frame
     byte is 4 and `freqtable[$26]` is `$09C4` -- then the vibrato from the
-    played note (`04D1 04E2 04F3 ...`).
+    played note. On the even-numbered onsets (897, 1009, 1121 ...) that
+    vibrato opens `04D1 04E2 04F3 ...`; on the odd-numbered onsets (953,
+    1065 ...) it opens `0504 04F3 04E2 04D1 ...` (siddump-rt -m1, 180 s, the
+    same 4-frame `$09C4` before each).
 
     Exactly `$40`, not "has `$40` and not `$04`": the other bits each have an
     emitter of their own that reaches the record first (`$80` the drum, the
