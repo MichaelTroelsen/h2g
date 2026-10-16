@@ -378,6 +378,9 @@ v0.5.492). Prune `build/audio` with `sound.py --prune ... --quarantine DIR
   three voices; re-derive a verify's prescribed fix; a blast radius far beyond
   the evidence means a mis-scoped rule; a shim hiding a defect from the score
   does not hide it from the file.
+- A rate on a clock the TRACK reloads is one speed per record: the
+  time-weighted mean (`track_set_tick_ratios`) plus clock-class clones for the
+  notes it misses by over 7% (`tri_clock`, at most 3 a record, built last).
 - Small readings: `instr 00` means "keep current" (`gplay.c:914`);
   `songview` `instruments[0]` is number 1 and patterns are numbered in hex;
   `_preset_opts` passes `False` for an absent (or misspelt) key; `gplay.c:334`

@@ -995,7 +995,11 @@ def convert(sid_path: str, log: Logger = print,
     # that clock below) -- and the GT pulse speed is divided by our calls a
     # tick, `multiplier * (O+1) / O` under an outer gate
     # (`goatwriter._tri_speed`): Game_Killer's packed ramp 225 -> 198 a
-    # frame against the original's 200. The intermediate "per CALL"
+    # frame against the original's 200. A gate the TRACK reloads
+    # (Rasputin's `$FE nn`) has no one O: each record gets the clock it
+    # sounds at, time-weighted (`goatwriter.track_set_tick_ratios`), and the
+    # notes that clock misses by more than 7% sound a clock-class clone
+    # (`goatwriter.tri_clock`, built last). The intermediate "per CALL"
     # reading was itself a pairing slip. See docs/LESSONS.md's two
     # RETRACTED sections for "THE SWEEP STEPS PER FRAME" and the 2026-10-03
     # entry after them.
