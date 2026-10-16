@@ -1797,7 +1797,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, tracks, wave_entries,
         {g: out[instr_at + 1 + (g - 1) * 25 + 2]
          for g in range(1, written_instr + 1)}, log,
-        **({} if program_only is None else {"only": program_only}))
+        **({} if program_only is None else {
+            "only": program_only,
+            "lagged": _gw_rest_park.lagged_instruments(
+                out, instr_at, written_instr)}))
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

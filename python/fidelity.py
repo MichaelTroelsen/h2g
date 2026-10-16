@@ -955,6 +955,12 @@ def _bend_tail(v: Voice) -> int:
 # that matters here.
 TRAVEL_NOTE_STEP = 8
 
+# A step under the cutoff but at least NUM/DEN of it (here 1/2, about one
+# semitone) that continues, on the next frame and the same way, a step over
+# the cutoff is part of that note change, not a bend (`_travel_steps`).
+TRAVEL_HYSTERESIS_NUM = 1
+TRAVEL_HYSTERESIS_DEN = 2
+
 
 def within_note_travel(v: Voice) -> int:
     """How far this voice's frequency moves within notes, from the register.
@@ -978,6 +984,16 @@ def within_note_travel(v: Voice) -> int:
       (a wavetable note, a tie, an arpeggio leap); a step from or to
       frequency zero is the whole pitch, so the same rule takes silence.
 
+    A third rule is its hysteresis: the step on the very next frame, the same
+    way, at least half the cutoff, after a step the second rule took as a note
+    change is the same sweep and is dropped with it (`TRAVEL_HYSTERESIS_*`);
+    one step only, so a run of near-cutoff steps is still read step by step.
+    Without it Star_Paws' drum fall 14176 -> 12384 (1.011 of the cutoff) was a
+    note change in the original and 14177 -> 12604 (0.888) a bend in ours, 352
+    drums x 1573 = 553,696 units of voice-1 travel that hid a real voice-0
+    shortfall in the file figure (0.969 then, 0.38 on voice 0 alone after;
+    v0.5.569, -t 180, historical).
+
     The second rule is a threshold, and the one this module otherwise avoids;
     it is here because a bare frequency write carries no marker saying whether
     it was a note or a bend (see `_bend_travel`'s Zoolook case). A step that
@@ -998,11 +1014,38 @@ def _travel_steps(v: Voice) -> list[tuple[int, int, int]]:
     for a in v.attack_frames:
         skip |= {a - 1, a, a + 1}
     steps = []
+    # (frame, sign) of the last step taken as a note change, for the
+    # hysteresis below; None once a step that is not one has intervened.
+    fall: tuple[int, int] | None = None
     for (_, prev), (f, cur) in zip(v.freq_events, v.freq_events[1:]):
         d = abs(cur - prev)
-        if (not d or f in skip or f - 1 in skip
-                or d * TRAVEL_NOTE_STEP > max(prev, cur)):
+        if not d:
             continue
+        sign = 1 if cur > prev else -1
+        if f in skip or f - 1 in skip:
+            fall = None
+            continue
+        big = d * TRAVEL_NOTE_STEP > max(prev, cur)
+        # Hysteresis: the step right after a note-change step, on the very
+        # next frame and the same way, is the same sweep (a drum program's
+        # fall) when it is at least half the cutoff. Star_Paws' drum steps
+        # 17824 -> 14176 -> 12384 in the original and 17825 -> 14177 -> 12604
+        # in ours are one gesture, but the second step is 1.011 of the cutoff
+        # on one side and 0.888 on the other, so a bare threshold counted it
+        # as a bend for ours alone (v0.5.569 tree, -t 180, historical).
+        cont = (not big and fall is not None and fall[0] == f - 1
+                and fall[1] == sign
+                and d * TRAVEL_NOTE_STEP * TRAVEL_HYSTERESIS_DEN
+                >= max(prev, cur) * TRAVEL_HYSTERESIS_NUM)
+        if big:
+            fall = (f, sign)
+            continue
+        if cont:
+            # One step only: a chain of near-cutoff steps is a run, which the
+            # bare threshold already reads step by step.
+            fall = None
+            continue
+        fall = None
         steps.append((f, prev, cur))
     return steps
 

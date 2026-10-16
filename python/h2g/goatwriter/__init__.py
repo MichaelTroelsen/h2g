@@ -239,8 +239,8 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _tied_instrument_envelopes, _vibrato_command_pass)  # noqa: F401
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
-from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, program_instruments,
-                        programmed_instruments,
+from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,
+                        program_instruments, programmed_instruments,
                         rest_park_pass, rest_park_plan,
                         rest_wave_rows)  # noqa: F401
 from .rest_ring import (_ring_free, _ring_last_row, _ring_marker,

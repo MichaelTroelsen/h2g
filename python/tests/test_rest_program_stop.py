@@ -65,6 +65,71 @@ def test_a_rest_on_a_program_instrument_points_the_table_at_the_park():
     assert new[0][4 + 2:4 + 4] == [SETWAVEPTR, len(entries) + 1]
 
 
+def test_a_lagged_program_instrument_parks_through_the_one_call_delay():
+    """Test-bit firstwave: the program runs a call behind the row grid, the
+    original's rest comes on attack + 12 and a tick-0 park is attack + 11
+    (Bangkok_Knights `$0AA9`). The pointer names a delay row that falls
+    through into the plain park: [delay, E8 80, FF 00]."""
+    pats, tracks, entries, starts = _song()
+    new, new_entries = RP.rest_park_plan(pats, tracks, entries, starts,
+                                         only=ONLY, lagged=ONLY)
+    assert new_entries == entries + [RP.REST_PARK_DELAY] + list(PARK)
+    assert new[0][4 + 2:4 + 4] == [SETWAVEPTR, len(entries) + 1]
+    # the delay row is a 1-call hold that writes nothing (gplay.c:697-704)
+    assert RP.REST_PARK_DELAY[0] <= 0x0F and RP.REST_PARK_DELAY[0] == 0
+
+
+def test_an_unlagged_program_instrument_keeps_the_plain_two_row_park():
+    pats, tracks, entries, starts = _song()
+    new, new_entries = RP.rest_park_plan(pats, tracks, entries, starts,
+                                         only=ONLY, lagged=frozenset({2}))
+    assert new_entries == entries + list(PARK)
+    assert new[0][4 + 2:4 + 4] == [SETWAVEPTR, len(entries) + 1]
+
+
+def test_both_kinds_share_one_park_program():
+    """Instruments 1 (lagged) and 4 (not) both stop: one three-row program,
+    the lagged rest at the delay row, the other one row in."""
+    entries = [(0x41, 0x00), (0xFF, 0x01), (0x41, 0x00), (0xFF, 0x03)]
+    starts = {1: 1, 4: 3}
+    pats = [_pat((0x60, 1, 0, 0), REST, HOLD),
+            _pat((0x60, 4, 0, 0), REST, HOLD)]
+    tracks = [[0, 0xFF, 0], [1, 0xFF, 0], [0xFF, 0]]
+    new, new_entries = RP.rest_park_plan(pats, tracks, entries, starts,
+                                         only=frozenset({1, 4}),
+                                         lagged=frozenset({1}))
+    n = len(entries)
+    assert new_entries == entries + [RP.REST_PARK_DELAY] + list(PARK)
+    assert new[0][4 + 2:4 + 4] == [SETWAVEPTR, n + 1]
+    assert new[1][4 + 2:4 + 4] == [SETWAVEPTR, n + 2]
+
+
+def test_lagged_instruments_reads_the_testbit_firstwave():
+    def rec(fw):
+        return bytes(8) + bytes([fw]) + bytes(16)
+    out = bytearray(1)
+    for fw in (0x09, 0x10, 0x00, 0x48, 0xFF, 0xFE):
+        out += rec(fw)
+    # $09 and $48 (named test bit) lag; a gate-clear byte, no byte and the
+    # two gate-command bytes do not
+    assert RP.lagged_instruments(out, 0, 6) == frozenset({1, 4})
+
+
+def test_the_delay_moves_the_park_one_call_in_the_player():
+    """gplay.c's loop, transcribed in `Voice`: from SETWAVEPTR at tick 0 the
+    plain park writes $08 on the SAME call, the delayed one on the next."""
+    table = list(PARK)
+    plain = Voice(table, 1)
+    plain.waveexec()
+    assert plain.wave == 0x08 and plain.ptr == 0
+    late_table = [RP.REST_PARK_DELAY] + list(PARK)
+    late = Voice(late_table, 1)
+    late.waveexec()
+    assert late.wave == 0x41 and late.ptr == 2
+    late.waveexec()
+    assert late.wave == 0x08 and late.ptr == 0
+
+
 def test_a_rest_on_any_other_instrument_is_left_a_plain_keyoff():
     """The arpeggio instrument keeps stepping across a rest in the player, so
     parking its table is the loss `--rest-wave-silence` shows; the no-table
@@ -264,9 +329,12 @@ def test_ik_plus_every_rest_is_stopped_or_a_plain_keyoff():
     w = song.tables["WTBL"]
     at = [i + 1 for i in range(len(w) - 1)
           if w[i] == PARK[0] and w[i + 1] == PARK[1]]
-    assert len(at) == 1 and len(w) == len(base.tables["WTBL"]) + 2
+    # IK+ carries a test-bit firstwave ($09): the park is three rows, the
+    # one-call delay in front of it, and each rest points at the delay.
+    assert len(at) == 1 and len(w) == len(base.tables["WTBL"]) + 3
+    assert w[at[0] - 2] == tuple(RP.REST_PARK_DELAY)
     pointers = [row for _, _, row in _rows(song)
-                if row[2] == SETWAVEPTR and row[3] == at[0]]
+                if row[2] == SETWAVEPTR and row[3] == at[0] - 1]
     assert pointers and all(r[0] == KEYOFF for r in pointers)
     assert not [row for _, _, row in _rows(song)
                 if row[2] == SETWAVE and row[3] == 0x08]
@@ -284,8 +352,8 @@ def test_ik_plus_the_stop_ends_the_program_the_original_ends():
     import songview as S
     song = S.parse_sng(_convert("IK_plus.sid", rest_program_stop=True))
     w = song.tables["WTBL"]
-    park = [i + 1 for i in range(len(w) - 1)
-            if w[i] == PARK[0] and w[i + 1] == PARK[1]][0]
+    park = [i for i in range(len(w) - 1)
+            if w[i] == PARK[0] and w[i + 1] == PARK[1]][0]   # the delay row
     prog = [i for i in song.instruments
             if i.effect_byte and i.effect_byte & 0x08 and i.wave_ptr]
     assert prog
@@ -301,11 +369,16 @@ def test_ik_plus_the_stop_ends_the_program_the_original_ends():
         running += 1
         stopped.command(SETWAVEPTR, park)
         seen = set()
-        for _ in range(24):
+        before = stopped.wave
+        for n in range(24):
             free.waveexec()
             stopped.waveexec()
             seen.add(free.wave)
-            assert stopped.wave == 0x08 and stopped.ptr == 0
+            if n == 0:
+                # the delay row holds one call: nothing is written yet
+                assert stopped.wave == before and stopped.ptr == park + 1
+            else:
+                assert stopped.wave == 0x08 and stopped.ptr == 0
         changing += len(seen) > 1
     # $09F8 and $08D8 outlast three frames and keep rewriting the waveform
     assert running >= 2 and changing >= 2, (running, changing)

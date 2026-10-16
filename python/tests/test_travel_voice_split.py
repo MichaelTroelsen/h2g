@@ -48,7 +48,7 @@ def test_compare_carries_travel_per_voice_and_the_file_total_is_their_sum():
     out = fidelity.compare(
         _three(_drum(12384), _drum(12384)), _three(_drum(12604, 14177), _drum(12604, 14177)))
     per = [(v["orig_travel"], v["our_travel"]) for v in out["voices"]]
-    assert per == [(0, 4 * 1573), (0, 4 * 1573), (0, 0)]
+    assert per == [(0, 0), (0, 0), (0, 0)]
     assert out["orig_travel"] == sum(p[0] for p in per)
     assert out["our_travel"] == sum(p[1] for p in per)
 
@@ -68,14 +68,48 @@ def test_a_cancelling_total_is_split_by_voice():
         (70, 0), (0, 70), (0, 0)]
 
 
-def test_the_drum_fall_straddles_the_note_change_cutoff():
+def test_the_drum_fall_straddles_the_note_change_cutoff_and_hysteresis_joins_it():
     # 1792 * 8 = 14336 > 14176: the original's fall is a note change.
-    # 1573 * 8 = 12584 < 14177: ours is a bend, 4 drums x 1573.
+    # 1573 * 8 = 12584 < 14177: under the bare threshold ours was a bend,
+    # 4 drums x 1573. It follows a note-change step on the next frame, the
+    # same way, at 0.888 of the cutoff, so the hysteresis takes it too.
     orig, ours = _drum(12384), _drum(12604, 14177)
     assert fidelity.within_note_travel(orig) == 0
-    assert fidelity.within_note_travel(ours) == 4 * 1573
+    assert fidelity.within_note_travel(ours) == 0
     assert fidelity.travel_step_census(orig) == []
-    assert fidelity.travel_step_census(ours) == [(14177, 12604, 4)]
+    assert fidelity.travel_step_census(ours) == []
+
+
+def _fall_after(first_to, second_to, gap=1):
+    v = fidelity.Voice()
+    v.attack_frames = [0]
+    v.freq_events = [(0, 0), (10, 17824), (10 + gap, first_to),
+                     (10 + 2 * gap, second_to)]
+    return v
+
+
+def test_hysteresis_needs_a_preceding_note_change_the_next_frame_the_same_way():
+    # 17824 -> 14176 (note change), then 14176 -> 12604 (0.888): joined.
+    assert fidelity.within_note_travel(_fall_after(14176, 12604)) == 0
+    # Same second step two frames later: a bend.
+    assert fidelity.within_note_travel(_fall_after(14176, 12604, gap=2)) == 1572
+    v = fidelity.Voice()
+    v.attack_frames = [0]
+    # Only the ONE step after the note change: a second near-cutoff step in
+    # the chain (14176 -> 12604 -> 11100, 0.88 of the cutoff) is a bend.
+    v = fidelity.Voice()
+    v.attack_frames = [0]
+    v.freq_events = [(0, 0), (10, 17824), (11, 14176), (12, 12604), (13, 11200)]
+    assert fidelity.within_note_travel(v) == 1404
+    # Opposite direction: a bend.
+    v.freq_events = [(0, 0), (10, 17824), (11, 14176), (12, 15749)]
+    assert fidelity.within_note_travel(v) == 1573
+    # Under half the cutoff (0.4): a bend, however it follows.
+    v.freq_events = [(0, 0), (10, 17824), (11, 14176), (12, 14176 - 700)]
+    assert fidelity.within_note_travel(v) == 700
+    # No preceding note change: a lone 0.888 step stays a bend.
+    v.freq_events = [(0, 0), (10, 14177), (11, 12604)]
+    assert fidelity.within_note_travel(v) == 1573
 
 
 def test_census_ranks_steps_by_the_distance_they_add_not_their_count():
@@ -92,9 +126,12 @@ def test_census_ranks_steps_by_the_distance_they_add_not_their_count():
 
 
 def test_diagnose_line_names_the_counted_step_and_its_margin():
-    line = fidelity.describe_voice_travel(_drum(12384), _drum(12604, 14177))
-    assert "original 0, ours 6,292" in line
-    assert "4x 14177->12604" in line and "0.888 of the 1/8 cutoff" in line
+    lone = fidelity.Voice()
+    lone.attack_frames = [0]
+    lone.freq_events = [(0, 0), (10, 14177), (11, 12604)]
+    line = fidelity.describe_voice_travel(_drum(12384), lone)
+    assert "original 0, ours 1,573" in line
+    assert "1x 14177->12604" in line and "0.888 of the 1/8 cutoff" in line
     assert fidelity.describe_voice_travel(
         fidelity.Voice(), fidelity.Voice()) == "travel: none on either side"
 
@@ -111,8 +148,9 @@ def test_equal_calls_rows_drop_the_per_voice_travel_too():
 @pytest.mark.skipif(not pathlib.Path(fidelity.SIDDUMP).exists(),
                     reason="no siddump")
 def test_star_paws_voice_1_travel_is_the_drum_fall(tmp_path):
-    """Real trace, 30 s: the original travels on voice 0 only; ours adds a
-    whole number of 1573-unit drum falls on voice 1."""
+    """Real trace, 30 s: the original travels on voice 0 only; ours no longer
+    adds the voice-1 drum falls (the hysteresis joins them to their note
+    change)."""
     sid = CORPUS / "Star_Paws.sid"
     assert sid.is_file(), "Star_Paws is not in the corpus"
     out = tmp_path / "f.json"
@@ -126,7 +164,7 @@ def test_star_paws_voice_1_travel_is_the_drum_fall(tmp_path):
     (o0, u0), (o1, u1), (o2, u2) = [(v["orig_travel"], v["our_travel"])
                                     for v in row["voices"]]
     assert o0 > 0 and u0 > 0
-    assert o1 == 0 and u1 > 0 and u1 % 1573 == 0
+    assert o1 == 0 and u1 == 0
     assert o2 == u2 == 0
     assert row["orig_travel"] == o0 + o1 + o2
     assert row["our_travel"] == u0 + u1 + u2

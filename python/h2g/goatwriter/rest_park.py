@@ -77,6 +77,11 @@ REST_PARK_PROGRAM: Tuple[Tuple[int, int], Tuple[int, int]] = (
     (GT_WAVE_JUMP, 0x00),
 )
 
+# A delay entry of 0 holds ONE call (gplay.c:697-704, a delay entry is current
+# for `value + 1` calls) and writes nothing. Placed in front of the park it
+# lets the park land one call later; see `lagged_instruments`.
+REST_PARK_DELAY: Tuple[int, int] = (0x00, GT_WAVE_NO_NOTE)
+
 
 def rest_wave_rows(patterns: List[List[int]]) -> int:
     """How many `CMD_SETWAVE $08` rows the patterns hold."""
@@ -130,9 +135,45 @@ def program_instruments(out, instr_at: int, written: int, gate: int,
     return frozenset(found)
 
 
+def lagged_instruments(out, instr_at: int, written: int) -> frozenset:
+    """The instrument numbers (1-based) whose note-init call writes a
+    TEST-BIT firstwave (`$09`, or `$x8` from `named_testbit_firstwave`; the
+    record's `+8`): the program's first wavetable row then runs on call 2, a
+    call after the row grid, while the original's first opcode runs on the
+    row's own frame.
+
+    The original's rest arrives on the frame after the program's last opcode,
+    counted from the attack: Bangkok_Knights `$0AA9`, 12 frames, the rest on
+    attack + 12. A park at tick 0 of our rest row is attack + 11 for such an
+    instrument. Measured 2026-10-16 over the 78 parked notes of that
+    instrument: 60 one frame early, 10 two, 8 on time; with the delay row
+    (`REST_PARK_DELAY`) 60 on time, 10 one early, 8 one late (the original's
+    own rest alternates between attack + 12 and + 13). IK+, I_Ball and
+    Trans-Atlantic read the same (-1 on 180 of 193, 19 of 22 and 14 of 14
+    before; 0 on those same counts afterwards).
+
+    **What the delay does NOT do.** SETWAVEPTR switches the pointer on the
+    rest row's own call, so the delay row runs IN PLACE of the program's
+    step on that call: the park lands on the original's frame but the step
+    one frame before it (Bangkok `$0AA9` `+11`, the `$BB` opcode) is still
+    lost, as it was without the delay. Restoring it needs the pointer the
+    program holds at the rest, which the pattern stage does not know.
+
+    Only the test-bit family is claimed: it is what the four measured files
+    carry; a record with another firstwave is left on the plain park,
+    unmeasured."""
+    found = set()
+    for g in range(1, written + 1):
+        fw = out[instr_at + 1 + (g - 1) * 25 + 8]
+        if fw & 0x08 and fw < 0xFE:
+            found.add(g)
+    return frozenset(found)
+
+
 def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                    programmed: frozenset, park: int, log=None,
-                   only: Optional[frozenset] = None
+                   only: Optional[frozenset] = None,
+                   late_park: int = 0, lagged: frozenset = frozenset()
                    ) -> List[List[int]]:
     """`CMD_SETWAVE $08` -> `CMD_SETWAVEPTR park` on each rest whose live
     instrument has a wavetable program (`programmed`), or is not known (a
@@ -166,8 +207,11 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                 if copy is None:
                     copy = list(pat)
                 if park and cands and cands <= only:
+                    # A test-bit instrument's program runs a call behind
+                    # the row grid: park through the one-call delay.
+                    to = late_park if late_park and cands <= lagged else park
                     copy[r + 2] = CMD_SETWAVEPTR
-                    copy[r + 3] = park & 0xFF
+                    copy[r + 3] = to & 0xFF
                     placed += 1
                 else:
                     copy[r + 2] = 0
@@ -226,7 +270,8 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
 def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
                    wave_entries: List[Tuple[int, int]],
                    starts: Dict[int, int], log=None,
-                   only: Optional[frozenset] = None
+                   only: Optional[frozenset] = None,
+                   lagged: frozenset = frozenset()
                    ) -> Tuple[List[List[int]], List[Tuple[int, int]]]:
     """(patterns, wave_entries) with the park program appended and the rests
     of looping instruments pointed at it. Unchanged where the patterns hold
@@ -240,20 +285,43 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
         # selects the byte-code program. The parked program is appended
         # only if a rest actually points at it.
         only = frozenset(only) & programmed
-        park = len(wave_entries) + 1
-        if park + len(REST_PARK_PROGRAM) - 1 > GT_MAX_TABLELEN or park > 0xFF:
+        lagged = frozenset(lagged) & only
+        # The delayed entry sits one row before the plain park and falls
+        # through into it: [delay, E8 80, FF 00], the plain pointer one row
+        # in. Without a lagged rest the delay row is not written at all.
+        late = len(wave_entries) + 1 if lagged else 0
+        park = len(wave_entries) + 1 + (1 if lagged else 0)
+        rows = len(REST_PARK_PROGRAM) + (1 if lagged else 0)
+        if (park + len(REST_PARK_PROGRAM) - 1 > GT_MAX_TABLELEN
+                or late + rows - 1 > GT_MAX_TABLELEN or park > 0xFF):
             if only and log:
                 log("Rest program stop.......: no room in the wavetable for "
                     "the parked program; rests keep a plain key-off")
-            park = 0
+            park = late = 0
+        # Quiet while the layout is still undecided: one log line, not two.
         new = rest_park_pass(patterns, tracks, programmed,
-                             park if only else 0, log, only)
-        used = bool(park and only) and any(
-            pat[r + 2] == CMD_SETWAVEPTR and pat[r + 3] == (park & 0xFF)
-            for pat in new for r in range(0, len(pat) - 3, 4)
-            if pat[r] != 0xFF)
-        return new, (wave_entries + list(REST_PARK_PROGRAM) if used
-                     else wave_entries)
+                             park if only else 0, None, only, late, lagged)
+
+        def _points(to):
+            return bool(to and only) and any(
+                pat[r + 2] == CMD_SETWAVEPTR and pat[r + 3] == (to & 0xFF)
+                for pat in new for r in range(0, len(pat) - 3, 4)
+                if pat[r] != 0xFF)
+        if late and not _points(late):
+            # No rest took the delayed entry: the plain layout, as before.
+            park = len(wave_entries) + 1
+            late = 0
+            new = rest_park_pass(patterns, tracks, programmed, park, None,
+                                 only)
+        used = _points(park) or _points(late)
+        new = rest_park_pass(patterns, tracks, programmed,
+                             park if only else 0, log, only, late, lagged)
+        if not used:
+            return new, wave_entries
+        prog = list(REST_PARK_PROGRAM)
+        if late:
+            prog = [REST_PARK_DELAY] + prog
+        return new, wave_entries + prog
     if not programmed:
         return patterns, wave_entries
     park = len(wave_entries) + 1

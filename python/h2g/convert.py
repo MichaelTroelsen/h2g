@@ -1198,7 +1198,8 @@ def convert(sid_path: str, log: Logger = print,
                 apply_pulse_phase(
                     new_patterns, tracks, writes, index, log,
                     row_seconds=[max(1, t) / (50.0 * calls_per_frame)
-                                 for t in walk_tempos])
+                                 for t in walk_tempos],
+                    calls_per_frame=multiplier)
                 pulse_plan = (entries, starts)
             else:
                 # Nothing shipped: the expansion collect may have made is

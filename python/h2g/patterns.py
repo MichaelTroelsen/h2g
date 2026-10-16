@@ -13,6 +13,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from functools import lru_cache
 from math import gcd, log2
 from typing import Dict, List, Optional, Set, Tuple
@@ -6925,9 +6926,57 @@ def _row_start_rows(track: List[int], patterns: List[List[int]]) -> Dict[int, in
     return starts
 
 
+def _settempo_calls(value: int) -> Optional[int]:
+    """Play calls a row lasts after `CMD_SETTEMPO value`, or None where the
+    value is not a plain song tempo (gplay.c:494-505: under $80 sets all
+    three channels; `newtempo >= 3` is decremented; a stored tempo under 2
+    is the funktempo table, whose row length is not one number)."""
+    if value >= 0x80 or value < 2:
+        return None
+    return value + 1 if value == 2 else value
+
+
+def _tempo_changes(track: List[int], patterns: List[List[int]]
+                   ) -> Dict[int, int]:
+    """Row index (from the track's start) -> the calls a row lasts from it,
+    for every `CMD_SETTEMPO` the first pass through the orderlist plays."""
+    changes: Dict[int, int] = {}
+    for pos, row0 in _row_start_rows(track, patterns).items():
+        pat = patterns[track[pos]]
+        for r in range(len(pat) // 4):
+            if pat[4 * r] == GT_END_PATTERN:
+                break
+            if pat[4 * r + 2] == CMD_SETTEMPO:
+                calls = _settempo_calls(pat[4 * r + 3])
+                if calls is not None:
+                    changes[row0 + r] = calls
+    return changes
+
+
+def _row_clock(changes: Dict[int, int], base_seconds: float,
+               calls_per_frame: float):
+    """Row index -> seconds from the subtune's start, following `changes`
+    (row -> calls a row lasts from there on) from `base_seconds` a row."""
+    marks = [(0, 0.0, base_seconds)]
+    for row in sorted(changes):
+        at, t, secs = marks[-1]
+        new = changes[row] / (50.0 * calls_per_frame)
+        if row == at:
+            marks[-1] = (at, t, new)
+        else:
+            marks.append((row, t + (row - at) * secs, new))
+    rows = [m[0] for m in marks]
+
+    def clock(row: int) -> float:
+        at, t, secs = marks[bisect_right(rows, row) - 1]
+        return t + (row - at) * secs
+    return clock
+
+
 def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                       writes: list, index: dict, log=None,
-                      row_seconds: Optional[List[float]] = None) -> int:
+                      row_seconds: Optional[List[float]] = None,
+                      calls_per_frame: Optional[float] = None) -> int:
     """Write the planned CMD_SETPULSEPTR commands, always into copies.
 
     One clone per distinct (pattern, command vector), shared across every
@@ -6948,7 +6997,10 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
     in all, then by plan order. A clone costs one pattern whatever it
     serves, so taking the largest first maximises the in-window rows the
     capacity buys. The play time is an ESTIMATE -- rows times the subtune's
-    constant row length; a tempo that changes mid-song is not followed.
+    row length, which starts at `row_seconds` and, given `calls_per_frame`
+    (play calls our side makes a frame), follows the plain `CMD_SETTEMPO`
+    rows the three tracks of the subtune carry (the orderlist tempos the
+    tempo pass wrote); without it the row length stays constant.
     A row whose command column is taken serves nothing. Without
     `row_seconds` there is no clock to rank by and the plan order stands.
     """
@@ -6973,6 +7025,7 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
     if row_seconds is not None:
         starts: Dict[int, Dict[int, int]] = {}
         score: dict = {}
+        clocks: dict = {}
         order: dict = {}
         for (ti, pos, target, vector) in slots:
             src = patterns[target]
@@ -6984,15 +7037,21 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                 starts[ti] = _row_start_rows(tracks[ti], patterns)
             g = ti // 3
             secs = row_seconds[g] if g < len(row_seconds) else None
+            if secs is not None and calls_per_frame and g not in clocks:
+                merged: Dict[int, int] = {}
+                for t3 in tracks[3 * g:3 * g + 3]:
+                    merged.update(_tempo_changes(t3, patterns))
+                clocks[g] = _row_clock(merged, secs, calls_per_frame)
             inside = served = 0
             for r, _ in vector:
                 if src[4 * r + 2] != 0:
                     continue
                 served += 1
-                if secs is not None and pos in starts[ti] and (
-                        (starts[ti][pos] + r) * secs
-                        < PULSE_PHASE_WINDOW_SECONDS):
-                    inside += 1
+                if secs is not None and pos in starts[ti]:
+                    row = starts[ti][pos] + r
+                    when = (clocks[g](row) if g in clocks else row * secs)
+                    if when < PULSE_PHASE_WINDOW_SECONDS:
+                        inside += 1
             have = score.get(key, (0, 0))
             score[key] = (have[0] + inside, have[1] + served)
         room = MAX_PATTERNS - len(patterns)

@@ -159,3 +159,78 @@ def test_human_races_window_reach_total_rises_and_subtune_zero_holds():
     # table keeps 23 in 21's place): subtune 4 voice 0 173 -> 210, subtune 2
     # voice 1 69 -> 63.
     assert sum(reached.values()) == 1202, reached
+
+
+# --- following the tempo changes the tempo pass wrote ----------------------
+# calls_per_frame=0.02 makes a SETTEMPO of 0x7F last 127 s a row.
+SLOW = 0x7F
+CPF = 0.02
+
+
+def _tempo_at(pats, k, value, row=0):
+    pats[k][4 * row + 2], pats[k][4 * row + 3] = P.CMD_SETTEMPO, value
+
+
+def _run_cpf(pats, tracks, writes, row_seconds, cpf):
+    log: list = []
+    n = P.apply_pulse_phase(pats, tracks, writes, INDEX, log.append,
+                            row_seconds=row_seconds, calls_per_frame=cpf)
+    return n, log
+
+
+def test_settempo_calls_matches_gplay():
+    # gplay.c:494-505: >= 3 is decremented into the tempo, a tempo of n >= 2
+    # lasts n + 1 calls; under 2 is the funktempo table, under no one number.
+    assert [P._settempo_calls(v) for v in (0, 1, 2, 3, 4, 0x7F, 0x80)] == \
+        [None, None, 3, 3, 4, 0x7F, None]
+
+
+def test_a_slow_opening_tempo_pushes_the_later_clone_out_of_the_window():
+    def build():
+        pats = _table(2, 1)
+        _tempo_at(pats, 0, SLOW)
+        return pats, [[0, 1, P.GT_ORDER_RESTART, 0]], \
+            [(0, 1, {0: _ph(0x800)}), (0, 0, {1: _ph(0x900)})]
+    a = build()
+    na, _ = _run_cpf(*a, [1.0], None)           # the constant estimate
+    assert na == 1 and a[1][0][1] >= P.MAX_PATTERNS - 1, \
+        "constant 1 s a row: both inside, plan order, the later position wins"
+    b = build()
+    nb, _ = _run_cpf(*b, [1.0], CPF)            # row 4 is at 508 s
+    assert nb == 1
+    assert b[1][0][0] >= P.MAX_PATTERNS - 1 and b[1][0][1] == 1
+
+
+def test_a_tempo_in_another_voice_of_the_group_is_followed():
+    pats = _table(3, 1)
+    _tempo_at(pats, 2, SLOW)
+    tracks = [[0, 1, P.GT_ORDER_RESTART, 0], [2, P.GT_ORDER_RESTART, 0],
+              [2, P.GT_ORDER_RESTART, 0]]
+    writes = [(0, 1, {0: _ph(0x800)}), (0, 0, {1: _ph(0x900)})]
+    n, _ = _run_cpf(pats, tracks, writes, [1.0], CPF)
+    assert n == 1
+    assert tracks[0][0] >= P.MAX_PATTERNS - 1 and tracks[0][1] == 1
+
+
+def test_a_change_only_moves_the_rows_after_it():
+    # Pattern 1 (row 4 on) slows the tune; position 2 (row 8) is late, but
+    # position 1's row 0 (row 4 itself, at 4 s) and pattern 0's rows are not.
+    pats = _table(3, 1)
+    _tempo_at(pats, 1, SLOW)
+    tracks = [[0, 1, 2, P.GT_ORDER_RESTART, 0]]
+    writes = [(0, 2, {0: _ph(0x800)}), (0, 1, {1: _ph(0x900)})]
+    n, _ = _run_cpf(pats, tracks, writes, [1.0], CPF)
+    assert n == 1
+    assert tracks[0][1] >= P.MAX_PATTERNS - 1 and tracks[0][2] == 2
+
+
+def test_a_funktempo_value_leaves_the_constant_clock():
+    def build():
+        pats = _table(2, 1)
+        _tempo_at(pats, 0, 1)                   # < 2: funk table, ignored
+        return pats, [[0, 1, P.GT_ORDER_RESTART, 0]], \
+            [(0, 1, {0: _ph(0x800)}), (0, 0, {1: _ph(0x900)})]
+    a, b = build(), build()
+    _run_cpf(*a, [1.0], None)
+    _run_cpf(*b, [1.0], CPF)
+    assert a[0] == b[0] and a[1] == b[1]
