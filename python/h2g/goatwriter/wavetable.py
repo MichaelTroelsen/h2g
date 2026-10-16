@@ -67,7 +67,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        log=None,
                        arp_gate_phase: Optional[int] = None,
                        hold_travel: bool = False,
-                       pitches: Optional[dict] = None) -> tuple:
+                       pitches: Optional[dict] = None,
+                       spans: Optional[dict] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -194,7 +195,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                      multiplier, budget,
                                      written=no_test_restart,
                                      hold_travel=hold_travel,
-                                     pitches=pitches)
+                                     pitches=pitches,
+                                     spans=spans, row_calls=row_calls)
         if prog is not None:
             return prog
 
@@ -1856,7 +1858,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       hold_travel: bool = False,
                       eor_phases: Optional[dict] = None,
                       note_pitches: Optional[dict] = None,
-                      eor_span: Optional[list] = None) -> tuple:
+                      eor_span: Optional[list] = None,
+                      note_spans: Optional[dict] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -2007,7 +2010,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                       else arp_gate_phases.get(gt_number)),
                                   hold_travel=hold_travel,
                                   pitches=(None if note_pitches is None
-                                           else note_pitches.get(gt_number)))
+                                           else note_pitches.get(gt_number)),
+                                  spans=(None if note_spans is None
+                                         else note_spans.get(gt_number)))
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is

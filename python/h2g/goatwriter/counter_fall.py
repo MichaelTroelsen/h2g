@@ -95,8 +95,7 @@ from .constants import (CMD_SETWAVEPTR, CMD_VIBRATO, FORMAT_GTS5,
                         GT_FIRST_NOTE, GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST,
                         GT_WAVE_JUMP, GT_WAVE_NO_NOTE, PACKED_PATTERN_LIMIT,
                         WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
-                        _SONG_MAX_PATTERNS)
-from ..patterns import MAX_TRACK_LEN
+                        MAX_TRACK_LEN, _SONG_MAX_PATTERNS)
 from . import pulse as _gw_pulse
 from . import skydive as _gw_skydive
 from . import tempo as _gw_tempo

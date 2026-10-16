@@ -4,7 +4,8 @@ from __future__ import annotations
 import copy
 from typing import Callable, List, Optional
 
-from .detect import Detection, PlayerView, detect, player_view
+from .detect import (Detection, PlayerView, detect, player_view,
+                     wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
 from .goatwriter import note_passes as _gw_note_passes
 from .goatwriter import wave_eor as _gw_wave_eor
@@ -27,6 +28,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations, played_note_weights,
+                       played_duration_histograms,
                        pattern_references, drop_unplayed_patterns,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
@@ -251,6 +253,7 @@ def convert(sid_path: str, log: Logger = print,
             rest_instrument: bool = False,
             rest_keyoff: bool = False,
             rest_wave_silence: bool = False,
+            rest_program_stop: bool = False,
             rest_envelope_silence: bool = False,
             compact_instruments: bool = False,
             engine: int = 0,
@@ -667,6 +670,13 @@ def convert(sid_path: str, log: Logger = print,
         sid, det, tracks, det.pattern_used + 1 + len(variants), floor, log,
         slides=slides, status_bit6=status_bit6)
     want_event_rows = bool(pulse_phase and pulse and det.pulse_tri_hi >= 0)
+    # `--rest-program-stop`: a bit-6 rest bypasses the wave-program
+    # interpreter in the players that carry the branch, so it stops the
+    # program (`detect.wave_program_rest_bypass`). Inert without the program
+    # itself, and subsumed by the broader `--rest-wave-silence`.
+    program_stop = bool(rest_program_stop and wave_program
+                        and det.wave_program >= 0 and det.wave_program_gate
+                        and wave_program_rest_bypass(sid, det))
     # The note rows that sound an entry 93-95 of the player's table, which
     # Goattracker's note column cannot name (past_table_wave plays them).
     top_cols = det.top_cols
@@ -679,7 +689,8 @@ def convert(sid_path: str, log: Logger = print,
         rest_keyoff=rest_keyoff,
         # Only the testbit family parks a waveform; the envelope-zeroing
         # four write none, and a KEYOFF already says what they do.
-        rest_wave=rest_wave_silence and det.rest_silence_kind == "testbit",
+        rest_wave=((rest_wave_silence or program_stop)
+                   and det.rest_silence_kind == "testbit"),
         # ...but *every* one of the 21 zeroes the envelope pair, which is
         # the half a KEYOFF cannot say. See
         # detect._find_rest_silence_envelope.
@@ -1220,6 +1231,8 @@ def convert(sid_path: str, log: Logger = print,
                          min_notes=min_played_notes(tracks, new_patterns),
                          note_rows=median_played_durations(tracks, new_patterns),
                          note_pitches=played_note_weights(tracks, new_patterns),
+                         note_spans=played_duration_histograms(
+                             tracks, new_patterns),
                          row_calls=short_row_calls,
                          compact_instruments=compact_instruments,
                          real_firstwave_instruments=real_firstwave_instruments,
@@ -1232,7 +1245,9 @@ def convert(sid_path: str, log: Logger = print,
                          ilv_filter_routing=ilv_filter_routing,
                          tie_restart=tie_restart,
                          wave_reserve=reserve,
-                         sfx_drum_bandpass=sfx_drum_bandpass)
+                         sfx_drum_bandpass=sfx_drum_bandpass,
+                         rest_program_stop=(program_stop
+                                            and not rest_wave_silence))
 
     def _assemble(tracks, new_patterns, gate_off, log):
         # Every pass that settles which instrument a row plays walks the

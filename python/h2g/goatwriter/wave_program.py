@@ -24,6 +24,35 @@ from .vibrato import (_classic_vibrato_entry, _table_vibrato_entry,
 # high pitch it actually sounds at (mean error over its notes 31 -> 244).
 SLIDE_SEMITONE_MAX_CENTS = 100
 SLIDE_SEMITONE_SHARE = 0.75
+# The share of an instrument's plays that must END on a slide frame for that
+# frame to stay on the note under a written firstwave (`_cut_share`). Any
+# note is enough: the next note's init call inherits the pitch the previous
+# one left, so a frame a note can end on is a frame whose pitch is the next
+# attack's name, and one note in a hundred is already a wrong name.
+SLIDE_CUT_SHARE = 0.0
+
+
+def _cut_share(spans: Optional[Dict[int, int]], row_calls: int, first: int,
+               last: int) -> float:
+    """The share of an instrument's plays whose last play call is in
+    `first..last`, calls counted from the note's init call (call 0).
+
+    `spans` is `{rows a note lasts: plays}` (`patterns.played_duration_
+    histograms`) and `row_calls` the record's row in play calls. A note of
+    `g` rows runs `g * row_calls` calls, so its last is call `g * row_calls -
+    1`, and the wavetable entry that ran on it is the pitch the voice keeps
+    until the next note's init call -- which writes the waveform alone
+    (`player.s` `jmp mt_loadregswaveonly`) and so gates the next note on at
+    that pitch for one frame. Zero where either is unknown.
+    """
+    if not spans or row_calls <= 0:
+        return 0.0
+    total = sum(spans.values())
+    if total <= 0:
+        return 0.0
+    cut = sum(plays for rows, plays in spans.items()
+              if first <= rows * row_calls - 1 <= last)
+    return cut / total
 
 
 def _hold_wave_program_entry(left: List[int], right: List[int],
@@ -397,7 +426,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           multiplier: int, budget: int,
                           written: bool = False,
                           hold_travel: bool = False,
-                          pitches: Optional[Dict[int, int]] = None
+                          pitches: Optional[Dict[int, int]] = None,
+                          spans: Optional[Dict[int, int]] = None,
+                          row_calls: int = 0
                           ) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
@@ -468,6 +499,17 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     that frame. Above `-S1` the travel is emitted as it always was,
     except on a record the player vibrates, which gets no closing travel
     at any `-S` (Kings_of_the_Beach_intro records 13 and 16 at `-S5`).
+
+    **`spans` and `row_calls`: the slide frame a note ends on, under a written
+    firstwave.** The same inheritance, one note earlier: a note cut on a
+    quantised slide frame (`_slide_semitones`) leaves `note - k` semitones for
+    the next init call to open at. `spans` is `{rows: plays}` for this
+    instrument (`patterns.played_duration_histograms`; `build_sng` hands it
+    over only where an instrument writes a real firstwave) and `row_calls` the
+    record's row in play calls. The frame that ENTERS the quantised run is
+    written as the note when any played note ends on it (`_cut_share`); a frame
+    in the middle of the run keeps its count, because the note between two
+    shifted frames would be a reversal on every longer note.
     """
     if fmt != FORMAT_GTS5:
         return None
@@ -650,8 +692,20 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # lands on is the quantised `note - sum`** (`_slide_semitones`) --
         # `WAVE_NOTE_BASE` plus a relative note, `adc mt_chnnote / and #$7f`.
         shift = 0 if travel else _slide_semitones(pitches, running + arg)
+        # **A frame a note can END on stays on the note, under a written
+        # firstwave** (`spans`, `_cut_share`): the next note's init call holds
+        # whatever pitch this one left, and the original's own init frame
+        # already sounds the new note. A quantised slide pitch left there
+        # names the next attack a semitone or two off -- Auf_Wiedersehen_Monty's
+        # 3-frame notes on `$0F26`, nine attacks, melody 0.9876 -> 0.9830.
+        cut_prone = bool(spans) and not travel and not quantised and _cut_share(
+            spans, row_calls, len(left), len(left) + multiplier - 1
+        ) > SLIDE_CUT_SHARE
         if carried:
             right.append(WAVE_NOTE_KEEP)
+        elif cut_prone:
+            right.append(WAVE_NOTE_BASE)
+            quantised = False
         elif shift:
             right.append((WAVE_NOTE_BASE + shift) & 0x7F)
             quantised = True

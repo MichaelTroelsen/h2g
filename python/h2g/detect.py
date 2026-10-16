@@ -6298,6 +6298,70 @@ def wave_program_set_stores_wave(sid: SidFile,
                     rb".{0,24}?\x68\x9d", blk, re.S) is not None
 
 
+def wave_program_rest_bypass(sid: SidFile,
+                             det: Optional[Detection] = None) -> bool:
+    """Whether a bit-6 REST event bypasses the wave-program interpreter.
+
+    **The stop condition of the program** (task ik-plus-record2-program-stop).
+    IK+'s `$09F8` / `$08D8` programs run 6 frames of an 18-frame slot, and the
+    trace says why: the event after the note is a rest (status byte bit 6,
+    `$E549,X` reads `$43` where the note read `$81`), the stored waveform goes
+    to `$08`, and the program index stops advancing -- the gate mask had
+    already dropped to `$FE` three frames earlier and the program ran on
+    through it. The interpreter's own prologue is the reason:
+
+        E329  BD 49 E5  LDA $E549,X    ; THIS event's status byte
+        E32C  29 40     AND #$40       ; bit 6 = a rest
+        E32E  D0 58     BNE $E388      ; ...skips the interpreter altogether
+        E330  AD 58 E7  LDA effect     ; the instrument's effect byte
+        E333  29 08     AND #$08       ; the wave-program gate
+        E335  F0 51     BEQ $E388
+        E337  8E FA E5  STX save       ; <- `_wave_program_fetch_site`'s block
+        E33A  B9 ED E9  LDA ptr,Y
+
+    and the rest handler (`$E135`) has already written `$08` into the stored
+    waveform, so nothing rewrites it until the next note. `$E388` is the
+    arpeggio / vibrato / pulse code that follows the interpreter, which is why
+    an ARPEGGIO instrument keeps stepping across a rest in the same player
+    (voice 0 of the same trace) and a program does not.
+
+    Read as `29 40 D0 rel` ending immediately before the effect load that the
+    gate test reads, with the branch landing past the fetch. 20 of the 29
+    corpus files carry it (historical, v0.5.553); the 9 without it (After 8,
+    Kings of the Beach, Mr Meaner, Off the Cuff, One on One, Powerplay,
+    Pygmies, Rikky, Rock Tells the Tale) test the gate first and have no such
+    branch, and are not claimed.
+    """
+    off = _wave_program_fetch_site(sid, det)
+    if off < 0:
+        return False
+    d = sid.data
+    zp = d[off + 1]
+    site = -1
+    for k in range(max(0, off - 40), off):
+        if (d[k] == 0xB9 and k + 4 < len(d)
+                and d[k + 3] == 0x85 and d[k + 4] == zp):
+            site = k
+    if site < 0:
+        return False
+    for width in (3, 2):
+        q = site - width - 2                 # the gate branch
+        if q < 8 or d[q] not in _WAVE_PROGRAM_BRANCH:
+            continue
+        # The effect load sits before `AND #gate` (or directly before a sign
+        # branch): `LDA abs` is three bytes, `LDA zp` two.
+        after_load = q - 2 if d[q - 2] == 0x29 else q
+        for e in (after_load - 3, after_load - 2):
+            if e < 4 or d[e] not in (0xAD, 0xA5):
+                continue
+            if (d[e - 4], d[e - 3], d[e - 2]) != (0x29, 0x40, 0xD0):
+                continue
+            rel = d[e - 1] - 256 if d[e - 1] >= 0x80 else d[e - 1]
+            if e + rel >= site:
+                return True
+    return False
+
+
 def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
     """The program at file offset `at` as (opcode, waveform, operand) steps.
 

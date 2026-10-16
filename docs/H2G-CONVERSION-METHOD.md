@@ -3122,6 +3122,47 @@ the start subtune does. Mega_Apocalypse's table, which was near full, goes from
 fit (42 before; `Expanding vibrato loops` 18 nearest-fit loops with 14 swings
 merged at mean 5% off in size -> 17 with 13 at 2%), and none is dropped.
 
+**A slide frame a note can end on stays on the note, under a written firstwave**
+(task real-firstwave-stale-init-mid-slide; figures are 7b18636 -> this tree,
+`-t 180`, presets, siddump, and historical). The first of the two losses above
+is repaired. The packed player's note-init call writes the waveform alone
+(`jmp mt_loadregswaveonly`), so under `real_firstwave_instruments` or
+`no_test_restart` the next note's gate rises on the pitch the previous note
+LEFT, and the harness names the attack from it. Where a note is cut on a
+quantised slide frame it leaves `note - k` semitones: Monty record 4 (`slide
+$41 $01C0`, first slide frame at call 2) is played on one-row notes (3 calls
+at 3 a row: init, noise, that frame) as well as longer ones, and nine attacks
+of its second voice were named C-4 / A#3 where the original names D-4 / C-4.
+The original is not wrong at that frame -- it sounds the same shifted pitch
+(`$1388 - $01C0 = $11C8`, traced on its 3-frame notes: `1388/11 3088/81
+11C8/40` and then the next note's `1388/11`) -- its own init frame just
+writes the NEW note's frequency, which a packed Goattracker init cannot. So the frame cannot be made
+right, only made safe: `_wave_program_entries` takes the instrument's note
+lengths (`patterns.played_duration_histograms`, `{rows: plays}`, handed over
+by `build_sng` only where an instrument is written) and the record's row in
+calls, and a slide frame whose call is the LAST call of some played note
+(`_cut_share` > `SLIDE_CUT_SHARE`, i.e. any) writes `WAVE_NOTE_BASE` instead
+of the quantised count. Only the frame that ENTERS the quantised run is
+declined: a mid-run frame written as the note would be a bounce up and down on
+every longer note, the jump up and down the restore above exists to avoid
+(measured: also declining Monty record 1's 2%-cut fifth frame moved
+`reversal_ratio` 1.0043 -> 1.0461 and `tie_ratio` 0.984 -> 1.020, melody
+unchanged). Declining the first slide frame of EVERY program in a written song
+recovers the melody as well and loses the gain the slide frames made
+(Monty `travel_ratio` 0.934 -> 0.556, `reversal_ratio` 1.004 -> 0.897): the
+frame's benefit is the longer notes', so it is only taken from the records
+where a note ends on it. Measured on Monty: melody 0.9830 -> 0.9876 (= the
+value before the slide frames), sequence 0.9633 -> 0.9684; the one column
+that is worse is `travel_ratio` 0.9344 -> 0.9308 (the first slide frame's
+-2 semitones, lost to the longer notes too -- one wavetable serves both
+lengths, so that cost is inherent to sharing it); ties, `tie_agreement`,
+`reversal_ratio` are unchanged. Of the 95-file corpus under presets only
+Auf_Wiedersehen_Monty moves (f983ffa0ef70 -> ba7ef08dbdb1); Pygmies_Revenge
+and Arcade_Classics, the other two written-firstwave `wave_program` files, are
+byte-identical because no played note of theirs ends on a quantised slide
+frame. Exact per-length instruments (a 3-frame clone) would keep the frame for
+the long notes too; not built, the clone machinery is for duty and phase.
+
 **A vibrating record's slides, at `-S1`, as a portamento chain** (task
 nemesis-counter-gate-age-1-move). Nemesis `$0B09`/`$0C0A`/`$0C5A` moved at
 frame 4 against the original's frame 1, although the vibrato's counter gate
@@ -3190,6 +3231,23 @@ threshold until this one file passed would be fitting, which §7.eee already
 records the cost of. So the option ships off, selected nowhere, and the next
 honest step is a listening test — the same route `FIDELITY_VETOED` exists for,
 in the other direction.
+
+#### A rest stops the program (`--rest-program-stop`)
+
+IK+ `$09F8` is a twelve-opcode program and the original sounds six frames of
+it: the note's event is followed by a rest, and the interpreter's prologue
+(`$E329 LDA status / AND #$40 / BNE $E388`) never lets a rest reach the program
+(`$E388` is the arpeggio code that follows it, which does run). Ours kept
+stepping the wavetable through the rest (`$09F8` 775 reversals against the
+original's 310; `$08D8` 800 against 536; v0.5.553). The stop is
+`goatwriter/rest_park.py`'s `CMD_SETWAVEPTR` to the shared `E8 80 / FF 00`
+program, restricted to the instruments whose record selects the program and to
+the 20 of 29 players that carry the branch (`detect.wave_program_rest_bypass`).
+Off by default: `wave` rises on IK+ (+2.2 pp), Pandora and Trans-Atlantic, and
+the per-instrument reversal error worsens on Bangkok Knights, I, Ball and
+Trans-Atlantic. Traced on Bangkok `$0AA9` only: its program ends on the frame
+the rest lands and ours lands one frame early, clipping the last opcode; the
+other two were not traced (`docs/OPTIONS.md`).
 
 ### 7.ggg The drum's noise run is 1, 2 or the whole note — and we always write 2
 

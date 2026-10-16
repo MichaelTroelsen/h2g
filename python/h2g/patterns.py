@@ -23,6 +23,7 @@ from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
                          TEMPO_FASTEST_STEADY, hold_direction, hold_steps,
                          hold_wait, restarted_gate_calls)
 from .search import search_file
+from .goatwriter.constants import MAX_TRACK_LEN
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -105,7 +106,6 @@ TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 GT_FIRSTNOTE = 0x60
 GT_LASTNOTE = 0xBC
 MAX_PATTERNS = 0xD0
-MAX_TRACK_LEN = 0xFF
 
 # Goattracker orderlist byte ranges: $00-$CF pattern number, $D0-$FE command
 # (repeat / transpose, no operand), $FF restart -- the only one that takes an
@@ -5196,7 +5196,8 @@ def _pattern_successors(tracks: List[List[int]],
 
 
 def median_played_durations(tracks: List[List[int]],
-                            patterns: List[List[int]]) -> dict:
+                            patterns: List[List[int]],
+                            histograms: bool = False) -> dict:
     """The rows each instrument's *typical* note lasts, before the next fetch.
 
     The companion to `min_played_notes`, and the other half of the drum
@@ -5255,7 +5256,8 @@ def median_played_durations(tracks: List[List[int]],
     occurrence at all is simply absent from the result, which callers must
     read as "unknown" rather than as "short".
 
-    Returns `{goattracker instrument number: rows}`.
+    Returns `{goattracker instrument number: rows}`; with `histograms`, the
+    `{rows: plays}` each median is taken of (`played_duration_histograms`).
     """
     entry = _entry_instruments(tracks, patterns)
     weight = _pattern_plays(tracks, patterns)
@@ -5320,6 +5322,8 @@ def median_played_durations(tracks: List[List[int]],
                 counts = hist.setdefault(instr, {})
                 counts[gap] = counts.get(gap, 0) + plays
 
+    if histograms:
+        return hist
     out: dict = {}
     for instr, counts in hist.items():
         total = sum(counts.values())
@@ -5330,6 +5334,19 @@ def median_played_durations(tracks: List[List[int]],
                 out[instr] = gap
                 break
     return out
+
+
+def played_duration_histograms(tracks: List[List[int]],
+                               patterns: List[List[int]]) -> dict:
+    """`{goattracker instrument number: {rows a note lasts: plays}}`.
+
+    The distribution `median_played_durations` reduces, with the same
+    attributions (its docstring has them). Wanted by an emitter whose answer
+    depends on WHICH frame a note ends on and not on the typical one
+    (`goatwriter.wave_program`'s cut-note test). An instrument with no
+    measurable occurrence is absent: unknown, not short.
+    """
+    return median_played_durations(tracks, patterns, histograms=True)
 
 
 def min_played_notes(tracks: List[List[int]],

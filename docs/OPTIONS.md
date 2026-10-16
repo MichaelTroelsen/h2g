@@ -1555,7 +1555,10 @@ note relative to the pattern's, chosen against the pitches the instrument is
 played at and declined where one count does not stand for 75% of them. Where
 the closing hold applies the restore takes the last slide's count and no
 travel follows, so the tail is within a quarter-tone of the accumulator and not
-on it. Above `-S1` nothing else changes. A record the player vibrates takes no
+on it. Under a real firstwave (`no_test_restart`, `real_firstwave_instruments`)
+the first slide frame of a run that some played note of the instrument ENDS on
+stays on the note, because the next note's init call would open at the shifted
+pitch (Auf_Wiedersehen_Monty melody 0.9830 -> 0.9876). Above `-S1` nothing else changes. A record the player vibrates takes no
 closing travel at any `-S` (since v0.5.532). Mega_Apocalypse `$09F9`/`$07E7` and the
 `$0797` drums of I_Ball, Bangkok_Knights and Nineteen are the records it moves;
 see H2G-CONVERSION-METHOD.md §7.fff for the figures and the two losses.
@@ -2304,6 +2307,65 @@ Nineteen `our_ties_silent` 1457 → 6 (the original: 148); Shockway Rider
 falls 0.970 → 0.911 because the silent surplus had been masking audible ties
 the file is short of on voices 1 and 2 (voice 0 alone: 1.175 → 0.926), and
 `wave` on Nineteen voice 2 loses 0.7 pp.
+
+## `--rest-program-stop` (the rest that stops the wave program)
+
+With `--wave-program`: a bit-6 **rest stops the byte-code wave program**, the
+way it does in the player. IK+'s `$09F8` (record 2: `set $81 / slide $11 /
+slide $41 / set $80 x8 / hold`) sounds its first six frames and the original's
+trace reads `30A8 15A8` and then nothing; ours played every opcode through
+the rest (`$09F8` 775 reversals against the original's 310, `$08D8` 800
+against 536 -- historical, v0.5.553, `-t 180`).
+
+The stop condition, from the disassembly (IK+):
+
+```
+E329  BD 49 E5  LDA $E549,X    ; THIS event's status byte ($81 note, $43 rest)
+E32C  29 40     AND #$40       ; bit 6 = a rest
+E32E  D0 58     BNE $E388      ; skips the wave-program interpreter
+E330  AD 58 E7  LDA effect     ; ...only a note reaches the gate test
+E333  29 08     AND #$08       ; the program's gate
+```
+
+A rest never reaches the program, and the rest handler (`$E135`) has already
+written `$08` into the stored waveform and dropped the gate mask, so nothing
+rewrites it before the next note. The gate-off three frames earlier (`$E1C4`,
+the note's own length) does not stop it: the trace has the mask at `$FE` and
+the program index still advancing for three more frames. `$E388` is the
+arpeggio / vibrato / pulse code, which *does* run across a rest -- IK+ voice 0,
+an arpeggio instrument, keeps stepping and re-writes its stored waveform every
+frame -- and that is why `--rest-wave-silence` (which parks every instrument
+that has a wavetable) loses `wave` on IK+ (voice 0 0.80 -> 0.58) where this
+option gains it (voice 1 0.40 -> 0.44, voice 0 unmoved; file 0.587 -> 0.609).
+
+The same `29 40 D0` branch precedes the gate test in **20 of the 29**
+wave-program players (`detect.wave_program_rest_bypass`; historical, v0.5.553);
+the nine without it (After 8, Kings of the Beach, Mr Meaner, Off the Cuff, One
+on One, Powerplay, Pygmies, Rikky, Rock Tells the Tale) test the gate first and
+are not touched. The option is inert in them, without `--wave-program`, and
+where `--rest-wave-silence` is also given (which subsumes it).
+
+It is the `--rest-wave-silence` pass (`goatwriter/rest_park.py`) restricted to
+instruments whose record selects the program: `CMD_SETWAVEPTR` to the shared
+`E8 80 / FF 00` park program on the rest, which writes `$08` and zeroes the
+pointer (gplay.c:436-445, :525-527, :709-712). A rest whose live instrument is
+not wholly a program instrument gets no command, and `--rest-envelope-silence`
+beside it keeps the SETSR / SETAD rows it would have without this option.
+
+**Off by default, and the corpus A/B is mixed** (shipped presets with the
+option forced on in `always`, `-t 180`, v0.5.553; 12 of 89 files move, 77 do
+not). `wave` up on IK+ +2.2 pp, Pandora +1.3, Trans-Atlantic +1.1, Nemesis
++0.3; down 0.04-0.14 pp on Monty, Bangkok Knights and I, Ball. Per-instrument
+reversals (sum of |ours - original|): IK+ 4428 -> 3869, but Bangkok 2296 ->
+2442, I, Ball 328 -> 372, Trans-Atlantic 271 -> 299. Where a program ends on
+the very frame the rest lands (Bangkok `$0AA9`: 12 frames, rest on the 13th)
+our rest executes one frame early and the last opcode is clipped. So it is a
+per-song question for the preset search, not an `always` entry; IK+ is the file
+it was decoded from.
+
+```sh
+python -m h2g song.sid --wave-program --rest-keyoff --rest-program-stop
+```
 
 ## `--rest-envelope-silence` (the rest that zeroes the envelope)
 

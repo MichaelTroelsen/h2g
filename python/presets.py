@@ -468,6 +468,17 @@ EXCLUDED_FROM_ALWAYS = {
     # refused everywhere it applies -- and nobody should re-run the experiment,
     # which is why the numbers are here rather than in a run record.
     "rest_wave_silence",
+    # The bit-6 rest's STOP of the byte-code wave program: the same park
+    # restricted to the instruments whose record selects the program
+    # (`wave_program_rest_bypass`, 20 corpus files), because in the player
+    # the rest bypasses that interpreter and nothing else. Offered rather than
+    # on `always` because the corpus A/B is mixed (task
+    # ik-plus-record2-program-stop, v0.5.553, forced on in `always`: 12 files
+    # move, `wave` up on IK+/Pandora/Trans-Atlantic, per-instrument reversal
+    # error worse on Bangkok/I_Ball/Trans-Atlantic; docs/OPTIONS.md). Like its
+    # parent it is not in FIDELITY_TOGGLES, and `fidelity_better` has no term
+    # that reads a program's reversals, so no per-song entry exists yet.
+    "rest_program_stop",
     # The bit-6 rest's zeroed ENVELOPE pair -- a different write in the same
     # branch, and a mechanism read off the 6502 rather than guessed: all 21
     # players that silence on a rest do `LDA #$00 / STA SR,Y / STA AD,Y`

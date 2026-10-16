@@ -34,6 +34,9 @@ GT_TABLES_GTS5 = 4
 # Goattracker limits, from goattracker2 src/gcommon.h.
 GT_MAX_INSTR = 64      # MAX_INSTR
 GT_MAX_TABLELEN = 255  # MAX_TABLELEN -- ltable/rtable are this many bytes each
+# An orderlist track's byte limit (patterns.MAX_TRACK_LEN re-exports it). Lives
+# here, a leaf, so goatwriter can import it without importing patterns.
+MAX_TRACK_LEN = 0xFF
 
 # Wave/pulse table entries emitted per instrument.
 WAVE_ENTRIES_PER_INSTR = 5

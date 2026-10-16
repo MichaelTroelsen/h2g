@@ -431,6 +431,19 @@ def main(argv=None) -> int:
              "since. Provided so the measurement can be re-run"
     )
     parser.add_argument(
+        "--rest-program-stop", action="store_true",
+        help="with --wave-program, a bit-6 rest stops the byte-code wave "
+             "program the way the player does: the rest bypasses the "
+             "interpreter (`29 40 D0` ahead of its gate test, 20 corpus "
+             "files) and the stored waveform stays at the $08 the rest "
+             "handler parked. IK+ $09F8 sounds 6 frames of its 12-opcode "
+             "program and was playing all of it. Only instruments whose "
+             "record selects the program are stopped; an arpeggio "
+             "instrument keeps stepping across a rest in the original and "
+             "is left alone, which --rest-wave-silence does not do. Off by "
+             "default"
+    )
+    parser.add_argument(
         "--rest-envelope-silence", action="store_true",
         help="on a bit-6 rest, zero the sustain/release register the way "
              "the player does (CMD_SETSR $00) as well as keying off. All "
@@ -682,6 +695,7 @@ def main(argv=None) -> int:
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
                           ("--rest-wave-silence", "rest_wave_silence"),
+                          ("--rest-program-stop", "rest_program_stop"),
                           ("--rest-envelope-silence", "rest_envelope_silence"),
                           ("--two-stage", "two_stage"),
                           ("--voice-two-stage", "voice_two_stage"),
@@ -795,6 +809,7 @@ def main(argv=None) -> int:
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
                       rest_wave_silence=args.rest_wave_silence,
+                      rest_program_stop=args.rest_program_stop,
                       rest_envelope_silence=args.rest_envelope_silence,
                       two_stage=args.two_stage,
                       voice_two_stage=args.voice_two_stage,

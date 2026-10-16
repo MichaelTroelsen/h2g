@@ -459,6 +459,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               instr_voices: Optional[dict] = None,
               instr_row_calls: Optional[dict] = None,
               note_pitches: Optional[dict] = None,
+              note_spans: Optional[dict] = None,
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
               max_hard_restart: bool = False,
@@ -473,6 +474,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               sfx_drum_bandpass: bool = False,
               named_firstwave: bool = False,
               pitch_tie_phase: bool = False,
+              rest_program_stop: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -571,6 +573,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 return True
         return False
 
+    # The note lengths the byte-code program's cut-note test reads
+    # (`_wave_program_entries` `spans`): only where an instrument writes a
+    # real firstwave, because only there does the next note's init call put
+    # the previous note's last pitch on the chip for a frame.
+    stale_spans = (note_spans if (no_test_restart
+                                  or real_firstwave_instruments) else None)
     # Before the orderlists are written, because its pattern copies repoint
     # them; its instrument bytes wait for `apply_tempo_duty_edits`, last.
     duty_split = tempo_duty_split_plan(sid, det, tracks, patterns, effects,
@@ -650,7 +658,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 hold_travel=not (no_test_restart
                                  or real_firstwave_instruments
                                  or gate_off_firstwave_instruments),
-                note_pitches=note_pitches)
+                note_pitches=note_pitches, note_spans=stale_spans)
             failed = {(rec, res) for (rec, _c, res), at
                       in zip(phase_split.clones, dry_starts) if not at}
             if not failed:
@@ -722,7 +730,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     hold_travel=not (no_test_restart
                                      or real_firstwave_instruments
                                      or gate_off_firstwave_instruments),
-                    note_pitches=note_pitches)
+                    note_pitches=note_pitches, note_spans=stale_spans)
                 failed = {(rec, res) for (rec, _c, res), at
                           in zip(phase_split.clones, dry_starts) if not at}
                 if not failed:
@@ -1123,6 +1131,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         hold_travel=not (no_test_restart or real_firstwave_instruments
                          or gate_off_firstwave_instruments),
         eor_phases=eor_phases, note_pitches=note_pitches,
+        note_spans=stale_spans,
         eor_span=eor_span)
     # The sfx drum's one-frame bandpass, written into the filter programs of the
     # drum records. After the wavetable layout, because where the noise lands
@@ -1685,10 +1694,20 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # here instead. Inert where no pattern holds a `CMD_SETWAVE $08` row.
     # After every pass that names an instrument or appends a block (it reads
     # the finished starts), before the table is written.
+    # `--rest-program-stop` is the same pass restricted to the instruments
+    # whose record selects the byte-code program -- the only ones a bit-6 rest
+    # stops (`detect.wave_program_rest_bypass`). The record's effect byte is
+    # the third field of the name `_write_instruments` gives each instrument.
+    program_only = None
+    if rest_program_stop:
+        program_only = _gw_rest_park.program_instruments(
+            out, instr_at, written_instr, det.wave_program_gate,
+            det.effect_arp)
     patterns, wave_entries = _gw_rest_park.rest_park_plan(
         patterns, tracks, wave_entries,
         {g: out[instr_at + 1 + (g - 1) * 25 + 2]
-         for g in range(1, written_instr + 1)}, log)
+         for g in range(1, written_instr + 1)}, log,
+        **({} if program_only is None else {"only": program_only}))
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
