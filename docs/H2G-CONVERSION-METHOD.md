@@ -14654,6 +14654,22 @@ and no column of its row moves. The corpus byte-hash compared 95 files, 89
 converted, 6 refused, and 3 moved: Battle_of_Britain, Game_Killer,
 Human_Race. Commando is byte-identical.
 
+**The KEYOFF that opens a continued event gives up the tie's pin** (since
+v0.5.567, `lead-in-the-320-frame-tied-0a9a`). That row carries the tie's
+`CMD_TONEPORTA 00`, and a pattern command persists until another comes, so on
+the rest rows after it the portamento pinned the voice to its note every tick
+and each store lasted one call: Game_Killer's `$0A9A` note read `$44` for one
+call in 20 through its eighth event, which a frame-end trace never sees.
+`note_rise._release_pins` puts the note's own command back on that row, where
+every play of the row opens one of these runs, they agree on the cell, a rest
+row after it kept a store, and the row holds that pin and no store of its own
+(Chimera's KEYOFF row carries a store's pointer, and overwriting it cost the
+narrow window 186 -> 174 when the first version did). Game_Killer `-t 180`:
+`tie_agreement` .778 -> .790, `reversal_ratio` .958 -> .986, `tie_ratio`
+.925 -> .939, `aud` -.0009; the note's last 40 frames' mean high-byte error
+12.1 -> 4.45. The byte-hash moves Battle_of_Britain and Game_Killer.
+`tests/test_note_rise_pin_release.py`.
+
 ### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
 Rasputin's player reads bit `$02` a fourth way. It is not the rise, the

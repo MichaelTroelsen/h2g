@@ -304,6 +304,7 @@ from .note_rise import (_note_rows, NOTE_RISE_MAX_DURATION,
                         nearest_value, note_rise_entries, note_rise_placed,
                         note_rise_plan, continuation, _extension_pays,
                         _rise_plan_once, _isolate, _lap_positions, _lap_visits,
+                        _release_pins,
                         program_cost, program_entries, row_calls_of,
                         store_lag, store_phase, store_rows, store_values,
                         tail_entries)  # noqa: F401

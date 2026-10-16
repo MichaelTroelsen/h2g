@@ -649,6 +649,7 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
     kbase = 0           # the highest store the notes' own events ask for
     carried_on: List[tuple] = []        # ((pattern, row), (k, tick)) past a note
     declined: Dict[str, int] = {}
+    releases: List[tuple] = []   # ((pattern, row) of a pinning KEYOFF, cell, rest rows)
 
     def decline(why: str) -> None:
         declined[why] = declined.get(why, 0) + 1
@@ -712,6 +713,21 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                 carried_on.extend(((wp, wr), kh) for kh in got)
         if more:
             runs.append((seq, frames))
+            # The KEYOFF that opens the continued event carries the tie's
+            # `CMD_TONEPORTA 00`, and a command persists until another comes:
+            # on the rest rows it pins the voice to its note every tick, so a
+            # store lasts ONE call, not the tick (Game_Killer's $0A9A note at
+            # frame 641: the 8th event's stores read $44 for one call in 20
+            # and the frame reads the bare note). The note's own vibrato
+            # command goes back on that row (`_release_pin`).
+            kp, kr, _ = rows[a + length]
+            lp2, lr2, _ = rows[a + length - 1]
+            prev = tuple(patterns[lp2][4 * lr2 + 2:4 * lr2 + 4])
+            if (tuple(patterns[kp][4 * kr + 2:4 * kr + 4])
+                    == (CMD_TONEPORTA, 0x00) and prev[0] in (0, 4)):
+                releases.append(((kp, kr), prev,
+                                 [(rows[a + jj][0], rows[a + jj][1])
+                                  for jj in stores if jj >= length]))
 
     # The rows a continuing note asks for that other plays of the row do not
     # (`_isolate`): the patterns holding them get a copy per spelling and the
@@ -966,6 +982,7 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
     out, edited, numbers = best["out"], best["edited"], best["numbers"]
     entries, base_table, placed = best["entries"], best["base"], best["placed"]
     speed_table[:] = best["speeds"]
+    released = _release_pins(out, releases, rows, plays)
     if best["over"]:
         declined["pattern past the packed limit"] = best["over"]
     if best["cut"]:
@@ -991,6 +1008,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
            if runs else "")
         + (f"; {copies} pattern copy(ies) for the rest rows" if copies
            else "")
+        + (f"; {released} tie pin(s) released on the KEYOFF row" if released
+           else "")
         + ("; declined: " + ", ".join(f"{n} {w}" for w, n in declined.items())
            if declined else ""))
     if info is not None:
@@ -1001,6 +1020,38 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                                if kh in rows.get(key, ())))
     return _gw_skydive.SkydivePlan(patterns=out, entries=entries,
                                    base=base_table, starts=new_starts)
+
+
+def _release_pins(out: List[List[int]], releases: List[tuple],
+                  rows: Dict[tuple, tuple], plays: Dict[tuple, int]) -> int:
+    """Put the note's own command back on each KEYOFF row that opens a
+    continued event and pins the voice with the tie's `CMD_TONEPORTA 00`
+    (a command persists until another comes, so the pin held the voice on
+    its note through every rest row after it and a store lasted one call).
+
+    Only a row every play of which is one of these continued notes' (its
+    `plays` equal the releases asking for it, all for the same cell), and
+    only where one of the rest rows after it was given a store."""
+    by_key: Dict[tuple, List[tuple]] = {}
+    for key, cell, rest in releases:
+        by_key.setdefault(key, []).append((cell, rest))
+    done = 0
+    for (p, r), asked in by_key.items():
+        cells = {cell for cell, _rest in asked}
+        if (len(asked) != plays.get((p, r), 0) or len(cells) != 1
+                or not any(k in rows for _c, rest in asked for k in rest)):
+            continue
+        # Only the pin itself: a KEYOFF row that carries a store of its own
+        # (Chimera's row 22, `continuation`) has its command column taken
+        # by the store's pointer, and putting the note's command there
+        # drops the store.
+        if (p, r) in rows or out[p][4 * r + 2] != CMD_TONEPORTA:
+            continue
+        cmd, data = cells.pop()
+        out[p][4 * r + 2] = cmd
+        out[p][4 * r + 3] = data
+        done += 1
+    return done
 
 
 def _extension_pays(ext: dict, base: dict) -> bool:

@@ -1171,6 +1171,25 @@ def _drum_tick_noise(wave: int, multiplier: int = 1,
     wrap is a window of period 9 of at least one wrap (~33 ms) before the
     rise, as the original's `ADSR $0000` write is, and that also cuts the
     previous tail; no write at the rise can.
+
+    **That window, built, does lower the wrap on three files and still loses
+    `adsr_exact` on all five** (task `open-a-window-of-period-9-before`, base
+    ba696cb, not shipped; `tests/test_drum_window_setsr.py`). The restore
+    above plus a second `$F6 00` after the tail behind a delay, timed
+    `back` frames before the record's typical note end. Same 19 of 89 files
+    move as with the restore alone. VICE, 60 s, share of attacks rising
+    within 5 lines, head -> window (back 2): Rasputin 0.023 -> 0.659,
+    Warhawk 0.025 -> 0.252, Proteus 0.007 -> 0.209, Formula_1 0.008 -> 0.016,
+    Bump_Set_Spike 0.000 -> 0.014 (release 0 whole-note: 0.86-0.91). Tail
+    sum8 -0.5 to -2.6 % on four, Rasputin +3.4 %. Fidelity, -t 180, presets,
+    --sound, 29 files: `adsr_exact` down on 13, up on none, mean -0.9 pp
+    (Thrust -5.4, Formula_1 -3.0, Kentilla -4.3); Rasputin
+    `release_tail_agreement` 0.875 -> 0.75; Kentilla and Spellbound
+    `melody`/`sequence` fall (1 -> 0.982 and 0.9985), cause not traced.
+    On the five files back 0.5, 1, 2, 3, 4 frames all lower `adsr_exact` on
+    every file. The original's `$0000` write is a window the converter
+    cannot place per note: the wavetable knows the typical length, not
+    this note's.
     `-A0000` (the original writes $0000 before every rise; Goattracker's
     `adparam` default is $0F00) changes no packed byte under presets on
     any of the 89 files that convert: every file carries `no_hard_restart`,
