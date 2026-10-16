@@ -685,6 +685,14 @@ CMD_SETSR = 0x06                # gcommon.h:10 -- patterns.CMD_SETSR
 # old and 57 of its 59 additions sit within 2 frames of an original tick.
 # The overshoot past 240 is not in the additions: 30 of the common 210 sit
 # 4-6 frames from every original tick (nearest-offset census, both arms).
+# (That figure was never scripted: ticks.py held no nearest computation.
+# Re-derived at 68dacf6 by python/nearest_offset_census.py, whose base arm
+# turns `note_passes.legato_tie_family` off: base 210 ticks, tree 239
+# (original 240), 180 common. At the best global shift (-7, the startup
+# lag) the base's ticks read {0: 103, 1: 75, 2: 2, 5: 13, 6: 17} frames from
+# the nearest original tick -- 30 at 5-6, as recorded -- and the tree's
+# {0: 132, 1: 104, 2: 3}: the respelling removes them, and there is no
+# overshoot left to explain.)
 # Gate-on edges 106/149/194 in all three.
 # Above -S1 the clones are numbered behind a decoy legato record that takes
 # gt2reloc's FIRSTLEGATOINSTR slip (`note_passes.legato_slip_decoy`); see

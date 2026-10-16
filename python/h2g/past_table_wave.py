@@ -91,9 +91,17 @@ table gets a `CMD_SETWAVEPTR` to a copy of the instrument's wave program
 to the original's cell, exactly as above. A note row's own `CMD_SETWAVEPTR`
 replaces the instrument's wave pointer on the note's first call and leaves
 the instrument alone otherwise (`note_passes._attack_hold_pass`), so no
-instrument is cloned and no later row needs restoring. A row is left
-on the relative step, counted in the log, when its command column is taken,
-when the contexts that play it disagree and the pattern cannot be copied,
+instrument is cloned and no later row needs restoring. Where the command
+column holds a `CMD_SETPULSEPTR` (the pulse phase `pulse.py` plants on a
+note row) the pointer cannot share that column either, so the row keeps its
+`CMD_SETPULSEPTR` untouched and names a CLONE of the instrument whose wave
+pointer is the pinned copy (`clonekeep`): the clone is otherwise the
+instrument byte for byte, vibrato and pulse pointer included, and the row
+after it names the instrument again where it names none. A `CMD_VIBRATO 0`
+row on a vibrating instrument is cloned the same way, with the vibrato
+switched off on the clone instead (`clone`). A row is left
+on the relative step, counted in the log, when its command column holds
+any other command, when the contexts that play it disagree and the pattern cannot be copied,
 when the copy does not fit the wavetable, or when the pattern would pack
 past `PACKED_PATTERN_LIMIT`.
 
@@ -498,17 +506,25 @@ def retarget_mixed_steps(song, sid, det,
     `stats`, where given, receives `wave_short`: the wavetable rows the first
     pass lacked for the copies it could not place.
 
-    Two ways to point, by what the row's command column holds:
+    Three ways to point, by what the row's command column holds:
 
     * free (or already a `CMD_SETWAVEPTR`, or a `CMD_VIBRATO 0` on an
       instrument with no vibrato, which says nothing): the row takes the
-      pointer, and nothing else about the voice changes;
+      pointer, and nothing else about the voice changes (`ptr`);
     * `CMD_VIBRATO 0` on an instrument that does vibrate -- the vibrato
       pass's "this note never vibrates" -- the pointer cannot share the
       column, so the row names a CLONE of the instrument with the vibrato
       off and the pinned program, and the row after it names the instrument
       again where it names none (the clone stays latched until a column says
-      otherwise, `gplay.c:62`/`:358`). A row that ends its pattern is left.
+      otherwise, `gplay.c:62`/`:358`). A row that ends its pattern is left
+      (`clone`);
+    * `CMD_SETPULSEPTR` (the pulse phase on the note row): the row keeps its
+      command and names a CLONE of the instrument, identical except for the
+      wave pointer, which is the pinned program (`clonekeep`). The clone is
+      not vibrato-switched, so the vibrato stays as the instrument has it;
+      a row that ends its pattern is left.
+
+    Any other command in the column leaves the row on the relative step.
     """
     if det.freq_table is None or not SPLIT_MIXED:
         return False

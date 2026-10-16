@@ -14906,6 +14906,18 @@ it; the pointer would not), and one whose pack would pass
 `PACKED_PATTERN_LIMIT`. Rasputin: 266 notes stop, 12 not followed by a plain
 note, none otherwise declined.
 
+**Since v0.5.566 a note that ends its pattern carries its stop into the next**
+(`cover-the-12-rasputin-ring-notes-the`). Rasputin's 12 were ring notes ending
+a pattern whose successor opens on 2 or 4 rest rows and then a plain note; the
+pass now puts the pointer on the successor's last leading rest row
+(`_orderlist_edges`, `_leading_rests`), editing the successor in place only
+when every pattern that enters it is such a ring tail, and declining it
+("shared") otherwise -- the corpus has no shared case. 326 notes stop, none
+declined; on the packed trace the extra toggles inside the last tick fall
+24 -> 16 (original 0, the rest the next note's early attack) and last-tick
+class agreement 496 -> 504 of 858; `wave` +.0002, `aud` -.0003.
+`tests/test_wave_eor_rest_opening.py`.
+
 Measured at c4eedc4, presets, `-t 180`, on the PACKED song traced (not the
 wavetable simulated: the simulation never sees a pattern command), voice 0's
 toggling record-10 notes of 3 rows or more, 336 of them, counting 4x <-> 5x

@@ -130,11 +130,14 @@ def test_a_note_at_a_pattern_end_looks_at_the_next_pattern():
     got = _run([c], tracks=[[0, 0xFF, 0]])
     assert _cmds(got[0]) == [(0, 0)] * 3
     # `--max-rows` slices a long pattern: the note runs on into the next
-    # pattern's leading rest rows, so the slice's last row is not its last
+    # pattern's leading rest rows, so the slice's last row is not its last;
+    # the pointer goes on the last of those rows instead
+    # (test_wave_eor_rest_opening.py)
     cut = _pat([N, 3, 0, 0], REST, REST)
     tail = _pat(REST, REST, [N + 1, 5, 0, 0])
     got = _run([cut, tail], tracks=[[0, 1, 0xFF, 0]])
     assert _cmds(got[0]) == [(0, 0)] * 3
+    assert _cmds(got[1]) == [(0, 0), (CMD_SETWAVEPTR, STOP), (0, 0)]
     # a pattern two orderlists follow with different heads needs both to say
     # it: here one voice follows `c` with a tie, the other with a note
     got = _run([c, b, d], tracks=[[0, 1, 0xFF, 0], [0, 2, 0xFF, 0]])
@@ -246,7 +249,10 @@ def test_rasputin_every_ring_note_ends_on_the_pointer(converted):
             assert pa[4 * r] == GT_REST and r >= 1
         changed += len(rows)
     line = next(l for l in log if l.startswith("EOR last tick"))
-    assert int(line.split(":")[1].split()[0]) == changed >= 200
+    # the log counts NOTES, the rows are PATTERN rows: Rasputin's pattern 8
+    # opens with the rests three sliced ring notes run into, one row for
+    # the three (test_wave_eor_rest_opening.py)
+    assert int(line.split(":")[1].split()[0]) == changed + 2 >= 200
 
 
 # --- the packed song, traced -------------------------------------------------------

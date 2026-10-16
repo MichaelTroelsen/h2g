@@ -52,8 +52,8 @@ from ..detect import Detection
 from ..sidfile import SidFile
 from .constants import (CMD_SETTEMPO, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         CMD_VIBRATO,
-                        GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_WAVE_JUMP,
-                        GT_WAVE_NO_NOTE, WAVE_MAX_DELAY, WAVE_NOISE_GATEOFF,
+                        GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_REST,
+                        GT_WAVE_JUMP, GT_WAVE_NO_NOTE, WAVE_MAX_DELAY, WAVE_NOISE_GATEOFF,
                         WAVE_NOTE_BASE)
 from .primitives import _first_frame_entry
 
@@ -712,6 +712,63 @@ def eor_ring_instruments(entries: List[Tuple[int, int]],
     return frozenset(out)
 
 
+def _orderlist_edges(tracks: List[List[int]], patterns: List[List[int]]):
+    """(successors, predecessors): pattern number -> the set of pattern
+    numbers the orderlists play right after / right before it.
+
+    Walked like `note_passes._successor_heads` (repeats honoured, transposes
+    skipped). `None` marks what the walk cannot name: the pattern before an
+    orderlist's `$FF` (the restart target is an operand), and, among the
+    predecessors, a track's first pattern and the one its restart lands on.
+    """
+    succ: Dict[int, set] = {}
+    pred: Dict[int, set] = {}
+    for track in tracks:
+        seq, at, repeat = [], [], 1
+        restart = 0
+        for k, b in enumerate(track):
+            if b == 0xFF:
+                restart = track[k + 1] if k + 1 < len(track) else 0
+                break
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b < len(patterns):
+                seq += [b] * repeat
+                at += [k] * repeat
+            repeat = 1
+        for a, b in zip(seq, seq[1:]):
+            succ.setdefault(a, set()).add(b)
+            pred.setdefault(b, set()).add(a)
+        if seq:
+            succ.setdefault(seq[-1], set()).add(None)
+            pred.setdefault(seq[0], set()).add(None)
+            for p, k in zip(seq, at):
+                if k >= restart:
+                    pred.setdefault(p, set()).add(None)
+                    break
+    return succ, pred
+
+
+def _leading_rests(pat: List[int]) -> int:
+    """How many rows a pattern opens with that are plain rests (no
+    instrument), when the event after them is a plain note (not a tie);
+    0 when it opens on anything else or the rests lead nowhere."""
+    i = 0
+    while i + 3 < len(pat) and pat[i] == GT_REST and not pat[i + 1]:
+        i += 4
+    if i == 0 or i + 3 >= len(pat):
+        return 0
+    nb = pat[i]
+    if not GT_FIRST_NOTE <= nb <= GT_LAST_NOTE:
+        return 0
+    if pat[i + 2] == CMD_TONEPORTA and pat[i + 3] == 0:
+        return 0
+    return i // 4
+
+
 def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
                   rings: frozenset, stop: int, log=None) -> List[List[int]]:
     """`CMD_SETWAVEPTR` to `stop` on the last row of each note of a `rings`
@@ -726,6 +783,13 @@ def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
       And a note can run on past the pattern's end: `--max-rows` slices
       long patterns, and a slice's tail is rest rows, not an event. So at the
       pattern's end every successor's first row must be a plain note.
+      **Unless the successor opens on rest rows and then a plain note**: the
+      note runs on through them (a slice's continuation), and its last tick
+      is the last of those rest rows, where the pointer goes instead. That
+      successor is edited in place, so it must be entered ONLY from such
+      tails (every orderlist predecessor ends on a ring note of its own,
+      none is unknown, no track starts or restarts on it); a successor that
+      other notes also reach would stop theirs, and is declined (**shared**).
     * **unknown**: no row of the pattern has named the instrument and the
       orderlists enter it holding more than one.
     * **busy**: the last row's command column is taken.
@@ -748,6 +812,9 @@ def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
     heads = _successor_heads(tracks, patterns)
     out: List[List[int]] = []
     placed = unfollowed = unknown = busy = over = persistent = 0
+    shared = 0
+    succ, pred = _orderlist_edges(tracks, patterns)
+    carried: Dict[int, int] = {}     # pattern -> row offset its tail note starts
     for number, pat in enumerate(patterns):
         held = entry.get(number, ())
         live = next(iter(held)) if len(held) == 1 else 0
@@ -785,7 +852,12 @@ def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
                     and not (h[2] == CMD_TONEPORTA and h[3] == 0)
                     for h in heads.get(number, {None}))
             if not followed:
-                unfollowed += 1
+                if (j + 1 == len(events) and succ.get(number)
+                        and all(s is not None and _leading_rests(patterns[s])
+                                for s in succ[number])):
+                    carried[number] = at
+                else:
+                    unfollowed += 1
                 continue
             last = end - 4
             cur = copy if copy is not None else pat
@@ -810,11 +882,62 @@ def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
             copy = trial
             placed += 1
         out.append(pat if copy is None else copy)
-    if log and (placed or busy or unknown or over or unfollowed or persistent):
+    # A note that runs on into rest rows: the pointer on the last of them.
+    # All its successors are such openings (`carried`'s test); a note counts
+    # as placed when every successor took the pointer.
+    taken: Dict[int, bool] = {}
+    for number, at in carried.items():
+        done = True
+        for s in sorted(succ[number]):
+            if s not in taken:
+                taken[s] = False
+                lead = _leading_rests(patterns[s])
+                mates = pred.get(s, {None})
+                if None in mates or not all(p in carried for p in mates):
+                    shared += 1
+                    continue
+                cur = out[s]
+                last = 4 * (lead - 1)
+                if cur[last + 2] or cur[last + 3]:
+                    busy += 1
+                    continue
+                running = 0
+                for p in sorted(mates):
+                    rows = list(range(carried[p], len(patterns[p]), 4))
+                    walk = [patterns[p][r + 2] for r in rows
+                            if patterns[p][r] != 0xFF]
+                    walk += [cur[r + 2] for r in range(0, last, 4)]
+                    run = 0
+                    for c in walk:
+                        if c == CMD_DONOTHING:
+                            run = 0
+                        elif c in CONTINUOUS_COMMANDS:
+                            run = c
+                    running = running or run
+                if running:
+                    persistent += 1
+                    continue
+                trial = list(cur)
+                trial[last + 2] = CMD_SETWAVEPTR
+                trial[last + 3] = stop & 0xFF
+                if packed_pattern_size(pattern_rows(trial)) >                         PACKED_PATTERN_LIMIT:
+                    over += 1
+                    continue
+                out[s] = trial
+                taken[s] = True
+            done = done and taken[s]
+        if done:
+            placed += 1
+        else:
+            unfollowed += 1
+    if log and (placed or busy or unknown or over or unfollowed or persistent
+                or shared):
         log(f"EOR last tick...........: {placed} note(s) stop their toggle "
             "on the last row"
             + (f", {unfollowed} not followed by a plain note"
                if unfollowed else "")
+            + (f", {shared} rest opening(s) other notes also enter"
+               if shared else "")
             + (f", {busy} with the column in use" if busy else "")
             + (f", {persistent} under a running effect" if persistent
                else "")

@@ -354,7 +354,8 @@ from .wave_eor import (_hold, _is_drum, _plays, _record_effect, _row_tempos,
                        eor_stop_pass, CONTINUOUS_COMMANDS,
                        CMD_DONOTHING, DETOUR_FRAMES, eor_skip_detours,
                        has_skip_rows, program_waves, ring0_waves,
-                       skip_clock, _effect_runs_into)  # noqa: F401
+                       skip_clock, _effect_runs_into, _orderlist_edges,
+                       _leading_rests)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
                     _heard_splits, _RetrySplit, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _record_numbers,
