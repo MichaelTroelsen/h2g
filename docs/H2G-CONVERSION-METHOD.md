@@ -13961,6 +13961,20 @@ windows the file has**, measured under presets at the bridged base 81a766c
 | Master_of_Magic | 0 of 4 (a carried program is 74 steps at -S2) | 189 of 255 |
 | One_Man_and_his_Droid | 0 of 8 (100 steps at -S2) | 208 of 255 |
 
+**Since v0.5.557 a program that finds no room at the table's end may lie over
+the rows of duplicate instrument blocks** (`note_rise.reclaimable_holes`, the
+5-row blocks note_rise already reused; `skydive.reusable_runs`,
+`assemble(reuse=True)`), tried only when every plain layout fails. Two files
+move under presets: Gremlins now carries the vibrato on 7 rows (73 rows laid
+over its duplicate blocks) and Hunter_Patrol on voice 1 too (60 rows). A/B at
+-t 180: Gremlins bend .918 -> .935, travel .870 -> .886, tie agreement .845 ->
+.848; Hunter_Patrol bend .781 -> .810; aud -0.0008 at most. The single
+unreachable padding rows are NOT reclaimable: every such run in the corpus is
+one row and the shortest program is two
+(`tests/test_skydive_reclaim.py`). Master_of_Magic, One_Man_and_his_Droid,
+Zoids and Last_V8 still decline: their free rows sit in runs shorter than the
+74-140 a carried program needs.
+
 Where a window IS carried it is frame-exact. Through gt2reloc and siddump
 (lag 7), over a window's frames, our frequency equals the original's:
 

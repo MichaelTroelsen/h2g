@@ -18,4 +18,8 @@ def test_human_race_takes_the_rows_that_fit_instead_of_none():
     assert len(rise) == 1, rise
     assert "not emitted" not in rise[0], rise
     assert "store row(s) on instrument(s)" in rise[0], rise
-    assert "row past the packed limit" in rise[0], rise
+    # The packed limit is no longer binding: the planner also tries the
+    # duplicate-block rows when a first fit cut rows, and thinning the
+    # pointers there takes all 224.
+    assert "224 store row(s)" in rise[0], rise
+    assert "past the packed limit" not in rise[0], rise

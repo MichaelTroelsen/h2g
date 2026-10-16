@@ -299,15 +299,19 @@ def test_the_packed_window_follows_the_originals_frequency_on_every_frame(
     them. The held program agrees on the stores' high byte and sits at the
     note between them, up to `$255` off, and is never exactly equal.
 
-    The wavetable has room for ONE carried program here, which two windows
-    of voice 2 share (frames 300-320 and 516-536 at lag 7; 30 s holds three
-    a voice, 21 frames each)."""
+    The wavetable's own end has room for ONE carried program here, which two
+    windows of voice 2 share (frames 300-320 and 516-536 at lag 7; 30 s holds
+    three a voice, 21 frames each). Voice 1's has none there, and gets the
+    rows of Hunter_Patrol's duplicate instrument blocks instead
+    (`note_rise.reclaimable_holes`, `skydive.reusable_runs`): before that it
+    stayed on the held program (`carried[0] == held[0]`, 25 frames of 63)."""
     carried, held, total = _window_frames("Hunter_Patrol", 0, 30, tmp_path,
                                           monkeypatch)
     assert total[0] >= 63 and total[1] >= 63, total
     assert carried[1][1] == 42, (carried, held, total)      # 2 windows x 21
     assert held[1][1] == 0 and held[0][1] == 0, (carried, held, total)
-    assert carried[0] == held[0], (carried, held, total)    # voice 1: no room
+    assert carried[0][1] == 42, (carried, held, total)      # voice 1: the rows
+    assert carried[0][0] >= held[0][0] + 20, (carried, held, total)
     assert carried[1][0] >= held[1][0] + 20, (carried, held, total)
 
 

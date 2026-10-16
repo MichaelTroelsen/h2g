@@ -166,9 +166,11 @@ class SkydivePlan:
     """The finished patterns and the program block to append to the wavetable.
 
     `base` and `starts` are set only when the plan made room by sharing the
-    identical programs at the end of the table (`compact_wave_tail`): the
-    wavetable to append `entries` to is then `base`, not the one the plan was
-    given, and `starts` is the instrument starts to write over `wave_starts`.
+    identical programs at the end of the table (`compact_wave_tail`) or by
+    laying programs over the rows of duplicate instrument blocks
+    (`note_rise.reclaimable_holes`): the wavetable to append `entries` to is
+    then `base`, not the one the plan was given, and `starts` is the
+    instrument starts to write over `wave_starts`.
     """
     patterns: List[List[int]]
     entries: List[Tuple[int, int]]
@@ -225,6 +227,33 @@ def compact_wave_tail(wave_entries: List[Tuple[int, int]],
         return entries, [placed[blocks[s]] if s >= cut else s
                          for s in wave_starts]
     return None
+
+
+def coalesce_holes(holes: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """`holes` ((first row, rows) each, `note_rise.reclaimable_holes`) with
+    the ones that touch merged into runs: duplicate blocks are five rows
+    apiece and lie side by side, and a program is one run of rows."""
+    runs: List[List[int]] = []
+    for first, rows in sorted(holes):
+        if runs and runs[-1][0] + runs[-1][1] == first:
+            runs[-1][1] += rows
+        else:
+            runs.append([first, rows])
+    return [(a, n) for a, n in runs]
+
+
+def take_from_runs(free: List[List[int]], rows: int) -> Optional[int]:
+    """The first row of the smallest run in `free` ([first, rows] lists) with
+    `rows` rows or more, taken off it, or None. Smallest first so the long
+    runs stay for the long programs; the lower address breaks a tie."""
+    fit = [run for run in free if run[1] >= rows]
+    if not fit:
+        return None
+    run = min(fit, key=lambda r: (r[1], r[0]))
+    at = run[0]
+    run[0] += rows
+    run[1] -= rows
+    return at
 
 
 @dataclass(frozen=True)
@@ -980,6 +1009,10 @@ class _Assembly:
     tie_keys: Dict[tuple, tuple] = dataclasses.field(default_factory=dict)
     tie_declined: Dict[str, int] = dataclasses.field(default_factory=dict)
     tie_shared: int = 0
+    # {row: entry} of the programs laid over reclaimed rows (`reuse`), which
+    # `entries` does not carry: it is only what goes past the table's end.
+    overlay: Dict[int, Tuple[int, int]] = dataclasses.field(
+        default_factory=dict)
 
     @property
     def placed(self) -> int:
@@ -1226,7 +1259,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     instr_of: Dict[tuple, Optional[list]] = {}
 
     def assemble(carried: frozenset, compact: bool = False,
-                 shared: Optional[tuple] = None
+                 shared: Optional[tuple] = None, reuse: bool = False
                  ) -> Tuple[Optional[_Assembly], str]:
         """The programs laid out with the `carried` ones (program keys
         `(window, vibrato)`) written out and every other window held, on a
@@ -1235,10 +1268,32 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         `compact` lays the held alternating programs out in a third of the
         rows (`skydive_compact_calls`). `shared` is `(entries, starts)` of
         the wavetable with its identical tail programs shared
-        (`compact_wave_tail`), the table the programs are laid out after."""
+        (`compact_wave_tail`), the table the programs are laid out after.
+        `reuse` lets a program go over the rows of the table's duplicate
+        instrument blocks (`reusable_runs`) wherever it fits, before the
+        table's end; without it nothing is placed there."""
         table = list(speed_table)
         base, base_starts = shared or (wave_entries, wave_starts)
         wave_used = len(base) if shared else wave_used_before
+        free = ([list(run) for run in reusable_runs(shared)[0]]
+                if reuse else [])
+        overlay: Dict[int, Tuple[int, int]] = {}
+
+        def place(prog: list, force: bool = False) -> Optional[int]:
+            """The first row `prog` is laid at: a reclaimed run it fits,
+            else the table's end (None past MAX_TABLELEN unless `force`,
+            whose caller checks the end itself)."""
+            at = take_from_runs(free, len(prog))
+            if at is not None:
+                overlay.update({at + i: e for i, e in enumerate(prog)})
+                return at
+            if (not force
+                    and wave_used + len(entries) + len(prog)
+                    > GT_MAX_TABLELEN):
+                return None
+            at = wave_used + len(entries) + 1
+            entries.extend(prog)
+            return at
 
         def instrument_program(number: int) -> Optional[list]:
             key = (shared is not None, number)
@@ -1303,7 +1358,6 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         placed_rows: Dict[int, Tuple[int, int]] = {}
         try:
             for key in sorted(set(row_keys.values()), key=_program_order):
-                starts[key] = wave_used + len(entries) + 1
                 squeeze = (compact and key[0][2] and key[1] is None
                            and multiplier > 1)
                 prog = skydive_program(
@@ -1312,9 +1366,9 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     if squeeze else speed_index,
                     multiplier, vib=key[1], speed_row=speed_row,
                     **({"compact": True} if squeeze else {}))
+                starts[key] = place(prog, force=True)
                 placed_rows.update(
                     {starts[key] + i: e for i, e in enumerate(prog)})
-                entries += prog
         except OverflowError:
             return None, (f"speed table full or a step not a whole per-call "
                           f"rate at -S{multiplier}")
@@ -1366,14 +1420,14 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 table[:] = before
                 note_declined["speed table"] += 1
                 continue
-            if wave_used + len(entries) + len(prog) > GT_MAX_TABLELEN:
+            at = place(prog)
+            if at is None:
                 table[:] = before
                 note_declined["wavetable full"] += 1
                 continue
-            note_starts[key] = wave_used + len(entries) + 1
+            note_starts[key] = at
             placed_rows.update(
-                {note_starts[key] + i: e for i, e in enumerate(prog)})
-            entries += prog
+                {at + i: e for i, e in enumerate(prog)})
 
         # The tie windows' programs, each placed where it fits and sharing
         # the tail of a program already placed (`share_program_tail`).
@@ -1393,20 +1447,17 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 continue
             full = len(prog)
             prog, point_at = share_program_tail(prog, placed_rows)
-            if wave_used + len(entries) + len(prog) > GT_MAX_TABLELEN:
+            at = place(prog) if prog else wave_used + len(entries) + 1
+            if at is None:
                 table[:] = before
                 tie_declined_now["wavetable full"] += 1
                 continue
             tie_shared += full - len(prog)
-            tie_starts[key] = (point_at if point_at is not None
-                               else wave_used + len(entries) + 1)
-            placed_rows.update(
-                {wave_used + len(entries) + 1 + i: e
-                 for i, e in enumerate(prog)})
-            entries += prog
+            tie_starts[key] = point_at if point_at is not None else at
+            placed_rows.update({at + i: e for i, e in enumerate(prog)})
         return _Assembly(entries, starts, row_keys, note_starts, note_keys,
                          note_declined, table, tie_starts, tie_keys,
-                         tie_declined_now, tie_shared), ""
+                         tie_declined_now, tie_shared, overlay), ""
 
     # The layouts to try, the first that fits taken: as before, then the
     # held alternating programs in a third of the rows (above -S1), then the
@@ -1414,12 +1465,35 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # after the first is a rescue for a file that otherwise gets nothing, so
     # a file the first layout fits is untouched.
     sharing = None
+    pointers: List[int] = []
     if wave_entries and wave_starts:
         pointers = list(wave_pointers or ())
         pointers += [pat[4 * r + 3] for pat in patterns
                      for r in range(len(pat) // 4)
                      if pat[4 * r + 2] == CMD_SETWAVEPTR]
         sharing = compact_wave_tail(wave_entries, wave_starts, pointers)
+    reuse_cache: Dict[bool, tuple] = {}
+
+    def reusable_runs(shared: Optional[tuple]) -> tuple:
+        """(runs, starts, holes) of the table the programs are laid after
+        (`shared`'s, else the one the plan was given): the rows its duplicate
+        instrument blocks free (`note_rise.reclaimable_holes`) as runs of
+        touching blocks, the instrument starts with those records repointed
+        at the first copy, and the blocks. Empty where the plan was given no
+        table or not the whole of it."""
+        key = shared is not None
+        if key not in reuse_cache:
+            table_, starts_ = shared or (wave_entries, wave_starts)
+            if (not table_ or not starts_
+                    or (shared is None and len(table_) != wave_used_before)):
+                reuse_cache[key] = ([], list(starts_ or ()), [])
+            else:
+                from .note_rise import reclaimable_holes
+                holes, starts_to = reclaimable_holes(table_, starts_,
+                                                     pointers)
+                reuse_cache[key] = (coalesce_holes(holes), starts_to, holes)
+        return reuse_cache[key]
+
     layouts = [(False, None)]
     if multiplier > 1:
         layouts.append((True, None))
@@ -1428,11 +1502,22 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         if multiplier > 1:
             layouts.append((True, sharing))
     held, reason = None, ""
+    reuse = False
     for compact, shared in layouts:
         held, why_not = assemble(frozenset(), compact, shared)
         if held is not None:
             break
         reason = reason or why_not
+    if held is None:
+        # Nothing fits at the table's end: the rows of the duplicate
+        # instrument blocks are free too, so lay out over those first.
+        for compact, shared in layouts:
+            if not reusable_runs(shared)[0]:
+                continue
+            held, _why = assemble(frozenset(), compact, shared, True)
+            if held is not None:
+                reuse = True
+                break
     if held is None:
         say(f"{reason}, not emitted")
         return None
@@ -1447,7 +1532,15 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     best, carried = held, frozenset()
     for key in (sorted(use, key=lambda k: (-use[k], _program_order(k)))
                 if CARRY_VIBRATO else ()):
-        trial, _ = assemble(carried | {key}, compact, shared)
+        trial, _ = assemble(carried | {key}, compact, shared, reuse)
+        if ((trial is None or trial.placed < held.placed) and not reuse
+                and reusable_runs(shared)[0]):
+            # It does not fit at the table's end, or only at a note-row or
+            # tie program's cost: the rows of the duplicate instrument blocks
+            # are free too. From here every layout is over them.
+            again, _ = assemble(carried | {key}, compact, shared, True)
+            if again is not None and again.placed >= held.placed:
+                trial, reuse = again, True
         if (trial is not None
                 and trial.placed >= held.placed
                 and (CARRY_BUDGET is None
@@ -1516,6 +1609,8 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         + (f", compact (3 rows a pair of frames)" if compact else "")
         + (f", {len(wave_entries) - len(shared[0])} row(s) made by sharing "
            f"identical programs at the end of the table" if shared else "")
+        + (f", {len(best.overlay)} row(s) laid over the rows of duplicate "
+           f"instrument blocks" if best.overlay else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + (f"; declined: {skipped}" if skipped else "")
         + (f"; on the note row: {note_edited} row(s), {len(note_starts)} "
@@ -1530,6 +1625,20 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
            + (f", {tie_mixed} row(s) mixed or occupied" if tie_mixed else "")
            + (f", declined: {tie_skipped}" if tie_skipped else "")
            if tie_asks or tie_skipped else ""))
+    base_out, starts_out = (shared[0], shared[1]) if shared else (None, None)
+    if best.overlay:
+        # Programs went over duplicate blocks' rows: the table to append to
+        # has them written in, and the records of the blocks they took point
+        # at the first copy of the block instead.
+        _runs, starts_to, holes = reusable_runs(shared)
+        base_out = list(shared[0] if shared else wave_entries)
+        for row, entry in best.overlay.items():
+            base_out[row - 1] = entry
+        taken_blocks = {first for first, n in holes
+                        if any(first <= row < first + n
+                               for row in best.overlay)}
+        starts_out = [to if was in taken_blocks else was
+                      for was, to in zip(shared[1] if shared else wave_starts,
+                                         starts_to)]
     return SkydivePlan(patterns=out, entries=entries,
-                       base=shared[0] if shared else None,
-                       starts=shared[1] if shared else None)
+                       base=base_out, starts=starts_out)

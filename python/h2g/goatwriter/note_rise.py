@@ -813,7 +813,7 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
     # file that fits is laid out as before.
     new_starts: Optional[List[int]] = None
     perfect = (best is not None and len(best["chosen"]) == kmax
-               and best["over"] == 0)
+               and best["over"] == 0 and best["cut"] == 0)
     if (not perfect and wave_entries is not None and wave_starts is not None
             and len(wave_entries) == wave_used):
         named = list(wave_pointers or []) + [
