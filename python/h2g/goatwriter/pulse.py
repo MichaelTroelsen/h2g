@@ -579,6 +579,16 @@ def _tri_speed(step: int, delay: int, multiplier: int,
     86.0, 96.0, 106.0 and 122.0 a frame at R = 2, 3, 5 and 60 against the
     original's 82.3, 92.2, 105.3 and 121.3.
 
+    **Read over ALL sweep frames, record 0 shows 115.2 against the 122
+    emitted, and that is not lost travel** (`tri-turn-frame-dilution`,
+    9a0a452). `player.s` steps on every call, turns included
+    (`mt_nextpulsestep` resolves the jump on the previous entry's last
+    step), so travel is 61 a call. Record 0's legs are 23 calls, odd at
+    mult 2, so once per 23-frame cycle a -61 and a +61 share a frame and
+    net 0; the steady mean is 22 * 122 / 23 = 116.8. Record 11's 14-call
+    legs do not fold. Evening the legs would cost a 61-step of band to
+    remove a fold the SID never hears.
+
     **So the `pul` COUNT overshoots by (O+1)/O by construction, and that is
     not a pulse defect.** The gate skips the WHOLE play routine one frame in
     O+1 (Samantha Fox `$7006 DEC $EA / BPL / LDA #$04 / STA $EA / RTS`), so
