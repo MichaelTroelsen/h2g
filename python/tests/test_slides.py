@@ -12,7 +12,7 @@ and this converter used to manage **7**.
    presets use. GTS2 files escaped because their loader builds the table while
    reading (gsong.c:311-321).
 
-2. **The step is 16 bits, split across two pattern bytes.** 41 of 95 corpus
+2. **The step is 16 bits, split across two pattern bytes.** 42 of 95 corpus
    players fetch a second byte after the command operand (Warhawk $10EC:
    `INY / LDA (patt),Y / STA slidehi,X`). Reading only the first gave half the
    parameter and, worse, left the *second* byte to be played as a note with

@@ -1772,7 +1772,7 @@ honours the CIA rate, or a listening pass.
 
 A pitch slide is a 16-bit step split across two pattern bytes — the command
 operand and a byte fetched after it. `detect.SLIDE_OPERAND_SHAPE` finds the
-fetch (41 of 95 corpus files have it). **It does not say which byte is which
+fetch (41 of 95 corpus files have it; 42 since v0.5.570, when the zero-page fallback `SLIDE_OPERAND_ZP_SHAPE` found Mega_Apocalypse's `STA $D3,X` spelling). **It does not say which byte is which
 half, and two players disagree.**
 
 Warhawk `$1320`, the routine this converter was built on:

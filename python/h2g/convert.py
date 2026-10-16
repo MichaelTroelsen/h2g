@@ -305,8 +305,8 @@ def convert(sid_path: str, log: Logger = print,
     that have one, giving the true 16-bit step instead of half of it and --
     more importantly -- keeping the rest of the pattern in step. It applies
     only where detection found that fetch (det.slide_operand), so it is a
-    no-op for 54 of the 95 corpus files and for the Commando fixture. Off by
-    default because it changes the bytes of the 41 files it does reach.
+    no-op for 53 of the 95 corpus files and for the Commando fixture. Off by
+    default because it changes the bytes of the 42 files it does reach.
 
     effects decodes the two bits of the instrument effect byte (+7) that the
     original mis-read: bit $02's chromatic rise, which it ignored entirely,
