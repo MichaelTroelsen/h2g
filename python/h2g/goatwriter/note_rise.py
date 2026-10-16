@@ -74,6 +74,7 @@ the note on every row, where the original's runs on its global triangle.
 """
 from __future__ import annotations
 
+from dataclasses import replace as _dc_replace
 from typing import Dict, List, Optional, Tuple
 
 from ..detect import Detection, note_rise_rest_carries_on
@@ -82,6 +83,7 @@ from .constants import (CMD_SETWAVEPTR, CMD_TONEPORTA, FORMAT_GTS5,
                         GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE,
                         GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
                         PACKED_PATTERN_LIMIT, WAVE_MAX_DELAY,
+                        _SONG_MAX_PATTERNS,
                         WAVECMD_BASE, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .primitives import _gate_calls
 from . import arpeggio as _gw_arpeggio
@@ -481,6 +483,102 @@ def _note_rows(tracks: List[List[int]], patterns: List[List[int]],
                    note - GT_FIRST_NOTE + transpose)
 
 
+def _lap_positions(track: List[int], patterns: List[List[int]]):
+    """The orderlist position of every row one lap of `track` plays, in the
+    order `skydive._lap_rows` yields them (a repeat expanded)."""
+    repeat, operand = 1, False
+    for pos, b in enumerate(track):
+        if operand:
+            break
+        if b == 0xFF:
+            operand = True
+            continue
+        if 0xE0 <= b < 0xFF:
+            continue
+        if 0xD0 <= b < 0xE0:
+            repeat = b - 0xD0 + 1
+            continue
+        if b >= len(patterns):
+            continue
+        pat = patterns[b]
+        for _ in range(repeat):
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:
+                    break
+                yield pos
+        repeat = 1
+
+
+def _lap_visits(tracks: List[List[int]], patterns: List[List[int]]):
+    """({(pattern, row): plays}, {(track, position, row): visits},
+    {track: the orderlist position of each row of its lap}) for one lap of
+    every orderlist."""
+    plays: Dict[tuple, int] = {}
+    pos_plays: Dict[tuple, int] = {}
+    lap_pos: Dict[int, List[int]] = {}
+    for ti, track in enumerate(tracks):
+        lap_pos[ti] = list(_lap_positions(track, patterns))
+        for (p, r, _t), pos in zip(_gw_skydive._lap_rows(track, patterns),
+                                   lap_pos[ti]):
+            plays[(p, r)] = plays.get((p, r), 0) + 1
+            pos_plays[(ti, pos, r)] = pos_plays.get((ti, pos, r), 0) + 1
+    return plays, pos_plays, lap_pos
+
+
+def _isolate(tracks: List[List[int]], patterns: List[List[int]],
+             pos_asks: Dict[tuple, List[tuple]], pos_plays: Dict[tuple, int],
+             wanted: set):
+    """(tracks, patterns, copies): a pattern copy for every spelling of a
+    pattern in `wanted` that its orderlist positions disagree on.
+
+    The rest rows after a long note are mostly a rest pattern every voice
+    shares, played after other notes too (Game_Killer's pattern $0B: four
+    plays, two after a rise note), so a row whose plays do not all ask for
+    the store is `mixed` and carries none. A position's spelling is, per
+    row, the store it asks for on every one of its visits (`pos_asks` against
+    `pos_plays`), or a marker where its visits disagree; positions that
+    spell a pattern the same way stay together, the largest group on the
+    pattern itself and each other on a copy (`counter_fall`'s clones: the
+    orderlist byte repointed, same length and place)."""
+    rows_of: Dict[tuple, List[int]] = {}
+    for (ti, pos, r) in pos_plays:
+        rows_of.setdefault((ti, pos), []).append(r)
+    by_pat: Dict[int, List[tuple]] = {}
+    for (ti, pos) in sorted(rows_of):
+        if tracks[ti][pos] in wanted:
+            by_pat.setdefault(tracks[ti][pos], []).append((ti, pos))
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = [list(p) for p in patterns]
+    copies = 0
+    for p in sorted(by_pat):
+        groups: Dict[tuple, list] = {}
+        for (ti, pos) in by_pat[p]:
+            spell = []
+            for r in sorted(rows_of[(ti, pos)]):
+                got = pos_asks.get((ti, pos, r))
+                if not got:
+                    continue
+                spell.append((r, got[0] if (
+                    len(got) == pos_plays[(ti, pos, r)]
+                    and len(set(got)) == 1) else None))
+            groups.setdefault(tuple(spell), []).append((ti, pos))
+        if len(groups) < 2:
+            continue
+        stays = max(groups, key=lambda s: (len(groups[s]), not s, repr(s)))
+        for spell in sorted(groups, key=repr):
+            if spell == stays:
+                continue
+            if len(new_patterns) >= _SONG_MAX_PATTERNS:
+                return tracks, patterns, 0
+            new_patterns.append(list(patterns[p]))
+            copies += 1
+            for ti, pos in groups[spell]:
+                new_tracks[ti][pos] = len(new_patterns) - 1
+    if not copies:
+        return tracks, patterns, 0
+    return new_tracks, new_patterns, copies
+
+
 def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                     patterns: List[List[int]], lead: int, instr_used: int,
                     fmt: str, multiplier: int, gate_skip: Optional[int],
@@ -490,7 +588,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                     wave_entries: Optional[List[tuple]] = None,
                     wave_starts: Optional[List[int]] = None,
                     wave_pointers: Optional[List[int]] = None,
-                    extend: bool = True, info: Optional[dict] = None
+                    extend: bool = True, info: Optional[dict] = None,
+                    isolate: bool = True, copies: int = 0
                     ) -> Optional[_gw_skydive.SkydivePlan]:
     """The rows holding a store of every long note on a bit-$02 record, each
     pointed at its store's program, or None where nothing is taken.
@@ -542,10 +641,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         say(f"a tick of {tick_calls} calls, not emitted")
         return None
 
-    plays: Dict[tuple, int] = {}
-    for track in tracks:
-        for p, r, _t in _gw_skydive._lap_rows(track, patterns):
-            plays[(p, r)] = plays.get((p, r), 0) + 1
+    plays, pos_plays, lap_pos = _lap_visits(tracks, patterns)
+    pos_asks: Dict[tuple, List[tuple]] = {}
     asks: Dict[tuple, List[tuple]] = {}
     askers: Dict[tuple, set] = {}
     runs: List[Tuple[List[tuple], int]] = []   # per continued note: its rows
@@ -607,6 +704,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                     and cell in ((0, 0x00), (CMD_TONEPORTA, 0x00))):
                 safe = True
             asks.setdefault((wp, wr), []).append((tuple(got), safe))
+            pos_asks.setdefault((ti, lap_pos[ti][a + j], wr), []).append(
+                (tuple(got), safe))
             askers.setdefault((wp, wr), set()).add(number)
             seq.append((wp, wr))
             if j >= length:
@@ -614,6 +713,24 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         if more:
             runs.append((seq, frames))
 
+    # The rows a continuing note asks for that other plays of the row do not
+    # (`_isolate`): the patterns holding them get a copy per spelling and the
+    # plan is made again on the copies.
+    if isolate and extend and carried_on:
+        stuck = {key for key, _kh in carried_on
+                 if len(asks.get(key, ())) != plays.get(key, 0)}
+        if stuck:
+            new_tracks, new_patterns, made = _isolate(
+                tracks, patterns, pos_asks, pos_plays, {p for p, _r in stuck})
+            if made:
+                again = _rise_plan_once(
+                    sid, det, new_tracks, new_patterns, lead, instr_used,
+                    fmt, multiplier, gate_skip, row_calls, speed_table,
+                    wave_used, no_test_restart, real_firstwave, log, reserve,
+                    wave_entries, wave_starts, wave_pointers, extend, info,
+                    False, made)
+                if again is not None:
+                    return _dc_replace(again, tracks=new_tracks)
     taken: Dict[tuple, tuple] = {}
     mixed = 0
     for key, wants in asks.items():
@@ -683,6 +800,14 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
             if count < kmax and len(kinds) > 1:
                 trial_values, trial_rows = (list(range(1, count + 1)),
                                             clipped(count))
+            elif count < kmax and extend and count >= kbase:
+                # A continued note asks for more values than its notes' own
+                # events: the values those ask for stay exact and the rest
+                # are spread over the stores above them.
+                trial_values = list(range(1, kbase + 1)) + [
+                    kbase + v for v in store_values(kmax - kbase,
+                                                    count - kbase)]
+                trial_rows = taken
             else:
                 trial_values, trial_rows = store_values(kmax, count), taken
             if not trial_rows:
@@ -757,10 +882,17 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
             # third ...) from the programs there are, before it is given up.
             # Only where the duplicate blocks made room for the values: a
             # file that fits without them is laid out as it was.
+            # The thinning keeps the notes' own last value and, apart from it,
+            # a continued note's (the values above `kbase`): thinned over the
+            # whole range the last of them would stand in for the own one
+            # (Game_Killer: store 16 would take 15).
+            own = [v for v in chosen if v <= kbase]
+            beyond = [v for v in chosen if v > kbase]
             thin = 1
             while holes and too_big(trial) and thin < len(chosen):
                 thin += 1
-                trial = fill(chosen[::thin] + [chosen[-1]])
+                trial = fill(own[::thin] + own[-1:] + beyond[::thin]
+                             + beyond[-1:])
             kept = [key for key in rows if key[0] == p]
             if too_big(trial):
                 # First-fit in row order, as `pulse.budget_pulse_phase_commands`:
@@ -857,6 +989,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + (f"; {len(runs)} note(s) carried on through the rest after them"
            if runs else "")
+        + (f"; {copies} pattern copy(ies) for the rest rows" if copies
+           else "")
         + ("; declined: " + ", ".join(f"{n} {w}" for w, n in declined.items())
            if declined else ""))
     if info is not None:
@@ -878,8 +1012,12 @@ def _extension_pays(ext: dict, base: dict) -> bool:
 
     The last is what keeps a file whose rests are mostly shared rows from
     moving for a handful of stores: Crazy_Comets asks for 256 and places
-    10-16 (its rests are played after other notes too, so `mixed`), Human_Race
-    18 and 1, Game_Killer 136 and 0; Chimera asks for 192 and places 114.
+    20-32 (its rest pattern is played in a repeat `$D4`-`$D5`, five visits of
+    which only the first follows the note, and an orderlist byte cannot be
+    unrolled in place, so `mixed`); Chimera asks for 192 and places 114. A
+    rest pattern played after other notes too is given a copy per spelling
+    first (`_isolate`), which is what lets Game_Killer (136 asked, 0 placed
+    before) and Battle_of_Britain (97, 58) place every one.
     """
     chosen, kbase = ext["chosen"], ext["kbase"]
     return (len(chosen) >= kbase and chosen[:kbase] == list(range(1, kbase + 1))

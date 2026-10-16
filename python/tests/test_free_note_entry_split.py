@@ -150,13 +150,15 @@ def test_knucklebusters_settles_original_33_on_the_traced_instruments(
         monkeypatch):
     lines, seen = _preset_convert("Knucklebusters.sid", monkeypatch)
     line = _free_line(lines)
-    assert line.startswith("Free note (bit 7).......: 45 flagged note row(s) "
+    # 46 (was 45, 1 kept the full start): the row that followed a legato
+    # clone of its own record is taken (`same_pulse`, task
+    # delta-new-rows-kept-full-start).
+    assert line.startswith("Free note (bit 7).......: 46 flagged note row(s) "
                            "on 6 variant(s)"), line
     # Two more were declined "entered with two instruments" until the
     # boundary tie took the slide events that open $1F/$21 (the rows are
     # CMD_TONEPORTA now, not free notes, so they are no longer candidates).
-    assert line.endswith("1 kept the full start (1 follows another "
-                         "instrument)"), line
+    assert "kept the full start" not in line, line
     _rows, (tracks, patterns, copies) = seen["split"]
     # Pattern numbers of the families' sources. 0x44/0x45 until `$FD a b` was
     # read as a tempo (Knucklebusters' voice 2 no longer ends at its first

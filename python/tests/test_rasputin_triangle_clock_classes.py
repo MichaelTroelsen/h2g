@@ -268,7 +268,9 @@ def test_every_other_instrument_and_the_record_itself_keep_their_bytes():
     import songview
     sng, _doc = _convert_ras()
     song = songview.parse_sng(sng)
-    assert len(song.instruments) == 45
+    # 45 before the two clones of the EOR toggle's late first toggle (a note
+    # fetched on a skip row of the R 10 and R 60 gates, `clock_residue`)
+    assert len(song.instruments) == 47
     assert len(song.tables["PTBL"]) == 54
 
 

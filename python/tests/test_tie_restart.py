@@ -338,8 +338,10 @@ def test_the_phase_locked_ties_keep_the_old_spelling():
                for line in lines), lines
     _, lines = _convert("Chimera.sid", tie_restart=True)
     # 541 before record 8's rows (waveform `$10`) and the attacks after them
-    # stopped reading as ties (tests/test_gate_clear_record.py).
-    assert any("(477 row-locked arpeggio)" in line for line in lines), lines
+    # stopped reading as ties (tests/test_gate_clear_record.py); 477 before the
+    # arp split wrote a repeated orderlist entry out as one entry per play
+    # (6 pattern copies, 24 more tie rows; tests/test_arp_repeat_unroll.py).
+    assert any("(501 row-locked arpeggio)" in line for line in lines), lines
     # The nibble dialect's counter (`nibble_arp_phases`' walk), and its
     # gate's phase: International-Karate-style player, -S4. Through 0421071
     # the tied rows voted for their record's gate residue and the count read

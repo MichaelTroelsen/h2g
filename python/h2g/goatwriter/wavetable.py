@@ -35,7 +35,7 @@ from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
 from .wave_eor import (EOR_STOP_PROGRAM, EorPhase, eor_library,
-                       wave_eor_block)
+                       has_skip_rows, wave_eor_block)
 from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
@@ -1859,7 +1859,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       eor_phases: Optional[dict] = None,
                       note_pitches: Optional[dict] = None,
                       eor_span: Optional[list] = None,
-                      note_spans: Optional[dict] = None) -> tuple:
+                      note_spans: Optional[dict] = None,
+                      eor_library_out: Optional[list] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1911,8 +1912,11 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 w_ = sid.data[det.instr_start + i_ * det.instr_stride + 2]
                 waves.add((w_, w_ ^ det.wave_eor.mask))
         if waves:
-            eor_lib = eor_library(sorted(waves), multiplier, len(entries) + 1)
+            eor_lib = eor_library(sorted(waves), multiplier, len(entries) + 1,
+                                  detours=has_skip_rows(det, multiplier))
             entries += list(zip(eor_lib.left, eor_lib.right))
+            if eor_library_out is not None:
+                eor_library_out[:] = [eor_lib]
             # The program a note's last row points the voice at to end the
             # ring (`wave_eor.eor_stop_pass`), right behind the cycles.
             if eor_span is not None:

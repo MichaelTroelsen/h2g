@@ -2458,14 +2458,6 @@ def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
         return None
     period, residues = walked
     phases = fixed_arp_phases(sid, det, tracks, patterns)
-    # The votes stay the first lap's; the spelling is written over every lap
-    # the counter needs (`fixed_arp_unrolled_tracks`).
-    spell = None
-    unrolled, folds = fixed_arp_unrolled_tracks(sid, det, tracks, patterns)
-    if unrolled is not tracks:
-        later = fixed_arp_note_residues(sid, det, unrolled, patterns)
-        if later is not None:
-            spell = (unrolled, later[1], folds)
     data = sid.data
     arp_records = set()
     for i in range(max(instr_used - lead, 0)):
@@ -2474,6 +2466,34 @@ def fixed_arp_phase_split_plan(sid: SidFile, det: Detection,
             arp_records.add(i + lead + 1)
     if not arp_records:
         return None
+    # A repeated orderlist entry plays one pattern's bytes several times and
+    # `_note_phase_split` keeps its first play's spelling for all of them.
+    # Human_Race subtune 5 voice 1 plays `D3 45` -- four plays of an 18-row
+    # pattern, 36 calls each, a shift of 4 in the counter's period of 8 --
+    # so the original attacks its octave note on alternate residues and the
+    # one-spelling plan sounded all four plays on the first's (204 4-frame
+    # octave runs against the original's 109, siddump -t180 at 0.5.560;
+    # tests/test_arp_repeat_unroll.py).
+    # Such an entry is unrolled into one entry per play
+    # (`_expand_repeats`) wherever its plays want different spellings, as
+    # `pitch_seq_phase_split_plan` does; the copies share a pattern wherever
+    # their spellings agree.
+    unroll = _phase_divergent_repeats(tracks, patterns, residues, arp_records)
+    if unroll:
+        wide = [(_expand_repeats(t, unroll.get(ti, set())) or t)
+                if ti in unroll else t for ti, t in enumerate(tracks)]
+        if wide != tracks:
+            wide_walk = fixed_arp_note_residues(sid, det, wide, patterns)
+            if wide_walk is not None:
+                tracks, residues = wide, wide_walk[1]
+    # The votes stay the first lap's; the spelling is written over every lap
+    # the counter needs (`fixed_arp_unrolled_tracks`).
+    spell = None
+    unrolled, folds = fixed_arp_unrolled_tracks(sid, det, tracks, patterns)
+    if unrolled is not tracks:
+        later = fixed_arp_note_residues(sid, det, unrolled, patterns)
+        if later is not None:
+            spell = (unrolled, later[1], folds)
     return _note_phase_split(tracks, patterns, residues, phases,
                              arp_records, first_clone, distinct,
                              "arp phase split", log, spell=spell)

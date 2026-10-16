@@ -21,5 +21,7 @@ def test_human_race_takes_the_rows_that_fit_instead_of_none():
     # The packed limit is no longer binding: the planner also tries the
     # duplicate-block rows when a first fit cut rows, and thinning the
     # pointers there takes all 224.
-    assert "224 store row(s)" in rise[0], rise
+    # (the 224 rows of the notes' own stores, and the rows of the one note
+    # the rise now runs on through the rest after: 258)
+    assert "258 store row(s)" in rise[0], rise
     assert "past the packed limit" not in rise[0], rise

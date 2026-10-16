@@ -13,6 +13,7 @@ with DEC.
 """
 import json
 import pathlib
+import re
 import sys
 
 import pytest
@@ -194,8 +195,13 @@ def test_game_killer_points_rows_2_to_17_of_each_note_at_a_rising_store(
     import songview
     sng, lines, _ = _converted("Game_Killer", tie_restart=tie_restart)
     song = songview.parse_sng(sng)
-    hits = _store_rows(song, 2)
+    every = _store_rows(song, 2)
+    # The rows past the note's 18 are the rest after it, which the rise runs
+    # on through (`note_rise.continuation`); their own test is
+    # test_note_rise_isolate.py.
+    hits = [(j, s) for j, s in every if j < 18]
     assert {j for j, _ in hits} == set(range(2, 18)), hits
+    assert any(j >= 18 for j, _ in every), every
     wt, stbl = song.tables["WTBL"], song.tables["STBL"]
     assert len(wt) <= 255
     exact = 0
@@ -209,8 +215,11 @@ def test_game_killer_points_rows_2_to_17_of_each_note_at_a_rising_store(
         assert prog == {0: cmd, 10: "note", 19: "note"}, (j, prog)
     assert exact > 5 * len(hits) // 6, (exact, len(hits))
     assert len({start for _j, start in hits}) == 16
-    assert any("Note rise (bit $02).....: 176 store row(s)" in m
-               and "16 of 16 store value(s)" in m for m in lines), lines
+    rise = [m for m in lines if "Note rise (bit $02)" in m]
+    assert len(rise) == 1 and "295 store row(s)" in rise[0], rise
+    # the notes' own sixteen values stay exact; the continued stores above
+    # them take the 2 more the table has room for
+    assert re.search(r"18 of 118 store value\(s\)", rise[0]), rise
 
 
 def _hi_frames(trace, nframes, key, keep):

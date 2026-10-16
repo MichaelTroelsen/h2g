@@ -41,9 +41,14 @@ def test_delta_splits_for_its_pulse_only_records():
     # the full start / 3 copies were the capped file's. The 3 "kept the full
     # start" are declines at pattern rows reached only past the old cut
     # (1 unsettled, 2 follow another instrument), not an entry decline.
-    assert "136 flagged note row(s) on 8 variant(s)" in free[0], free[0]
-    assert ("3 kept the full start (1 follows an unsettled instrument; "
-            "2 follows another instrument)") in free[0], free[0]
+    # Re-taken at delta-new-rows-kept-full-start (base 881bbe1): $B4/$B5
+    # row 11 followed a legato CLONE of its own record (28 of 2), which the
+    # walk read as another instrument; one is now taken (137 rows), the other
+    # declines at its last row for what its successor holds.
+    assert "137 flagged note row(s) on 8 variant(s)" in free[0], free[0]
+    assert ("2 kept the full start (1 follows an unsettled instrument; "
+            "1 last row, successor entered holding another instrument)"
+            ) in free[0], free[0]
     split = [ln for ln in lines if ln.startswith("Entry instrument split")]
     assert split and "5 pattern cop(ies) of 02, 03" in split[0], split
 

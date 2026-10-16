@@ -12311,6 +12311,20 @@ patterns. Hunter_Patrol's offset-1 octave up-fraction reads 0.40 against the
 original's 0.40, and Game_Killer's reversal_ratio 0.234 -> 0.527 at -t 60 with
 melody 1.0; exactly the six split-vote files move (§ 7.mmmmmm).
 
+**Every play of a repeat, not the first** (since v0.5.563,
+`human-race-sub5-octave-alternation`). A `$Dn` repeat plays one orderlist
+entry several times, and a pattern whose length is not a multiple of the
+counter's period lands each play on another residue; `_note_phase_split` kept
+the first play's spelling for every play. Human_Race subtune 5 voice 1 plays
+an 18-row pattern four times (36 calls a play, a shift of 4 in a period of 8),
+so the 4-frame octave clone ran on every play: 204 runs of 4-frame alternation
+against the original's 109. `fixed_arp_phase_split_plan` now writes out the
+repeats whose plays want different spellings (`_phase_divergent_repeats`,
+`_expand_repeats`, as `pitch_seq_phase_split_plan` already did) and re-walks
+the residues on the widened tracks: 109 runs, as the original. The corpus
+byte-hash under presets moves Human_Race and Chimera; Chimera `tie_agreement`
+0.7403 -> 0.7420, every Human_Race column within its printed precision.
+
 **Every lap, not the first** (`fixed_arp_unrolled_tracks`, built after v0.5.519). The walk
 above is one lap and the song loops: a loop body of `R` rows of `frames` calls
 starts its next lap `(R * frames) % period` residues on, so a pattern played
@@ -14541,7 +14555,8 @@ stores it carries on are placed. Battle_of_Britain's one carried note had
 the other stores' values spread over 52 and took its two `$0FF` voices from
 98% and 99% to 59% before the exactness rule; Crazy_Comets asks for 256 and places 10-16 (its rests
 are rows other notes play too), Game_Killer 136 and 0, Human_Race 18 and 1,
-so those four keep the plan they had, byte for byte.
+so those four kept the plan they had, byte for byte, until the rest rows were
+given copies (the next section).
 
 Measured on the tree at c4eedc4 plus this change, under presets, -t 180,
 voice 1, `$0F0` notes, packed through gt2reloc, lag-aligned:
@@ -14565,6 +14580,60 @@ replace the instrument's looping vibrato program for the rows they cover
 (the same approximation the note's own rows make). The corpus byte-hash
 compared 95 files, 89 converted, 6 refused, and 1 moved: Chimera. Commando is
 byte-identical.
+
+**The rest rows other notes share get a copy of their own** (`carry-the-note-
+rise-through-bit-6`). The rows the rise runs through are mostly a rest pattern
+the orderlists play after other notes too, so a row of it was asked for in
+some of its plays and not in the others and the planner called it `mixed`.
+Game_Killer's pattern `$0B` is 18 rows of KEYOFF played four times, two after
+a rise note; Battle_of_Britain's and Human_Race's are the same shape.
+`note_rise._isolate` gives each *spelling* of such a pattern a pattern copy
+of its own: per orderlist position (`_lap_visits`, `_lap_positions`), a row's
+spelling is the store every one of its visits asks for, or a marker where the
+visits disagree; positions that spell a pattern alike stay together, the
+largest group on the pattern and each other on a copy with the orderlist byte
+repointed (same length, same place, as `counter_fall`'s clones), and the plan
+is made again on the copies. Only the patterns that hold a row a continued
+note asked for and the plays disagreed on are looked at, only with the
+continuation on, and the copies stop at `_SONG_MAX_PATTERNS`. Crazy_Comets
+is not helped: its rest pattern is played in a repeat (`$D4`, five visits)
+of which only the first follows the note, and an orderlist byte cannot be
+unrolled in place; it asks for 256 and places 20-32, and keeps the plan it
+had.
+
+A continued note asks for more values than its notes' own events (Game_
+Killer 118, Battle_of_Britain 127, against 16 and 30), and the table has room
+for 18 and 52. The notes' own values stay exact (`_extension_pays` still
+requires it) and the room that is left is spread over the stores above them
+(`note_rise_plan`'s `fitting`), each of which takes the nearest: the stores
+past the last value sit on it. The thinning that keeps a pattern within the
+packed limit keeps the notes' own last value for the same reason (spread over
+the whole range, store 16 of Game_Killer took 15 and the narrow window lost
+7 of 123).
+
+Measured on 881bbe1 plus this change, under presets, `fidelity.measure -t 180`
+(the A/B is `ab2_all`-style, packed through gt2reloc, lag-aligned):
+
+| file / window | before | after |
+|---|---:|---:|
+| Game_Killer, `$0A9`, 3 to `$7F` above the note, -t 150 | 435 of 765 | 462 of 765 |
+| Game_Killer, 3 to `$20` above the note, -t 60 | 56 of 123 | 56 of 123 |
+| Battle_of_Britain, `$0FF`, 1 to `$7F` below the note, -t 60 | 30 of 127 | 52 of 127 |
+
+`fidelity.measure -t 180` (only the columns that move): Game_Killer
+`reversal_ratio` 0.896 -> 0.958, `tie_ratio` 0.874 -> 0.925, `tie_agreement`
+0.742 -> 0.778, `our_bend_tail` 18779 -> 2693 (the original's is 2543),
+`our_oscillation` 0.928 -> 0.951; `travel_ratio` 0.982 -> 0.955 moves away
+from 1 (the row programs replace the instrument's looping vibrato in the rows
+they cover). Battle_of_Britain `travel_ratio` 1.214 -> 1.110, `tie_ratio`
+0.858 -> 0.931, `tie_agreement` 0.807 -> 0.879, `our_bend_tail` 183334 ->
+96907 (the original's is 6203), `our_oscillation` 0.9899 -> 0.9927;
+`reversal_ratio` 1.089 -> 1.141 moves away from 1. Both gain silent ties
+(`our_ties_silent` 69 -> 281 and 16 -> 210, the original's 556 and 19), the
+price Chimera paid too. Human_Race moves (its one carried note, 18 stores)
+and no column of its row moves. The corpus byte-hash compared 95 files, 89
+converted, 6 refused, and 3 moved: Battle_of_Britain, Game_Killer,
+Human_Race. Commando is byte-identical.
 
 ### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
@@ -14837,6 +14906,32 @@ two frames). Column A/B on Rasputin (`fidelity.measure`, `--sound`): `wave`
 the two table rows (36328 -> 36332 bytes). The corpus byte-hash under presets
 moves Rasputin only; Commando is byte-identical. `tests/test_wave_eor_stop.py`
 packs and traces the song and counts both.
+
+#### The skipped frame: a pattern command on the skip row
+
+Since v0.5.563 (`rasputin-r10-ring-and-r60-detours`). At an even R that no
+ring family covers (R = 10, R = 60), the gate's skipped frame falls inside a
+note and the R = 0 ring, which toggles every frame, runs straight through it:
+on the packed song traced at `-t 180`, R = 10 lost 100 of 422 frames and
+R = 60 111 of 1348, every loss at a skip. `wave_eor.eor_skip_detours` (build.py,
+right after `eor_stop_pass`) finds each toggling note's interior rows where
+`(m + 2i) % R == 0`, reads how late our row starts against the original's grid
+off the finished tempos (0-2 calls: the tempo runs round to whole calls), and
+writes a `CMD_SETWAVEPTR` on that row's empty command column into one of two
+3-row detour programs per wave (write the state, hold it the skipped frame,
+jump into the ring at the other state), or into the ring node itself where the
+row is late enough. It simulates the instrument's own program first and
+declines where it does not toggle where the clock says, where the column is
+taken, or where an effect is running; a pattern two places want differently is
+copied. `clock_residue` also takes a note's first toggle from the real R, so a
+note fetched on the skip row toggles a frame late. The room came from
+`eor_library` sharing R = 2's second ring, byte-identical to its first (-5 rows);
+the wavetable went 252 -> 253 of 255 with the detours in, and no R = 10 ring was
+needed. Rasputin, 42 pointers placed, none declined: R = 10 100 -> 38 lost
+frames, R = 60 111 -> 22, R = 2/3/5 unchanged; `wave` 0.8886 -> 0.8944,
+`aud` 0.9345 -> 0.9350, `loud_ratio` 0.9992 -> 1.0021. What is left is the
+tempo-run rounding, not the skip. The corpus byte-hash under presets moves
+Rasputin only. `tests/test_wave_eor_detour.py`.
 
 ### 7.qqqqqqq The triangle walk in lockstep: a record two voices sweep is stepped by both
 
@@ -15126,6 +15221,15 @@ one.
   These agree only when both are the same record, so a pulse-only row after another
   instrument declines as "follows another instrument" (6 rows in the corpus), and
   one after an unknown one as "follows an unsettled instrument".
+  **Since v0.5.563 a legato clone counts as its base here** where the clone
+  carries the base's own pulse pointer (`free_note_variants`' `same_pulse`,
+  built in build.py from `stair_aliases` where the records' byte 3 agree): the
+  channel then holds the base record's program, which is what the variant
+  needs (`delta-new-rows-kept-full-start`). Four files take one row each
+  (Delta, Knucklebusters, Nineteen, Shockway_Rider); at `-t 180` Shockway_Rider
+  `pphase` 0.875 -> 1.000 and no other column moves. Delta pattern `$30` row 0
+  still declines, correctly: it is entered holding 2 or 4, and the entry split
+  only takes rows before the first named row.
 - A record with an attack that `free_note_wave_start` cannot enter past keeps the
   full start, declined as "attack the wavetable cannot skip" (Flash_Gordon
   instruments 7 and 8, 4 rows).

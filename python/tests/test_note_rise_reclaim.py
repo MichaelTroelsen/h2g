@@ -84,7 +84,10 @@ def test_game_killer_takes_all_sixteen_store_values():
     lines = []
     opts = fidelity._preset_opts(doc, "Game_Killer.sid")
     sng = C.convert(str(CORPUS / "Game_Killer.sid"), log=lines.append, **opts)
-    assert any("16 of 16 store value(s)" in m and "reused from 4 duplicate "
+    # the notes' own sixteen values all fit (and stay exact); the rise that
+    # now runs on through the rest after the notes asks for more, of which the
+    # table has room for two (`note_rise.continuation`)
+    assert any("18 of 118 store value(s)" in m and "reused from 4 duplicate "
                "block(s)" in m for m in lines), lines
     song = songview.parse_sng(sng)
     wt = song.tables["WTBL"]

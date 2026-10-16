@@ -1110,6 +1110,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # [first, last, stop] wavetable rows of bit $02's EOR cycles and the
     # program that ends them, where the layout laid them out.
     eor_span: List[int] = []
+    eor_lib_out: List[object] = []
     # The blocks the phase-mismatched tie rows need (`_tie_blocks_wanted`):
     # a legato clone of a record restarts the block it points at, and a tie
     # landing on a residue no block was laid for would restart the wrong
@@ -1182,7 +1183,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                          or gate_off_firstwave_instruments),
         eor_phases=eor_phases, note_pitches=note_pitches,
         note_spans=stale_spans,
-        eor_span=eor_span)
+        eor_span=eor_span, eor_library_out=eor_lib_out)
     # The sfx drum's one-frame bandpass, written into the filter programs of the
     # drum records. After the wavetable layout, because where the noise lands
     # is read off the laid-out block (`sfx_drum_hit_lattice`); the table is
@@ -1305,6 +1306,13 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 + tie_block_starts + attack_hold_starts + drum_starts) if r])
         if rise is not None:
             patterns = rise.patterns
+            if rise.tracks is not None:
+                # Its pattern copies repoint orderlist positions: same
+                # length, same place, so the bytes already written are
+                # written over (as the counter-started fall's).
+                tracks = rise.tracks
+                for at, track in zip(track_at, tracks):
+                    out[at:at + len(track)] = bytes(track)
             if rise.base is not None:
                 # Duplicate instrument blocks gave their rows to the
                 # programs: the records now share the first copy.
@@ -1697,11 +1705,19 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 pulse_only.add(g)
         free_rows = _gw_note_passes.free_note_rows(patterns,
                                                    bit7_rows(patterns))
+        # A legato clone (or the decoy) of a record carries its pulse
+        # pointer: a channel holding it runs that record's own program.
+        same_pulse = {
+            number: base for base, number in stair_aliases
+            if base != number and number <= written_instr
+            and out[instr_at + 1 + (number - 1) * 25 + 3]
+            == out[instr_at + 1 + (base - 1) * 25 + 3]}
         patterns, free_variants, _kept = _gw_note_passes.free_note_variants(
             patterns, free_rows, tracks, free_starts, written_instr + 1,
             last_number=_gw_note_passes.clone_number_ceiling(
                 patterns, written_instr), log=log,
-            pulse_only=pulse_only, no_variant=no_variant)
+            pulse_only=pulse_only, no_variant=no_variant,
+            same_pulse=same_pulse)
         for base, _number in free_variants:
             rec = instr_at + 1 + (base - 1) * 25
             clone = bytearray(out[rec:rec + 25])
@@ -1725,6 +1741,29 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             (eor_span[0], eor_span[1]))
         patterns = _gw_wave_eor.eor_stop_pass(patterns, tracks, rings,
                                               eor_span[2], log)
+        # The gate's skip once in R calls, where R has no ring of its own
+        # (`wave_eor.eor_skip_detours`): a `CMD_SETWAVEPTR` on the skip row
+        # puts the R = 0 ring back on the original's frames. After the stop
+        # pass, whose last-row commands it must see as taken, and after every
+        # pass that names an instrument or copies a pattern.
+        if eor_lib_out:
+            eor_alias = {
+                g: i + lead + 1 for g, i in _record_numbers(
+                    lead, instr_used, duty_split, phase_split,
+                    drum_variants).items()}
+            for base, number in stair_aliases:
+                eor_alias[number] = eor_alias.get(base, base)
+            eor_starts = {g: out[instr_at + 1 + (g - 1) * 25 + 2]
+                          for g in range(1, written_instr + 1)
+                          if out[instr_at + 1 + (g - 1) * 25 + 2]}
+            patterns, tracks = _gw_wave_eor.eor_skip_detours(
+                sid, det, tracks, patterns, instr_used, lead, eor_alias,
+                wave_entries, eor_starts,
+                {g: out[instr_at + 1 + (g - 1) * 25 + 8]
+                 for g in range(1, written_instr + 1)},
+                eor_lib_out[0], multiplier, log)
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
     # A swept record's notes at a clock its program misses sound a clone of
     # it with the program of their clock class. Here, after every pass that
     # appends or renames an instrument -- the clone is made from the finished

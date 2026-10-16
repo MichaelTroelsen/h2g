@@ -223,18 +223,26 @@ def test_a_status_byte_the_rise_does_not_read_says_no():
 
 
 @needs_corpus
-def test_chimeras_six_long_notes_are_carried_on_and_nothing_else_is():
+def test_the_rise_is_carried_on_where_the_rest_rows_can_take_it():
+    """Chimera 6 notes, Game_Killer 3, Battle_of_Britain 1, Human_Race 1 --
+    the last three since the rest patterns that are played after other notes
+    too are given a copy per spelling (`note_rise._isolate`). Crazy_Comets
+    stays as it was: its rest pattern is played in a repeat of five visits,
+    and an orderlist byte cannot be unrolled in place."""
     rises = {}
     for name in ("Chimera", "Crazy_Comets", "Game_Killer",
                  "Battle_of_Britain", "Human_Race"):
         _sng, lines, _ = _converted(name)
         rises[name] = [m for m in lines if "Note rise (bit $02)" in m]
-    assert len(rises["Chimera"]) == 1
-    assert "6 note(s) carried on through the rest after them" in rises["Chimera"][0]
-    for name in ("Crazy_Comets", "Game_Killer", "Battle_of_Britain",
-                 "Human_Race"):
-        assert rises[name] and not any("carried on" in m for m in rises[name]), (
-            name, rises[name])
+        assert len(rises[name]) == 1, (name, rises[name])
+    for name, notes in (("Chimera", 6), ("Game_Killer", 3),
+                        ("Battle_of_Britain", 1), ("Human_Race", 1)):
+        assert (f"{notes} note(s) carried on through the rest after them"
+                in rises[name][0]), (name, rises[name])
+    assert "carried on" not in rises["Crazy_Comets"][0], rises["Crazy_Comets"]
+    assert "pattern copy" not in rises["Chimera"][0], rises["Chimera"]
+    for name in ("Game_Killer", "Battle_of_Britain", "Human_Race"):
+        assert "pattern copy(ies) for the rest rows" in rises[name][0], name
 
 
 @needs_corpus

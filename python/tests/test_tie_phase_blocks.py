@@ -257,7 +257,10 @@ def test_a_table_with_no_room_keeps_the_old_spelling():
 @needs_corpus
 def test_chimeras_row_locked_ties_stay_on_the_old_spelling():
     _sng, lines, seen, _real = _convert_capturing("Chimera.sid")
-    assert any("(477 row-locked arpeggio)" in line for line in lines), lines
+    # 477 before the arp split wrote a repeated orderlist entry out as one
+    # entry per play (6 pattern copies, 24 more tie rows;
+    # tests/test_arp_repeat_unroll.py).
+    assert any("(501 row-locked arpeggio)" in line for line in lines), lines
     assert not any("restart the block of the residue" in line
                    for line in lines)
     assert not seen or not seen[-1][1]["tie_blocks"]

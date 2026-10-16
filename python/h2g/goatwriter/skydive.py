@@ -176,6 +176,9 @@ class SkydivePlan:
     entries: List[Tuple[int, int]]
     base: Optional[List[Tuple[int, int]]] = None
     starts: Optional[List[int]] = None
+    # Set only where the plan gave an orderlist position a pattern copy of
+    # its own (`note_rise._isolate`): the orderlists to write.
+    tracks: Optional[List[List[int]]] = None
 
 
 def compact_wave_tail(wave_entries: List[Tuple[int, int]],

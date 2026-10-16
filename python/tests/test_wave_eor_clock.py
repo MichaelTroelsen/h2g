@@ -131,7 +131,9 @@ def test_every_ring_closes_and_holds_each_node_for_its_frames():
     assert sorted({R for (_w, R, _s, _x) in lib.nodes}) == [0, 2, 3, 5]
     per = {R: sum(1 for k in lib.nodes if k[1] == R) for R in (0, 2, 3, 5)}
     assert per == {0: 2, 2: 4, 3: 6, 5: 10}
-    assert len(lib.left) == 49            # 49 entries, one jump a ring
+    # 44 entries, one jump a ring: R 2's second ring holds what its first
+    # does (all three-frame nodes), so it is the first (49 before it shared)
+    assert len(lib.left) == 44
     for (wave, R, s, w), pos in lib.nodes.items():
         # from this node the program alternates the two waveforms, each for
         # the frames the gate gives the toggle that ends it

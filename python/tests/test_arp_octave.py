@@ -1016,14 +1016,15 @@ def test_rasputin_splits_its_opening_by_tempo():
     s = songview.parse_sng(sng)
     # 16 before tie_restart's legato clones and decoys (gatetimer bit 6, appended past the written records since v0.5.516's adoption);
     # they are numbered after the duty clones, so 15 and 16 keep their place.
-    # Plus the 23 clones of bit $02's EOR phase split (`wave_eor_split_plan`),
-    # numbered after the duty clones too: 16 + 23. A clone per place on the
+    # Plus the 25 clones of bit $02's EOR phase split (`wave_eor_split_plan`),
+    # numbered after the duty clones too: 16 + 25. A clone per place on the
     # original's gate clock (counter phase, the outer gate's R and the
     # toggle's position in its cycle), where the first split had 8 per
-    # (phase, tick).
+    # (phase, tick); two of them are the notes fetched ON a skip row of a gate
+    # with no ring (R 10 and 60), whose first toggle is a frame late.
     # Plus the 3 clones of record 0's triangle sweep, one per far clock class
-    # (`tri_clock_clones`), numbered last of all: 16 + 23 + 3.
-    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 42
+    # (`tri_clock_clones`), numbered last of all: 16 + 25 + 3.
+    assert len([i for i in s.instruments if not i.gatetimer & 0x40]) == 44
     clones = {7: 15, 14: 16}
     moved = {7: 0, 14: 0}
     for g in range(s.subtunes):
@@ -1653,16 +1654,22 @@ def test_each_note_names_its_residues_instrument(monkeypatch):
     assert [out[2][1], out[2][5], out[2][9]] == [2, 1, 2]
 
 
-def test_a_repeated_entry_keeps_its_first_spelling(monkeypatch):
+def test_a_repeated_entry_is_written_out_for_its_plays(monkeypatch):
     """`$D1 00`: one orderlist entry played twice, whose plays want two
-    spellings. A repeat cannot be repointed, so the first play's stands --
-    and no copy is made."""
+    spellings. A repeat cannot be repointed, so it is written out as one
+    entry per play (`_expand_repeats`, as bit $10's split does) and the
+    second play is a copy -- the bytes `[0, 0, 0xFF, 0]` gets
+    (`test_each_note_names_its_residues_instrument`). At v0.5.560 the
+    first play's spelling stood for both and no copy was made (Human_Race
+    subtune 5 voice 1; tests/test_arp_repeat_unroll.py)."""
     tracks, patterns, (sid, det) = _fake_phase(monkeypatch, [0xD1, 0, 0xFF, 0])
     split = fixed_arp_phase_split_plan(sid, det, tracks, patterns, True, 0,
                                        1, 2)
     assert split is not None
-    assert split.edits == {0: {1: (0, 2), 2: (0, 1)}}
-    assert len(split.patterns) == len(patterns)
+    assert split.edits == {0: {1: (0, 2), 2: (0, 1)},
+                           2: {0: (1, 2), 1: (0, 1), 2: (0, 2)}}
+    assert split.tracks[0] == [0, 2, 0xFF, 0]
+    assert len(split.patterns) == len(patterns) + 1
 
 
 def test_a_residue_whose_shape_ignores_it_gets_no_clone(monkeypatch):

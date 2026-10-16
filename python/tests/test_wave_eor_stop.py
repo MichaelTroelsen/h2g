@@ -218,8 +218,9 @@ def test_rasputin_lays_the_stop_program_behind_the_cycles(converted):
     stop = seen["stop"]
     assert (left[stop - 1], right[stop - 1]) == (0x00, 0x80)
     assert (left[stop], right[stop]) == (0xFF, 0x00)
-    # the cycles are the rows just before it, and they end in a jump back
-    assert left[stop - 2] == 0xFF and 1 < right[stop - 2] < stop - 2
+    # the cycles are the rows just before it (the skip-row detours last among
+    # them), and they end in a jump back into them
+    assert left[stop - 2] == 0xFF and 1 <= right[stop - 2] < stop - 2
 
 
 @needs_corpus

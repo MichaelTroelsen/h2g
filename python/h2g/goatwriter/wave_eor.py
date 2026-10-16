@@ -39,12 +39,13 @@ restarts' rows off the orderlists (convert.py, as `det.gate_restarts`),
 `.pos`), and `eor_library` lays the cycles out once for the residues to jump
 into: a ring of nodes per R, a node being one toggle's state held for the
 frames to the next. R = 2, 3 and 5 get a ring; every other R (10, 60, 120
-and the closing 6) is read as a gate that does not skip inside a note.
+and the closing 6) is read as a gate that skips only on a ROW of the note, and
+`eor_skip_detours` puts a pointer on that row (see "the skip row" below).
 """
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from ..detect import Detection
@@ -190,8 +191,10 @@ def _row_tempos(tracks: List[List[int]], patterns: List[List[int]],
 
 # The segment reloads that get a cycle of their own in the library. Rasputin's
 # others (10, 60, 120 and the 6 of the closing minutes) skip a frame too
-# rarely for it to land inside one note, or cost a cycle the 255-entry
-# wavetable has no room for (a cycle is `2R` nodes of two entries).
+# rarely for it to land inside every note, or cost a cycle the 255-entry
+# wavetable has no room for (a cycle is `2R` nodes of two entries; R = 10's
+# two rings are 42 rows): their skip is a pointer on its row instead
+# (`eor_skip_detours`).
 GATE_FAMILIES = (2, 3, 5)
 
 
@@ -309,7 +312,9 @@ def clock_residue(det: Detection, group: int, row: int,
     m, R = st
     family = R if R in GATE_FAMILIES else 0
     c = 1 if phase == 0 else 2
-    first = gate_tick(family, m + c) - gate_tick(family, m)
+    # A gate with no ring still skips: the first toggle is late when the
+    # skip falls between the fetch and it (`m` on a multiple of R).
+    first = gate_tick(R, m + c) - gate_tick(R, m)
     return EorPhase(phase, first, family, (m + c) % family if family else 0)
 
 
@@ -320,24 +325,44 @@ class EorLibrary:
     1-based position of the node that holds `state` (0 the record's wave, 1
     the toggled one) from the toggle at working call `w` (mod R) to the next:
     `_hold` of `node_frames(R, w)` frames, two entries, and a ring's last
-    entry jumps back to its first."""
+    entry jumps back to its first.
+
+    `detours[(wave, state)]` is a skip row's program (`eor_skip_detours`):
+    `state` written and held `DETOUR_FRAMES` frames, then a jump into the R = 0
+    ring at the other state. Entered one row in -- at its delay -- it is the
+    plain wait of `DETOUR_FRAMES * 2 - 1` calls, state already there.
+    `owner[row - start]` names what each row belongs to,
+    `(wave, R, state, w)` for a node and `("d", wave, state)` for a detour,
+    None for a ring's closing jump."""
     start: int
     left: List[int]
     right: List[int]
     nodes: Dict[Tuple[int, int, int, int], int]
+    detours: Dict[Tuple[int, int], int] = field(default_factory=dict)
+    owner: List[Optional[tuple]] = field(default_factory=list)
+
+
+# Frames the node after a skip row's toggle is held: the skip adds one to the
+# ring's two (`eor_skip_detours`).
+DETOUR_FRAMES = 3
 
 
 def eor_library(waves: List[Tuple[int, int]], multiplier: int,
-                start: int) -> EorLibrary:
+                start: int, detours: bool = False) -> EorLibrary:
     """`(wave, toggled wave)` pairs -> their rings, from position `start`.
     A ring is the nodes (state, w) -> (other state, w + 2 mod R) until it
     closes: one ring of 2R nodes for an odd R, two of R for an even one (the
-    toggle's working call keeps its parity), and two nodes for R 0."""
+    toggle's working call keeps its parity), and two nodes for R 0. A ring
+    whose nodes hold exactly what an earlier one's do is that ring: R = 2's
+    second ring is its first (its nodes are all three frames), five rows
+    back. With `detours` each pair also gets the two detour nodes."""
     m = max(1, multiplier)
     left: List[int] = []
     right: List[int] = []
+    owner: List[Optional[tuple]] = []
     nodes: Dict[Tuple[int, int, int, int], int] = {}
     for wave, alt in sorted(set(waves)):
+        rings: Dict[tuple, List[int]] = {}
         for R in (0,) + GATE_FAMILIES:
             seen = set()
             for w0 in (range(R) if R else (0,)):
@@ -346,17 +371,41 @@ def eor_library(waves: List[Tuple[int, int]], multiplier: int,
                         continue
                     ring_start = start + len(left)
                     s, w = s0, w0
+                    keys, holds = [], []
                     while (s, w) not in seen:
                         seen.add((s, w))
-                        nodes[(wave, R, s, w)] = start + len(left)
-                        hl, hr = _hold(alt if s else wave,
-                                       node_frames(R, w) * m)
+                        keys.append((s, w))
+                        holds.append(_hold(alt if s else wave,
+                                           node_frames(R, w) * m))
+                        s, w = 1 - s, ((w + 2) % R if R else 0)
+                    shape = tuple((k[0], tuple(h[0]), tuple(h[1]))
+                                  for k, h in zip(keys, holds))
+                    if shape in rings:
+                        for k, at in zip(keys, rings[shape]):
+                            nodes[(wave, R, k[0], k[1])] = at
+                        continue
+                    ats = []
+                    for k, (hl, hr) in zip(keys, holds):
+                        ats.append(start + len(left))
+                        nodes[(wave, R, k[0], k[1])] = start + len(left)
                         left += hl
                         right += hr
-                        s, w = 1 - s, ((w + 2) % R if R else 0)
+                        owner += [(wave, R, k[0], k[1])] * len(hl)
+                    rings[shape] = ats
                     left.append(GT_WAVE_JUMP)
                     right.append(ring_start & 0xFF)
-    return EorLibrary(start, left, right, nodes)
+                    owner.append(None)
+    lib = EorLibrary(start, left, right, nodes, owner=owner)
+    if detours:
+        for wave, alt in sorted(set(waves)):
+            for s in (0, 1):
+                # The state held three frames, then the ring at the other.
+                hl, hr = _hold(alt if s else wave, DETOUR_FRAMES * m)
+                lib.detours[(wave, s)] = start + len(left)
+                left += hl + [GT_WAVE_JUMP]
+                right += hr + [nodes[(wave, 0, 1 - s, 0)] & 0xFF]
+                owner += [("d", wave, s)] * len(hl) + [None]
+    return lib
 
 
 def note_parities(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -548,6 +597,18 @@ def wave_eor_block(sid: SidFile, det: Detection, i: int, eor: EorPhase,
         if eor.phase == 1 and frames == node_frames(R, w0):
             at = library.nodes.get((wave, R, 0, w0))
             return block if at is None else at + (1 if written else 0)
+        if not R:
+            # A gate with no ring, its skip right after the fetch: the first
+            # toggle is a node's length away on phase 0 (two frames), and a
+            # skip row's three on phase 1 -- the detour node, which holds the
+            # wave that long and enters the ring at the toggled one.
+            if eor.phase == 0 and frames == node_frames(0, 0):
+                at = library.nodes.get((wave, 0, 0, 0))
+                return block if at is None else at + (1 if written else 0)
+            if eor.phase == 1 and frames == DETOUR_FRAMES:
+                at = library.detours.get((wave, 0))
+                if at is not None:
+                    return at + (1 if written else 0)
         target = library.nodes.get((wave, R, 1, p0 if R else 0))
         if target is None or frames < 1:
             return block
@@ -761,6 +822,346 @@ def eor_stop_pass(patterns: List[List[int]], tracks: List[List[int]],
                else "")
             + (f", {over} over the pack limit" if over else ""))
     return out
+
+
+# --- the skip row: the gate's skip where no ring is laid out ---------------------
+#
+# A gate with no ring of its own (Rasputin's R = 10, 60, 120, 6: `GATE_FAMILIES`
+# gives a cycle only to 2, 3 and 5 -- R = 10's would be two rings of twenty
+# rows, and the table has not the room) is read as one that never skips, and
+# a note whose window holds the skip has every toggle after it a frame off.
+# R is even there, so the skip lands exactly on a ROW: row `i` of the note with
+# `(m + 2 i) % R == 0` has its first call, then the skip, then its second call
+# -- a three-frame row (`restarted_gate_calls` places our next row six calls
+# on). The toggle runs once a row, on its second call on phase 0 and its first
+# on phase 1, so on the skip row:
+#
+#   phase 0  the toggle is a frame late: the state the voice holds (`i` mod 2
+#            toggles have run) stays five calls from the row start, then the
+#            R = 0 ring goes on from the other state.
+#   phase 1  the toggle is on time but the NEXT is a frame late: the state it
+#            makes (`i` mod 2) is written and held three frames, then the ring.
+#
+# A `CMD_SETWAVEPTR` on the skip row's pattern row is the timer a wavetable
+# does not have; it enters the library's detour (`EorLibrary.detours`) or the
+# ring itself. The row is looked up on the finished orderlists as the residues
+# were (`_event_rows`), and a pattern played at two places that want different
+# commands is COPIED, as `classic_filter_stop.apply_stops` does.
+#
+# **Our row does not start where the original's does.** The tempo runs round
+# the 4.4 calls a row to whole calls, so a row starts 0 to 2 calls after its
+# ideal place; the pointer enters the program that many calls early on the
+# state it must hold (`late`, below). A note fetched ON the skip row has no
+# row to put a pointer on: `clock_residue` makes its first toggle late, and
+# `wave_eor_block` enters the library by a row.
+
+def _effect_runs_into(pat: List[int], r: int) -> bool:
+    """Whether a continuous effect (`CONTINUOUS_COMMANDS`) set on an earlier
+    row is still running on row `r`: an empty column ends it, a new note zeroes
+    it, any other command leaves it (gplay.c:340-422)."""
+    for j in range(r - 1, -1, -1):
+        c = pat[4 * j + 2]
+        if c in CONTINUOUS_COMMANDS:
+            return True
+        if c == CMD_DONOTHING or GT_FIRST_NOTE <= pat[4 * j] <= GT_LAST_NOTE:
+            return False
+    return False
+
+
+def skip_clock(det: Detection, group: int, row: int):
+    """(working calls since the gate's last restart, its R, frames a row
+    works) for a row of subtune `group`, or None where no restart is read."""
+    gr = getattr(det, "gate_restarts", None)
+    if not gr:
+        return None
+    seen = [x for x in gr["restarts"].get(group, ()) if x[0] <= row]
+    if not seen:
+        return None
+    r0, frames, R = seen[-1]
+    return frames * (row - r0), R, frames
+
+
+def has_skip_rows(det: Detection, multiplier: int = 2) -> bool:
+    """Whether some restart of the file has an R the detours serve: even, two
+    frames a row, and without a ring of its own -- and the song packs at two
+    calls a frame, the length the detour programs are written in."""
+    gr = getattr(det, "gate_restarts", None)
+    if not gr or multiplier != 2:
+        return False
+    return any(frames == 2 and R and R % 2 == 0 and R not in GATE_FAMILIES
+               for rs in gr["restarts"].values() for _row, frames, R in rs)
+
+
+def ring0_waves(entries: List[Tuple[int, int]], starts: Dict[int, int],
+                library: EorLibrary) -> Dict[int, int]:
+    """{instrument number: the wave it toggles} for each instrument (keys of
+    `starts`, number -> 1-based wavetable row) whose program reaches the
+    library's R = 0 ring, or a detour into it, before anything else: those
+    toggle on the gate with no ring of its own."""
+    lo, hi = library.start, library.start + len(library.left)
+    out: Dict[int, int] = {}
+    for number, start in starts.items():
+        at, seen = start, set()
+        while 1 <= at <= len(entries) and at not in seen:
+            seen.add(at)
+            if lo <= at < hi:
+                key = library.owner[at - lo]
+                if key is not None:
+                    if key[0] == "d":
+                        out[number] = key[1]
+                    elif key[1] == 0:
+                        out[number] = key[0]
+                break
+            left, right = entries[at - 1]
+            if left == GT_WAVE_JUMP:
+                if not right:
+                    break
+                at = right
+                continue
+            at += 1
+    return out
+
+
+def program_waves(entries: List[Tuple[int, int]], start: int, calls: int,
+                  firstwave: int = 0) -> List[int]:
+    """The waveform after each of `calls` calls of the program entered at
+    `start`: a waveform entry is a call, a delay `$01-$0F` holds for
+    `value + 1`, `$00` keeps the wave, `$FF xx` jumps free and `$FF 00` stops.
+    A `firstwave` owns the attack call and the entries begin the next."""
+    out: List[int] = []
+    wave = firstwave or 0
+    if firstwave:
+        out.append(wave)
+    at, guard = start, 0
+    while len(out) < calls and guard < 10 * calls + 100:
+        guard += 1
+        if not 1 <= at <= len(entries):
+            out.append(wave)
+            continue
+        left, right = entries[at - 1]
+        if left == GT_WAVE_JUMP:
+            if not right:
+                at = 0
+            else:
+                at = right
+            continue
+        if 0x01 <= left <= WAVE_MAX_DELAY:
+            out += [wave] * (left + 1)
+        else:
+            if left:
+                wave = left
+            out.append(wave)
+        at += 1
+    return out[:calls]
+
+
+def eor_skip_detours(sid: SidFile, det: Detection, tracks: List[List[int]],
+                     patterns: List[List[int]], instr_used: int, lead: int,
+                     aliases: Optional[Dict[int, int]],
+                     entries: List[Tuple[int, int]], starts: Dict[int, int],
+                     firstwaves: Dict[int, int], library: EorLibrary,
+                     multiplier: int, log=None):
+    """`(patterns, tracks)` with a `CMD_SETWAVEPTR` on each skip row inside a
+    toggling note of an R = 0 ring instrument (see above). `entries` is the
+    finished wavetable, `starts` {instrument number: wavetable row},
+    `firstwaves` {instrument number: its firstwave byte} and `library` the
+    one `eor_library` laid out with its detours; `aliases` maps each clone to
+    the record whose bit $02 it carries (`eor_records`).
+
+    Declined, and counted:
+
+    * **program**: the instrument's own program does not already toggle where
+      the clock puts the toggles around the skip row (`sim`, the calls
+      `program_waves` reads off it) -- a note on the wrong clone is not mended
+      by a mid-note jump.
+    * **timing**: our row starts more than two calls after the original's
+      (`late`; the tempo runs round to whole calls), or a row's tempo is not
+      known.
+    * **busy**: the row's command column is taken.
+    * **running**: a portamento, tone portamento or vibrato set on the row
+      before is still running into it (an empty column ends it, a
+      `CMD_SETWAVEPTR` does not).
+    * **start**: the note's pattern begins on the row (what ran before it
+      is in another pattern).
+    * **over**: the pattern would pack past `PACKED_PATTERN_LIMIT`, or the
+      copy it needs would pass the pattern table.
+    * **disagree**: a repeated orderlist entry whose plays want different
+      commands keeps what all of them agree on.
+
+    A pattern wanted differently at its positions is COPIED and only those
+    positions repointed (same length, same place)."""
+    from .constants import _SONG_MAX_PATTERNS
+    from .pulse import packed_pattern_size, pattern_rows
+    from .constants import PACKED_PATTERN_LIMIT
+    if (library is None or not library.detours
+            or not has_skip_rows(det, multiplier)):
+        return patterns, tracks
+    toggles = ring0_waves(entries, starts, library)
+    if not toggles:
+        return patterns, tracks
+    laps: Dict[int, int] = {}
+    rowmap: Dict[int, dict] = {}
+    for ti in range(len(tracks)):
+        rowmap[ti], laps[ti] = _event_rows(tracks, patterns, ti)
+    if not _gate_valid(det, tracks, laps):
+        return patterns, tracks
+    where: Dict[int, Dict[int, tuple]] = {}
+    for ti in range(len(tracks)):
+        at, row = {}, 0
+        for _t, pos, play, p in _plays([tracks[ti]], patterns):
+            pat = patterns[p]
+            for k in range(len(pat) // 4):
+                if pat[4 * k] == 0xFF:
+                    break
+                at[row] = (pos, play, p, k)
+                row += 1
+        where[ti] = at
+    m = max(1, multiplier)
+    mask = det.wave_eor.mask
+    wanted: Dict[tuple, Dict[int, int]] = {}      # (ti, pos, play) -> {row: operand}
+    stats = Counter()
+    tempos: Dict[int, list] = {}
+    for ti, key, k, gt, _rec, length, phase, quiet, _tempo in note_parities(
+            sid, det, tracks, patterns, instr_used, lead, aliases):
+        if quiet or length < 3 or gt not in toggles:
+            continue
+        row = rowmap[ti][(key, k)]
+        clock = skip_clock(det, ti // 3, row)
+        if clock is None:
+            continue
+        w0, R, frames = clock
+        if frames != 2 or not R or R % 2 or R in GATE_FAMILIES:
+            continue
+        wave = toggles[gt]
+        alt = wave ^ mask
+        written = firstwaves.get(gt, 0)
+        if ti // 3 not in tempos:
+            tempos[ti // 3] = _row_tempos(tracks, patterns, ti // 3)
+        row_calls = tempos[ti // 3][ti % 3]
+        sim = flips = None
+        for i in range(1, length - 1):
+            if (w0 + frames * i) % R:
+                continue
+            state = i % 2
+            at = library.detours.get((wave, state))
+            ring = library.nodes.get((wave, 0, state, 0))
+            if at is None or ring is None:
+                continue
+            # Where our row `i` starts against where the original's does:
+            # the tempo runs round to whole calls, so it is 0 to 2 late.
+            lens = row_calls[row:row + i]
+            ideal = m * (gate_tick(R, w0 + frames * i) - gate_tick(R, w0))
+            if len(lens) < i or None in lens:
+                stats["timing"] += 1
+                continue
+            late = sum(lens) - ideal
+            if sim is None:
+                sim = program_waves(entries, starts[gt],
+                                    m * (length + 1) * 3, written)
+                flips = {c for c in range(1, len(sim))
+                         if sim[c] != sim[c - 1] and {sim[c], sim[c - 1]}
+                         == {wave, alt}}
+            # Phase 0 toggles on the row's second call, a frame late here:
+            # hold the state `5 - late` calls and enter the ring at the other.
+            # Phase 1 toggles on the first call, on time, and the next one a
+            # frame later than the ring's: `late` 1 writes the state and
+            # holds six calls, 2 -- the toggle already past -- holds five, and
+            # 0 would want a call kept first, which the table has no row for.
+            # The ring's own toggles sit where the clock puts them; where they
+            # do not, the program is not the one the model describes.
+            if phase == 0:
+                ok = {ideal - 1, ideal + 3} <= flips
+                operand = {0: at + 1, 1: ring, 2: ring + 1}.get(late)
+            else:
+                ok = ({ideal + 1, ideal + 5} | ({ideal - 3} if i > 1 else set())
+                      ) <= flips
+                operand = {0: at, 1: at, 2: at + 1}.get(late)
+            if not ok:
+                stats["program"] += 1
+                continue
+            if operand is None:
+                stats["timing"] += 1
+                continue
+            site = where[ti].get(row + i)
+            if site is None:
+                continue
+            pos, play, _p, kk = site
+            wanted.setdefault((ti, pos, play), {})[kk] = operand
+    # Per orderlist position: the rows every play wants alike.
+    plays_at: Dict[tuple, int] = Counter()
+    for ti in range(len(tracks)):
+        for _t, pos, play, p in _plays([tracks[ti]], patterns):
+            plays_at[(ti, pos)] += 1
+    votes: Dict[tuple, Counter] = {}
+    for (ti, pos, _play), rows in wanted.items():
+        for r, operand in rows.items():
+            votes.setdefault((ti, pos), Counter())[(r, operand)] += 1
+    sites: Dict[tuple, Dict[int, int]] = {}
+    for (ti, pos), c in votes.items():
+        for (r, operand), n in c.items():
+            if n == plays_at[(ti, pos)]:
+                sites.setdefault((ti, pos), {})[r] = operand
+            else:
+                stats["disagree"] += n
+    occurrences: Dict[int, list] = {}
+    for ti, track in enumerate(tracks):
+        for pos, b in enumerate(track):
+            if b == 0xFF:
+                break
+            if b < _SONG_MAX_PATTERNS and b < len(patterns):
+                occurrences.setdefault(b, []).append((ti, pos))
+    new_tracks = [list(t) for t in tracks]
+    new_patterns = list(patterns)
+    placed = copies = 0
+    for p, occs in occurrences.items():
+        pat = patterns[p]
+        sigs = {}
+        for occ in occs:
+            keep = []
+            for r, operand in sorted(sites.get(occ, {}).items()):
+                if pat[4 * r + 2] or pat[4 * r + 3]:
+                    stats["busy"] += 1
+                elif r == 0:
+                    stats["start"] += 1
+                elif _effect_runs_into(pat, r):
+                    stats["running"] += 1
+                else:
+                    keep.append((r, operand))
+            sigs[occ] = tuple(keep)
+        distinct = list(dict.fromkeys(sigs.values()))
+        if distinct == [()]:
+            continue
+        keeper = (() if () in distinct
+                  else Counter(sigs.values()).most_common(1)[0][0])
+        number = {(): p}
+        for sig in distinct:
+            if not sig:
+                continue
+            edited = list(pat)
+            for r, operand in sig:
+                edited[4 * r + 2], edited[4 * r + 3] = CMD_SETWAVEPTR, operand
+            if packed_pattern_size(pattern_rows(edited)) > PACKED_PATTERN_LIMIT:
+                stats["over"] += len(sig)
+                number[sig] = p
+            elif sig == keeper:
+                new_patterns[p] = edited
+                number[sig] = p
+                placed += len(sig)
+            elif len(new_patterns) >= _SONG_MAX_PATTERNS:
+                stats["over"] += len(sig)
+                number[sig] = p
+            else:
+                number[sig] = len(new_patterns)
+                new_patterns.append(edited)
+                copies += 1
+                placed += len(sig)
+        for ti, pos in occs:
+            new_tracks[ti][pos] = number[sigs[(ti, pos)]]
+    if log and (placed or stats):
+        log(f"EOR skip rows...........: CMD_SETWAVEPTR on {placed} row(s), "
+            f"{copies} pattern copy(ies)"
+            + "".join(f", {n} {why}" for why, n in sorted(stats.items())))
+    return new_patterns, new_tracks
 
 
 def carry_split_edits(tracks: List[List[int]], new_tracks: List[List[int]],

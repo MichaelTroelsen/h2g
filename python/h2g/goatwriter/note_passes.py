@@ -1243,10 +1243,12 @@ def free_note_variants(patterns: List[List[int]], rows: set,
                        starts: dict, first_number: int,
                        last_number: int = 0, log=None,
                        pulse_only: Set[int] = frozenset(),
-                       no_variant: Optional[dict] = None):
+                       no_variant: Optional[dict] = None,
+                       same_pulse: Optional[dict] = None):
     """`_free_note_variants`, the pass itself (see there)."""
     return _free_note_variants(patterns, rows, tracks, starts, first_number,
-                               last_number, log, pulse_only, no_variant)
+                               last_number, log, pulse_only, no_variant,
+                               same_pulse)
 
 
 def free_note_has_work(patterns: List[List[int]], rows: set,
@@ -1264,7 +1266,8 @@ def _free_note_variants(patterns: List[List[int]], rows: set,
                         starts: dict, first_number: int,
                         last_number: int = 0, log=None,
                         pulse_only: Set[int] = frozenset(),
-                        no_variant: Optional[dict] = None):
+                        no_variant: Optional[dict] = None,
+                        same_pulse: Optional[dict] = None):
     """Respell each of `rows` (`free_note_rows`) on a variant of the
     instrument it plays whose wavetable starts at the second stage
     (`starts`: GT number -> `free_note_wave_start`) and whose pulse pointer
@@ -1286,11 +1289,16 @@ def _free_note_variants(patterns: List[List[int]], rows: set,
     "follows another instrument" otherwise, "follows an unsettled
     instrument" where that is not known. `no_variant` maps a number
     outside `starts` to the reason its rows decline (default "no two-stage
-    attack to skip").
+    attack to skip"). `same_pulse` maps a clone's number to the base whose
+    pulse pointer it carries unchanged (a legato clone of the base): a
+    channel holding the clone runs the base's own pulse program, so the
+    pulse-only test reads it as holding the base.
     Returns (patterns, [(instrument, variant number)], declined)."""
     reasons = no_variant or {}
+    same = same_pulse or {}
 
     def refuse(base: int, held: int) -> Optional[str]:
+        held = same.get(held, held)
         if base not in pulse_only or held == base:
             return None
         return ("follows another instrument" if held
