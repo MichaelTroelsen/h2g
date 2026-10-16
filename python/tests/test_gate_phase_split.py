@@ -104,12 +104,13 @@ def test_the_stream_check_follows_jumps_and_stops():
     assert not _same_wave_stream(stop, 1, t, 1)   # one stops, one loops
 
 
-def _converted(name, split=True):
+def _converted(name, split=True, **extra):
     """(sng, the plan build_sng took or None, build_sng's input tracks and
     patterns, multiplier) under presets."""
     import h2g.convert as C
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     opts = fidelity._preset_opts(doc, f"{name}.sid")
+    opts.update(extra)
     got = {"plans": []}
     real_plan = gw_arpeggio.nibble_gate_phase_split_plan
     real_build = C.build_sng
@@ -185,7 +186,7 @@ def test_the_lvvp_clones_enter_their_records_blocks():
     import songview
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
-    sng, got = _converted(LVVP)
+    sng, got = _converted(LVVP, tie_restart=False)
     plan = got["plans"][-1]
     assert plan is not None and len(plan.clones) >= 9
     assert all(isinstance(res, GatePhase) for _r, _c, res in plan.clones)
@@ -198,7 +199,11 @@ def test_the_lvvp_clones_enter_their_records_blocks():
     for k, (record, _clone, res) in enumerate(plan.clones):
         mine = ptr[last - len(plan.clones) + 1 + k]
         assert mine and mine != ptr[record], (record, res, mine)
-    flat = songview.parse_sng(_converted(LVVP, split=False)[0])
+    # Measured with `tie_restart` off: on, the ties that land off their
+    # record's gate residue lay blocks of their own beside the clones
+    # (tests/test_lvvp_gate_tie_blocks.py) and so does the flat build.
+    flat = songview.parse_sng(_converted(LVVP, split=False,
+                                         tie_restart=False)[0])
     assert len(s.tables["WTBL"]) - len(flat.tables["WTBL"]) == 3
 
 

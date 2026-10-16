@@ -229,20 +229,29 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
 
 @needs_corpus
 def test_a_table_with_no_room_keeps_the_old_spelling():
-    """Las_Vegas_Video_Poker: its tie rows keep the old spelling, with the
-    gated ones. Through 0421071 record $15's ties landed on residue 1, whose
-    block the full table could not hold (`tie phase block: 15 at residue 1
-    has no room in the wavetable`); since gate-majority-counts-tied-notes
-    ties cast no vote, $15 sits on residue 3 with the rest, every one of the
-    28 tie rows lands off it, and no block is asked for. The corpus no
-    longer exercises the no-room message."""
+    """Las_Vegas_Video_Poker: its tie rows keep the old spelling where the
+    full table has no room for the block they need. Through 0421071 record
+    $15's ties landed on residue 1, whose block the full table could not hold
+    (`tie phase block: 15 at residue 1 has no room in the wavetable`); ties
+    then cast no vote (gate-majority-counts-tied-notes), every tie row kept
+    the old spelling and no block was asked for. Since
+    lvvp-tie-rows-off-gate-residue a gated record's row on ONE gate residue
+    is free where it lands on its block's residue (7 rows) or restarts a
+    block laid for it (6 rows on the 2 of 5 wanted blocks that fit: $14 at
+    1 and 2); the 15 rows left are the three blocks the table has no room
+    for ($14 at 0, $15 at 0 and 1). HISTORICAL counts (4f29873)."""
     _sng, lines, seen, _real = _convert_capturing("Las_Vegas_Video_Poker.sid")
-    assert any("(28 gated arpeggio phase)" in line for line in lines), lines
-    assert not seen or not seen[-1][1]["tie_blocks"]
-    assert not any("tie phase block: 15 at residue 1 has no room" in line
-                   for line in lines), lines
-    assert not any("restart the block of the residue" in line
-                   for line in lines)
+    assert any("(15 gated arpeggio phase)" in line for line in lines), lines
+    assert any("6 tie row(s) restart the block of the residue they land on "
+               "(5 block(s) laid out for them)" in line
+               for line in lines), lines
+    assert len(seen[-1][1]["tie_blocks"]) == 5
+    assert sorted(seen[-1][1]["tie_block_starts"]).count(0) == 3
+    nofit = sorted(line for line in lines
+                   if line.startswith("tie phase block:")
+                   and "has no room" in line)
+    assert len(nofit) == 3, nofit
+    assert all("GatePhase" in line for line in nofit), nofit
 
 
 @needs_corpus

@@ -16,7 +16,8 @@ from .constants import (CMD_SETPULSEPTR, CMD_SETWAVEPTR, CMD_TONEPORTA,
 from .instruments import (_build_header, _instruments_used, record_envelope,
                           _table_length_byte, _write_instruments)
 from .arpeggio import (apply_tempo_duty_edits, fixed_arp_phase_split_plan,
-                       fixed_arp_phases, fixed_arp_tie_rows, nibble_arp_phases,
+                       fixed_arp_phases, fixed_arp_tie_rows, GatePhase,
+                       nibble_arp_phases,
                        nibble_gate_phases, tempo_duty_split_plan)
 from .pulse import (_pulse_layout, _write_pulsetable)
 from .filters import (_classic_clearing_instruments, _filter_entries,
@@ -186,13 +187,15 @@ def _tie_phase_verdicts(sid: SidFile, det: Detection, rows: set,
                         tracks: List[List[int]], patterns: List[List[int]],
                         record_of: dict, lead: int, arp_phases, arp_tie_rows,
                         pitch_phases, arp_gate_phases, phase_clones,
-                        distinct) -> dict:
+                        distinct, gate_skip=None) -> dict:
     """{(pattern, row): (why, record GT number, residue)} for every tie row
     in `rows` a legato clone of the instrument it plays would put out of
     phase. `why` is one of the four reasons `_phase_locked_ties` logs;
     `residue` is the one counter residue an "arpeggio phase" row is played
-    on (`arp_row_residues`), else None -- a row played on several has no
-    one block to restart on. The rules are `_phase_locked_ties`'."""
+    on (`arp_row_residues`), or a `GatePhase` for a "gated arpeggio phase"
+    row played on one gate residue (`nibble_gate_row_residues`, which needs
+    `gate_skip`), else None -- a row played on several has no one block to
+    restart on. The rules are `_phase_locked_ties`'."""
     if not rows or not (arp_phases or arp_tie_rows or pitch_phases
                         or arp_gate_phases):
         return {}
@@ -201,6 +204,15 @@ def _tie_phase_verdicts(sid: SidFile, det: Detection, rows: set,
                 if arp_phases else None) or {}
     seen = sorted(set().union(*residues.values())) if residues else []
     clone_residue = {clone: res for _rec, clone, res in phase_clones}
+    gate_rows: dict = {}
+    period = None
+    if arp_gate_phases and gate_skip:
+        gate_rows = _gw_arpeggio.nibble_gate_row_residues(
+            sid, det, tracks, patterns, gate_skip) or {}
+        per = det.arp_nibble_period
+        if per is not None:
+            period = _gw_arpeggio.fixed_arp_period(
+                max(per.on_interval, per.otherwise))
     kept: dict = {}
     for pn in sorted({p for p, _r in rows}):
         pat = patterns[pn]
@@ -226,8 +238,24 @@ def _tie_phase_verdicts(sid: SidFile, det: Detection, rows: set,
             elif (arp_gate_phases and g in arp_gate_phases
                   and mine is not None and distinct(g, mine)):
                 # Its block at its own residue differs from the one laid
-                # out: the gate's phase is in it.
-                kept[(pn, r)] = ("gated arpeggio phase", g, None)
+                # out: the gate's phase is in it. A row played on ONE gate
+                # residue (`GatePhase`, the counter modulo lcm(P, O)) is
+                # free where that is the residue of the block it restarts,
+                # else restarts the block laid out for it.
+                got = gate_rows.get((pn, r))
+                cur = clone_residue.get(live)
+                landing = None
+                if (got and None not in got and len(got) == 1 and period
+                        and (cur is None or isinstance(cur, GatePhase))):
+                    x = next(iter(got))
+                    here = GatePhase(x, period)
+                    if x == (arp_gate_phases[g] if cur is None
+                             else cur.residue):
+                        continue         # a fresh attack lands on the block
+                    if cur is None and not distinct(g, here):
+                        continue         # the block no residue changes
+                    landing = here
+                kept[(pn, r)] = ("gated arpeggio phase", g, landing)
             elif (mine is not None
                   and any(distinct(g, x) for x in seen)):
                 own = clone_residue.get(live, mine)
@@ -255,18 +283,39 @@ def _tie_block_source(g: int, x: int, mine: Optional[int], distinct,
     return None
 
 
+# The verdicts whose row lands on one residue, so on a block that can be laid
+# for it (`_tie_blocks_wanted`, `_phase_locked_ties`' respell).
+_TIE_BLOCK_KINDS = ("arpeggio phase", "gated arpeggio phase")
+
+
+def _block_residue_of(g: int, x, arp_phases, arp_gate_phases):
+    """The residue record `g`'s own block was laid out at, in the kind of
+    residue `x` is: the counter's (`arp_phases`), or a `GatePhase` of the
+    record's gate residue."""
+    if isinstance(x, GatePhase):
+        own = (arp_gate_phases or {}).get(g)
+        return None if own is None else GatePhase(own, x.period)
+    return (arp_phases or {}).get(g)
+
+
 def _tie_blocks_wanted(verdicts: dict, arp_phases, distinct,
-                       phase_clones) -> List[tuple]:
-    """The (record GT number, residue) blocks the "arpeggio phase" verdicts
-    in `verdicts` need laid out: one per pair, in sorted order, none for a
-    pair `_tie_block_source` finds already laid out."""
+                       phase_clones, arp_gate_phases=None) -> List[tuple]:
+    """The (record GT number, residue) blocks the "arpeggio phase" and
+    one-residue "gated arpeggio phase" verdicts in `verdicts` need laid out:
+    one per pair, in sorted order, none for a pair `_tie_block_source` finds
+    already laid out."""
     wanted = set()
     for why, g, x in verdicts.values():
-        if (why == "arpeggio phase" and x is not None
-                and _tie_block_source(g, x, (arp_phases or {}).get(g),
-                                      distinct, phase_clones) is None):
+        if (why in _TIE_BLOCK_KINDS and x is not None
+                and _tie_block_source(
+                    g, x, _block_residue_of(g, x, arp_phases,
+                                            arp_gate_phases),
+                    distinct, phase_clones) is None):
             wanted.add((g, x))
-    return sorted(wanted)
+    return sorted(wanted, key=lambda t: (
+        t[0], isinstance(t[1], GatePhase),
+        (t[1].residue, t[1].period) if isinstance(t[1], GatePhase)
+        else (t[1], 0)))
 
 
 def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
@@ -274,7 +323,7 @@ def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
                        record_of: dict, lead: int, arp_phases, arp_tie_rows,
                        pitch_phases, arp_gate_phases, phase_clones,
                        distinct, log=None, block_start=None,
-                       respelled=None) -> set:
+                       respelled=None, gate_skip=None) -> set:
     """The tie rows a legato clone would put out of phase: kept on
     `CMD_TONEPORTA 00`, which runs the wavetable on through the tie.
 
@@ -302,11 +351,12 @@ def _phase_locked_ties(sid: SidFile, det: Detection, rows: set,
     as {(pattern, row): start}."""
     verdicts = _tie_phase_verdicts(
         sid, det, rows, tracks, patterns, record_of, lead, arp_phases,
-        arp_tie_rows, pitch_phases, arp_gate_phases, phase_clones, distinct)
+        arp_tie_rows, pitch_phases, arp_gate_phases, phase_clones, distinct,
+        gate_skip)
     kept = {k: v[0] for k, v in verdicts.items()}
     if block_start is not None and respelled is not None:
         for key, (why, g, x) in verdicts.items():
-            if why == "arpeggio phase" and x is not None:
+            if why in _TIE_BLOCK_KINDS and x is not None:
                 start = block_start(g, x)
                 if start:
                     respelled[key] = start
@@ -1085,8 +1135,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 _record_numbers(lead, instr_used, duty_split, phase_split,
                                 []),
                 lead, arp_phases, arp_tie_rows, pitch_phases,
-                arp_gate_phases, plan_clones, plan_distinct),
-            arp_phases, plan_distinct, plan_clones)
+                arp_gate_phases, plan_clones, plan_distinct, gate_skip),
+            arp_phases, plan_distinct, plan_clones, arp_gate_phases)
     if tie_tags:
         # One block per (record, phase tuple) a tagged tie lands on.
         tie_blocks = sorted(set(tie_tags.values()))
@@ -1480,8 +1530,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             def block_start(g: int, x: int) -> int:
                 # The wavetable start of record `g`'s block at residue `x`:
                 # where it was laid out, 0 where it could not be.
-                source = _tie_block_source(g, x, (arp_phases or {}).get(g),
-                                           tie_distinct, live_clones)
+                source = _tie_block_source(
+                    g, x, _block_residue_of(g, x, arp_phases, arp_gate_phases),
+                    tie_distinct, live_clones)
                 own = wave_starts[g - 1] if 0 < g <= len(wave_starts) else 0
                 if source == "clone":
                     return clone_start.get((g, x)) or own
@@ -1493,7 +1544,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 sid, det, still, tracks, patterns, record_of, lead,
                 arp_phases, arp_tie_rows, pitch_phases, arp_gate_phases,
                 live_clones, tie_distinct, log, block_start=block_start,
-                respelled=retarget)
+                respelled=retarget, gate_skip=gate_skip)
             still -= phase_kept
         if tie_tags:
             # The pitch-sequence ties (`pitch_seq_tie_plan`): each tagged

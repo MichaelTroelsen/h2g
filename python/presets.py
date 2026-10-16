@@ -185,8 +185,9 @@ LIVE_ON = {
     # v0.5.515 once Action_Biker's max_rows rose 94 -> 128, 26 once
     # Formula_1_Simulator's phase-mismatched ties were respelled (MOVERS), 25
     # once Las_Vegas_Video_Poker's ties stopped voting (its tie rows then all
-    # land off their record's gate residue and keep the old spelling).
-    "tie_restart": 25,
+    # kept the old spelling), 26 once its rows on one gate residue were
+    # respelled (lvvp-tie-rows-off-gate-residue).
+    "tie_restart": 26,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:

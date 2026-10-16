@@ -345,18 +345,25 @@ def test_the_phase_locked_ties_keep_the_old_spelling():
     # the tied rows voted for their record's gate residue and the count read
     # "(6 arpeggio phase; 16 gated arpeggio phase)"; ties cast no vote since
     # gate-majority-counts-tied-notes, GT $12/$14/$15 sit on residue 3, and
-    # all 28 tie rows land off it.
+    # all 28 tie rows kept the old spelling because a gated record's rows
+    # were never checked against the residue they land on. Since
+    # lvvp-tie-rows-off-gate-residue 7 of them land ON their record's
+    # residue (free), 6 more restart a block laid for the residue they land
+    # on, and 15 stay: their records ($14, $15) land on three residues whose
+    # blocks the full wavetable cannot hold.
     _, lines = _convert("Las_Vegas_Video_Poker.sid", tie_restart=True)
-    assert any("(28 gated arpeggio phase)" in line
+    assert any("(15 gated arpeggio phase)" in line
                for line in lines), lines
 
 
 # --- the option -------------------------------------------------------------
 
 MOVERS = {
-    # Las_Vegas_Video_Poker left at gate-majority-counts-tied-notes: with
-    # ties out of the gate vote its tie rows all land off their record's
-    # residue and keep the old spelling, so the option writes the same bytes.
+    # Las_Vegas_Video_Poker left at gate-majority-counts-tied-notes (with
+    # ties out of the gate vote its tie rows kept the old spelling, so the
+    # option wrote the same bytes) and came back with the gate-phase tie
+    # blocks (lvvp-tie-rows-off-gate-residue): its rows on one gate residue
+    # restart a block laid for it.
     # Action_Biker left at v0.5.514: presets.py raised its max_rows 94 -> 128,
     # and its two-entry pattern no longer needs the entry split.
     # Formula_1_Simulator joined with the phase-mismatched ties: its 3 ties
@@ -367,7 +374,7 @@ MOVERS = {
     "Crazy_Comets.sid", "Devils_Galop.sid", "Formula_1_Simulator.sid",
     "Geoff_Capes_Strongman_Challenge.sid", "Gerry_the_Germ.sid",
     "Gremlins.sid", "Human_Race.sid", "Hunter_Patrol.sid",
-    "International_Karate.sid", "Kentilla.sid",
+    "International_Karate.sid", "Kentilla.sid", "Las_Vegas_Video_Poker.sid",
     "Master_of_Magic.sid", "Monty_on_the_Run.sid", "One_Man_and_his_Droid.sid",
     "Proteus.sid", "Rasputin.sid", "Samantha_Fox_Strip_Poker.sid",
     "Spellbound.sid", "Thing_on_a_Spring.sid", "Thrust.sid", "Warhawk.sid", "Zoids.sid",

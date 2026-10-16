@@ -3272,6 +3272,43 @@ def nibble_gate_note_residues(sid: SidFile, det: Detection,
     return out
 
 
+def nibble_gate_row_residues(sid: SidFile, det: Detection,
+                             tracks: List[List[int]],
+                             patterns: List[List[int]],
+                             gate: Optional[int]) -> Optional[dict]:
+    """{(pattern, row): {gate residue, ...}} -- every `GatePhase` residue (the
+    counter modulo lcm(P, O)) a note row, tied or not, is played on, one lap
+    of each orderlist, repeats expanded (`nibble_gate_note_residues`' walk,
+    keyed as `arp_row_residues` is). A place the walk cannot model (a
+    subtune whose reload is not `gate`, or whose speed is unread) adds
+    `None` to its rows' sets: a row with a `None` has no one residue.
+    None wherever `nibble_gate_note_residues` is."""
+    res = nibble_gate_note_residues(sid, det, tracks, patterns, gate)
+    if res is None:
+        return None
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    out: dict = {}
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3) if speeds is not None else None
+        modelled = frames is not None and outer_gate_skip(sid, ti // 3) == gate
+        seen = Counter()
+        for pos, p in _orderlist_occurrences(track):
+            if p >= len(patterns):
+                continue
+            play = seen[pos]
+            seen[pos] += 1
+            pat = patterns[p]
+            here = res.get((ti, pos, play), {}) if modelled else {}
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:
+                    break
+                if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                    got = here.get(r // 4)
+                    out.setdefault((p, r // 4), set()).add(
+                        got.residue if got is not None else None)
+    return out
+
+
 def nibble_gate_phase_split_plan(sid: SidFile, det: Detection,
                                  tracks: List[List[int]],
                                  patterns: List[List[int]], effects: bool,

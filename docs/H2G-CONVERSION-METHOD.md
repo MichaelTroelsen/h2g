@@ -15427,6 +15427,18 @@ Formula_1_Simulator melody .978 -> 1.000, sequence .984 -> 1.000, retrigger
 .969 -> 1.000 (voice 2 melody .946 -> 1.000), and no column at all on the other
 three. HISTORICAL figures, 9d1ff22.
 
+**Since v0.5.559 a gated record's tie rows are read against the gate residue
+they land on** (`arpeggio.nibble_gate_row_residues`;
+`_tie_phase_verdicts(gate_skip=...)`): a row on its record's own residue is
+free, and a row on one other residue restarts a `GatePhase` block laid for it
+(`_TIE_BLOCK_KINDS`). LVVP's 28 gated rows land 7 on residue 3 (free) and 21
+off it; 6 of those get their block ($14 at residues 1 and 2) and 15 stay on
+the old spelling, since the 3 blocks they want ($14 at 0, $15 at 0 and 1) do
+not fit a 254-of-255 table. LVVP and Formula_1_Simulator move; A/B -t 180:
+LVVP `tie_orig_only` 24 -> 0, `tie_agreement` .968 -> .971, aud -.0025 and
+loud -.0011 (inside aud's floor), every register column unchanged
+(`tests/test_lvvp_gate_tie_blocks.py`).
+
 **The clone's firstwave is 0** where the record's is the test bit and its
 block's first entry writes the waveform. The init call writes no pitch, so
 the record's own waveform there would open a gate an effect had closed on the
@@ -15448,7 +15460,9 @@ count is `tests/test_tie_restart.py`'s `MOVERS`, re-measured by
 `test_the_option_moves_exactly_the_familys_heard_files`: 26 once
 `entry_instrument_split` and the zero-page gate hold landed, 25 from v0.5.515
 when Action_Biker's `max_rows` rose 94 -> 128, 26 again once
-Formula_1_Simulator's phase-mismatched ties were respelled. `tie_restart` was held out of
+Formula_1_Simulator's phase-mismatched ties were respelled, 25 once
+Las_Vegas_Video_Poker's ties stopped voting, 26 again with its gate-phase tie
+blocks at v0.5.559. `tie_restart` was held out of
 the `always` block at v0.5.515 and re-adopted at v0.5.516, after the 8 pinned
 tests its first adoption failed were each traced to appended legato clones, a
 declined-spelling pin, or a lost `CMD_SETPULSEPTR` whose packed width was still
