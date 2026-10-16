@@ -190,4 +190,4 @@ def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row():
     # later laps add 117 rows (1279 -> 1396) and alone merged 18 swings:
     # the two together merge 11 and still lose no row to a full table.
     assert "(11 swing(s) merged" in swell[0], swell
-    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1396", swell
+    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1321", swell

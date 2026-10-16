@@ -271,7 +271,8 @@ def test_a_legato_note_of_another_pitch_or_an_unknown_bit_is_declined():
 
 @needs_corpus
 def test_the_decoder_reads_bit_7_of_megas_two_legato_notes():
-    """Entries 25 (record 9) and 39 (record 16) each carry one note with bit 7
+    """(Entry 21 joined them when its slide fetch was read: raw row 8, the
+    `97 98 46 95` event.) Entries 25 (record 9) and 39 (record 16) each carry one note with bit 7
     at raw row 32 -- two events of 32 rows, the second the first's legato
     continuation -- and no other entry carries any. The player skips its
     instrument start, and the counter's reset with it ($4BB3 BMI), on them;
@@ -287,7 +288,7 @@ def test_the_decoder_reads_bit_7_of_megas_two_legato_notes():
                        rest_keyoff=True, free_rows=fr)
         if fr:
             found[i] = fr
-    assert found == {25: [32], 39: [32]}
+    assert found == {21: [8], 25: [32], 39: [32]}
 
 
 # --- Mega_Apocalypse, end to end ---------------------------------------------
@@ -302,7 +303,9 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     loops' sharing, `_expanding_vibrato_loop_share`, gave the rows the
     split had left on their `4xy` a neighbour's loop; f68b08b44061 since
     a remainder's block jumps onto the speed's F4 entry,
-    `_expanding_vibrato_loop_cost`)."""
+    `_expanding_vibrato_loop_cost`; 8c3819931350 since the zero-page slide
+    fetch ($4B63 STA $D3,X) was read, which put every pattern holding a
+    slide back in step: `SLIDE_OPERAND_ZP_SHAPE`)."""
     import hashlib
     import h2g.goatwriter.build as B
     # Mega's tied landings are legato clones since ca85ac7's
@@ -316,7 +319,7 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "f68b08b44061"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "8c3819931350"
 
 
 @needs_corpus

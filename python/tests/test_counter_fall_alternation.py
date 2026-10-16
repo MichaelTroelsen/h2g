@@ -238,7 +238,7 @@ def test_mega_apocalypse_emits_the_alternation_and_the_swell_loops_still_fit():
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "row(s)" in m]
     assert len(said) == 1, lines
-    assert "54 emitted on" in said[0] and "dip size(s)" in said[0], said[0]
+    assert "55 emitted on" in said[0] and "dip size(s)" in said[0], said[0]
     swell = [m for m in lines if m.startswith("Expanding vibrato loops")]
     assert swell and "table full" not in swell[0], swell
     import songview
@@ -306,7 +306,7 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "bb50807c38f5"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "56c7171be4eb"
     assert any("not emitted" in m for m in lines), lines
 
 
@@ -315,8 +315,8 @@ def test_every_alternating_note_of_the_corpus_is_counted_or_emitted():
     _sng, lines = _converted()
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "alternating" in m][0]
-    assert "381 alternating note(s) on instrument(s) [10, 13]" in said
-    assert "54 emitted" in said and "327 too few dips" in said
+    assert "385 alternating note(s) on instrument(s) [10, 13]" in said
+    assert "55 emitted" in said and "330 too few dips" in said
 
 
 def _reversals(freqs):

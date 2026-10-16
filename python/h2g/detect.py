@@ -2776,8 +2776,44 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
 SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
 
 
+# Zero-page spelling of the same fetch, a FALLBACK consulted only where the
+# `STA abs,X` one above matched nothing. Mega_Apocalypse $4B5E stores the
+# first operand byte to zero page and the second to an absolute table:
+#
+#     4B5E  C8        INY
+#     4B5F  B1 FA     LDA (patt),Y
+#     4B61  10 0D     BPL $4B70         ; < $80 -> an instrument number
+#     4B63  95 D3     STA $D3,X         ; >= $80 -> slide, first byte (zero page)
+#     4B65  C8        INY
+#     4B66  B1 FA     LDA (patt),Y
+#     4B68  9D 62 4F  STA $4F62,X       ; second byte
+#
+# The abs,X-only shape never matched it, so the decoder read the second byte
+# as the NOTE and the note as the next event's header: every pattern holding
+# a slide went out of step from there (frames 7060-7106 of voice 0: the
+# original's notes `01 21 03 21 ...` came out as one 22-row noise event).
+# Only Mega_Apocalypse matches this among the 95 corpus files.
+SLIDE_OPERAND_ZP_SHAPE = "C8 B1 ?? 10 ?? 95 ?? C8 B1 ?? 9D ?? ??"
+# Its consumer, Mega_Apocalypse $4D3A: Flash Gordon's `CMP #$BF` /
+# `AND #$3F` high-first dialect, with zero-page loads and the SEC after the
+# self-modifying store:
+#
+#     4D3A  B5 D3     LDA $D3,X
+#     4D3C  F0 2D     BEQ
+#     4D3E  C9 BF     CMP #$BF
+#     4D40  90 16     BCC
+#     4D42  29 3F     AND #$3F
+#     4D44  8D 52 4D  STA $4D52
+#     4D47  38        SEC
+#     4D48  B5 C3     LDA $C3,X
+#     4D4A  FD 62 4F  SBC $4F62,X
+SLIDE_HIGH_FIRST_ZP_SHAPE = "B5 ?? F0 ?? C9 BF 90 ?? 29 3F 8D ?? ?? 38 B5 ?? FD ?? ??"
+
+
 def _find_slide_operand(data: bytes) -> bool:
-    return search_file(data, SLIDE_OPERAND_SHAPE) >= 1
+    if search_file(data, SLIDE_OPERAND_SHAPE) >= 1:
+        return True
+    return search_file(data, SLIDE_OPERAND_ZP_SHAPE) >= 1
 
 
 # The instrument-indexed note transpose. Food Feud $90F8, anchored on the
@@ -2894,7 +2930,9 @@ SLIDE_HIGH_FIRST_MASK = 0x3F
 
 
 def _find_slide_high_first(data: bytes) -> bool:
-    return search_file(data, SLIDE_HIGH_FIRST_SHAPE) >= 1
+    if search_file(data, SLIDE_HIGH_FIRST_SHAPE) >= 1:
+        return True
+    return search_file(data, SLIDE_HIGH_FIRST_ZP_SHAPE) >= 1
 
 
 # --- Vibrato ---------------------------------------------------------------
