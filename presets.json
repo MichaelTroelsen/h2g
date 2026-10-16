@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.563 presets.py",
+  "generator": "h2g 0.5.566 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -69,7 +69,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 18037,
+      "bytes": 18249,
       "subtunes": 3,
       "rows": 10653,
       "multiplier": 1
@@ -301,7 +301,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23731,
+      "bytes": 23971,
       "subtunes": 1,
       "rows": 16023,
       "multiplier": 2
@@ -381,7 +381,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 43101,
+      "bytes": 43217,
       "subtunes": 7,
       "rows": 32302,
       "multiplier": 1,
@@ -406,7 +406,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 52220,
+      "bytes": 52324,
       "subtunes": 7,
       "rows": 36980,
       "multiplier": 1,
@@ -562,7 +562,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16146,
+      "bytes": 16372,
       "subtunes": 3,
       "rows": 12254,
       "multiplier": 2
@@ -572,7 +572,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16134,
+      "bytes": 16324,
       "subtunes": 3,
       "rows": 12254,
       "multiplier": 2
@@ -633,7 +633,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 42653,
+      "bytes": 42953,
       "subtunes": 3,
       "rows": 32317,
       "multiplier": 2
@@ -1025,7 +1025,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 17702,
+      "bytes": 17776,
       "subtunes": 1,
       "rows": 17381,
       "multiplier": 2
