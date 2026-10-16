@@ -5,7 +5,7 @@ import copy
 from typing import Callable, List, Optional
 
 from .detect import (Detection, PlayerView, detect, player_view,
-                     wave_program_rest_bypass)
+                     rest_wave_rewrite_records, wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
 from .goatwriter import note_passes as _gw_note_passes
 from .goatwriter import wave_eor as _gw_wave_eor
@@ -46,7 +46,7 @@ from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
                      silence_pre_instrument_notes,
                      instrument_row_calls, instrument_voices,
-                     instrument_transposes,
+                     instrument_transposes, rest_entry_records,
                      legalise_restarts)
 
 Logger = Callable[[str], None]
@@ -669,6 +669,26 @@ def convert(sid_path: str, log: Logger = print,
     wave_notes, wave_copies = stored_wave_copies(
         sid, det, tracks, det.pattern_used + 1 + len(variants), floor, log,
         slides=slides, status_bit6=status_bit6)
+    # Only where `rest_wave` has records to exempt (IK+): the rest's parked
+    # `$08` survives or not by the record standing, which is the voice's
+    # state at that orderlist position and so is decided per position, with
+    # a pattern copy per class. After the waveform-state copies, whose
+    # numbers it follows.
+    rest_copies: List[tuple] = []
+    exempt = (rest_wave_rewrite_records(sid, det)
+              if rest_wave_silence and det.rest_silence_kind == "testbit"
+              else frozenset())
+    det.rest_wave_exempt = exempt
+    if exempt:
+        first_pattern = det.pattern_used + 1
+        origin = {first_pattern + j: v[0] for j, v in enumerate(variants)}
+        origin.update({first_pattern + len(variants) + j: c[0]
+                       for j, c in enumerate(wave_copies)})
+        det.rest_entry_records, rest_copies = rest_entry_records(
+            sid, det, tracks, log, slides=slides, status_bit6=status_bit6,
+            exempt=exempt,
+            first=first_pattern + len(variants) + len(wave_copies),
+            limit=floor, origin=origin)
     want_event_rows = bool(pulse_phase and pulse and det.pulse_tri_hi >= 0)
     # `--rest-program-stop`: a bit-6 rest bypasses the wave-program
     # interpreter in the players that carry the branch, so it stops the
@@ -704,6 +724,7 @@ def convert(sid_path: str, log: Logger = print,
                             and det.rest_silence_envelope)),
         instr_base=instr_base, tie=tie,
         wave_notes=wave_notes, wave_copies=wave_copies,
+        rest_copies=rest_copies,
         # The triangle walk's fetch rows (patterns.collect_pulse_phases'
         # `event_rows`). Unlike `free_rows` the request moves no byte -- the
         # dedup key is left alone -- so it is made wherever that walk can run.

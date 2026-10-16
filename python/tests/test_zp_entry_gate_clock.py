@@ -15,8 +15,9 @@ What it buys (60 s, presets, C:/t/multispeed-call-phase-one-call-earlier/
 out2): Spellbound's onset window {1..5} -> {-1..3} (all five phases of -S5,
 Thrust's class), `onset_timing` .5994 -> 1.0000, tie_agreement .6738 -> .9747,
 wave .9491 -> .9842, gate .5874 -> .6307, melody and sequence to 1.0000.
-Samantha_Fox is the same gate but reads no first fetch of the speed counter,
-so it gets no clock.
+Samantha_Fox is the same gate; its speed counter is a zero-page cell too
+(`$E9`), read by `call_phase.zp_speed_first_fetch` (tests/
+test_zp_speed_first_fetch.py).
 """
 import dataclasses
 import json
@@ -111,7 +112,7 @@ def test_any_other_access_to_the_cell_declines(tail):
 
 
 @needs_corpus
-def test_spellbound_takes_a_shorter_startup_row_and_samantha_fox_none():
+def test_spellbound_takes_a_shorter_startup_row_and_samantha_fox_one():
     sid, det, m, tempos = _read("Spellbound.sid")
     assert (m, tempos[0]) == (5, 11)             # 11 * 10 == 2 * 11 * 5 : exact
     phase = call_phase.startup_phase(sid, det, m, tempos)
@@ -119,10 +120,12 @@ def test_spellbound_takes_a_shorter_startup_row_and_samantha_fox_none():
     assert (phase.tempo, phase.default) == (28, 30)
     assert phase.mismatched == 0 and phase.default_mismatched == 88
     assert phase.rows == 220
-    # Samantha_Fox: the gate is read, the speed counter's first fetch is not.
+    # Samantha_Fox: the absolute spelling reads no first fetch, the zero-page
+    # one does (zp_speed_first_fetch), so it gets a row too.
     sid, det, m, tempos = _read("Samantha_Fox_Strip_Poker.sid")
     assert arpeggio.fixed_arp_first_fetch(sid, det) is None
-    assert call_phase.startup_phase(sid, det, m, tempos) is None
+    phase = call_phase.startup_phase(sid, det, m, tempos)
+    assert phase is not None and (phase.tempo, phase.default) == (22, 24)
 
 
 @needs_corpus

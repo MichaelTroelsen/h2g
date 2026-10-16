@@ -2308,6 +2308,18 @@ falls 0.970 → 0.911 because the silent surplus had been masking audible ties
 the file is short of on voices 1 and 2 (voice 0 alone: 1.175 → 0.926), and
 `wave` on Nineteen voice 2 loses 0.7 pp.
 
+**Since v0.5.561 the park follows the record standing on the voice at each
+orderlist position**, not the pattern (`tracks.rest_entry_records`,
+`detect.rest_wave_exempt`): in the 16 players carrying IK+'s `$E388` block a
+rest under an arpeggio record (whose `$E388` code re-writes the stored
+waveform across the rest) is exempt, and a pattern reached under both classes
+gets a copy per class. IK_plus at `-t 600`: `wave` 0.4730 -> 0.5471 for this
+option alone (0.5488 with neither option), 0.5590 with
+`--rest-envelope-silence` too; but `bend_ratio` 0.96 -> 0.84, `aud` -0.5 pp
+and `tie_ratio` 0.370 -> 0.285 in every arm, so it is still not adopted
+(`tests/test_rest_standing_state.py`; run record
+`ik-plus-bit6-rest-standing-state`).
+
 ## `--rest-program-stop` (the rest that stops the wave program)
 
 With `--wave-program`: a bit-6 **rest stops the byte-code wave program**, the

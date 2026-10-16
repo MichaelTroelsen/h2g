@@ -678,6 +678,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                        rest_wave: bool = False,
                        rest_envelope: bool = False,
                        rest_ring: bool = False,
+                       rest_wave_exempt: frozenset = frozenset(),
+                       rest_entry_record: Optional[int] = None,
+                       record_exit: Optional[List[tuple]] = None,
                        exits_tied: Optional[List[bool]] = None,
                        instr_mask: int = 0x7F,
                        rest_notes: frozenset = frozenset(),
@@ -725,6 +728,16 @@ def _build_raw_pattern(data: bytes, addr: int,
     fetch-next` sequencer, so an event whose `wait` field is zero never
     reaches it and ties into the next note. See detect.find_gate_hold and the
     `pending_tie` assignment below; it does nothing unless `tie` is also set.
+
+    `rest_wave_exempt` is the set of instrument RECORDS after which a bit-6
+    rest does not park `$08` under `rest_wave`: the records whose waveform
+    the player re-stores every frame, so the park would not last
+    (`detect.rest_wave_rewrite_records`). `rest_entry_record` is the record
+    standing when the pattern starts, carried in from the voice's previous
+    pattern (`tracks.rest_entry_records`), for a rest that comes before the
+    pattern names an instrument; None parks as ever. `record_exit`, when
+    given a list, receives one `(rests before the first named instrument,
+    record standing at the end or None)` tuple -- the walk's input.
 
     `exits_tied`, when given a list, receives one bool: whether the decode
     ended with `pending_tie` set -- that is, whether the player would carry
@@ -839,6 +852,10 @@ def _build_raw_pattern(data: bytes, addr: int,
     # before this pattern names one (the carried-in instrument is not known
     # here, so a pattern's opening events keep the old tie reading).
     cur_record = None
+    # The record a bit-6 rest finds standing (`rest_wave_exempt`): the
+    # pattern's own last named instrument, else the one carried in.
+    rest_record = rest_entry_record
+    rests_unnamed = 0
     g_instrument = 0
     i2 = 0
     # Events decoded so far, terminator excluded: the key `wave_notes` uses.
@@ -895,6 +912,9 @@ def _build_raw_pattern(data: bytes, addr: int,
             if transpose_exit is not None:
                 transpose_exit.append((notes_before_instr,
                                        transpose if named_instr else None))
+            if record_exit is not None:
+                record_exit.append((rests_unnamed,
+                                    rest_record if named_instr else None))
             break
 
         get_next = b1 & 0x80
@@ -976,11 +996,14 @@ def _build_raw_pattern(data: bytes, addr: int,
             # audible write is never the one displaced. With only one option
             # set the emission is UNCHANGED, which is what keeps every
             # shipped conversion byte-identical.
-            if rest_wave and rest_envelope and rest_keyoff:
+            if not named_instr:
+                rests_unnamed += 1
+            park_wave = rest_wave and rest_record not in rest_wave_exempt
+            if park_wave and rest_envelope and rest_keyoff:
                 cmd1, cmd2 = CMD_SETSR, 0x00
                 hold_cmds = [(CMD_SETWAVE, REST_SILENT_WAVE),
                              (CMD_SETAD, 0x00)]
-            elif rest_wave:
+            elif park_wave:
                 cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
             # ...and the half of that branch **both** families share: the
             # envelope pair is zeroed, so the note that was sounding stops
@@ -1159,6 +1182,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                 g_instrument = (b2 & instr_mask) + instr_base
                 log_record = b2 & instr_mask
                 cur_record = log_record
+                rest_record = log_record
                 named_instr = True
                 if instr_transpose is not None:
                     # `LDA table,X` with X = the operand the player stored;
@@ -2523,7 +2547,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  event_log: Optional[List[tuple]] = None,
                  wave_notes: Optional[Dict[int, int]] = None,
                  event_rows: Optional[List[int]] = None,
-                 top_rows: Optional[Dict[int, int]] = None
+                 top_rows: Optional[Dict[int, int]] = None,
+                 record_exit: Optional[List[tuple]] = None,
+                 entry_record: Optional[int] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2581,6 +2607,10 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
                               rest_envelope=rest_envelope, rest_ring=rest_ring,
+                              rest_wave_exempt=det.rest_wave_exempt,
+                              rest_entry_record=(entry_record if entry_record is not None
+                                                 else det.rest_entry_records.get(i)),
+                              record_exit=record_exit,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
@@ -3083,6 +3113,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      free_rows: bool = False,
                      wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
                      wave_copies: Optional[List[tuple]] = None,
+                     rest_copies: Optional[List[tuple]] = None,
                      event_rows: bool = False,
                      top_cols: Optional[dict] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
@@ -3273,7 +3304,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     # own stored-wave notes; `arps` and `steps` collect distinct values, so
     # passing them again re-finds what the source already added.
     copy_from: Dict[int, int] = {}
-    for src, notes in (wave_copies or ()):
+    # ...then the rest-state copies (`tracks.rest_entry_records`): the source
+    # decoded again with the record its positions leave standing, and its own
+    # waveform-state map if it has one.
+    for src, notes, record in ([(s, m, None) for s, m in (wave_copies or ())]
+                               + [(s, (wave_notes or {}).get(s), r)
+                                  for s, r in (rest_copies or ())]):
         n = len(raw_patterns)
         copy_from[n] = src
         ex = []
@@ -3287,7 +3323,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_envelope=rest_envelope, rest_ring=rest_ring, exits_tied=ex,
                               arps=arps,
                               free_rows=fr if collect else None,
-                              wave_notes=notes,
+                              wave_notes=notes, entry_record=record,
                               event_rows=ev if want_ev else None,
                               top_rows=tr if want_top else None)
         exits[n] = bool(ex and ex[0])

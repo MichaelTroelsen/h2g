@@ -65,10 +65,13 @@ def _player_notes():
     assert plan, "player 2 has no pulse plan"
     out = []
     for v in range(3):
-        notes, live = [], 0
+        notes, live, trans = [], 0, 0
         for b in tracks[v]:
             if b == P.GT_ORDER_RESTART:
                 break
+            if P.GT_TRANSPOSE_DOWN <= b < P.GT_ORDER_RESTART:
+                trans = b - P.GT_TRANSPOSE_UP
+                continue
             if b >= P.MAX_PATTERNS or b >= len(pats):
                 continue
             for r, kind, instr in P._phase_note_rows(pats[b], live, {}):
@@ -76,7 +79,7 @@ def _player_notes():
                     live = instr
                 if kind != "note" or pats[b][4 * r + 2] == P.CMD_TONEPORTA:
                     continue
-                nn = pats[b][4 * r] - P.GT_FIRSTNOTE
+                nn = pats[b][4 * r] - P.GT_FIRSTNOTE + trans
                 notes.append(f"{NAMES[nn % 12]}{nn // 12}")
         out.append(notes)
     return out

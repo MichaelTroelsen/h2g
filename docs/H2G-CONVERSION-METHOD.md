@@ -15688,8 +15688,16 @@ only translates the window). Two of the four are now READ instead:
   469 of our attacks on an original attack frame (.603 before), `onset_timing`
   .5994 -> 1.0000, `tie_agreement` .6738 -> .9747, `wave` .9491 -> .9842, `gate`
   .5874 -> .6307, `melody` .9986 -> 1.0, `sequence` .9992 -> 1.0.
-  Samantha_Fox is the same gate but reads no first fetch of the speed counter,
-  so it gets no clock (its start subtune has two onsets in 60 s).
+  Samantha_Fox is the same gate but read no first fetch of the speed counter,
+  so it got no clock. **Since v0.5.561 it does**
+  (`call_phase.zp_speed_first_fetch`, consulted only for a zero-page entry
+  gate where `fixed_arp_first_fetch` finds nothing): its counter is zero-page
+  `$E9` (`70C7 DEC $E9 / BPL / LDA $7405 / STA $E9`), the gate's own store and
+  decrement are its only accesses, so it starts at 0 and the first fetch is
+  call 0. Startup row 22 (default 24). Start subtune at `-t 180`:
+  `onset_timing` .658 -> 1.000, `tie_agreement` .549 -> .908, `gate` .942 ->
+  1.000, `wave` .961 -> .985, `aud` .901 -> .918; subtunes 1-7, near-empty,
+  lose ~.004 `wave` (`tests/test_zp_speed_first_fetch.py`).
 
 Corpus byte-hash under presets, 6f6de05 vs this tree: 95 files, 6 refused on both
 sides, 89 compared, 2 moved -- Go_Go_Dash and Spellbound; Commando identical.
@@ -15697,7 +15705,8 @@ The census cannot "concentrate at 0" for any file and the rule it stood for
 was the wrong one: what matters is that the window contains phase -1 (the
 visible init lies BEFORE the original's onset frame), which 14 of the 16 now do
 or never use the byte (W_A_R {0, 2}, Go_Go_Dash {0, 2}: neither visible phase
-occurs). Lion_Heart and Samantha_Fox are the two left.
+occurs). Lion_Heart and Samantha_Fox were the two left; Samantha_Fox has its
+clock since v0.5.561 (above).
 
 ### 7.zzzzzzz A wave step past note 95 read gt2reloc's orderlist addresses
 

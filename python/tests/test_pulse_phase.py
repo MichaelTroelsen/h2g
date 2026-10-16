@@ -517,10 +517,13 @@ def _exact_widths(name: str, seconds: int, sub, group: int) -> dict:
     out = {}
     for v in range(3):
         ti = 3 * group + v
-        notes, live = [], 0
+        notes, live, trans = [], 0, 0
         for pos, b in enumerate(cap["tracks"][ti]):
             if b == P.GT_ORDER_RESTART:
                 break
+            if P.GT_TRANSPOSE_DOWN <= b < P.GT_ORDER_RESTART:
+                trans = b - P.GT_TRANSPOSE_UP
+                continue
             if b >= P.MAX_PATTERNS or b >= len(cap["patterns"]):
                 continue
             pat = cap["patterns"][b]
@@ -529,7 +532,7 @@ def _exact_widths(name: str, seconds: int, sub, group: int) -> dict:
                     live = instr
                 if kind != "note" or pat[4 * r + 2] == P.CMD_TONEPORTA:
                     continue
-                n = pat[4 * r] - P.GT_FIRSTNOTE
+                n = pat[4 * r] - P.GT_FIRSTNOTE + trans
                 notes.append((f"{_NOTE_NAMES[n % 12]}{n // 12}",
                               planned.get((ti, pos, r))))
         if not any(ph for _, ph in notes):

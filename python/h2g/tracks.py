@@ -835,6 +835,120 @@ def instrument_transposes(sid: SidFile, det: Detection,
     return entries
 
 
+def rest_entry_records(sid: SidFile, det: Detection,
+                       tracks: List[List[int]], log=None,
+                       slides: bool = False,
+                       status_bit6: bool = False,
+                       exempt: frozenset = frozenset(),
+                       first: int = 0, limit: int = 0,
+                       origin: Optional[Dict[int, int]] = None
+                       ) -> Tuple[Dict[int, int], List[Tuple[int, int]]]:
+    """The record standing where each orderlist position's bit-6 rest comes
+    before its pattern names an instrument, per `rest_wave_exempt`, with one
+    pattern copy per standing class.
+
+    A bit-6 rest reads no operand, so which instrument was last named is state
+    the PREVIOUS pattern on the voice left behind -- the same shape of problem
+    as `instrument_transposes`, and walked the same way: every voice in play
+    order, twice, the second pass from the restart position with the first
+    pass's exit state. The state belongs to the POSITION, not the pattern: a
+    rests-only pattern several voices share is reached under records that
+    differ, and one pattern cannot say both. So positions are grouped by class
+    (a record in `exempt` or not), the larger group keeps the pattern's own
+    number (a tie keeps the exempt side), and the other becomes a COPY numbered
+    `first`, `first + 1`, ... whose orderlist positions are rewritten in place
+    in `tracks` -- as `stored_wave.stored_wave_copies` does for the stored
+    waveform. A copy is not made at or past `limit`; its positions keep the
+    majority, which is what the per-pattern rule did.
+
+    `origin` maps an orderlist number above the table (a transpose variant, a
+    waveform-state copy) to the entry it was built from. Returns
+    `(entry records, copies)`: the standing record a pattern's rests assume
+    by number, and the `(source entry, record)` list in copy-number order.
+    """
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
+    origin = origin or {}
+    shape: Dict[int, Tuple[int, Optional[int]]] = {}
+
+    def structure(entry: int) -> Tuple[int, Optional[int]]:
+        entry = origin.get(entry, entry)
+        if entry not in shape:
+            out: List[tuple] = []
+            decode_entry(sid, det, entry, slides=slides,
+                         status_bit6=status_bit6, record_exit=out)
+            shape[entry] = out[0] if out else (0, None)
+        return shape[entry]
+
+    # (track number, index in it) -> (pattern entry, records standing there)
+    seen: Dict[Tuple[int, int], Tuple[int, set]] = {}
+    for tn, track in enumerate(tracks):
+        body: List[int] = []
+        place: List[int] = []
+        restart = 0
+        i = 0
+        while i < len(track):
+            b = track[i]
+            if b == GT_ORDER_RESTART:
+                restart = track[i + 1] if i + 1 < len(track) else 0
+                break
+            if b < floor:
+                body.append(b)
+                place.append(i)
+            i += 1
+        start = sum(1 for j in range(min(restart, len(track)))
+                    if track[j] < floor)
+        cell: Optional[int] = None
+        for first_pos in (0, min(start, len(body))):
+            for k in range(first_pos, len(body)):
+                p = body[k]
+                rests_unnamed, exit_record = structure(p)
+                if rests_unnamed and cell is not None:
+                    seen.setdefault((tn, place[k]),
+                                    (origin.get(p, p), set()))[1].add(cell)
+                if exit_record is not None:
+                    cell = exit_record
+    by_entry: Dict[int, List[Tuple[Tuple[int, int], set]]] = {}
+    for key, (e, cells) in seen.items():
+        by_entry.setdefault(e, []).append((key, cells))
+    entries: Dict[int, int] = {}
+    copies: List[Tuple[int, int]] = []
+    moved = refused = mixed = 0
+    for e in sorted(by_entry):
+        groups: Dict[bool, List[tuple]] = {True: [], False: []}
+        for key, cells in by_entry[e]:
+            # A position the walk reaches under both classes (a loop) is
+            # exempt: the rewrite costs `wave` frames the park does not.
+            groups[any(c in exempt for c in cells)].append((key, cells))
+        if groups[True] and groups[False]:
+            mixed += 1
+        keep = (True if len(groups[True]) >= len(groups[False]) else False)
+        for cls in (keep, not keep):
+            if not groups[cls]:
+                continue
+            records = sorted({c for _k, cs in groups[cls] for c in cs
+                              if (c in exempt) == cls})
+            record = records[0] if records else sorted(
+                {c for _k, cs in groups[cls] for c in cs})[0]
+            if cls == keep:
+                entries[e] = record
+                continue
+            if first + len(copies) >= limit:
+                refused += len(groups[cls])
+                continue
+            number = first + len(copies)
+            copies.append((e, record))
+            for (tn, p), _cs in groups[cls]:
+                tracks[tn][p] = number
+                moved += 1
+    if log and entries:
+        log(f"Rest entry records......: {len(entries)} pattern(s) rest "
+            f"before naming an instrument ({mixed} reached under both "
+            f"classes); {len(copies)} copy(ies) for {moved} position(s)"
+            + (f"; {refused} kept the majority, no pattern number left"
+               if refused else ""))
+    return entries, copies
+
+
 SEMITONES_PER_OCTAVE = 12
 
 

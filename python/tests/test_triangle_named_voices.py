@@ -123,10 +123,13 @@ def _pairs(name: str) -> dict:
                for r, ph in rows.items()}
     out = {}
     for v in range(3):
-        notes, live = [], 0
+        notes, live, trans = [], 0, 0
         for pos, b in enumerate(cap["tracks"][v]):
             if b == P.GT_ORDER_RESTART:
                 break
+            if P.GT_TRANSPOSE_DOWN <= b < P.GT_ORDER_RESTART:
+                trans = b - P.GT_TRANSPOSE_UP
+                continue
             if b >= P.MAX_PATTERNS or b >= len(cap["patterns"]):
                 continue
             pat = cap["patterns"][b]
@@ -135,7 +138,7 @@ def _pairs(name: str) -> dict:
                     live = instr
                 if kind != "note" or pat[4 * r + 2] == P.CMD_TONEPORTA:
                     continue
-                n = pat[4 * r] - P.GT_FIRSTNOTE
+                n = pat[4 * r] - P.GT_FIRSTNOTE + trans
                 notes.append((instr, f"{_NOTE_NAMES[n % 12]}{n // 12}",
                               planned.get((v, pos, r))))
         if not any(ph for _, _, ph in notes):

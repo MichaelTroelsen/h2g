@@ -135,7 +135,7 @@ from ..detect import Detection, PlayerView
 from ..sidfile import SidFile
 from . import arpeggio as _gw_arpeggio
 from . import tempo as _gw_tempo
-from .constants import (GT_DEFAULT_TEMPO_CALLS, GT_MIN_TEMPO, OUTER_GATE,
+from .constants import (GT_DEFAULT_TEMPO_CALLS, GT_MIN_TEMPO, OUTER_GATE, SPEED_GATE_ZP,
                         OUTER_GATE_PAL, OUTER_GATE_RTS, OUTER_GATE_RTS_ZP,
                         SPEED_GATE)
 
@@ -527,6 +527,8 @@ def startup_phase(sid: SidFile, det: Detection, multiplier: int,
         return None
     gate_byte = 0 if zp else _gw_arpeggio.nibble_gate_byte(sid)
     first = _gw_arpeggio.fixed_arp_first_fetch(sid, det)
+    if first is None and zp:
+        first = zp_speed_first_fetch(sid, det)
     frames = speeds.frames_for(s0)
     if gate_byte is None or first is None or frames is None:
         return None
@@ -546,6 +548,34 @@ def startup_horizon(multiplier: int, reload: int) -> int:
     """Rows `best_startup` scores: `4 * multiplier * (reload + 1)`, which covers
     both grids' common period."""
     return 4 * multiplier * (reload + 1)
+
+
+def zp_speed_first_fetch(sid: SidFile, det: Detection) -> Optional[int]:
+    """The speed counter's first fetch where the counter lives in zero page
+    (Samantha_Fox `$E9`: `DEC zp / BPL +5 / LDA reload / STA zp`), else None.
+
+    `fixed_arp_first_fetch` reads the counter's byte out of the image, and a
+    zero-page cell has none; like the outer gate's cell (`zp_entry_gate`) it
+    starts at 0 -- but only where the file's sole accesses to it are the
+    gate's own `DEC` and reload `STA` (the `zp_entry_gate` count): any other
+    store, decrement or increment of the cell declines. Consulted only
+    by `startup_phase`, only after the absolute spelling read nothing.
+    """
+    data = sid.data
+    hits = [m for m in SPEED_GATE_ZP.finditer(data) if m.group(1) == m.group(3)]
+    if not hits:
+        return None
+    g = min(hits, key=lambda m: abs(m.start() - det.instr_start))
+    cell = g.group(1)[0]
+    zp_stores = sum(data.count(bytes([op, cell]))
+                    for op in (0x85, 0x84, 0x86, 0x95))
+    abs_stores = sum(data.count(bytes([op, cell, 0]))
+                     for op in (0x8D, 0x8C, 0x8E, 0x9D, 0x99))
+    decs = data.count(bytes([0xC6, cell])) + data.count(bytes([0xCE, cell, 0]))
+    incs = data.count(bytes([0xE6, cell])) + data.count(bytes([0xEE, cell, 0]))
+    if not (zp_stores == 1 and abs_stores == 0 and decs == 1 and incs == 0):
+        return None
+    return 0
 
 
 def best_startup(row_calls: int, multiplier: int, first: int, frames: int,

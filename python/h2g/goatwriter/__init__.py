@@ -336,6 +336,7 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
                          STARTUP_RESET_CALLS, StartupPhase,
                          GATE_OFF_FIRSTWAVE, zp_entry_gate,
+                         zp_speed_first_fetch,
                          _JMP_GATE_FETCH_FAR_WINDOW, _JMP_GATE_PRESCALER,
                          _fetch_names_the_cells,
                          _prescaled_new_song_test)  # noqa: F401

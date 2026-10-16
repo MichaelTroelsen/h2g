@@ -243,6 +243,14 @@ class Detection:
     # patterns.decode_entry -- every reader of a pattern -- needs the answer.
     # A pattern absent from the map starts at 0.
     instr_entry_transposes: Dict[int, int] = field(default_factory=dict)
+    # The records after which a bit-6 rest does NOT park `$08` under
+    # `--rest-wave-silence` (`rest_wave_rewrite_records`), and, for each
+    # pattern with a bit-6 rest before its first instrument byte, the record
+    # standing when the orderlists reach it. Both are set by `convert` only
+    # when the option is on and the player has such records, and are empty
+    # otherwise -- which is what keeps every other conversion byte-identical.
+    rest_wave_exempt: frozenset = frozenset()
+    rest_entry_records: Dict[int, int] = field(default_factory=dict)
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform
@@ -4777,6 +4785,73 @@ def _find_rest_silence_envelope(data: bytes) -> bool:
                 and win[k + 6] == (win[k + 3] - 1) & 0xFF):
             return True
     return False
+
+
+# IK+ `$E388`, the per-frame block that re-stores a record's waveform when the
+# effect byte (+7) has bit $04: `LDA effect / AND #$04 / BEQ / LDA ctr,X / BEQ
+# / DEC ctr,X / LDA alt,Y / JMP store / LDA wave,Y`, then `STA stored,X`. Not
+# an arpeggio the converter reads -- `effect_arp` is the pitch half -- but the
+# waveform half, which writes the stored-waveform cell EVERY frame.
+REST_WAVE_REWRITE_SHAPE = ("AD ?? ?? 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
+                           "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
+REST_WAVE_REWRITE_BIT = 0x04
+REST_WAVE_REWRITE_STORE = 24    # offset of the `9D` in the shape
+
+
+def rest_wave_rewrite_records(sid: SidFile, det: Detection) -> frozenset:
+    """The instrument records whose waveform the player re-stores each frame,
+    which undoes the `$08` a bit-6 rest parks there: `rest_wave` skips them.
+
+    The rest branch parks `$08` in the voice's stored-waveform cell and the
+    gate stays off; on IK+ that cell is then rewritten by `$E388` on every
+    frame a record with effect bit $04 is current, so the park lasts ONE frame
+    on such a record and the rest of the rest on every other. MEASURED at
+    -t 600 (C:/t/ik-00c9-vibrato-overbend, wruns.py), voice 0:
+
+        record 4 ($0A56, effect $14)  orig  50/0A56 x3  08/0000 x1  50/0000 x96
+        record 13 ($00C9, effect $08) orig  10/00C9 x3  08/0000 x387
+
+    A converter that parks `$08` after both held it for 96 frames where the
+    original returned to `$50` after one: 4440 voice-0 frames the original
+    plays `$50` and ours `$08`, `wave` 0.549 -> 0.465 on the file, though the
+    other half of the arm took `bend_ratio` 1.267 -> 0.825.
+
+    Only returned where the block is found AND its store is the cell the rest
+    branch's `LDA #$08 / JMP` lands on -- the claim is about this player, not
+    about bit $04 in general (Warhawk's `AND #$04` is a pitch arp that writes
+    no waveform). Empty for a file without the block. SIXTEEN corpus files
+    carry it, not one (scanned at 803b69b: ACE_II, Auf_Wiedersehen_Monty,
+    Bangkok_Knights, IK_plus, I_Ball, Kings_of_the_Beach_ingame,
+    Nemesis_the_Warlock, Nineteen, Pandora, Powerplay_Hockey, Saboteur_II,
+    Shockway_Rider, Star_Paws, Thundercats, Trans-Atlantic, Wiz), so under
+    `--rest-wave-silence` the rule reaches all of them; no preset sets that
+    option, which is why no preset conversion moves. The set covers every
+    record index to 255, past the real table; only a record a voice actually
+    names is ever looked up in it.
+    """
+    data = sid.data
+    if det.instr_start < 0 or det.rest_silence_kind != "testbit":
+        return frozenset()
+    at = search_file(data, REST_WAVE_REWRITE_SHAPE)
+    if at < 0:
+        return frozenset()
+    store = bytes(data[at + REST_WAVE_REWRITE_STORE:
+                       at + REST_WAVE_REWRITE_STORE + 3])
+    win = _rest_silence_window(data)
+    k = win.find(b"\xa9\x08\x4c")                  # LDA #$08 / JMP target
+    if k < 0 or k + 5 > len(win):
+        return frozenset()
+    target = sid.to_offset(win[k + 3] | (win[k + 4] << 8))
+    if not 0 <= target < len(data) - 2 or bytes(data[target:target + 3]) != store:
+        return frozenset()
+    out = set()
+    for rec in range(256):
+        eff = det.instr_start + rec * det.instr_stride + 7
+        if eff >= len(data):
+            break
+        if data[eff] & REST_WAVE_REWRITE_BIT:
+            out.add(rec)
+    return frozenset(out)
 
 
 # --- The instrument effect byte (+7) ---------------------------------------

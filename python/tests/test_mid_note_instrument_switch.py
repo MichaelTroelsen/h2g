@@ -181,7 +181,15 @@ def test_samantha_fox_voice_one_carries_instrument_sevens_envelope_on_the_tied_c
 
     # The writer's envelope for each instrument is the record's own.
     lead = 0 if opts["compact_instruments"] else 1
+    # Since v0.5.561 the song carries gt2reloc's startup record (instrument
+    # 63, `call_phase.zp_speed_first_fetch`) behind zero padding; neither is
+    # a record of the player's.
+    startup = [i for i in song.instruments[lead:] if i.wave_ptr == 0]
+    assert startup and startup[-1].number == 63, startup
+    assert all((i.ad, i.sr) == (0, 0) for i in startup[:-1]), startup
     for ins in song.instruments[lead:]:
+        if ins.wave_ptr == 0:
+            continue
         ad, sr = record_envelope(sid.data, det, ins.number - lead - 1,
                                  opts["sustain_exact"], opts["cut_release"])
         assert (ins.ad, ins.sr) == (ad, sr), ins

@@ -121,15 +121,18 @@ def _reading(run: dict, lag: int, shift: int):
     planned = {(ti, pos, r): ph for ti, pos, rows in cap["plan"][1]
                for r, ph in rows.items()}
 
-    def nm(note: int) -> str:
-        n = note - P.GT_FIRSTNOTE
+    def nm(note: int, trans: int = 0) -> str:
+        n = note - P.GT_FIRSTNOTE + trans
         return f"{_NOTE_NAMES[n % 12]}{n // 12}"
 
     def walk_notes(ti: int) -> list:
-        out, live = [], 0
+        out, live, trans = [], 0, 0
         for pos, b in enumerate(cap["tracks"][ti]):
             if b == P.GT_ORDER_RESTART:
                 break
+            if P.GT_TRANSPOSE_DOWN <= b < P.GT_ORDER_RESTART:
+                trans = b - P.GT_TRANSPOSE_UP
+                continue
             if b >= P.MAX_PATTERNS or b >= len(cap["pats"]):
                 continue
             pat = cap["pats"][b]
@@ -137,13 +140,18 @@ def _reading(run: dict, lag: int, shift: int):
                 if instr:
                     live = instr
                 if kind == "note" and pat[4 * r + 2] != P.CMD_TONEPORTA:
-                    out.append((nm(pat[4 * r]), planned.get((ti, pos, r))))
+                    out.append((nm(pat[4 * r], trans),
+                                planned.get((ti, pos, r))))
         return out
 
     def final_notes(ti: int) -> list:
-        track, out, i = song.tracks[ti], [], 0
+        track, out, i, trans = song.tracks[ti], [], 0, 0
         while i < len(track) and track[i] != P.GT_ORDER_RESTART:
             b, plays = track[i], 1
+            if P.GT_TRANSPOSE_DOWN <= b < P.GT_ORDER_RESTART:
+                trans = b - P.GT_TRANSPOSE_UP
+                i += 1
+                continue
             if P.GT_REPEAT <= b < P.GT_REPEAT + 16 and i + 1 < len(track):
                 plays, b = b - P.GT_REPEAT + 1, track[i + 1]
                 i += 1
@@ -158,7 +166,7 @@ def _reading(run: dict, lag: int, shift: int):
                         break
                     if (P.GT_FIRSTNOTE <= note <= P.GT_LASTNOTE
                             and pat[4 * r + 2] != P.CMD_TONEPORTA):
-                        out.append((nm(note), pat[4 * r + 3]
+                        out.append((nm(note, trans), pat[4 * r + 3]
                                     if pat[4 * r + 2] == P.CMD_SETPULSEPTR
                                     else None))
         return out

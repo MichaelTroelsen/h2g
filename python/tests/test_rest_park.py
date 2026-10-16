@@ -10,6 +10,7 @@ exists for before showing it gone. The rest read the converter's own output.
 import json
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -221,7 +222,13 @@ def _convert(name, **extra):
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = _preset_opts(doc, name)
     opts.update(extra)
-    return convert(str(CORPUS / name), log=lambda *a, **k: None, **opts)
+    # These tests pin the park-by-pointer pass on EVERY rest. The rule that a
+    # rest after a record the player rewrites each frame is not parked at all
+    # (`detect.rest_wave_rewrite_records`, tests/test_rest_standing_state.py)
+    # is a different question, so it is switched off here.
+    with mock.patch("h2g.convert.rest_wave_rewrite_records",
+                    lambda sid, det: frozenset()):
+        return convert(str(CORPUS / name), log=lambda *a, **k: None, **opts)
 
 
 def _need_corpus():
