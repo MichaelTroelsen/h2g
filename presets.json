@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.561 presets.py",
+  "generator": "h2g 0.5.563 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -150,7 +150,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 35265,
+      "bytes": 35654,
       "subtunes": 1,
       "rows": 20903,
       "multiplier": 2
@@ -209,7 +209,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15668,
+      "bytes": 15932,
       "subtunes": 2,
       "rows": 17441,
       "multiplier": 1
@@ -359,8 +359,8 @@
       "max_rows": 128,
       "pack": true,
       "prune": false,
-      "dedup": true,
-      "bytes": 12268,
+      "dedup": false,
+      "bytes": 12790,
       "subtunes": 1,
       "rows": 8132,
       "multiplier": 9,
@@ -424,11 +424,11 @@
       "no_test_restart": true
     },
     "Human_Race.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 25018,
+      "bytes": 25292,
       "subtunes": 5,
       "rows": 21036,
       "multiplier": 1,
@@ -835,7 +835,7 @@
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 36714,
+      "bytes": 37549,
       "subtunes": 2,
       "rows": 21593,
       "multiplier": 2
