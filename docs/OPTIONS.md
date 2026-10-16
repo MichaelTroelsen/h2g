@@ -2716,6 +2716,11 @@ Ricochet reads drift -7.81 -> 0.00. Delta and Dragons_Lair_Part_II move bytes
 and no column at all, because their compensation lands in subtunes other than
 the one measured. Adopting the flag for any of these files is a separate
 `presets.json` decision.
+**Delta adopts it since v0.5.555.** Measured at 2a13c5f under presets,
+`-t 180 --sound`, regrid off -> on. Subtune 8: `drift` per 1000 -25.0 -> 0.0,
+`gate` .047 -> .400, `wave` .956 -> .976, `aud` .922 -> .955, `loud` .958 ->
+.968, melody 1.00 both (55 attacks a side), `depth` .615 -> .598. The default
+subtune (11) is unchanged to four decimals, apart from `aud` -.0002.
 
 **`--regrid-full-debt` (`regrid_full_debt`) pays the debt the budget loses.**
 Measured at 6e467ff with `regrid` forced, Star_Paws' subtune 0 owes 147.28

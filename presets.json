@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.554 presets.py",
+  "generator": "h2g 0.5.555 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -279,7 +279,8 @@
       "subtunes": 13,
       "rows": 55619,
       "multiplier": 2,
-      "two_stage": true
+      "two_stage": true,
+      "regrid": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,

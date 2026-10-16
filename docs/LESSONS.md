@@ -1545,7 +1545,9 @@ test dependency).
     reversal shape as One_on_One's; the 14 above is now HISTORY.** **RE-GRADED
     AT v0.5.553: **16 adoptions** -- Sanxion adopted once its preset no longer
     carried `no_test_restart` (melody 1.00 both ways, drift -9.17 -> -0.13 per
-    1000 at f28b063); the 15 above is now HISTORY.** The drift split is not
+    1000 at f28b063); the 15 above is now HISTORY.** **RE-GRADED AT v0.5.555: **17 adoptions** --
+    Delta adopted (subtune 8 drift -25.0 -> 0.0 per 1000 at 2a13c5f); the 16
+    above is now HISTORY.** The drift split is not
     re-graded here and must not be: it is a per-file measurement and the
     artefact is now `-t 180` where that figure was taken at `-t 60`, so the
     test SKIPS it rather than comparing two different quantities.
