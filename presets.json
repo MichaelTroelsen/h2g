@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.568 presets.py",
+  "generator": "h2g 0.5.569 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -572,7 +572,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16324,
+      "bytes": 16334,
       "subtunes": 3,
       "rows": 12254,
       "multiplier": 2
@@ -868,7 +868,6 @@
       "regrid": true
     },
     "Rock_Tells_the_Tale.sid": {
-      "two_stage": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
@@ -877,6 +876,7 @@
       "subtunes": 1,
       "rows": 9979,
       "multiplier": 6,
+      "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 5
