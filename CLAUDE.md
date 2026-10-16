@@ -343,7 +343,8 @@ carrying a wrong mechanism is retracted where a grep for its words lands.
 ### Preset search
 
 `fidelity_better` is not a total order and must not become a scalar; diff a
-search result against the shipped presets before adopting it; a failed search
+search result against the shipped presets before adopting it; size alone does
+not move a shipped `max_rows`/toggle shape; a failed search
 is not a "no" (read stderr); `prune_inert` drops flags that change no bytes;
 size a ratio veto against its noise floor; a forced option measures the pair; do
 not give the search options no column scores; test invariants across both

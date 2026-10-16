@@ -359,7 +359,7 @@
       "max_rows": 128,
       "pack": true,
       "prune": false,
-      "dedup": false,
+      "dedup": true,
       "bytes": 12790,
       "subtunes": 1,
       "rows": 8132,
@@ -424,11 +424,11 @@
       "no_test_restart": true
     },
     "Human_Race.sid": {
-      "max_rows": 94,
+      "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 25292,
+      "bytes": 25405,
       "subtunes": 5,
       "rows": 21036,
       "multiplier": 1,
@@ -470,7 +470,8 @@
       "rows": 23374,
       "multiplier": 1,
       "wave_program": true,
-      "regrid": true
+      "regrid": true,
+      "regrid_full_debt": true
     },
     "International_Karate.sid": {
       "max_rows": 94,
@@ -687,7 +688,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "regrid": true
+      "regrid": true,
+      "regrid_full_debt": true
     },
     "Ninja.sid": {
       "max_rows": 128,
@@ -766,7 +768,8 @@
       "wave_program": true,
       "pitch_seq": true,
       "max_hard_restart": false,
-      "regrid": true
+      "regrid": true,
+      "regrid_full_debt": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,

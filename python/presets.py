@@ -862,9 +862,22 @@ def pack_multiplier(sid_path: Path) -> int:
         return 1
 
 
-def best_options(sid_path: Path) -> dict | None:
-    """Search every combination for one file; None if it never converts."""
+def best_options(sid_path: Path, keep: dict | None = None) -> dict | None:
+    """Search every combination for one file; None if it never converts.
+
+    `keep` is the shape the shipped entry records (`max_rows` and TOGGLES).
+    It stays wherever it plays as many subtunes and rows as the winner: the
+    third key of `_score`, size, is not a reason to move. Measured at
+    v0.5.563: once note_rise._isolate gave Human_Race's shared rest rows
+    copies of their own, `max_rows` 94 came out 113 bytes smaller than the
+    shipped 128 BECAUSE the slicing left no room for the copies, and a
+    regeneration took it -- undoing the change in four subtunes the fidelity
+    row does not measure (tests/test_note_rise_isolate.py,
+    tests/test_triangle_lockstep.py). Game_Killer's dedup flipped the same
+    way, on a tie of 12790 bytes each.
+    """
     best = None
+    kept = None
     for rows in MAX_ROWS:
         for flags in itertools.product((False, True), repeat=len(TOGGLES)):
             opts = dict(zip(TOGGLES, flags), max_rows=rows)
@@ -875,8 +888,12 @@ def best_options(sid_path: Path) -> dict | None:
             score = _score(blob)
             if best is None or score > best[0]:
                 best = (score, opts, len(blob))
+            if keep and all(opts[k] == keep.get(k) for k in opts):
+                kept = (score, opts, len(blob))
     if best is None:
         return None
+    if kept is not None and kept[0][:2] == best[0][:2]:
+        best = kept
     score, opts, size = best
     return {
         **{k: opts[k] for k in ("max_rows", *TOGGLES)},
@@ -1901,6 +1918,9 @@ def main(argv=None) -> int:
     # dropped them would leave three measured files silently back on the
     # default. Carried forward instead, and counted out loud.
     carried: dict[str, dict] = {}
+    # The shipped structural shape per song, kept unless the search finds one
+    # that plays more (best_options' `keep`).
+    shapes: dict[str, dict] = {}
     # Whether -o actually named a readable previous file. Distinct from
     # `carried` being empty: a real previous file can legitimately carry
     # nothing (no song had a per-song decision to keep), where a MISSING
@@ -1930,6 +1950,8 @@ def main(argv=None) -> int:
                 keep = carried_entry(e)
                 if keep:
                     carried[name] = keep
+                if all(k in e for k in ("max_rows", *TOGGLES)):
+                    shapes[name] = {k: e[k] for k in ("max_rows", *TOGGLES)}
         except (OSError, ValueError):
             pass
 
@@ -1961,7 +1983,7 @@ def main(argv=None) -> int:
         paths = paths[index::count]
         print(f"shard {index}/{count}: {len(paths)} song(s)", file=sys.stderr)
     for path in paths:
-        found = best_options(path)
+        found = best_options(path, shapes.get(path.name))
         if found:
             found["multiplier"] = pack_multiplier(path)
             if args.fidelity:

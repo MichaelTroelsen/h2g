@@ -333,6 +333,13 @@ dangerous one because it reads as current and gets cited as current.
   rule.**
 - **Diff the search result against the shipped presets before adopting it.** One
   version lost seven measured settings and gained one.
+- **Size is not a reason to move a shipped shape.** The structural search
+  (`best_options`) ranks subtunes, then played rows, then bytes; since v0.5.564
+  it keeps the entry's shipped `max_rows` and TOGGLES wherever they play as many
+  subtunes and rows as the winner (`tests/test_presets_keep_shape.py`). A file
+  can be smaller because a pass found no room: Human_Race at `max_rows` 94 lost
+  its rest-row copies and four subtunes' pulse reach, and the fidelity row,
+  which scores one subtune, did not see it. Evidence in `docs/LESSONS.md`.
 - **A search that fails is not a search that says no.** Read stderr for
   `will not convert` and `search failed`; a missing entry and a measured "no" are
   indistinguishable in `presets.json`, which is a record of measurements.

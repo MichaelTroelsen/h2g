@@ -2834,6 +2834,21 @@ the old budget, so each must be re-measured before it changes. With the flag
 off, the corpus byte-hash moves 0 of 89 under presets and 0 of 89 with `regrid`
 forced. `tests/test_regrid_full_debt.py` pins both budgets.
 
+**Adopted on Pandora, IK_plus and Nineteen since v0.5.564**
+(`adopt-regrid-full-debt-regrid-per-play`, with the IK_plus and Nineteen
+candidates of `regrid-full-debt-adopter-census`), re-taken at fde80d0, `-t 180`
+`--sound`, shipped -> `+ regrid_full_debt`:
+
+| file | drift/1000 | onset_timing | gate | wave | adsr | aud | costs |
+|---|---|---|---|---|---|---|---|
+| Pandora | 0.00 / 0.00 | .012 -> .531 | .346 -> .620 | .722 -> .850 | .928 -> .953 | .901 -> .923 | sequence -.0004, travel .886 -> .881 |
+| IK_plus | 0.91 -> 0.21 | .210 -> .315 | .431 -> .486 | .587 -> .589 | .758 -> .761 | .860 -> .860 | depth .939 -> .938 |
+| Nineteen | -1.46 -> 0.00 | .193 -> .242 | .492 -> .600 | .477 -> .569 | .721 -> .842 | .862 -> .882 | melody -.0001 |
+
+`regrid_per_play` gives Pandora the same bytes. Bangkok_Knights stays on the
+shipped budget: `regrid_full_debt` trades its drift 0.62 -> 2.58 for onset
+timing, which is the user's call.
+
 **`--regrid-per-play` (`regrid_per_play`) debits each row at the play that
 delivers it.** Both budgets above charge a pattern for all of its plays at the
 visit that buys a row. A pattern's bytes are global, so the walk's timeline is
