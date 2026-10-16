@@ -14259,10 +14259,33 @@ C128 rip under presets, -t 180: melody 0.99947 -> 1.0, sequence 0.99958 -> 1.0,
 pitch_jaccard 0.9556 -> 1.0 (the G#7 is gone), travel_ratio 1.0945 -> 0.8667
 (1.1062 -> 0.8762): the over-travel the compact skydive recorded was in part
 this one note falling from G#7, and what is left is the sweep, which a
-Goattracker note cannot play. **The 29 frames still miss**: the skydive now
-falls from `$62` against the original's `$60`, two high bytes up for its whole
-length, so the high-byte count stays 184/238. A note cannot be tuned finer
-than the table, and the pitch is the one thing here that is not reproduced.
+Goattracker note cannot play.
+
+**The fall now starts at the cell's `$60`, not the entry's `$62`** (measured
+2026-10-16 at 7ee69be, `-t 180` under presets). The skydive's fall is
+measured from Goattracker's note, `$6278` for entry 78, and the original's
+note is `$6001`: two high bytes and a bit, so every store read two high bytes
+up and the high-byte count stayed 188/238. A one-shot slide at the note start
+would not hold, since the program's own note steps put the voice back on the
+note every other frame. What does hold: `window_vibrato(..., det)` asks
+`patterns.player_cell_pitch` and a window on a recorded cell starts from that
+pitch (`SkydiveVibrato.pinned`), so its bias is `$277`, which
+`anchor_bias` would have declined as not a tuning difference. A program of
+its own would be 95 rows and the table has 3 free; but store k of a fall `n`
+high bytes deeper (`n = 2`, bias `$20E` against the group's `$0E`) is the
+group's program's store `k + n`, so the window is that program entered two
+stores in: a lead and a wavetable jump (`share_program_tail`, as a tie
+window's), 7 rows laid over duplicate instrument blocks on Last_V8
+(`skydive_plan`, `pinned_key`). It ends two stores short of the original's 29
+(frames 6461 and 6463 still miss). Last_V8 high-byte agreement 188/238 ->
+215/238; in the row only `bend` moves (0.78x -> 0.77x). **Last_V8_C128_version
+stays 188/238**: its window is one pair of frames late already (ours reads
+`$62` where the original reads `$5F` at 6407 before this change, three high
+bytes against Last_V8's two), the cell is now the same two bytes closer, but
+the timing is not this change's. The reverse lookup is by table entry, so
+it is right only while no genuine byte lands on entry 78 of a skydive record;
+`tests/test_skydive_cell_pitch.py` counts the windows. Where no layout fits
+the second program the plan lays the window as any other.
 
 Some cases are logged and not emitted:
 

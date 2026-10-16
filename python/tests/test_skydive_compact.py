@@ -195,7 +195,7 @@ def test_a_table_with_nothing_to_share_is_left_alone():
 
 @needs_corpus
 @pytest.mark.parametrize("name,steps", [("Last_V8", 95),
-                                        ("Last_V8_C128_version", 93)])
+                                        ("Last_V8_C128_version", 98)])
 def test_both_last_v8s_fit_in_compact_form_in_a_shared_table(name, steps):
     sng, lines = M._converted(name)
     (msg,) = M._sky(lines)

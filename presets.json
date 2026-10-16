@@ -868,6 +868,7 @@
       "regrid": true
     },
     "Rock_Tells_the_Tale.sid": {
+      "two_stage": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,

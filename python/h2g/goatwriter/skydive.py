@@ -275,6 +275,7 @@ class SkydiveVibrato:
     base: int
     step: int
     anchor: Optional[int] = None
+    pinned: bool = False
 
     @property
     def start(self) -> int:
@@ -338,7 +339,7 @@ def _orig_freq(sid: SidFile, index: int) -> Optional[int]:
     return sid.data[at] | sid.data[at + 1] << 8
 
 
-def anchor_bias(vib: Optional[SkydiveVibrato]) -> int:
+def anchor_bias(vib: Optional[SkydiveVibrato], pinned: bool = True) -> int:
     """How far above the original's own frequency for the note the voice
     starts, where a relative-note-0 step puts it: `anchor - base`.
 
@@ -354,11 +355,12 @@ def anchor_bias(vib: Optional[SkydiveVibrato]) -> int:
     if vib is None or vib.anchor is None:
         return 0
     bias = vib.anchor - vib.base
-    return bias if abs(bias) < 0x100 else 0
+    return bias if (vib.pinned and pinned) or abs(bias) < 0x100 else 0
 
 
 def window_vibrato(sid: SidFile, shift: Optional[int], note: int,
-                   counter: int) -> Optional[SkydiveVibrato]:
+                   counter: int, det: Optional[Detection] = None
+                   ) -> Optional[SkydiveVibrato]:
     """The vibrato a window on Goattracker note index `note` writes, or None.
 
     `counter` is the play-entry counter on the program's frame 0. The unit is
@@ -378,6 +380,17 @@ def window_vibrato(sid: SidFile, shift: Optional[int], note: int,
     step = (there - here) >> (shift + 1)
     if not step or here + SKYDIVE_VIBRATO_PEAK * step > 0xFFFF:
         return None
+    cell = None
+    if det is not None:
+        from ..patterns import player_cell_pitch
+        cell = player_cell_pitch(sid, det, index)
+    if cell is not None:
+        # A byte past the table: the original starts the note at the
+        # recorded cell pitch, so the fall is measured from THAT, however
+        # far (`pinned`) the entry it was rounded to sits from it.
+        return SkydiveVibrato(counter=counter & (TRIANGLE_VIBRATO_PERIOD - 1),
+                              base=cell, step=step,
+                              anchor=GT_FREQ_TABLE[note], pinned=True)
     return SkydiveVibrato(counter=counter & (TRIANGLE_VIBRATO_PERIOD - 1),
                           base=here, step=step, anchor=GT_FREQ_TABLE[note])
 
@@ -990,9 +1003,10 @@ def _lap_restart(track: List[int]) -> Optional[int]:
 def _program_order(key):
     """Sort key for a (window, vibrato) program key, which a held row's key
     extends with the anchor bias: the vibrato is None or a dataclass, which
-    do not compare."""
+    do not compare. A key of four (`pinned_key`) goes after the others, for
+    it is laid as the tail of one of them."""
     want, vib = key[0], key[1]
-    return (want, vib is not None,
+    return (len(key) > 3, want, vib is not None,
             (vib.counter, vib.base, vib.step, vib.start) if vib is not None
             else (), key[2:])
 
@@ -1177,7 +1191,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                 tie_asks.setdefault((wp, wr), []).append(
                     (start, writes, alternates, free,
                      window_vibrato(sid, by_shift.get(current), index,
-                                    base + first + at * frames - lag)))
+                                    base + first + at * frames - lag, det)))
                 continue
             if j0 <= 0:
                 if wave_entries is None or wave_starts is None:
@@ -1200,7 +1214,7 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     (phase + lag, writes, current,
                      note_row_column_free(cmd, ends_on_note),
                      window_vibrato(sid, by_shift.get(current), index,
-                                    counter - lag)))
+                                    counter - lag, det)))
                 if cmd:
                     calls = (end - a) * frames * max(1, multiplier) - 1
                     note_cover[(p, r)] = max(note_cover.get((p, r), 0),
@@ -1227,8 +1241,10 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             asks.setdefault((wp, wr), []).append(
                 (phase + lag, writes, by_number[current], safe,
                  window_vibrato(sid, by_shift.get(current), index,
-                                counter - lag)
+                                counter - lag, det)
                  if by_number[current] else None))
+
+    pinned_active = [True]
 
     def take(table_of_asks):
         """{row: held program}, {row: the vibrato every play asks for or
@@ -1344,16 +1360,51 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         # a note), and the program takes the largest of their biases: a fall
         # too deep by the difference to the others' is a few units of the low
         # byte, where one too shallow lets a vibrato tick carry over.
+        # A window whose start is a measured cell pitch (`pinned`) is a
+        # group of its own: its bias is hundreds of units, and the others
+        # would take it as their largest.
+        def is_pinned(pr):
+            vib = row_vib.get(pr)
+            return pinned_active[0] and vib is not None and vib.pinned
+
         group_bias: Dict[tuple, int] = {}
         for pr, want in taken.items():
-            if squeezes(want, key_of(want, row_vib.get(pr))):
-                group_bias[want] = max(group_bias.get(want, 0),
-                                       anchor_bias(row_vib.get(pr)))
-        row_keys = {pr: key_of(want, row_vib.get(pr))
-                    + (group_bias.get(want, 0)
-                       if squeezes(want, key_of(want, row_vib.get(pr)))
-                       else 0,)
-                    for pr, want in taken.items()}
+            if (not is_pinned(pr)
+                    and squeezes(want, key_of(want, row_vib.get(pr)))):
+                group_bias[want] = max(
+                    group_bias.get(want, 0),
+                    anchor_bias(row_vib.get(pr), pinned_active[0]))
+
+        def pinned_key(pr, want):
+            """The key of a row whose window starts at a measured cell
+            pitch, or None: the held program of its own group, entered
+            `n` stores later -- the fall `n` high bytes deeper is the same
+            program's store `k + n`, so it needs no speed rows of its own
+            and is laid as a tail of that program (`share_program_tail`)
+            with `writes - n` stores. Only where the high byte of the start
+            then agrees with the cell's."""
+            vib = row_vib[pr]
+            gb = group_bias.get(want)
+            if (gb is None
+                    or not squeezes(want, key_of(want, vib))):
+                return None
+            n = (anchor_bias(vib) - gb + 0x80) // 0x100
+            if (n < 1 or want[1] - n < 2
+                    or (vib.anchor - gb - 0x100 * n) >> 8 != vib.base >> 8):
+                return None
+            return ((want[0], want[1] - n, want[2]), None, 0x100 * n + gb,
+                    True)
+
+        row_keys = {}
+        for pr, want in taken.items():
+            key = key_of(want, row_vib.get(pr))
+            pk = pinned_key(pr, want) if is_pinned(pr) else None
+            if pk is not None:
+                row_keys[pr] = pk
+            else:
+                row_keys[pr] = key + (
+                    group_bias.get(want, 0)
+                    if squeezes(want, key) else 0,)
         entries: List[Tuple[int, int]] = []
         starts: Dict[tuple, int] = {}
         # Every row placed, by number: the tie windows' programs end in a
@@ -1369,6 +1420,14 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                     if squeeze else speed_index,
                     multiplier, vib=key[1], speed_row=speed_row,
                     **({"compact": True} if squeeze else {}))
+                if len(key) > 3:
+                    whole = prog
+                    prog, point_at = share_program_tail(prog, placed_rows)
+                    if point_at is None and prog == whole:
+                        return None, "a cell-pitch program shares no tail"
+                    if point_at is not None:
+                        starts[key] = point_at
+                        continue
                 starts[key] = place(prog, force=True)
                 placed_rows.update(
                     {starts[key] + i: e for i, e in enumerate(prog)})
@@ -1506,21 +1565,31 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             layouts.append((True, sharing))
     held, reason = None, ""
     reuse = False
-    for compact, shared in layouts:
-        held, why_not = assemble(frozenset(), compact, shared)
+    # A window at a measured cell pitch is laid as the tail of its group's
+    # program where it can be (`pinned_key`); where no layout takes that, it
+    # is laid as any other window, from the entry its byte was rounded to.
+    for pinned_active[0] in (True, False):
+        if not pinned_active[0] and not any(
+                v is not None and v.pinned for v in row_vib.values()):
+            break
+        reason, reuse = "", False
+        for compact, shared in layouts:
+            held, why_not = assemble(frozenset(), compact, shared)
+            if held is not None:
+                break
+            reason = reason or why_not
+        if held is None:
+            # Nothing fits at the table's end: the rows of the duplicate
+            # instrument blocks are free too, so lay out over those first.
+            for compact, shared in layouts:
+                if not reusable_runs(shared)[0]:
+                    continue
+                held, _why = assemble(frozenset(), compact, shared, True)
+                if held is not None:
+                    reuse = True
+                    break
         if held is not None:
             break
-        reason = reason or why_not
-    if held is None:
-        # Nothing fits at the table's end: the rows of the duplicate
-        # instrument blocks are free too, so lay out over those first.
-        for compact, shared in layouts:
-            if not reusable_runs(shared)[0]:
-                continue
-            held, _why = assemble(frozenset(), compact, shared, True)
-            if held is not None:
-                reuse = True
-                break
     if held is None:
         say(f"{reason}, not emitted")
         return None

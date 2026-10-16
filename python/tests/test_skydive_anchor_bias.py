@@ -49,10 +49,12 @@ def test_program_order_accepts_a_key_carrying_a_bias():
 @needs_corpus
 def test_last_v8_c128_falls_by_the_largest_bias_of_its_notes():
     """Notes 74, 76 and 78 are $08, $0E and $08 above the file's table; one
-    program serves all three windows and takes $0E."""
+    program serves the windows on 74 and 76 and takes $0E. The one on 78 is
+    a byte past the table (`patterns.PLAYER_CELL_PITCH`) and has the second
+    program of its own, the first one's tail (test_skydive_cell_pitch.py)."""
     import songview
     sng, lines = M._converted("Last_V8_C128_version")
-    assert "1 program(s)" in M._sky(lines)[0]
+    assert "2 program(s)" in M._sky(lines)[0]
     speeds = songview.parse_sng(sng).tables["STBL"]
     assert (0x0C, 0x0E) in [tuple(e) for e in speeds] or any(
         e[0] == 0x0C and e[1] == 0x0E for e in speeds), speeds

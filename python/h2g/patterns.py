@@ -662,6 +662,26 @@ def player_cell_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
     return out
 
 
+def player_cell_pitch(sid: SidFile, det: Detection, index: int
+                      ) -> Optional[int]:
+    """The measured pitch `PLAYER_CELL_PITCH` records for a note that
+    `player_cell_notes` put at the player's table entry `index`, or None.
+
+    The skydive's fall is measured from the pitch the original STARTS the
+    note at, and for such a note that is the recorded cell, not the entry the
+    byte was rounded to (`goatwriter.skydive.window_vibrato`). The reverse
+    lookup is by entry, so it holds only while no genuine pattern byte lands
+    on the same entry of a skydive record (`tests/test_player_cell_pitch.py`
+    counts the windows)."""
+    record = PLAYER_CELL_PITCH.get(sid.name)
+    if not record:
+        return None
+    for n, entry in player_cell_notes(sid, det).items():
+        if entry == index:
+            return record[n][0]
+    return None
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,

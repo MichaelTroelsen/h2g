@@ -127,8 +127,11 @@ def test_carried_programs_go_over_duplicate_blocks_and_nothing_else_moves(
 
 @needs_corpus
 @pytest.mark.parametrize("name", ["Master_of_Magic", "One_Man_and_his_Droid",
-                                  "Zoids", "Last_V8"])
+                                  "Zoids"])
 def test_a_file_the_table_end_fits_is_not_laid_over_blocks(name):
+    # Last_V8 is not here: its window at the cell pitch is a
+    # second program laid as the tail of the first (test_skydive_cell_pitch.py),
+    # and the 3 rows the table's end has left do not take its lead.
     _sng, lines = _convert(name)
     assert not any(MARK in m for m in lines
                    if m.startswith("Skydive (bit")), lines
