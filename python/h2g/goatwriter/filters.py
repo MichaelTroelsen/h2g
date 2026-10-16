@@ -464,7 +464,8 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     # own command column takes an `A` to a copy of its
                     # program that opens with [PARAMS majority, want], so
                     # the passband and this row's union land together.
-                    target = (ptr[1], [ptr[2]], True)
+                    target = (ptr[1], [ptr[2]] + [v for v in range(3)
+                                                  if v != ptr[2]], True)
                 elif (ptr is None and pending is not None
                         and pb_have != restore["pb"]):
                     # Its own column was taken: the copy runs from the first
@@ -479,7 +480,7 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                 rec, order, at_note = target
                 value = want if want is not None else (res or ILV_EMPTY_UNION)
                 free = [c for v in order for c in cells if c[0] == v
-                        and c[3] and c[2] and not c[4] and not c[5]
+                        and c[3] and not c[4] and not c[5]
                         and c[6] is None]
                 idx = restore["blocks"].get((rec, value))
                 if (idx is None and free and restore["next"]
@@ -516,11 +517,12 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     if cell is None:
                         continue
                     _, key, r, first, cmd, dat, mine = cell
-                    # "restore" also takes a pattern's row 0 where its command
+                    # Every spelling takes a pattern's row 0 where its command
                     # column is empty: the tempo is written before this plan,
                     # so an empty cell is one no subtune's clock needs.
-                    if (first and (r or mode == "restore") and not cmd
-                            and not dat and mine is None):
+                    # ("restore" only, until Go_Go_Dash: its seven unplaceable
+                    # changes were all row 0 cells.)
+                    if (first and not cmd and not dat and mine is None):
                         plan.setdefault(key, {})[r] = (CMD_SETFILTERCTRL,
                                                        value)
                         have = value

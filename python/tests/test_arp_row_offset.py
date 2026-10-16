@@ -57,14 +57,17 @@ def _read(mult: int, residue: int, rows_before: int = 5):
 
 @pytest.mark.parametrize("mult", range(1, 11))
 def test_every_sampled_call_reads_the_step_of_its_frame_whatever_the_rows_residue(mult):
-    """Attack-relative frame `k` reads step `k + 1` (the -S1 convention: call
-    `c` is frame `c + 1`), for every residue of the row's tick 0 in its frame."""
+    """Attack-relative frame `k` reads step `k + 1 - ARP_HEAD_FRAMES` (the -S1
+    convention: call `c` is frame `c + 1`, less the head the body subtracts),
+    for every residue of the row's tick 0 in its frame. The tail used to omit
+    the head, so this read `k + 1` -- the same cycle rotated by two steps, which
+    only a cycle of three or more can show (tests/test_arp_tail_phase.py)."""
     for residue in range(mult):
         seen = _read(mult, residue)
         for k, byte in seen.items():
             if k < 1:
                 continue            # the body's own call, before the cycle
-            assert byte == _note(k + 1), (mult, residue, k)
+            assert byte == _note(k + 1 - G.ARP_HEAD_FRAMES), (mult, residue, k)
 
 
 def test_the_earlier_shift_read_one_frame_late_on_most_residues():
@@ -89,7 +92,8 @@ def test_minus_s1_is_untouched():
     left, right = G._arp_block(SOURCE, OFFSETS, 1, START)
     tail = START + 1
     assert right[0] == G.WAVE_NOTE_BASE
-    # call 0 is frame 1 less the head -> step 0; tail call c is frame c + 1
+    # call 0 is frame 1 less the head -> step 0; tail call c is frame c + 1,
+    # less the same head
     assert [r - G.WAVE_NOTE_BASE for r in right[1:-1]] == [
-        OFFSETS[(c + 1) % 3] for c in range(1, 4)]
+        OFFSETS[(c + 1 - G.ARP_HEAD_FRAMES) % 3] for c in range(1, 4)]
     assert right[-1] == tail

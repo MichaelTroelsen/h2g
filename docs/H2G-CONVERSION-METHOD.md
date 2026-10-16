@@ -4997,6 +4997,45 @@ period: instruments whose oscillation is an arpeggio or an `$44` attack pitch
 sweep (Lakers' `$02A9`, `$09CA`, `$0875`; Sun_Never_Shines' `$0047`) read
 ratios far from 1 whatever the dwell does.
 
+**The `$01` records are the wave program, and it loops (v0.5.566 base;
+figures historical).** The largest absent block in these six -- records 0-2
+(effect `$01`, vibrato byte `00`; Pacific_Coast `$04D5` 3285 and `$04F9` 2210
+reversals against none, Go_Go_Dash `$04AA` 1982, Lakers_vs_Celtics `$08C7` 1063)
+-- is no vibrato at all. Effect bit `$01` selects the byte-code wave program the
+29 other files carry (`find_wave_program`), with one opcode more: `$86 n` jumps
+to the n-th opcode and fetches again in the same frame (`$16A1-$16B7`, counted
+3 bytes a `< $80` slide and 2 a `>= $80` set). The fetch tests `$86` before the
+`$85` hold, so `WAVE_PROGRAM_FETCH` never matched; `WAVE_PROGRAM_FETCH_LOOP`
+now finds it (exactly these six files, consulted only where the first found
+nothing) and `decode_wave_program(jump=True)` reads `("jump", 0, n)`. Pacific's
+`$04D5` program is `81 20 / 41 01 04 / 40 40 02 / 80 30 / 80 15 / 80 20 /
+80 10 / 86 04`: after the slides a noise pitch walking `$15 $20 $10` for as long
+as the note is held, which the trace reads as `15C8 20C8 10C8 15C8 ...` -- two
+reversals every three frames.
+
+`_wave_program_entries` writes the loop as a wavetable jump (`FF start + k`) to
+the entry the target opcode began at, with no restore and no stop, and declines
+a program whose jump it cannot write (no table position, a budget that cuts the
+block before it, a target slide written under a different carried-pitch state).
+`wave_program` is a per-song toggle and `presets.json` does not select it for
+these six yet, so **the shipped conversion does not move** (corpus byte-hash
+under presets: 89 compared, 6 refused in both arms, 0 moved). Forced on for the
+six, exactly the six move, and `vib_census` reads, original against ours (base
+-> new): Pacific `$04D5` 3285 (0 -> 3282), `$04F9` 2210 (0 -> 2210); Go_Go_Dash
+`$04AA` 1982 (0 -> 1986); Lakers_vs_Celtics `$08C7` 1063 (0 -> 885), `$0FC7` 759
+(0 -> 764); Radio_ACE `$00FA` 965 (0 -> 965). Of the 14 effect-`$01` rows the
+census listed as absent, 12 are no longer under half the original's and the 2
+left (18 and 14 reversals, ours 0) are programs that never loop. File level at -t 180 (base -> new): `onset` 79-82%
+-> 100% on all six, `noise` 1478/9198 -> 9192/9198 (Pacific), `wave` 53 -> 77%,
+`gate` 44 -> 79%, `vib` 0.12x -> 0.96x. **`melody` falls on the two files whose
+preset sets `no_test_restart`** (Pacific_Coast 94 -> 79%, Radio_ACE 94 -> 77%;
+Lion_Heart, at `-S3` and without it, 91 -> 88% for a reason not examined): a looping program never rests on the note, so the next
+note's attack frame inherits the loop's last pitch and siddump names the attack
+from it. With `no_test_restart` off the same two read 94% and 96% (the option's
+own `hold` and `otime` trade-off is separate). That interaction is a preset
+search's to settle, not this change's: it needs `wave_program` and
+`no_test_restart` searched as a pair on the six.
+
 #### Reach
 
 49 of 95 files change bytes — every file whose vibrato-byte addressing the
@@ -13586,9 +13625,13 @@ column), with one restore, a row after the song's first note (staged base of
 remained were all changes landing on a pattern's row 0, which the walk refused;
 "restore" now takes a row-0 cell that is empty when the plan runs (the tempo is
 written before it, so an empty cell is one no clock needs): 10 -> 0 rows late at
-0d0f6ec, Sun_Never_Shines the only file whose bytes move. "shared" and "params" still
-never use row 0, and no spelling writes over an occupied command
-column; late rows, rows on the wrong passband and dropped patterns are
+0d0f6ec, Sun_Never_Shines the only file whose bytes move. "shared" and "params" took
+the same empty row-0 cell later (Go_Go_Dash: seven unplaceable changes, all row 0,
+the late `B` left the cutoff sweeping with $D417 at $00; unrouted cutoff travel at
+-t 180 242,688 -> 11,264, 0 unplaceable; Go_Go_Dash and Radio_ACE are the movers;
+the 11 frames left are one filter step in the call that clears the routing, because
+player.s runs `mt_filtstep` before the channels), and no spelling writes over an
+occupied command column; late rows, rows on the wrong passband and dropped patterns are
 counted, not hidden.
 
 **The outer gate's skipped call is modelled per frame for the nibble

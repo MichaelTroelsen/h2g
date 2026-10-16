@@ -4,8 +4,8 @@ empty at plan time.
 Row 0's command column belongs to the subtune's clock, but `apply_tempos`
 runs before `ilv_filter_routing_plan` (convert.py), so a clock that needs the
 cell has already taken it; an empty row-0 cell is free. Sun_Never_Shines'
-last 10 late rows were all changes landing on a row 0 (10 -> 0). "params" and
-"shared" keep refusing row 0: only "restore" is relaxed.
+last 10 late rows were all changes landing on a row 0 (10 -> 0). (Originally
+"params" and "shared" refused row 0; they take it too since Go_Go_Dash.)
 
 SABOTAGE TARGET: restore the old `r and not cmd` condition in
 `_ilv_routing_walk` (drop `or mode == "restore"`) and the first and last
@@ -70,11 +70,12 @@ def test_restore_writes_a_b_on_an_empty_row_0_cell():
     assert stats["late_rows"] == 0, stats
 
 
-def test_params_and_shared_never_write_row_0():
+def test_shared_also_writes_row_0_now():
+    """Superseded: "params" and "shared" took row 0 too once Go_Go_Dash's
+    seven unplaceable changes proved all row 0 (test_ilv_row0_all_modes.py)."""
     patterns, tracks = _song()
-    for mode in ("params",):
-        plan, _stats = _walk(patterns, tracks, mode)
-        assert _row0(plan) == {}, (mode, plan)
+    plan, _stats = _walk(patterns, tracks, "shared")
+    assert _row0(plan), plan
 
 
 def test_restore_leaves_an_occupied_row_0_alone():

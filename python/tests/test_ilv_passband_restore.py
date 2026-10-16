@@ -108,14 +108,16 @@ def test_a_restore_whose_own_column_is_taken_runs_on_the_next_free_row():
     Row 0 is the subtune's clock (CLAUDE.md), so a majority note there takes
     its copy from the first free column after it, and the row it spent on the
     wrong passband is counted."""
-    patterns = [_pattern({0: (0x90, _MAJ, 0, 0)}), _pattern({}), _pattern({})]
+    tempo = (0x0F, 5)
+    patterns = [_pattern({0: (0x90, _MAJ) + tempo}),
+                _pattern({0: (0xBD, 0) + tempo}),
+                _pattern({0: (0xBD, 0) + tempo})]
     tracks = [[0, 0xFF, 0], [1, 0xFF, 0], [2, 0xFF, 0]]
     plan, stats = _walk(patterns, _groups(patterns, tracks), "restore",
                         _restore())
-    # The note's own empty row-0 cell now also takes the `B` of its union
-    # (tests/test_ilv_row0_restore.py); the copy still waits for row 1.
-    assert plan == {(0, 0): {0: (CMD_SETFILTERCTRL, 0x41),
-                             1: (CMD_SETFILTERPTR, _BASE)}}, plan
+    # Every row-0 cell holds the clock, so the copy waits for row 1 (voice 0's
+    # own empty cell there) and the row it spent on the wrong passband counts.
+    assert plan == {(0, 0): {1: (CMD_SETFILTERPTR, _BASE)}}, plan
     assert (stats["restore_unplaceable"], stats["late_restores"],
             stats["passband_late"]) == (1, 1, 1), stats
 
@@ -156,13 +158,14 @@ def test_sun_takes_the_restore_spelling_and_stops_lagging():
     """Figures at the staged base of the cycle this was written in: "params",
     130 lagged, 130 rows late. Then 0 lagged, 10 rows late (all on pattern
     row 0, which the walk refused); now 0 rows late (an empty row-0 cell is
-    taken, tests/test_ilv_row0_restore.py). One restore placed a row after the song's first note
-    (row 0, which also carries the tempo), one row on the wrong passband."""
+    taken, tests/test_ilv_row0_restore.py). The last restore, on the
+    first note (row 0, which carries the tempo), now takes voice 1's empty
+    row-0 cell: 0 late, 0 rows on the wrong passband."""
     _song_, line = _sun()
     assert line.startswith("ILV filter routing......: restore,"), line
     assert " 0 lagged," in line and " 0 row(s) late," in line, line
-    assert "1 passband restore(s), 1 late," in line, line
-    assert "1 row(s) on the wrong passband" in line, line
+    assert "1 passband restore(s), 0 late," in line, line
+    assert "0 unplaceable at the note, 0 row(s) on the wrong passband" in line, line
 
 
 @needs_corpus

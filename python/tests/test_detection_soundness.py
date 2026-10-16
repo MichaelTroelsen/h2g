@@ -237,8 +237,13 @@ def test_pulse_reseed_gate_is_empty_for_ik_plus():
 # the array `_fixed_attack_note` read until v0.5.486 -- so a signature edit
 # that silently moves a file between the three groups fails a named test:
 #
-#   AGREE     both arrays exist and name the same offset (26 files; the
+#   AGREE     both arrays exist and name the same offset (32 files; the
 #             reading the old code was derived on, unchanged by the new one).
+#             The six `$1003` files (Go_Go_Dash, Lakers_vs_Celtics,
+#             Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) joined
+#             it when `find_wave_program` learned their `$86`-jump dialect
+#             (`WAVE_PROGRAM_FETCH_LOOP`); their handler and their program
+#             pointer are the same record +8.
 #             Powerplay Hockey joined this group when `find_wave_program`
 #             was scoped to the selected engine (`_wave_program_fetch_site`):
 #             file-wide it returned the OTHER player's array ($3C00, the
@@ -247,7 +252,7 @@ def test_pulse_reseed_gate_is_empty_for_ik_plus():
 #   DISAGREE  both exist and differ (After 8: handler +12, wave_program +8)
 #             -- the handler's byte is what the original sounds
 #   REACH     no wave_program at all, and the handler operand is the only
-#             reading (16 files); every one of them has records with $40 set
+#             reading (10 files); every one of them has records with $40 set
 #
 # Recorded at v0.5.486 against the corpus; every name is in presets.json.
 _FIXED_PITCH_AGREE = {
@@ -260,19 +265,21 @@ _FIXED_PITCH_AGREE = {
     "Rock_Tells_the_Tale.sid", "Saboteur_II.sid", "Shockway_Rider.sid",
     "Skate_or_Die_intro.sid", "Star_Paws.sid", "Thundercats.sid",
     "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
+    # The `$1003` files, once REACH (v0.5.566); `$86 n` jump dialect.
+    "Go_Go_Dash.sid", "Lakers_vs_Celtics.sid", "Lion_Heart.sid",
+    "Pacific_Coast.sid", "Radio_ACE.sid", "Sun_Never_Shines.sid",
 }
 _FIXED_PITCH_DISAGREE = {"After_8.sid"}
 _FIXED_PITCH_REACH = {
     "Deep_Strike.sid", "Delta.sid", "Delta_Mix-E-Load_loader.sid",
-    "Dragons_Lair_Part_II.sid", "Food_Feud.sid", "Go_Go_Dash.sid",
-    "Knucklebusters.sid", "Lakers_vs_Celtics.sid", "Lightforce.sid",
-    "Lion_Heart.sid", "Pacific_Coast.sid", "Radio_ACE.sid", "Sanxion.sid",
-    "Sigma_Seven.sid", "Sun_Never_Shines.sid", "Tarzan.sid",
+    "Dragons_Lair_Part_II.sid", "Food_Feud.sid",
+    "Knucklebusters.sid", "Lightforce.sid", "Sanxion.sid",
+    "Sigma_Seven.sid", "Tarzan.sid",
 }
 
-assert len(_FIXED_PITCH_AGREE) == 26
+assert len(_FIXED_PITCH_AGREE) == 32
 assert len(_FIXED_PITCH_DISAGREE) == 1
-assert len(_FIXED_PITCH_REACH) == 16
+assert len(_FIXED_PITCH_REACH) == 10
 assert not (_FIXED_PITCH_AGREE & _FIXED_PITCH_DISAGREE)
 assert not (_FIXED_PITCH_AGREE & _FIXED_PITCH_REACH)
 assert not (_FIXED_PITCH_DISAGREE & _FIXED_PITCH_REACH)

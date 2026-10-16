@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import (Dict, List, Optional)
 
-from ..detect import (decode_wave_program, Detection,
+from ..detect import (decode_wave_program, Detection, wave_program_has_jump,
                       wave_program_set_stores_wave)
 from ..sidfile import (SidFile)
 from .constants import (FORMAT_GTS5, WAVE_NOTE_BASE,
@@ -428,7 +428,8 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           hold_travel: bool = False,
                           pitches: Optional[Dict[int, int]] = None,
                           spans: Optional[Dict[int, int]] = None,
-                          row_calls: int = 0
+                          row_calls: int = 0,
+                          start: Optional[int] = None
                           ) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
@@ -510,6 +511,20 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     written as the note when any played note ends on it (`_cut_share`); a frame
     in the middle of the run keeps its count, because the note between two
     shifted frames would be a reversal on every longer note.
+
+    **`start`: a program that LOOPS** (`$86 n`, the `$1003` dialect --
+    `detect.wave_program_has_jump`). The interpreter jumps to opcode `n` and
+    fetches again in the same frame, so the program never reaches a hold and
+    the block ends in a wavetable jump (`FF start + k`) to the entry opcode
+    `n` began at, with no restore and no stop. That needs the block's own table
+    position, which is `start` (None where the caller has none, and the
+    program is then declined). Declined too, rather than approximated, when the
+    block is cut short by the budget before its jump (the loop would be a
+    different loop), when `n` names no opcode already read, and when the entry
+    the jump lands on is a slide written under a different carried-pitch state
+    than the one the loop's last entry leaves (`carried` / `quantised`): a
+    static entry cannot be right for both passes. A `set` opcode writes an
+    absolute pitch and depends on neither.
     """
     if fmt != FORMAT_GTS5:
         return None
@@ -539,7 +554,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # latent here only because the multiplier gate above made it unreachable.
     lead_l, lead_r = _first_frame_lead(data[rec + 2], multiplier,
                                        written=written)
-    chain = _gated_slide_chain(sid, det, i, decode_wave_program(data, at),
+    program = decode_wave_program(data, at,
+                                  jump=wave_program_has_jump(sid, det))
+    chain = _gated_slide_chain(sid, det, i, program,
                                lead_l, lead_r, speed_table, multiplier,
                                budget)
     if chain is not None:
@@ -601,11 +618,29 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                            and _wave_program_travels(multiplier, fmt, 1))
                           or (closing and _wave_program_hold_travels(fmt, r)))
                     else 0)
-    for kind, wave, arg in decode_wave_program(data, at):
+    # Where each opcode's first entry sits in the block, and the carried-pitch
+    # state it was written under -- what a `$86` jump needs (see `start`).
+    starts: List[int] = []
+    states: List[tuple] = []
+    looped: Optional[int] = None
+    cut = False
+    for kind, wave, arg in program:
         if kind == "hold":
             break
+        if kind == "jump":
+            if (start is not None and 0 <= arg < len(starts)
+                    and len(left) > seed and len(left) + 1 <= budget
+                    and (program[arg][0] == "set"
+                         or states[arg] == (carried, quantised))):
+                looped = start + starts[arg]
+            break
+        starts.append(len(left))
+        states.append((carried, quantised))
         if kind == "set":
             if len(left) + per_opcode + tail(running) > budget:
+                starts.pop()
+                states.pop()
+                cut = True
                 break
             left.append(_wave_byte(wave))
             right.append(_sfx_note_byte(arg))
@@ -686,6 +721,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         travel = int(_wave_program_travels(multiplier, fmt, delta))
         cost = 1 + travel + (_wave_hold_byte(multiplier - travel) is not None)
         if len(left) + cost + tail(running + arg) > budget:
+            starts.pop()
+            states.pop()
+            cut = True
             break
         left.append(_wave_byte(wave))
         # **At `-S1`, where no portamento fits beside this entry, the note it
@@ -734,6 +772,14 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # below, exactly as it did before the seed entry existed.
     if len(left) <= seed:
         return None
+    if program and program[-1][0] == "jump":
+        # A looping program has no hold and so no restore: it is declined
+        # unless the jump itself could be written (see `start`).
+        if looped is None or cut:
+            return None
+        left.append(0xFF)
+        right.append(looped)
+        return left, right
     # **Restore the record's own waveform before stopping** (v0.5.203). The
     # docstring above used to say Goattracker keeps the last waveform "as the
     # player does"; the player does not. Its note-end routine writes the

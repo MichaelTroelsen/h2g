@@ -376,12 +376,15 @@ def test_a_params_row_overwrites_the_b_on_its_own_row_so_the_b_lags():
     assert (stats["lagged"], stats["late_rows"]) == (1, 1)
 
 
-def test_no_command_on_row_0_or_over_a_taken_column():
-    """Row 0 is the subtune's clock (CLAUDE.md); a change there waits for the
-    first free row, and an occupied column is never written over."""
-    patterns, groups = _song({0: (0x90, _ROUTED, 0, 0), 1: (0xBD, 0, 4, 0x11)},
-                             {1: (0xBD, 0, 5, 0x22)},
-                             {1: (0xBD, 0, 6, 0x33)})
+def test_no_command_over_a_taken_column():
+    """Row 0 is the subtune's clock (CLAUDE.md) only where its cell is taken
+    (the tempo is written first); an EMPTY row-0 cell is free for every
+    spelling (tests/test_ilv_row0_all_modes.py). An occupied column is never
+    written over: here every row-0 cell is taken, so the change waits."""
+    patterns, groups = _song({0: (0x90, _ROUTED, 0x0F, 3),
+                              1: (0xBD, 0, 4, 0x11)},
+                             {0: (0xBD, 0, 0x0F, 3), 1: (0xBD, 0, 5, 0x22)},
+                             {0: (0xBD, 0, 0x0F, 3), 1: (0xBD, 0, 6, 0x33)})
     plan, stats = _walk(patterns, groups, "shared")
     assert plan == {(0, 0): {2: (CMD_SETFILTERCTRL, 0x41)}}, plan
     assert (stats["unplaceable"], stats["late_rows"]) == (1, 2)
@@ -449,11 +452,10 @@ def test_the_routing_written_is_the_voices_the_original_routes(stem):
     assert nibbles and nibbles <= ILV_MOVERS[stem], (stem, nibbles)
     if stem != "Sun_Never_Shines":
         assert params <= ILV_MOVERS[stem], (stem, params)
-    # Never on row 0 -- except "restore" (Sun_Never_Shines), which takes an
-    # EMPTY row-0 cell (tempo is written before the plan, so a subtune's
-    # clock is never one); tests/test_ilv_row0_restore.py pins that.
-    if stem != "Sun_Never_Shines":
-        assert not row0, (stem, row0)
+    # Row 0 only where its command cell is EMPTY (tempo is written before
+    # the plan, so a subtune's clock is never one); every spelling may take
+    # it since Go_Go_Dash. tests/test_ilv_row0_restore.py and
+    # test_ilv_row0_all_modes.py pin that; `row0` is not asserted against.
     assert all(packed_pattern_size(pattern_rows(p)) <= PACKED_PATTERN_LIMIT
                for p in song.patterns)
     logged = [m for m in lines if m.startswith("ILV filter routing")]

@@ -81,17 +81,27 @@ def _arp_block(source: List[tuple], offsets: List[int],
     # frame 2 (`0 0 0 4 0 4 ...` against `0 0 4 0 4 0 ...`), and read the
     # original's shape exactly with this shift.
     shift = hold - 1
+
+    def step_note(call: int) -> int:
+        """The right byte for wavetable call `call`, body, padding and tail
+        alike. **One function, because the tail used to drop the head the body
+        subtracts**: `ARP_HEAD_FRAMES` of step 0 before the cycle advances (the
+        head the originals have, measured), clamping at 0 so it repeats step 0
+        rather than wrapping backwards into the cycle. A tail without it
+        started the cycle `ARP_HEAD_FRAMES` steps on from where the body left
+        it -- invisible in a 2-step cycle (2 mod 2 = 0) and a rotation by two in
+        a 3-step one. Measured on Go_Go_Dash (-S4, 22 three-step notes in
+        voice 2 whose original reads `0 0 5 11 0 5`): every one ours read one
+        frame late with the unheaded tail and every one exact with this."""
+        return note(max(0, (call + 1 + shift) // hold - ARP_HEAD_FRAMES))
+
     left: List[int] = []
     right: List[int] = []
     call = 0
     for w in body:
         last = call + (w if w < 0x10 else 0)   # a delay covers `w + 1` calls
         left.append(w)
-        # `ARP_HEAD_FRAMES` of step 0 before the cycle advances -- the
-        # head the originals have, measured. Clamping at 0 repeats
-        # step 0 rather than wrapping backwards into the cycle.
-        right.append(note(max(0, (last + 1 + shift) // hold
-                              - ARP_HEAD_FRAMES)))
+        right.append(step_note(last))
         call = last + 1
 
     # The sustained waveform: the last real waveform the program reaches. A
@@ -111,13 +121,12 @@ def _arp_block(source: List[tuple], offsets: List[int],
     # shift was measured at). The rest of the frame holds the body's last step.
     while call % hold:
         left.append(held)
-        right.append(note(max(0, (call + 1 + shift) // hold
-                              - ARP_HEAD_FRAMES)))
+        right.append(step_note(call))
         call += 1
     tail = start + len(left)
     for _ in range(len(offsets) * hold):
         left.append(held)
-        right.append(note((call + 1 + shift) // hold))
+        right.append(step_note(call))
         call += 1
     left.append(WAVE_JUMP)
     right.append(tail & 0xFF)

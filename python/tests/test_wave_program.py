@@ -103,7 +103,9 @@ def test_the_interpreter_is_found_across_the_corpus():
             continue
         if find_wave_program(sid)[0] >= 0:
             found += 1
-    assert found == 29, f"{found} -- the interpreter's reach changed"
+    # 29 files carry the `$85` fetch; the six `$1003` files carry its `$86`
+    # jump variant (`WAVE_PROGRAM_FETCH_LOOP`, v0.5.566): 35.
+    assert found == 35, f"{found} -- the interpreter's reach changed"
 
 
 @needs_corpus
@@ -170,8 +172,8 @@ def test_the_gate_reads_and_never_guesses():
         at, gate = find_wave_program(sid)
         if at >= 0:
             seen[gate] += 1
-    assert sum(seen.values()) == 29
-    assert seen[0x01] == 23, dict(seen)
+    assert sum(seen.values()) == 35
+    assert seen[0x01] == 29, dict(seen)       # 23 + the six `$1003` files
     assert seen[0x08] == 3, dict(seen)
     assert seen[0x20] == 1, dict(seen)
     assert seen[0x80] == 2, dict(seen)

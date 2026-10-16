@@ -196,7 +196,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                      written=no_test_restart,
                                      hold_travel=hold_travel,
                                      pitches=pitches,
-                                     spans=spans, row_calls=row_calls)
+                                     spans=spans, row_calls=row_calls,
+                                     start=start)
         if prog is not None:
             return prog
 

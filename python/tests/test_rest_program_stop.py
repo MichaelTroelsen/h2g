@@ -246,7 +246,12 @@ def test_ik_plus_carries_the_branch_and_the_nine_without_it_do_not():
                  "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid",
                  "Rikky.sid", "Rock_Tells_the_Tale.sid"):
         assert got[name] is False, name
-    assert sum(got.values()) == 20 and len(got) == 29   # historical: v0.5.553
+    # The six `$1003` files joined the population at v0.5.566 (their `$86`
+    # jump dialect); none carries the branch, so the 20 did not move.
+    for name in ("Go_Go_Dash.sid", "Lakers_vs_Celtics.sid", "Lion_Heart.sid",
+                 "Pacific_Coast.sid", "Radio_ACE.sid", "Sun_Never_Shines.sid"):
+        assert got[name] is False, name
+    assert sum(got.values()) == 20 and len(got) == 35   # historical: v0.5.566
 
 
 def test_ik_plus_every_rest_is_stopped_or_a_plain_keyoff():

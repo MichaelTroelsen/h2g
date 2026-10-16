@@ -6224,6 +6224,29 @@ def _find_pulse_tri_zp(sid: SidFile, det: Detection):
 # this the instrument's own flag rather than some other state.
 WAVE_PROGRAM_FETCH = "B1 ?? 10 ?? C9 85 D0 03"
 WAVE_PROGRAM_HOLD = 0x85
+# The same interpreter in the `$1003` interleaved dialect (Go_Go_Dash,
+# Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines --
+# exactly the six files that carry it, census at v0.5.566) tests `$86` BEFORE
+# the `$85` hold, so `WAVE_PROGRAM_FETCH` never matches:
+#
+#     1699  B1 F8     LDA ($F8),Y
+#     169B  10 40     BPL slide
+#     169D  C9 86     CMP #$86        ; <- the extra opcode
+#     169F  D0 19     BNE $16BA
+#     16A1  C8 / B1 F8 / AA           ; X = operand n
+#     16A5  A0 00 / CA / 30 0A        ; Y = start of entry n ...
+#     16AA  B1 F8 / 30 01 / C8 / C8 / C8 / 4C A7 16
+#     16B4  AE 9C 1A / 4C 99 16       ; ... and fetch again, in the SAME frame
+#     16BA  C9 85 / D0 03 / 4C B7 17  ; the `$85` hold, as before
+#
+# `$86 n` is a JUMP to the n-th opcode of the program (3 bytes for a `< $80`
+# slide, 2 for a `>= $80` set), which is what makes these programs LOOP: the
+# `$04D5` / `$04F9` records of Pacific_Coast end `80 15 80 20 80 10 86 04`, a
+# noise pitch walking `$15 $20 $10` for as long as the note is held -- the
+# 3285 and 2210 reversals `vib_census` found with none in ours. A rescue:
+# consulted only where `WAVE_PROGRAM_FETCH` found nothing.
+WAVE_PROGRAM_FETCH_LOOP = "B1 ?? 10 ?? C9 86 D0 ??"
+WAVE_PROGRAM_JUMP = 0x86
 _WAVE_PROGRAM_SIGN_BRANCH = (0x10, 0x30)     # BPL / BMI -- the bit is $80
 _WAVE_PROGRAM_BRANCH = (0x10, 0x30, 0xD0, 0xF0)
 
@@ -6257,6 +6280,10 @@ def _wave_program_fetch_site(sid: SidFile, det: Optional[Detection]) -> int:
     """
     d = sid.data
     sites = _search_all(d, WAVE_PROGRAM_FETCH)
+    if not sites:
+        # The `$86` jump dialect: the hold test follows within a few bytes.
+        sites = [k for k in _search_all(d, WAVE_PROGRAM_FETCH_LOOP)
+                 if bytes((0xC9, WAVE_PROGRAM_HOLD, 0xD0, 0x03)) in d[k + 8:k + 56]]
     if not sites:
         return -1
     if len(sites) == 1 or det is None:
@@ -6331,7 +6358,33 @@ def find_wave_program(sid: SidFile,
             gate = 0x80
         if gate:
             break
+    if not gate and d[off + 4] == 0xC9 and d[off + 5] == WAVE_PROGRAM_JUMP:
+        # `AND #bit / BNE enter / JMP skip` -- the `$1003` dialect enters the
+        # block by a taken branch over the JMP that leaves it (`1683 D0 03 /
+        # 1685 4C 0E 17`), so the branch sits a JMP further back. Scoped to
+        # the jump dialect, the only one known to enter that way: a wider
+        # rescue would give a gate to files that read none (Mega_Apocalypse).
+        for width in (3, 2):
+            q = site - width - 5
+            if (q >= 2 and d[q] == 0xD0 and d[q + 1] == 0x03
+                    and d[q + 2] == 0x4C and d[q - 2] == 0x29):
+                gate = d[q - 1]
+                break
     return at, gate
+
+
+def wave_program_has_jump(sid: SidFile,
+                          det: Optional[Detection] = None) -> bool:
+    """Whether the interpreter reads `$86 n` as a jump to opcode `n`.
+
+    The `$1003` interleaved dialect's does (`WAVE_PROGRAM_FETCH_LOOP`); the 29
+    files `WAVE_PROGRAM_FETCH` matches have no such opcode -- a `$86` there is
+    an ordinary `>= $80` waveform.
+    """
+    off = _wave_program_fetch_site(sid, det)
+    d = sid.data
+    return (0 <= off and off + 5 < len(d)
+            and d[off + 4] == 0xC9 and d[off + 5] == WAVE_PROGRAM_JUMP)
 
 
 def wave_program_set_stores_wave(sid: SidFile,
@@ -6368,7 +6421,17 @@ def wave_program_set_stores_wave(sid: SidFile,
     off = _wave_program_fetch_site(sid, det)
     if off < 0:
         return False
-    blk = sid.data[off + 4:off + 4 + 44]
+    start = off + 4
+    if wave_program_has_jump(sid, det):
+        # Past the `$86` block to the hold test: the `set` path that follows
+        # it (`16C1 LDX ctrl / STA $D404,X / PHA ... PLA / STA $1A43,X`) stores
+        # the stored cell, like the slide path does (`16DD STA $1A43,X`).
+        hold = bytes((0xC9, WAVE_PROGRAM_HOLD, 0xD0, 0x03, 0x4C))
+        at = sid.data.find(hold, start, start + 52)
+        if at < 0:
+            return False
+        start = at
+    blk = sid.data[start:start + 44]
     return re.match(rb"\xc9\x85\xd0\x03\x4c..(.{0,10}?)\x9d..\x48"
                     rb".{0,24}?\x68\x9d", blk, re.S) is not None
 
@@ -6437,13 +6500,19 @@ def wave_program_rest_bypass(sid: SidFile,
     return False
 
 
-def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
+def decode_wave_program(data: bytes, at: int, limit: int = 64,
+                        jump: bool = False) -> list:
     """The program at file offset `at` as (opcode, waveform, operand) steps.
 
     `opcode` is "hold", "set" (absolute frequency high) or "slide" (a 16-bit
     downward step). Stops at the hold, at `limit` steps, or at the end of the
     data -- a program is not length-prefixed, so a truncated read is the only
     alternative to trusting a byte count nothing states.
+
+    With `jump` (`wave_program_has_jump`) a `$86 n` is `("jump", 0, n)` and
+    ends the read: the program continues at opcode `n`, counted from the
+    start, and never reaches a hold. An `n` that does not name an opcode this
+    read decoded is returned as is -- the caller declines it.
     """
     out: list = []
     i = at
@@ -6451,6 +6520,11 @@ def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
         op = data[i]
         if op == WAVE_PROGRAM_HOLD:
             out.append(("hold", 0, 0))
+            return out
+        if jump and op == WAVE_PROGRAM_JUMP:
+            if i + 1 >= len(data):
+                return out
+            out.append(("jump", 0, data[i + 1]))
             return out
         if op >= 0x80:
             if i + 1 >= len(data):
