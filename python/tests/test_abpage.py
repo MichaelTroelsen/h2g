@@ -1381,3 +1381,31 @@ def test_badge_is_uncalibrated_and_distinguishes_its_cause_from_stale():
     # The two causes must read as different prose, not the same template
     # with the cause silently swapped for nothing.
     assert html != html2
+
+
+def test_find_sid_prefers_the_corpus_over_the_repo_root_fixture(tmp_path, monkeypatch):
+    """The staged audio is rendered from the CORPUS copy; the repo root holds
+    only the Commando FIXTURE, a different file. Resolving the root first made
+    Commando's page read "behind" forever, and finding nothing for every other
+    tune made their provenance "unknown" -- a guard that checked nothing."""
+    corpus = tmp_path / "corpus"; corpus.mkdir()
+    root = tmp_path / "root"; root.mkdir()
+    (corpus / "Commando.sid").write_bytes(b"corpus")
+    (root / "Commando.sid").write_bytes(b"fixture")
+    (corpus / "Other.sid").write_bytes(b"x")
+    monkeypatch.delenv("H2G_SID_DIR", raising=False)
+    monkeypatch.setattr(A, "CORPUS_DIR", corpus)
+    monkeypatch.setattr(A, "ROOT", root)
+    assert A.find_sid("Commando.sid") == corpus / "Commando.sid"
+    assert A.find_sid("Other.sid") == corpus / "Other.sid"
+    assert A.find_sid("Missing.sid") is None
+
+
+def test_h2g_sid_dir_overrides_the_corpus(tmp_path, monkeypatch):
+    env = tmp_path / "env"; env.mkdir()
+    corpus = tmp_path / "corpus"; corpus.mkdir()
+    (env / "T.sid").write_bytes(b"env")
+    (corpus / "T.sid").write_bytes(b"corpus")
+    monkeypatch.setenv("H2G_SID_DIR", str(env))
+    monkeypatch.setattr(A, "CORPUS_DIR", corpus)
+    assert A.find_sid("T.sid") == env / "T.sid"

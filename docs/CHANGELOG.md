@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.579 — 2026-10-17
+
+- abpage: find staged originals in the corpus
+
 ## 0.5.578 — 2026-10-17
 
 - queue policy, capped runqueue workflow, decisions

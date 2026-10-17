@@ -223,6 +223,35 @@ def approvals() -> dict[str, dict]:
     return tunes if isinstance(tunes, dict) else {}
 
 
+CORPUS_DIR = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+
+
+def sid_dirs() -> list[Path]:
+    """Where a staged tune's ORIGINAL is looked for, in order: `H2G_SID_DIR`,
+    the Hubbard corpus listen.py stages from, then the two old locations.
+
+    The corpus comes before the repo root ON PURPOSE. Until v0.5.579 the
+    search was only `arkiv/Hubbard_Rob` (which no longer exists) and the root,
+    so 88 of 89 staged tunes were never found -- their audio provenance read
+    "unknown" and the stale-audio guard silently checked nothing -- and
+    Commando resolved to the root's `Commando.sid`, the FIXTURE, a different
+    file from the corpus copy listen.py renders, so its page was always
+    flagged "behind" (measured 2026-10-17: fixture sha1 40b50aff7e09, corpus
+    8549166918b5).
+    """
+    env = os.environ.get("H2G_SID_DIR")
+    dirs = [Path(env)] if env else []
+    return dirs + [CORPUS_DIR, ROOT / "arkiv" / "Hubbard_Rob", ROOT]
+
+
+def find_sid(name: str) -> Path | None:
+    for base in sid_dirs():
+        sid = base / name
+        if sid.exists():
+            return sid
+    return None
+
+
 def conversion_shas() -> dict[str, str]:
     """sha256 of each staged tune's .sng as it converts RIGHT NOW.
 
@@ -258,11 +287,8 @@ def conversion_shas() -> dict[str, str]:
         stem = name[:-4] if name.endswith(".sid") else name
         if not (LISTEN / ("%s.original.wav" % stem)).exists():
             continue
-        for base in (ROOT / "arkiv" / "Hubbard_Rob", ROOT):
-            sid = base / name
-            if sid.exists():
-                break
-        else:
+        sid = find_sid(name)
+        if sid is None:
             continue
         try:
             blob = convert(str(sid), log=lambda m: None,
