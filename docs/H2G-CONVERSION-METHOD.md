@@ -16499,7 +16499,7 @@ laps 3 and 6 of the 1920-frame note, which end on a tempo row. The
 1920-frame note is read to its end by the model (840 stores) and the original
 is not: at frame 1153 the voice's high byte settles at `$59` with a drum
 blip (`C#6`, waveform `81`) every 6 frames to the end of the note, and there is
-no store after that; nothing here reads why. Also open: the swell's restart
+no store after that (a drum zeroes its counter: the next section). Also open: the swell's restart
 each lap (the original's vibrato starts small again at the gate, `4DBD 4D4A`
 at frames 20 and 276, ours takes the row's amplitude); the vibrato on the even
 frames; record 12's notes of 1-2 dips are emitted too (`aud` is 0.8853 with
@@ -16507,6 +16507,83 @@ them, 0.8844 with only the 4 notes of 32 dips or more, 0.8825 with 6 or more --
 the opposite of what the short notes' small dips suggested).
 `tests/test_counter_fall.py`, `tests/test_counter_fall_alternation.py`,
 `tests/test_counter_fall_laps.py`.
+
+**A drum zeroes voice 3's frame counter** (`counter_fall.drum_stops`,
+`detect.find_sfx_cell`, `tests/test_counter_fall_drum.py`). Why the 1920-frame
+note (lap row 6720, voice 3, original frame 20161) stops falling at frame 1153.
+Measured with a py65 trace of the original (subtune 0, the play routine
+`$4AA6` once a frame, `$02A6` = 1; its voice-3 writes agree with
+`siddump -v1` register for register over frames 21308-21330), at bb3eff3
+(v0.5.572, historical):
+
+- At the note's frame 1153 (row 384, the fetch frame of pattern 46's row 0)
+  voice 1 (X = 0, `$C9` goes `$10` -> `$0E`) starts instrument record 14,
+  `0D 01 09 98 00 00 80`: effect byte `$80`, the bit-`$80` voice-3 drum
+  (`_find_effect_bit80`'s "sfx"). Records 0 and 14 carry it; no fall record does.
+- From the next frame the effect dispatch for X = 0 runs `$4E43`: `LDA $EC /
+  BPL`, then `LDA $BE / CMP #1 / BEQ fire`, `CMP #6 / BCC out`, `LDA #0 / STA
+  $BE`. Fire is `$4E57` (`$48` into `$D40F`, `$81` into `$D412`: the blip, a
+  frame in six). The cell `$BE` is the drum's period counter and is
+  ALSO voice 3's own frame counter (`$BC,X`, X = 2), the cell `counter_fall`
+  tests against its threshold. `_find_effect_bit80` calls the drum's cell
+  "global"; in Mega it is not.
+- So once any voice holds a drum record, `$BE` is zeroed whenever it is at 6 or
+  more on a frame that voice runs its effects. The trace (`$BE` at the end of
+  each frame of the note): `7F 80 81` on 1151-1153, `00` on 1154 (it reads `$82`
+  when X = 0 zeroes it), then `01 .. 06 00` repeating to the end, 766 frames; the vibrato gate (19) and the threshold
+  (31) are never reached again. The last store is on frame 1153 (X = 2 runs
+  before X = 0 in the same frame): `$5AFA` -> `$5905`, and the voice holds
+  `$59xx` to the note's end, the drum's `$48` blip on every sixth frame.
+  The count at that store is 245 (4 laps of 113 stores and 50 of the fifth,
+  index 501): `$4E - 245` taken modulo 256 is `$59`.
+- A fall voice's counter is zeroed only by the cell the drum counts on, so
+  only voice 3's notes are cut; the cut needs the drum record to go on to the
+  note's end (the counter would otherwise start over from zero and store again
+  at the threshold; that schedule is not modelled, such a note is left as it
+  was and counted in `declined`).
+
+**What is emitted.** The note's stores stop after the frame the drum is
+fetched on plus one (one more for a drum on a lower voice than the fall's, which
+runs after it in the frame): `_Segment.stop`, which `s.length` honours in every
+place a note's stores are read. For the 1920-frame note the model's 840 stores
+become 502; the laps' ends past it (1279, 1535, 1791) are no longer candidates
+for holds, which changes no byte by itself (the same 21879-byte file as
+before). What changes bytes is the FINAL HOLD
+(`counter_fall_laps.ALTERNATION_FINAL_HOLD`): a note a drum silences ends in
+the lap-end hold's own machinery, `X` at the last store (count 245, row 384 tick
+2; row 384 carries the pattern's tempo command, so two rows back where it
+cannot take a pointer: the loop alternates on every call, so an even number of
+rows keeps the parity), `H` rows to the note's last row, no exit. Its program
+is `[wait 2][F1 11][jump to the still loop]`, 3 wavetable rows, funded first
+(`AltRow.final` weighs 1000 uses). The budget is `ALTERNATION_HOLD_ROWS` 6 ->
+9 and `ALTERNATION_ROWS` 29 -> 32 (the table is full: the swell's pass gets
+the 3 rows less, 50 loops -> 49).
+
+Measured on Mega_Apocalypse, presets, `--sound`, bb3eff3 against this change
+(historical):
+
+- Corpus byte-hash under presets: 95 files, 89 converted, 6 refused (Casio_Extended,
+  Dont_Step_on_My_Wire, Era_of_Eidolon, Robs_Life, Task_Force, Up_up_and_Away;
+  the same both arms), 89 compared, 1 moved: Mega_Apocalypse.sid
+  `c0b97b3bae87681a` -> `3afb7dcc191b630b` (sng sha1 `caa6813d1548` ->
+  `405bb203ee0d`, 21879 -> 23078 bytes; 8 -> 17 pattern copies, for the 255
+  rows of `H`). Commando unchanged (`4f71fc9475341f1b`).
+- Packed through gt2reloc and siddump (450 s): frames 1154-1919 of the note,
+  high byte equal to the original's on 638 of the 638 frames that are not the
+  drum's blip (0 of 766 before: the swell sat around `$33xx`); ours is `$5928`
+  against `$5905`, the low byte being the swell's last.
+- `-t 180` (the standing window, which ends before the note): `aud` 0.88840 ->
+  0.88791, `loud` 0.83918 -> 0.83946, every other column unchanged (the
+  difference is the swell's 3 rows). `-t 450` (the note inside it): `aud`
+  0.88572 -> 0.88863, `travel_ratio` 1.701 -> 1.555, `reversal_ratio` 1.042
+  -> 1.024, `tie_agreement` 0.634 -> 0.645, melody, sequence, wave, gate and
+  adsr unchanged. Keeping the old 29/6 budget (the final hold displacing the
+  first lap's hold) reads `aud` 0.88647 at -t 180 and 0.88100 at -t 450:
+  worse on both.
+- Still open: the note's frames 2-1153 (the swell's loops sit at the last
+  dip size; `-t 450` reads ours 83 of 1151 frames on the high byte), the drum's
+  blip on voice 3 from the cut note's own voice (ours has none there), and the
+  low byte (`$28` against `$05`).
 
 ### 7.NEW Effect bit `$40` alone: the fixed attack pitch on a record with no `$04`
 

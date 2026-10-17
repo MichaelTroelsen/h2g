@@ -189,5 +189,8 @@ def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row():
     # it alone. Merged in cycle 29 beside mega-gt10-second-lap-hold, whose
     # later laps add 117 rows (1279 -> 1396) and alone merged 18 swings:
     # the two together merge 11 and still lose no row to a full table.
-    assert "(11 swing(s) merged" in swell[0], swell
-    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1321", swell
+    # v0.5.572 + the drum cut's final hold (3 more rows for the alternation):
+    # 12 merged and 1350 rows, 29 more rows converted than at 1321; still no
+    # row lost to a full table.
+    assert "(12 swing(s) merged" in swell[0], swell
+    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1350", swell

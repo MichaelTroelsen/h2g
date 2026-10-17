@@ -58,8 +58,9 @@ from .counter_fall import (COUNTER_FALL_HALF, COUNTER_FALL_MAX_SIZE,
 # The second lap's end (count 225, tick 2, tied: 4 rows) is 10 in all; it
 # costs the dip sizes two of their seven, which the first lap's phase pin
 # (`counter_fall.ALTERNATION_ROWS`) does not allow. The other 7 lap ends are
-# single ones.
-ALTERNATION_HOLD_ROWS = 6
+# single ones. 9 is those 6 and the FINAL hold of a note a drum silences
+# (`counter_fall.drum_stops`: count 245, tick 2, 3 rows).
+ALTERNATION_HOLD_ROWS = 9
 # The still loop: a tie to the note, then `F2 0` forever.
 STILL_ROWS = 3
 # Whether the laps past the first get their DIPS (a fresh run after a hold, or
@@ -71,6 +72,10 @@ STILL_ROWS = 3
 # (`tests/test_tie_restart_mega.py`, `tests/test_expanding_vibrato_split.py`);
 # off it converts 1418 rows on 44 loops, 17 swings merged, as before.
 ALTERNATION_LATER_LAPS = False
+# Whether a note a drum silences (`counter_fall.drum_stops`) ends in a hold:
+# the voice stays on the last dip's pitch to the note's end, as the original
+# does once the counter can no longer reach the threshold.
+ALTERNATION_FINAL_HOLD = True
 
 
 def fall_size(count: int) -> int:
@@ -134,7 +139,8 @@ def alternation_note_rows(length: int, threshold: int, gate: Optional[int],
                           fetches: Set[int], lag: int, frames: int,
                           usable: Callable[[int], bool],
                           rows_in_note: int,
-                          holds: Optional[Set[Tuple[int, int, bool]]] = None
+                          holds: Optional[Set[Tuple[int, int, bool]]] = None,
+                          stop: Optional[int] = None
                           ) -> Optional[List[AltRow]]:
     """The rows of one alternating note over ALL its counter laps, or None
     where a fetch frame lands on a store of the first lap (as
@@ -154,6 +160,13 @@ def alternation_note_rows(length: int, threshold: int, gate: Optional[int],
     first the table can take is the entry, with no delay of its own); a hold's `X` row (count in `n`, tick in
     `delay`), `H` rows through to the gate, `Q` the row the gate falls in
     (or the first after it).
+
+    A `stop` (the frame a drum zeroes the counter on: `length` is already cut
+    there) makes the last open run end in a hold of its own, `X` then `H` rows
+    to the note's end and no `Q`: the original's pitch stays where the last
+    store left it. The row of the last store is used where it can take a
+    program, else the one two rows before it (the same call parity: the loop
+    alternates on every call, and a row is an odd number of them).
     """
     plain = fall_stores(length, threshold)
     real = fall_stores(length, threshold, fetches)
@@ -176,7 +189,7 @@ def alternation_note_rows(length: int, threshold: int, gate: Optional[int],
     run: List[Tuple[int, int]] = []        # (j, count) of the open run
     first_run = True
 
-    def close(hold_at: Optional[Tuple[int, int, int, int, bool]]) -> None:
+    def close(hold_at: Optional[tuple]) -> None:
         nonlocal run, first_run
         dips = [j for j, _n in run]
         mags = [fall_size(n) for _j, n in run]
@@ -186,9 +199,10 @@ def alternation_note_rows(length: int, threshold: int, gate: Optional[int],
                 ars = ars[1:]
             ars = [replace(a, fresh=True) for a in ars]
         if hold_at is not None:
-            count, e_x, tick, e_exit, tied = hold_at
+            count, e_x, tick, e_exit, tied = hold_at[:5]
             ars = [a for a in ars if a.e < e_x]
-            ars.append(AltRow(e_x, 'X', tick, count, True, tied=tied))
+            ars.append(AltRow(e_x, 'X', tick, count, True, tied=tied,
+                              final=len(hold_at) > 5))
             ars += [AltRow(e, 'H', 0, 0, True)
                     for e in range(e_x + 1, min(e_exit, rows_in_note))]
             if e_exit < rows_in_note:
@@ -229,6 +243,15 @@ def alternation_note_rows(length: int, threshold: int, gate: Optional[int],
                 hold_at = (count, e_x, tick, e_exit, tied)
         if hold_at is not None:
             close(hold_at)
+    if run and stop is not None and ALTERNATION_FINAL_HOLD:
+        last_j, last_n = run[-1]
+        count = last_n % COUNTER_FALL_WRAP
+        e_x, tick = divmod(last_j + lag, frames)
+        if not usable(e_x) and e_x >= 2:
+            e_x -= 2
+        if (count != COUNTER_FALL_HALF and usable(e_x)
+                and (holds is None or (count, tick, False) in holds)):
+            close((count, e_x, tick, rows_in_note, False, True))
     if run:
         close(None)
     if not ALTERNATION_LATER_LAPS:

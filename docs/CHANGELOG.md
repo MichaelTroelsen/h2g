@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.575 — 2026-10-17
+
+- runqueue cycle 49 merge
+
 ## 0.5.574 — 2026-10-17
 
 - METHOD: the bounds engine spells since v0.5.573

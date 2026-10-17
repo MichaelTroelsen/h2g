@@ -6698,6 +6698,41 @@ def _find_sfx_drum(sid: SidFile, det: Detection) -> tuple[int, int, int]:
     return d[off + 1], voice, period
 
 
+# The drum's trigger cell, as the player spells it:
+#     A5 EC  LDA effect / 10 1C BPL out      (the effect byte's own load)
+#     A5 BE  LDA cell   / C9 01 F0 0A        (fire at 1)
+#     C9 06  CMP #period / 90 12 BCC out     (below the period: carry on)
+#     A9 00  LDA #0 / 85 BE STA cell         (past it: start over)
+# Offsets are past the effect-byte load.
+SFX_CELL_SHAPE = "10 ?? A5 ?? C9 01 F0 ?? C9 ?? 90 ?? A9 00 85 ??"
+SFX_CELL_AT_LOAD = 3
+SFX_CELL_AT_STORE = 15
+
+
+def find_sfx_cell(sid: SidFile, det: Detection) -> int:
+    """The zero-page cell the bit-$80 drum counts its period on, or -1.
+
+    Read only in its zero-page spelling, and only where the cell the drum
+    loads and the cell it zeroes are one byte. `_find_effect_bit80` calls this
+    cell "global"; in Mega Apocalypse it is `$BE`, which is ALSO voice 3's
+    frame counter (`$BC,X` with X = 2): a drum playing on ANY voice zeroes
+    voice 3's counter every `period` frames, so its counter never reaches a
+    fall record's threshold (`counter_fall` reads that).
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return -1
+    addr, zp = found
+    if not zp:
+        return -1
+    off = search_file(sid.data, f"A5 {addr:02X} {SFX_CELL_SHAPE}")
+    if off < 0:
+        return -1
+    b = off + 2
+    cell = sid.data[b + SFX_CELL_AT_LOAD]
+    return cell if sid.data[b + SFX_CELL_AT_STORE] == cell else -1
+
+
 # The tail of the sfx drum's fire block: the two stores that follow the
 # `SFX_DRUM_SHAPE` pair, `LDA #cutoff / STA $D416 / LDA #mode / STA $D418`.
 # Nineteen `$948A`: `$48 -> $D40F`, `$81 -> $D412`, `$60 -> $D416`,

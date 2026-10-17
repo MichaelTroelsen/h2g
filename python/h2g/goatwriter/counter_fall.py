@@ -70,7 +70,12 @@ is emitted instead is the schedule at a handful of SIZES (`ALTERNATION_LEVELS`):
   room for two) points its rows at a short `[tie] F2 n / jump` into a still
   loop and ties back at the gate; the others keep the loop going at its last
   size, through the gap, into the next lap's dips (sizes `n` modulo 256
-  folded to 1..127, the direction not kept).
+  folded to 1..127, the direction not kept);
+* a drum on another voice zeroes voice 3's counter (`drum_stops`: the drum's
+  period cell is `$BE`, the same byte), so a voice-3 note stops storing the
+  frame after the drum is fetched and the original sits where its last store
+  left it. The note's stores end there (`_Segment.stop`) and an alternating
+  note ends in a hold to its last row (`counter_fall_laps`, the final hold).
 
 Sizes are the optimal clustering in log space of the dip counts the rows are
 at (`quantize_levels`), as many as the wavetable leaves the swell's loops.
@@ -89,7 +94,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
-from ..detect import Detection
+from ..detect import Detection, find_sfx_cell
 from ..sidfile import SidFile
 from .constants import (CMD_SETWAVEPTR, CMD_VIBRATO, FORMAT_GTS5,
                         GT_FIRST_NOTE, GT_LAST_NOTE, GT_MAX_TABLELEN, GT_REST,
@@ -154,6 +159,110 @@ def record_threshold(sid: SidFile, det: Detection, i: int) -> Optional[int]:
         return None
     at = sid.to_offset(cf.threshold + i * det.instr_stride)
     return sid.data[at] if 0 <= at < len(sid.data) else None
+
+
+COUNTER_FALL_DRUM = 0x80
+
+
+def drum_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
+    """{record index} of the records that carry the bit-$80 drum (the voice-3
+    drum, `COUNTER_FALL_EXCLUDED`'s $80)."""
+    out: Set[int] = set()
+    for i in range(records):
+        base = det.instr_start + i * det.instr_stride
+        if base + 7 >= len(sid.data):
+            break
+        if sid.data[base + 7] & COUNTER_FALL_DRUM:
+            out.add(i)
+    return out
+
+
+def drum_counter_voice(sid: SidFile, det: Detection) -> Optional[int]:
+    """The voice whose frame counter the bit-$80 drum zeroes, or None.
+
+    The drum counts its period on one cell, loads it on every frame of a voice
+    that holds a drum record (whatever voice that is) and zeroes it once it
+    reaches the period. In Mega Apocalypse that cell is `$BE`, which is voice
+    3's own frame counter (`$BC,X`, X = 2): the counter the fall tests against
+    its threshold. None where the player has no such drum, no period was read,
+    or the cell is not one of the three counters.
+    """
+    cf = det.counter_fall
+    if cf is None or det.effect_bit80 != "sfx" or det.sfx_period <= 0:
+        return None
+    cell = find_sfx_cell(sid, det)
+    if cell < 0 or not 0 <= cell - cf.counter < 3:
+        return None
+    return cell - cf.counter
+
+
+def drum_stops(segs, rows, patterns, drums: Set[int], voice: int,
+               period: int, thresholds: Dict[int, int],
+               declined: Dict[str, int]) -> int:
+    """Set `stop` on every fall note of `voice` that a drum silences, and
+    return how many.
+
+    Once a voice holds a drum record (`drums`, GT instrument numbers) every
+    frame on which it runs its effects zeroes `voice`'s counter as soon as it
+    is at `period`, so the counter stays under `period`, below every
+    threshold, and the fall stores nothing more -- the pitch stays where the
+    last store left it. The drum voice's first effect frame is the frame after
+    the one that fetched the drum, and the frame's passes run from voice 2
+    down, so a drum on a lower voice than `voice` leaves that frame's store
+    (`stop` = fetch + 2) and one on a higher voice does not (fetch + 1).
+
+    Only a drum that goes on to the end of the note is read: the counter then
+    starts over from zero and stores again once it is back at the threshold,
+    which this does not model, so a note whose drum ends inside it is left
+    as it was (counted in `declined`).
+    """
+    states: Dict[int, List[int]] = {}
+
+    def state(ti: int) -> List[int]:
+        if ti not in states:
+            cur, st = 0, []
+            for p, r, _t, _pos, _k in rows[ti]:
+                cur = patterns[p][4 * r + 1] or cur
+                st.append(cur)
+            states[ti] = st
+        return states[ti]
+
+    cut = 0
+    for s in segs:
+        if (s.track % 3 != voice or s.ok
+                or thresholds.get(s.number, 0) <= period):
+            continue
+        onset: Optional[Tuple[int, int]] = None      # (frame, drum voice)
+        ends_inside = False
+        for dv in range(3):
+            ti = s.track - voice + dv
+            if ti == s.track or ti not in rows:
+                continue
+            st = state(ti)
+            a = s.start
+            while a < s.end:
+                if a >= len(st):
+                    break
+                if st[a] not in drums:
+                    a += 1
+                    continue
+                b = a
+                while b < s.end and b < len(st) and st[b] in drums:
+                    b += 1
+                if b < s.end:
+                    ends_inside = True
+                else:
+                    j = (a - s.start) * s.frames + (2 if dv < voice else 1)
+                    if onset is None or j < onset[0]:
+                        onset = (j, dv)
+                a = b
+        if ends_inside:
+            declined["a drum ends inside the note"] = \
+                declined.get("a drum ends inside the note", 0) + 1
+        elif onset is not None:
+            s.stop = onset[0]
+            cut += 1
+    return cut
 
 
 def fall_stores(length: int, threshold: int,
@@ -280,6 +389,14 @@ class _Segment:
     fetches: Set[int]           # frames of the segment's own event starts
     resets: List[int]           # row offsets of legato notes (back on the note)
     ok: str = ""                # why it is declined, "" when it is not
+    stop: Optional[int] = None  # stores need a frame below this (`drum_stops`)
+
+    @property
+    def length(self) -> int:
+        """The frames the fall's stores are drawn from: the note's own, or
+        up to where a drum zeroes the counter."""
+        n = (self.end - self.start) * self.frames
+        return n if self.stop is None else min(n, self.stop)
 
 
 def _walk(tracks, patterns, bit7, by_number, speeds, no_test_restart,
@@ -521,7 +638,10 @@ ALTERNATION_LEVELS = 8
 # at 1172704 (historical): 29 rows with the one shared hold = 7 sizes, one
 # entry, 43 loops with 18 swings merged (43 and 13 before the holds, which took
 # 23 rows); a second hold (4 more rows) leaves 5-6 sizes and 42-44 loops.
-ALTERNATION_ROWS = 29
+# The final hold of a note a drum silences (`drum_stops`, `counter_fall_laps`) is
+# one more program of 3 rows: 32 rows with it, 7 sizes and 42 swings merged on
+# 49 loops (v0.5.572 + the change; the 1920-frame note's frames 1154-1920).
+ALTERNATION_ROWS = 32
 # Whether a note that outlasts the counter's first lap gets the repeats it
 # runs over unrolled (`unroll_fall_repeats`), so that its later laps' rows can
 # differ from visit to visit.
@@ -539,6 +659,7 @@ class AltRow:
     after_balanced: bool  # the row before ended on a step back
     fresh: bool = False  # the first row of a run after a hold (no entry)
     tied: bool = False   # an 'X' row whose program ties to the note first
+    final: bool = False  # an 'X' row that holds to the note's end (`drum_stops`)
     # Kinds 'X' (the row holds the lap's last dip: `n` its count, `delay` the
     # tick it is on), 'H' (a row held) and 'Q' (the row the vibrato gate
     # falls in) are `counter_fall_laps`'.
@@ -675,8 +796,7 @@ def alternation_asks(segs, rows, patterns, thresholds, own, room,
     declined: Dict[str, int] = {}
     live = []
     for s in segs:
-        dips = alternation_dips((s.end - s.start) * s.frames,
-                                thresholds[s.number], s.fetches)
+        dips = alternation_dips(s.length, thresholds[s.number], s.fetches)
         if dips is None:
             declined["a fetch frame on a store"] =                 declined.get("a fetch frame on a store", 0) + 1
             continue
@@ -703,9 +823,10 @@ def alternation_asks(segs, rows, patterns, thresholds, own, room,
         out = []
         for s in live:
             ars = _laps.alternation_note_rows(
-                (s.end - s.start) * s.frames, thresholds[s.number],
+                s.length, thresholds[s.number],
                 None if gates is None else gates.get(s.number), s.fetches,
-                s.lag, s.frames, usable_for(s), s.end - s.start, holds)
+                s.lag, s.frames, usable_for(s), s.end - s.start, holds,
+                s.stop)
             out.append((s, ars))
         return out
 
@@ -718,7 +839,7 @@ def alternation_asks(segs, rows, patterns, thresholds, own, room,
             for ar in ars:
                 if ar.kind == 'X':
                     k = (ar.n, ar.delay, ar.tied)
-                    uses[k] = uses.get(k, 0) + 1
+                    uses[k] = uses.get(k, 0) + (1000 if ar.final else 1)
         spent = _laps.STILL_ROWS
         for key in sorted(uses, key=lambda k: (-uses[k],
                                                _laps.hold_rows(*k), k)):
@@ -835,10 +956,17 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     rows, segs, visits, free, declined = _walk(
         tracks, patterns, bit7, by_number, speeds, no_test_restart,
         real_firstwave)
+    drum_cut = 0
+    dvoice = drum_counter_voice(sid, det)
+    if dvoice is not None:
+        drums = {i + lead + 1 for i in drum_records(
+            sid, det, max(instr_used - lead, 0))}
+        drum_cut = drum_stops(segs, rows, patterns, drums, dvoice,
+                              det.sfx_period, thresholds, declined)
     hold = [s for s in segs if not by_number[s.number]]
     alternating = [s for s in segs if by_number[s.number]]
-    stores_alt = sum(len(fall_stores((s.end - s.start) * s.frames,
-                                     thresholds[s.number], s.fetches))
+    stores_alt = sum(len(fall_stores(s.length, thresholds[s.number],
+                                     s.fetches))
                      for s in alternating)
     for s in hold:
         if s.ok:
@@ -866,8 +994,7 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # Per segment: the stores as (call, n), the legato resets as calls.
     instances = []
     for s in hold:
-        length = (s.end - s.start) * s.frames
-        js = fall_stores(length, thresholds[s.number], s.fetches)
+        js = fall_stores(s.length, thresholds[s.number], s.fetches)
         events = [(j + s.lag, 0, n) for n, j in enumerate(js)]
         events += [(off * s.frames, -1, 0) for off in s.resets]
         instances.append((s, sorted(events)))
@@ -1113,6 +1240,8 @@ def counter_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         + (f"; {skipped} row(s) past the packed pattern limit"
            if skipped else "")
         + (f"; {full} row(s) left alone: pattern table full" if full else "")
+        + (f"; {drum_cut} note(s) cut where a drum zeroes the counter"
+           if drum_cut else "")
         + (f"; declined: {notes}" if notes else "")
         + (f"; {len(alternating)} alternating note(s) on instrument(s) "
            f"{sorted({a.number for a in alternating})}, {stores_alt} "

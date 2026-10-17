@@ -411,12 +411,15 @@ def test_mega_apocalypse_writes_the_still_loop_and_the_shared_hold_program():
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "row(s)" in m]
     assert len(said) == 1, lines
-    assert "1 lap-end hold program(s) [(112, 1, False)]" in said[0], said[0]
+    # the first lap's end every long note shares, and the final hold of the
+    # 1920-frame note a drum silences (`counter_fall.drum_stops`)
+    assert ("2 lap-end hold program(s) [(112, 1, False), (245, 2, False)]"
+            in said[0]), said[0]
     assert "7 dip size(s)" in said[0], said[0]
     # the record-16 programs share their tails to pay for the hold's rows:
     # 40 steps from row 118 once `[wait][F2][stop]` is the end of a longer
-    # one (43 laid one each)
-    assert "40 wavetable step(s) at 118" in said[0], said[0]
+    # one (43 laid one each); the final hold's 3 rows make 43 in all
+    assert "43 wavetable step(s) at 118" in said[0], said[0]
     assert "visits disagree" not in said[0], said[0]
     swell, _loops = _swell_loops(lines)
     assert "table full" not in swell, swell
@@ -438,7 +441,9 @@ def test_mega_apocalypse_writes_the_still_loop_and_the_shared_hold_program():
         prev = wt[j - 1]
         if prev[0] in (WAVECMD_PORTADOWN, WAVECMD_PORTAUP):
             shapes.add((prev[0], st[prev[1] - 1][0], wt[j - 2]))
-    assert shapes == {(WAVECMD_PORTADOWN, 112, (TIE, 0))}, shapes
+    # (and the final hold: two still calls, then F1 11, count 245 = $59)
+    assert shapes == {(WAVECMD_PORTADOWN, 112, (TIE, 0)),
+                      (WAVECMD_PORTAUP, 11, (1, 0x80))}, shapes
 
 
 @needs_corpus
@@ -457,7 +462,8 @@ def test_the_640_row_notes_first_hold_needs_its_repeats_unrolled(monkeypatch):
     _sng, lines = _converted()
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "row(s)" in m][0]
-    assert "28 rows the visits disagree on" in said, said
+    # (28 before the 1920-frame note's final hold, which points 255 more rows)
+    assert "31 rows the visits disagree on" in said, said
     assert "1 lap-end hold program(s)" in said      # the two shorter notes'
 
 
@@ -562,8 +568,8 @@ def test_packed_the_second_lap_hold_ties_first_and_matches_too(tmp_path,
     """With room for the second program (`[wait] [tie] F1 31`, count 225 =
     `$6D`, above the note) the 576-frame note's second hold is the
     original's too: 60 of 60. The swell's pins do not allow the room."""
-    monkeypatch.setattr(L, "ALTERNATION_HOLD_ROWS", 10)
-    monkeypatch.setattr(C, "ALTERNATION_ROWS", 40)
+    monkeypatch.setattr(L, "ALTERNATION_HOLD_ROWS", 13)
+    monkeypatch.setattr(C, "ALTERNATION_ROWS", 43)
     fo, fu, lag = _timelines(_converted()[0], tmp_path, "both")
     assert _held_frames(fo, fu, lag, NOTES_BOTH) == (60, 60)
 
@@ -611,8 +617,8 @@ def test_packed_with_the_later_laps_on_the_576_frame_note_reverses_as_often(
     later laps' dips and both programs -- which cost the swell three pins and
     the first lap two dip sizes, so they are off."""
     monkeypatch.setattr(L, "ALTERNATION_LATER_LAPS", True)
-    monkeypatch.setattr(L, "ALTERNATION_HOLD_ROWS", 10)
-    monkeypatch.setattr(C, "ALTERNATION_ROWS", 40)
+    monkeypatch.setattr(L, "ALTERNATION_HOLD_ROWS", 13)
+    monkeypatch.setattr(C, "ALTERNATION_ROWS", 43)
     fo, fu, lag = _timelines(_converted()[0], tmp_path, "rev")
     start = 13728
     o = _reversals(fo[start + 2:start + 576])
