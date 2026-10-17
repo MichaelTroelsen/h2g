@@ -675,6 +675,14 @@ EXCLUDED_FROM_ALWAYS = {
     # FIDELITY_TOGGLES, as `pitch_tie_phase` is not. A song entry
     # `"pitch_lead_tie": true`.
     "pitch_lead_tie",
+    # `drum_gate_off`: the drum block's gate-off on drum+arpeggio records
+    # (the noise tick at -S1 and, for a sustaining one, the tail) and under
+    # bit $02's alternation (goatwriter.wavetable._wavetable_entries).
+    # Off by default and per song: forced on it moves 32 of 89 converting
+    # files under presets, and its tick half is the repair the ticked shape
+    # refused corpus-wide for melody on seven files. Not in FIDELITY_TOGGLES.
+    # A song entry `"drum_gate_off": true`.
+    "drum_gate_off",
 }
 
 

@@ -251,6 +251,10 @@ class Detection:
     # otherwise -- which is what keeps every other conversion byte-identical.
     rest_wave_exempt: frozenset = frozenset()
     rest_entry_records: Dict[int, int] = field(default_factory=dict)
+    # `convert(drum_gate_off=...)`, carried here so the wavetable emitter can
+    # read it without threading a parameter through every layout call.
+    # False by default, which keeps every conversion byte-identical.
+    drum_gate_off: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform

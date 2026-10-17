@@ -137,7 +137,22 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # `81` noise and closed the gate on the attack's fourth frame. The
             # median, as for the sweep's depth (`median_played_durations`).
             drum = False
-        elif drum and (data[base + 4] >> 4):
+        elif drum and (data[base + 4] >> 4) and not (
+                det.drum_gate_off and arp and det.effect_arp
+                and arp_note != 0):
+            # **`drum_gate_off` exempts a record that also carries a live
+            # arpeggio**, and only that one: its sweep is overwritten by the
+            # arpeggio every frame (`arp_overwrites_sweep`'s reading), so the
+            # gate-off is the whole of what the drum block leaves audible --
+            # and the player closes the gate whatever the sustain. Commando
+            # `$5306 LDA $54F2,X / BEQ` is the only guard on the note; the
+            # noise branch writes `$5331 LDA #$80` and the rest `$5324 LDA
+            # $54F8,X / AND #$FE`, both to $D404. Its record 1 (ADSR $064B,
+            # effect $05) reads `41 80 80 40 40` from each onset in the
+            # original, so it rings on R=$B from the attack peak; held, it
+            # decays to S=$4 and the arpeggio is quieter than the original's.
+            # A drum-only sustaining record keeps the rule below (v0.5.164's
+            # listening verdict); the option does not reach it.
             # A record whose envelope sustains is not percussive, and the drum
             # shape is wrong for it in *both* its parts -- not just the pitch
             # sweep. Its second entry releases the gate, so a held tone drops
@@ -503,7 +518,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             alt = _wave_alternate_entries(
                 wave, alt_byte, multiplier, start, budget,
                 written=no_test_restart, alt_first=alt_first,
-                alt_note=_note_alternate_note(sid, det, i))
+                alt_note=_note_alternate_note(sid, det, i),
+                # The drum block's gate-off, where the record runs it
+                # (`drum`, after the one-row rule above) or where only its
+                # sustain rule cleared it (`tick`): the player masks the gate
+                # whatever the sustain. The gate lasts the note's first frame
+                # and the noise tick, the length `_drum_entries` holds.
+                gate_frames=(1 + _noise_tick_frames(sid, det)
+                             if det.drum_gate_off and (drum or tick)
+                             else None))
             if alt is not None:
                 return alt
 
@@ -572,6 +595,18 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # second thing the OR controls; on this evidence it controls the leading
         # gated frames and nothing else.
         noise = WAVE_NOISE_GATEOFF | (wave & 0x01)
+        if det.drum_gate_off and drum:
+            # **`drum_gate_off` takes the refused repair above per song**, for
+            # a record that runs the drum (`drum`, the exempted sustaining
+            # arpeggio included): the drum block writes its noise with the
+            # gate clear -- Commando `$5331 LDA #$80 / STA $D404,Y` -- so the
+            # gate lasts the note's first frame alone (Commando record 1:
+            # `41 80 80 40`, Hunter_Patrol's `$0508` drum `81 80 80 80`).
+            # `_drum_tick_noise`'s rule, the drum-only shape's: gate-off at
+            # -S1, gated above it, where a gate-off tick would release the
+            # voice before its attack has started.
+            noise = _drum_tick_noise(wave, multiplier,
+                                     written=no_test_restart)
         # **The tick's length is the player's speed gate less one, not the
         # constant**, exactly as it is in `_drum_entries` -- the same rule
         # about the same block, and this emitter had been reading it from a
@@ -748,7 +783,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 (arp_step_calls if arp_step_calls is not None
                  else _gate_calls(multiplier, gate_skip)), base_entry,
                 budget, written=no_test_restart,
-                tick=((WAVE_NOISE_GATEOFF | (wave & 0x01),
+                tick=((noise if det.drum_gate_off and drum
+                       else WAVE_NOISE_GATEOFF | (wave & 0x01),
                        _noise_tick_frames(sid, det)) if tick else None),
                 # A record played under tie chains locks its octave to the
                 # row (`fixed_arp_tie_rows`); never a clone's own step.

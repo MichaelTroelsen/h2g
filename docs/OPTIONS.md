@@ -2765,6 +2765,38 @@ right. Judge it on the drum census (`C:/t/drum-attack-first-frame/census.py`,
 not yet a harness column) and on listening. Adopting it in `presets.json` waits
 on the user's A/B.
 
+## `--drum-gate-off` (the drum block's gate-off, where the gate was held)
+
+Hubbard's drum block (effect bit `$01`) closes the gate after the note's first
+frame whatever the record's sustain: Commando writes its noise tick as `$5331
+LDA #$80 / STA $D404,Y` and the rest as `$5324 LDA $54F8,X / AND #$FE`; Deep
+Strike masks the gate instead (`$C302 LDA #$FE / STA $C4AF,X`, written through
+`$C3B5 AND $C4AF,X` every frame). A note on such a record rings on its release.
+Three conversion shapes held the gate there, and the note rode its decay to
+the sustain level instead -- the user's "Commando's arps are too quiet",
+"Deep Strike's drums decay too slowly" and "Hunter Patrol's drums are not
+cutting off":
+
+* a drum+arpeggio record's noise tick was gated (`$81`); under the option it
+  takes `_drum_tick_noise`'s byte, gate-off at -S1 as the drum-only shape's is
+  (Hunter_Patrol `$0508`: original `81 80 80 80`);
+* a drum+arpeggio record whose envelope sustains lost the drum entirely to
+  v0.5.164's sustaining-record rule, so its tails held the gate (Commando
+  record 1, ADSR `$064B`: original `41 80 80 40 40`, ours `41 81 81 41 41`);
+  the option keeps the drum for it -- the arpeggio overwrites the sweep every
+  frame, so the gate-off is all the drum leaves audible. A drum-only
+  sustaining record keeps the v0.5.164 rule (a listening verdict);
+* effect bit `$02`'s alternation on a drum record alternated two gated halves;
+  under the option the pair loses the gate after the tick (Deep_Strike record
+  7, `$0F07`: original `11 11 81 10 80 10 80`).
+
+Off by default and per song: forced on it moves 32 of the 89 converting files
+under presets and none under defaults (Commando stays byte-exact). The tick
+half is the repair the ticked shape refused corpus-wide for melody on seven
+files (see the comment at `noise` in `_wavetable_entries`), which is why it is
+per song. Census, A/B and the files it is proposed for: run record
+`commando-arp-one-frame-gate`. `tests/test_drum_gate_off.py`.
+
 ## `--regrid` (a row that is not a whole number of play calls)
 
 A Goattracker row is a whole number of play calls, so a player whose row is

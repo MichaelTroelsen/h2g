@@ -276,7 +276,8 @@ def convert(sid_path: str, log: Logger = print,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
-            pitch_lead_tie: bool = False) -> bytes:
+            pitch_lead_tie: bool = False,
+            drum_gate_off: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -474,6 +475,20 @@ def convert(sid_path: str, log: Logger = print,
     (presets.EXCLUDED_FROM_ALWAYS); byte-inert on a file with no gated
     firstwave record. See pitch_lead.
 
+    drum_gate_off keeps the drum block's gate-off where the conversion held
+    the gate on a drum-flagged record (bit $01, routine detected, notes
+    longer than one row). Three places: a drum+arpeggio record's noise tick
+    is written gate-off at -S1 (`_drum_tick_noise`'s rule; Commando `$5331
+    LDA #$80 / STA $D404,Y`); such a record whose envelope sustains keeps
+    the drum's gate-off tail instead of the sustaining-record rule's held
+    gate (Commando's arpeggio, ADSR $064B: the player's `$5324 AND #$FE`
+    closes the gate whatever the sustain); and effect bit $02's alternation
+    on a drum record takes the drum's gate mask after the tick (Deep Strike
+    `$C302 LDA #$FE / STA $C4AF,X`). The note then rings on its release,
+    as the original's does, instead of riding its decay. Off by default
+    and per song; byte-inert on a file with no such record. See
+    goatwriter.wavetable._wavetable_entries.
+
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
     columns to match; instrument 1 is always kept, because both players
@@ -591,6 +606,7 @@ def convert(sid_path: str, log: Logger = print,
 
     log("-----------------------------------------------------SEARCHING---")
     sid, det = _detect_tables(sid, log, engine)
+    det.drum_gate_off = drum_gate_off
 
     log("--------------------------------------------------------STATUS---")
     if not det.can_convert:

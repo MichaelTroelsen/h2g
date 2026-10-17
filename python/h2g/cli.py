@@ -285,6 +285,14 @@ def main(argv=None) -> int:
              "note's. Per song (a --presets entry's pitch_lead_tie); off "
              "leaves every conversion byte-identical.")
     parser.add_argument(
+        "--drum-gate-off", action="store_true",
+        help="keep the drum block's gate-off where the conversion held the "
+             "gate: a drum+arpeggio record's noise tick (at -S1) and, where "
+             "its envelope sustains, its tail; and effect bit $02's "
+             "alternation on a drum record. The note rings on its release as "
+             "the original's does. Per song (a --presets entry's "
+             "drum_gate_off); off leaves every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -727,6 +735,7 @@ def main(argv=None) -> int:
                           ("--named-firstwave", "named_firstwave"),
                           ("--pitch-tie-phase", "pitch_tie_phase"),
                           ("--pitch-lead-tie", "pitch_lead_tie"),
+                          ("--drum-gate-off", "drum_gate_off"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -843,6 +852,7 @@ def main(argv=None) -> int:
                       named_firstwave=args.named_firstwave,
                       pitch_tie_phase=args.pitch_tie_phase,
                       pitch_lead_tie=args.pitch_lead_tie,
+                      drum_gate_off=args.drum_gate_off,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

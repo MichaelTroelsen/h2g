@@ -208,7 +208,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             budget: int = WAVE_ENTRIES_PER_INSTR,
                             written: bool = False,
                             alt_first: bool = False,
-                            alt_note: Optional[int] = None) -> Optional[tuple]:
+                            alt_note: Optional[int] = None,
+                            gate_frames: Optional[int] = None) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -345,6 +346,34 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     first, second = (alt, wave) if alt_first else (wave, alt)
     first_r, second_r = ((alt_r, own_note) if alt_first
                          else (own_note, alt_r))
+    if gate_frames is not None and gate_frames >= 1:
+        # **`gate_frames`: the drum block's gate mask under the alternation**
+        # (`convert(drum_gate_off=...)`). A record setting bit $01 beside $02
+        # gets both blocks, and the drum's closes the gate after its first
+        # duration unit whatever waveform the alternation then picks: Deep
+        # Strike `$C302 LDA #$FE / STA $C4AF,X`, and `$C3B5 LDA $C4A6,X /
+        # AND $C4AF,X / STA $D404,Y` writes every frame through that mask.
+        # Its record 7 (ADSR $0F07, effect $0B) reads `11 11 81 10 80 10 80`
+        # from each onset in the original. So frames 1 .. gate_frames - 1
+        # keep the gated pair, in the alternation's own phase, and the loop
+        # from frame `gate_frames` on is the same pair with the gate bit
+        # cleared -- per frame, each half `multiplier` calls, as above.
+        pair = [(first, first_r), (second, second_r)]
+        left, right = list(lead), list(lead_r)
+        for k in range(1, gate_frames):
+            w, n = pair[(k - 1) % 2]
+            h_l, h_r = half(w, n)
+            left += h_l
+            right += h_r
+        loop = len(left)
+        for k in (gate_frames, gate_frames + 1):
+            w, n = pair[(k - 1) % 2]
+            h_l, h_r = half(w & 0xFE, n)
+            left += h_l
+            right += h_r
+        if len(left) + 1 > budget:
+            return None
+        return left + [0xFF], right + [(start + loop) & 0xFF]
     a_l, a_r = half(first, first_r)
     b_l, b_r = half(second, second_r)
     left = lead + a_l + b_l
