@@ -2736,6 +2736,29 @@ booleans together spends a quarter of its combinations on a distinction that
 cannot exist; that pruning is not implemented, because changing the walk needs
 its own two-arm corpus A/B before adoption.
 
+## `--vibrato-onset` (the instrument vibrato starts on frame 1)
+
+A classic player whose vibrato gate is a *duration* threshold (a note that
+qualifies runs the counter update from the frame after its fetch), and the
+LFO-table player, which gates nothing, move a vibrato note's pitch on frame 1.
+Ours started on frame 3: the plain program `41/00 41/00 41/00 FF/00`
+re-pitches calls 1-3 (each `/00` step skips the effects and zeroes `vibtime`)
+and the frame-1 floor sits behind them. The option respells the later steps
+`/80` and puts `vibdelay` on the frame-1 call, as `_free_gate_calls` /
+`_classic_gate_refine` already do for a counter gate; a record whose program
+writes the frequency again later (a waveform-changing program, Deep_Strike)
+keeps its bytes, because an earlier start there only blips.
+
+**A trade, per song, off by default.** Forced on (v0.5.583, 25 files move;
+census over 60 s of subtune 0, C:/t/f1-vibrato): onset frame exact on 1012 of
+1655 matched vibrato notes against 462 (Hollywood_or_Bust 19 -> 120,
+Las_Vegas 4 -> 121, Bump_Set_Spike 43 -> 139, Thanatos 59 -> 126), but at
+-t 180 Hollywood_or_Bust subtune 2 loses melody 0.657 -> 0.630 (its `$14`
+swing, 1.33x deep by integer `rshift`, is heard from frame 1), Formula_1's
+reversals go 1.002 -> 0.860, and Mozart's original moves on frame 2 or later
+on every note measured, so it goes early (onset exact 14 -> 0). `aud` moves
+on no file beyond its noise.
+
 ## `--pitch-lead-tie` (drum attacks open on their own pitch)
 
 Goattracker's packed player writes only `$D404` when a new note starts

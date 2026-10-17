@@ -691,6 +691,15 @@ EXCLUDED_FROM_ALWAYS = {
     # FIDELITY_TOGGLES, as `pitch_lead_tie` is not. A song entry
     # `"drum_fall": true`.
     "drum_fall",
+    # `vibrato_onset`: the instrument vibrato starts on frame 1 of a note on
+    # a duration-gated classic player and the LFO-table player, as the
+    # original's does (goatwriter.vibrato._onset_engine). Off by default and
+    # per song: it trades -- Hollywood_or_Bust subtune 2 melody 0.657 ->
+    # 0.630, its over-deep `$14` swing heard from frame 1; Mozart's
+    # original moves on frame 2 or later, not 1, on every note measured
+    # (task formula-1-lead-vibrato, v0.5.583, 180 s, historical).
+    # Not in FIDELITY_TOGGLES. A song entry `"vibrato_onset": true`.
+    "vibrato_onset",
 }
 
 

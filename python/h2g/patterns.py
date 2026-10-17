@@ -24,6 +24,7 @@ from .goatwriter import (CMD_SETTEMPO, CMD_SETWAVEPTR, PulseVoiceCell,
                          TEMPO_FASTEST_STEADY, hold_direction, hold_steps,
                          hold_wait, restarted_gate_calls)
 from .search import search_file
+from .cmd_chord import chord_arp
 from .goatwriter.constants import MAX_TRACK_LEN
 from .sidfile import SidFile
 
@@ -2398,8 +2399,18 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 slide_mask: int = 0x3F,
                                 steps: Optional[List[int]] = None,
                                 instr_base: int = 2,
+                                arps: Optional[List[tuple]] = None,
+                                chords: Optional[Dict[int, tuple]] = None,
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
+
+    With `arps` and `chords` (`{event ordinal: (offsets, voice, record, intro, frames)}`,
+    from `cmd_chord.chord_note_cycles` via `det.cmd_chord_notes`), a chorded
+    note is written at the pitch the original sounds on its fetch frame and
+    carries a `CMD_SETWAVEPTR` naming a `(record, ChordArp)` pair -- the
+    interleaved `$83` route, resolved by `goatwriter.build_sng`. See
+    h2g/cmd_chord.py for the player code. A row whose command column a slide
+    already holds keeps the slide and plays the note plain.
 
     With `collect` given, the durations the pattern uses are added to it and
     the returned stream is ignored -- that pre-pass is how frames_per_row is
@@ -2417,7 +2428,9 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
 
     events: List[int] = []
     instrument = 0
+    record: Optional[int] = None
     pending: Optional[tuple] = None
+    ordinal = 0                 # events in fetch order, cmd_chord's key
 
     for _ in range(20000):
         if addr <= 1 or addr >= len(data):
@@ -2440,6 +2453,7 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                 # +2 for the same reason every other decoder here adds it:
                 # Goattracker instrument 1 is the empty "Clear Voice" slot.
                 instrument = data[addr + 1] + instr_base
+                record = data[addr + 1]
             elif c == slide_cmd and slides and operands[c] >= 2:
                 lo, d2 = data[addr + 1], data[addr + 2]
                 step = ((d2 & slide_mask) << 8) | lo
@@ -2457,6 +2471,8 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
         if collect is not None:
             collect.add(frames)
         rows = max(1, frames // frames_per_row)
+        chord = (chords or {}).get(ordinal) if arps is not None else None
+        ordinal += 1
         if b & 0x40:
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
             addr += 1
@@ -2468,10 +2484,29 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
             # strips with `AND #$7F` before the lookup (the grammar block
             # above), and `b & 0x7F == ((b << 1) & 0xFF) >> 1` for every
             # byte, so the wrap and the mask are one number here.
-            note = max(0, min(data[addr + 1] & 0x7F,
-                              CMDTABLE_MAX_NOTE) + note_base) + 0x60
+            raw = data[addr + 1] & 0x7F
+            arp = None
+            if chord is not None and pending is None:
+                cycle, _voice, held, intro, intro_frames = chord
+                # The record the voice holds: this pattern's, or the one the
+                # walk saw an earlier pattern leave (`instr 00` keeps it).
+                owner = record if record is not None else held
+                lifted = raw + cycle[0]
+                if owner is not None and 0 <= lifted <= CMDTABLE_MAX_NOTE:
+                    arp = chord_arp(cycle, intro, intro_frames)
+                    if arp is not None and ((owner, arp) not in arps
+                                            and len(arps) >= 0xFF):
+                        arp = None      # the operand is one byte
+                    if arp is not None:
+                        raw = lifted
+            note = max(0, min(raw, CMDTABLE_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
             addr += 2
+            if arp is not None:
+                key = (owner, arp)
+                if key not in arps:
+                    arps.append(key)
+                events[-2], events[-1] = CMD_SETWAVEPTR, arps.index(key) + 1
         if pending is not None:
             events[-2], events[-1] = _digi_command(pending, steps)
             pending = None
@@ -2674,7 +2709,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             det.cmd_instrument, det.frames_per_row,
             note_base=det.note_base, slides=slides,
             slide_cmd=det.cmd_slide, slide_mask=det.cmd_slide_mask or 0x3F,
-            steps=steps, instr_base=instr_base)
+            steps=steps, instr_base=instr_base,
+            arps=arps, chords=det.cmd_chord_notes.get(i))
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               instr_mask=_instrument_mask(det.instr_stride),

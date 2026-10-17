@@ -300,6 +300,13 @@ def main(argv=None) -> int:
              "--presets entry's drum_fall); off leaves every conversion "
              "byte-identical.")
     parser.add_argument(
+        "--vibrato-onset", action="store_true",
+        help="start the instrument vibrato on frame 1 of each note where the "
+             "player's own does (a duration-gated classic vibrato, the LFO "
+             "table): free the plain program's re-pitching steps and put "
+             "vibdelay on that call. Per song (a --presets entry's "
+             "vibrato_onset); off leaves every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -744,6 +751,7 @@ def main(argv=None) -> int:
                           ("--pitch-lead-tie", "pitch_lead_tie"),
                           ("--drum-gate-off", "drum_gate_off"),
                           ("--drum-fall", "drum_fall"),
+                          ("--vibrato-onset", "vibrato_onset"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -862,6 +870,7 @@ def main(argv=None) -> int:
                       pitch_lead_tie=args.pitch_lead_tie,
                       drum_gate_off=args.drum_gate_off,
                       drum_fall=args.drum_fall,
+                      vibrato_onset=args.vibrato_onset,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

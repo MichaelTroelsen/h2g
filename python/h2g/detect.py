@@ -414,6 +414,11 @@ class Detection:
     # it is found the track-read version becomes 11 -- version 0's reader
     # with that command lifted into the orderlist. See _cmdtable_transpose().
     cmd_transpose: int = -1
+    # "cmdtable" dialect: the chord arpeggio's per-note reading,
+    # {pattern: {event ordinal: (offsets on frames 0-2, voice, record held,
+    # intro wave, intro frames)}} -- filled by convert() from cmd_chord.chord_note_cycles
+    # (it needs the orderlists), empty everywhere else.
+    cmd_chord_notes: Dict[int, Dict[int, tuple]] = field(default_factory=dict)
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
@@ -3566,10 +3571,15 @@ class TableVibrato:
     `unit_shift` is the player's own right shift on the semitone interval.
     `shapes` is (length, peak) per LFO table, indexed by the parameter byte's
     high nibble; an unreadable table is (0, 0) and yields no vibrato.
+    `spans` is each table's peak-to-peak, `max - min` over its signed
+    entries (0 where unreadable): `2 * peak` for a symmetric table, less
+    for a lopsided one -- Hollywood_or_Bust's `00 01 02 01 00 81` spans 3
+    units (-1..+2), not 4.
     """
     offset: int
     unit_shift: int
     shapes: Tuple[Tuple[int, int], ...]
+    spans: Tuple[int, ...] = ()
 
 
 def _table_vibrato_unit_shift(data: bytes) -> Optional[int]:
@@ -3604,6 +3614,21 @@ def _read_lfo_table(sid: SidFile, addr: int) -> Tuple[int, int]:
     return length, peak
 
 
+def _lfo_table_span(sid: SidFile, addr: int) -> int:
+    """`max - min` of the signed LFO table at `addr` (sign-magnitude, bit
+    `TABLE_VIBRATO_SIGN`), or 0 where `_read_lfo_table` reads nothing."""
+    if not _read_lfo_table(sid, addr)[0]:
+        return 0
+    data = sid.data
+    off = sid.to_offset(addr)
+    values = []
+    while data[off] != TABLE_VIBRATO_END:
+        mag = data[off] & (TABLE_VIBRATO_SIGN - 1)
+        values.append(-mag if data[off] & TABLE_VIBRATO_SIGN else mag)
+        off += 1
+    return max(values) - min(values)
+
+
 def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
     """The LFO vibrato of the command-table engine, or None.
 
@@ -3636,14 +3661,16 @@ def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
     if not 1 <= count <= TABLE_VIBRATO_MAX_SHAPES:
         return None
     shapes = []
+    spans = []
     for i in range(count):
         a, b = sid.to_offset(lo + i), sid.to_offset(hi + i)
         if not (0 <= a < len(data) and 0 <= b < len(data)):
             return None
         shapes.append(_read_lfo_table(sid, data[a] | data[b] << 8))
+        spans.append(_lfo_table_span(sid, data[a] | data[b] << 8))
     if not any(s[0] for s in shapes):
         return None
-    return TableVibrato(offset, unit_shift, tuple(shapes))
+    return TableVibrato(offset, unit_shift, tuple(shapes), tuple(spans))
 
 
 # The status-byte fetch that tests bit 6 first, and alone. Commando $50C2
@@ -5265,12 +5292,15 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # rather than per instrument: 38 pattern events over 6 distinct offset
     # pairs across records 5, 9 and 10.
     #
-    # It is decoded here and **not emitted**. A per-note wavetable could hold
-    # it -- unusually for a global counter, every duration this engine uses is
-    # a multiple of 3, so notes stay phase-locked (contrast bit $10, § 7.ttt) --
-    # but the offsets belong to the pattern event, so emitting them means one
-    # Goattracker instrument per chord, which is `patterns.py` work. It would
-    # also reach Hollywood or Bust, whose command $82 is the same handler.
+    # It was decoded here and not emitted before cmd_chord.py; it is now
+    # h2g/cmd_chord.py: the three orderlists walked frame by frame in the
+    # player's own order (the counter is global and steps once per ENABLED
+    # voice per frame, so a note's rotation is read, not assumed), and each
+    # chorded note gets a `CMD_SETWAVEPTR` to a per-chord wavetable block --
+    # the interleaved `$83` route -- in Chicken Song and Hollywood or Bust,
+    # the only two corpus files with the shape. (Correction to the line
+    # above: the enable is NOT per note; `$84` clears it, so a pattern with
+    # no chord command plays chorded when the one before it left it set.)
     at = search_file(
         sid.data, f"{load} 29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0")
     drum = at >= 1 and search_file(

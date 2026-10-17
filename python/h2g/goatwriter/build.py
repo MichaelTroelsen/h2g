@@ -536,6 +536,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               pitch_tie_phase: bool = False,
               rest_program_stop: bool = False,
               drop_dead_blocks: bool = False,
+              vibrato_onset: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1008,9 +1009,11 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                vibrato_command=vibrato_command,
                                row_calls=row_calls, effects=effects,
                                gate_skip=(_gw_tempo.outer_gate_skip(sid)
-                                          if _gw_call_phase.entry_gate(sid)
+                                          if _gw_call_phase.entry_gate(
+                                              sid, dispatch=True)
                                           else None),
-                               instr_row_calls=instr_row_calls)
+                               instr_row_calls=instr_row_calls,
+                               table_span=True)
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.
@@ -1284,7 +1287,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         wave_entries, _freed = _free_gate_calls(
             det, vib_ptrs, wave_entries, blocks, multiplier, row_calls,
             instr_row_calls, lead, no_test_restart,
-            real_firstwave_instruments, swelling=swelling, log=log)
+            real_firstwave_instruments, swelling=swelling, log=log,
+            duration_onset=vibrato_onset)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     # After the arpeggio pointers are resolved (they own every CMD_SETWAVEPTR
     # operand until then) and before the pulse budget, which must see every
@@ -1496,7 +1500,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     vib_ptrs = _classic_gate_refine(det, vib_ptrs, wave_entries, wave_starts,
                                     multiplier, row_calls, instr_row_calls,
                                     lead, no_test_restart,
-                                    real_firstwave_instruments)
+                                    real_firstwave_instruments,
+                                    duration_onset=vibrato_onset)
     instr_at = len(out)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,

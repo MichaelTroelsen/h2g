@@ -182,9 +182,48 @@ class StartupPhase:
     rows: int
 
 
-def entry_gate(sid: SidFile) -> bool:
+# A play address that dispatches on the subtune number before the music
+# routine: `LDA cell / [CMP #$00] / BNE +3 / JMP music`, the cell being the one
+# the init's FIRST instruction stores A (the subtune) to. Formula_1_Simulator:
+#
+#     CB40  STA $F7 / BNE $CB47 / JMP $C000      (init)
+#     CB60  LDA $F7 / BNE $CB67 / JMP $C006      (play)
+#     C006  DEC $C4EB / BPL $C011 / LDA #$04 / STA $C4EB / RTS
+#
+# so subtune 0 -- the music; subtune 1 is the engine noise at $CB04 -- enters
+# the outer gate on every call, which `play_entry` (a chain of `JMP`s only)
+# stops in front of.
+SUBTUNE_DISPATCH = re.compile(
+    rb"(?:\xa5(.)|\xad(..))(?:\xc9\x00)?\xd0\x03\x4c(..)", re.DOTALL)
+
+
+def subtune_zero_entry(sid: SidFile) -> Optional[int]:
+    """Image offset subtune 0's play call reaches through `SUBTUNE_DISPATCH`,
+    or None where the play address is no such dispatch."""
+    at = play_entry(sid)
+    if at is None or not sid.init_addr:
+        return None
+    data = sid.data
+    m = SUBTUNE_DISPATCH.match(data, at)
+    if m is None:
+        return None
+    init = sid.to_offset(sid.init_addr)
+    if m.group(1) is not None:
+        store = b"\x85" + m.group(1)
+    else:
+        store = b"\x8d" + m.group(2)
+    if data[init:init + len(store)] != store:
+        return None
+    target = sid.to_offset(m.group(3)[0] | m.group(3)[1] << 8)
+    return target if 0 <= target < len(data) else None
+
+
+def entry_gate(sid: SidFile, dispatch: bool = False) -> bool:
     """Whether the outer gate is the play routine's first instruction and its
     underflow call does nothing else.
+
+    `dispatch` also follows a `SUBTUNE_DISPATCH` in front of it (subtune 0's
+    path); only the classic vibrato's update rate asks that (`build_sng`).
 
     Three spellings qualify, each at `play_entry`: `OUTER_GATE_RTS` (Warhawk,
     Game_Killer), `OUTER_GATE_PAL` (Las_Vegas_Video_Poker), and the `JMP`
@@ -199,6 +238,8 @@ def entry_gate(sid: SidFile) -> bool:
     at = play_entry(sid)
     if at is None:
         return False
+    if dispatch:
+        at = subtune_zero_entry(sid) or at
     data = sid.data
     first = _gw_tempo.outer_gate_match(sid)
     if first is not None:

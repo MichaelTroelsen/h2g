@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.586 — 2026-10-18
+
+- vibrato outer-gate stretch through a subtune dispatch; chord arpeggio command $82
+
 ## 0.5.585 — 2026-10-17
 
 - CIA-timed tunes pack at the original's rate; drum_fall option

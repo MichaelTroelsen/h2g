@@ -35,6 +35,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        collect_pulse_phases, apply_pulse_phase,
                        inherit_free_rows, inherit_event_rows, IlvArps)
 from .ilv_arp_default import ilv_default_arps
+from .cmd_chord import find_cmd_chord, chord_note_cycles, record_intro
 from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
@@ -278,7 +279,8 @@ def convert(sid_path: str, log: Logger = print,
             pitch_tie_phase: bool = False,
             pitch_lead_tie: bool = False,
             drum_gate_off: bool = False,
-            drum_fall: bool = False) -> bytes:
+            drum_fall: bool = False,
+            vibrato_onset: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -502,6 +504,21 @@ def convert(sid_path: str, log: Logger = print,
     frame (Tarzan at -t 180 under presets: melody 99% -> 42%, travel 0.31x
     -> 0.83x).
 
+    vibrato_onset starts the instrument vibrato on frame 1 of the note
+    where the original's does -- a classic player whose vibrato gate is a
+    DURATION threshold (detect.VibratoGate form "duration": a note that
+    qualifies vibrates from the frame after its fetch) and the LFO-table
+    player, which gates nothing. The plain program's re-pitching `/00`
+    steps are respelled `/80` and `vibdelay` is put on the frame-1 call,
+    as `_free_gate_calls` / `_classic_gate_refine` already do for a counter
+    gate; a record whose program writes the frequency on a later step
+    (a waveform-changing program) keeps its bytes. Off by default and per
+    song (presets.EXCLUDED_FROM_ALWAYS): it trades -- an over-deep swing
+    sounding from frame 1 reads as a different note (Hollywood_or_Bust
+    subtune 2 melody 0.657 -> 0.630, v0.5.583), Formula_1's reversals
+    1.002 -> 0.860, and Mozart's original moves on frame 2 or later on
+    every note measured, not 1 (docs/OPTIONS.md).
+
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
     columns to match; instrument 1 is always kept, because both players
@@ -692,11 +709,34 @@ def convert(sid_path: str, log: Logger = print,
     # `arpeggio_default` (`--arpeggio-default`): the same arpeggio cell as `$83`,
     # but filled by the player from the record's own byte +10 at every note
     # start (ilv_arp_default.py), so it needs no command in the pattern.
-    ilv_arps: list | None = None
+    pattern_arps: list | None = None
     if (arpeggio or arpeggio_default) and det.pattern_dialect == "ilv":
-        ilv_arps = IlvArps(
+        pattern_arps = IlvArps(
             commands=arpeggio,
             defaults=ilv_default_arps(sid, det) if arpeggio_default else None)
+    # The command-table engine's `$82` chord (h2g/cmd_chord.py): read per
+    # note by walking the three orderlists in the player's own frame order,
+    # because the counter it steps is global. It rides on `effects`, the
+    # switch every other player effect this writer emits rides on, and uses
+    # the same `arps` route as the interleaved `$83` -- the two dialects never
+    # meet in one file. Off the dialect, or without the shape, nothing moves.
+    if effects and pattern_arps is None and det.pattern_dialect == "cmdtable":
+        chord = find_cmd_chord(sid, det)
+        if chord is not None:
+            origin = {det.pattern_used + 1 + j: v[0]
+                      for j, v in enumerate(variants)}
+            notes = chord_note_cycles(sid, det, chord, tracks, floor, origin)
+            det.cmd_chord_notes = {
+                i: {k: (cycle, voice, record,
+                        record_intro(sid, det, chord, record, voice),
+                        chord.intro_frames)
+                    for k, (cycle, voice, record) in per.items()}
+                for i, per in notes.items()}
+            if det.cmd_chord_notes:
+                pattern_arps = []
+                log(f"Chord arpeggio..........: ${0x80 + chord.cmd:02X} a b, "
+                    f"{sum(len(p) for p in notes.values())} note(s) in "
+                    f"{len(notes)} pattern(s)")
     instr_base = 1 if compact_instruments else 2
     # The bounds pulse engine's phase walk (below, beside the triangle
     # engine's) needs the note byte's bit 7 carried out of the decoder per
@@ -760,7 +800,7 @@ def convert(sid_path: str, log: Logger = print,
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
         slides=slides, status_bit6=status_bit6,
-        variants=variants, steps=slide_steps, arps=ilv_arps,
+        variants=variants, steps=slide_steps, arps=pattern_arps,
         rest_instrument=rest_instrument,
         rest_keyoff=rest_keyoff,
         # Only the testbit family parks a waveform; the envelope-zeroing
@@ -1329,7 +1369,8 @@ def convert(sid_path: str, log: Logger = print,
                          gatetimer_trim=1 if aligned_firstwave else 0,
                          named_firstwave=named_firstwave,
                          pitch_tie_phase=pitch_tie_phase,
-                         arps=ilv_arps,
+                         vibrato_onset=vibrato_onset,
+                         arps=pattern_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
                          tie_restart=tie_restart,

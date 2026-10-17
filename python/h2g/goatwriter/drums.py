@@ -134,6 +134,71 @@ def _arp_block(source: List[tuple], offsets: List[int],
     return left, right
 
 
+def _chord_block(source: List[tuple], chord, multiplier: int,
+                 start: int) -> Optional[tuple]:
+    """One `CMD_SETWAVEPTR` target for the command-table chord (h2g/cmd_chord.py).
+
+    `chord.rel` is the offset on the original's frames 0, 1, 2 of the note
+    relative to its frame-0 pitch, which the pattern note already carries.
+    **Wavetable call `c` is the original's frame `c // hold`, NOT `_arp_block`'s
+    `(c + hold) // hold`.** The init call gates the voice on the pitch it
+    already holds and the wavetable is not executed on it (player.s:908-911),
+    so the note's own pitch is first written by call 0, one frame after our
+    gate -- and the harness's `startup_lag` (8 on Chicken Song, from that
+    pitch frame) puts call 0 against the original's fetch frame. Measured at
+    -t 60 under presets: with `(c + hold) // hold` Chicken Song voice 2 read
+    1616 of 2126 gated frames off pitch by more than half a semitone at that
+    lag; with `c // hold`, 0. The left column
+    is `source`'s program call for call (its waveform repeated where it
+    holds), except the frames below `chord.intro_frames`, which write the
+    player's intro waveform instead (effect bit $01). After the source and the
+    intro, one frame-aligned cycle of `3 * hold` calls loops on itself: three
+    frames is a whole cycle, so the phase across the jump is exact.
+
+    Only plain waveform entries ($10-$DF) are copied; a source with a delay
+    or a command on its left side returns None and the command is cleared
+    (`_resolve_arp_pointers`), which leaves the note playing plain.
+    """
+    body = []
+    for left, _ in source:
+        if left == WAVE_JUMP:
+            break
+        if not 0x10 <= left <= 0xDF:
+            return None
+        body.append(left)
+    if not body:
+        return None
+    hold = max(1, multiplier)
+    held = body[-1]
+
+    def frame(call: int) -> int:
+        return call // hold
+
+    left: List[int] = []
+    right: List[int] = []
+    call = 0
+    while (call < len(body) or frame(call) < chord.intro_frames
+           or call % hold):
+        f = frame(call)
+        w = body[call] if call < len(body) else held
+        left.append(chord.intro if f < chord.intro_frames and chord.intro else w)
+        right.append(chord.rel[f % 3] & 0x7F)
+        call += 1
+    if all(w == held for w in left):
+        # Nothing before the cycle differs from it: the cycle alone, from
+        # call 0, says the same thing in fewer rows (and the table is shared
+        # with every record's own program).
+        left, right, call = [], [], 0
+    tail = start + len(left)
+    for _ in range(3 * hold):
+        left.append(held)
+        right.append(chord.rel[frame(call) % 3] & 0x7F)
+        call += 1
+    left.append(WAVE_JUMP)
+    right.append(tail & 0xFF)
+    return left, right
+
+
 def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
                       multiplier: int = 1,
                       second_note: Optional[int] = None) -> tuple:

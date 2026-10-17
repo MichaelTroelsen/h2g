@@ -30,7 +30,8 @@ from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _note_alternate_note, _two_stage_entries,
                      _two_stage_frames, _two_stage_pitch_seq_entries,
                      _voice_two_stage_entries, _wave_alternate_entries)
-from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries,
+from ..cmd_chord import ChordArp
+from .drums import (_arp_block, _chord_block, _arp_offsets, _sfx_drum_entries,
                     _sfx_drum_pitch_seq_entries)
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
@@ -2150,17 +2151,40 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         entries += list(zip(left, right))
 
     arp_starts: List[int] = []
+    # A chord block depends only on the source's program and the chord, so
+    # two records with one program share it (Hollywood or Bust: 129 chorded
+    # notes over 20 records would not fit one block per pair).
+    chord_blocks: dict = {}
     for record, operand in (arps or []):
-        offsets = _arp_offsets(operand)
+        # A `ChordArp` is the command-table engine's `$82` chord
+        # (h2g/cmd_chord.py); an int is the interleaved engine's `$83`.
+        chord = isinstance(operand, ChordArp)
+        offsets = None if chord else _arp_offsets(operand)
         start = len(entries) + 1
         block = None
-        if offsets is not None and 0 <= record < len(starts) - lead:
+        shared = None
+        if ((chord or offsets is not None)
+                and 0 <= record < len(starts) - lead):
             src = starts[record + lead] - 1
-            block = _arp_block(entries[src:], offsets, multiplier, start)
+            if chord:
+                program = []
+                for left_, _r in entries[src:]:
+                    program.append(left_)
+                    if left_ == WAVE_JUMP or len(program) > 64:
+                        break
+                shared = (tuple(program), operand)
+                if shared in chord_blocks:
+                    arp_starts.append(chord_blocks[shared])
+                    continue
+            block = (_chord_block(entries[src:], operand, multiplier, start)
+                     if chord else
+                     _arp_block(entries[src:], offsets, multiplier, start))
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
             arp_starts.append(0)
             continue
         arp_starts.append(start)
+        if shared is not None:
+            chord_blocks[shared] = start
         entries += list(zip(*block))
     # `tempo_duty_split_plan`'s clones, last, so no record's start moves: the
     # record's own entries at the clone's step. One that does not fit gets

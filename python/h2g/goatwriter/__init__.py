@@ -255,10 +255,12 @@ from .vibrato import (CLASSIC_DEPTH_CMP_TRIM, _classic_gate_delay,
                       _classic_gate_refine, _depth_trimmed,
                       _classic_vibrato_entry, _effect_call_list, _effect_calls,
                       _free_gate_calls, _gate_start_call, _step_calls,
+                      _gate_target_call, _onset_engine, _gate_reachable,
+                      _repitch_after,
                       _table_vibrato_entry, _triangle_rate_shift,
                       _triangle_vibrato_entry,
                       _vibrato_delay, _vibrato_layout)  # noqa: F401
-from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries,  # noqa: F401
+from .drums import (_arp_block, _arp_offsets, _chord_block, _sfx_drum_entries,  # noqa: F401
                     _sfx_drum_pitch_seq_entries)
 from .notes import (_drum_steps_safe, _phase_note, _pitch_seq_entries,
                     _pitch_seq_note_byte, _pitch_seq_notes,
@@ -348,6 +350,7 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
                          STARTUP_RESET_CALLS, StartupPhase,
                          GATE_OFF_FIRSTWAVE, zp_entry_gate,
+                         SUBTUNE_DISPATCH, subtune_zero_entry,
                          zp_speed_first_fetch,
                          _JMP_GATE_FETCH_FAR_WINDOW, _JMP_GATE_PRESCALER,
                          _fetch_names_the_cells,

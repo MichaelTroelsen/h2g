@@ -478,10 +478,59 @@ def _effect_call_list(entries: Optional[List[tuple]], ptr: int, calls: int,
     return out
 
 
+def _gate_target_call(det: Detection, multiplier: int, attack_call: int,
+                      record: Optional[int] = None,
+                      duration_onset: bool = False) -> Optional[int]:
+    """The call the oscillator should first run on: the counter gate's
+    (`_counter_gate_call`), or -- with `duration_onset`, for a DURATION gate
+    (dialect B) -- the original's frame 1, `multiplier + attack_call`.
+
+    A duration gate is a threshold on the note's stored length, decided at
+    the fetch: a note that qualifies runs the update from the frame after
+    its fetch frame. Formula_1_Simulator `$C247 LDA $C4C9,X / AND #$1F /
+    CMP #$03 / BCC $C27B` sits after the counter update at `$C1D6-$C1F6`,
+    which the fetch frame never reaches (`$C077 DEC $C4C6,X / BMI` fetches
+    and leaves by `$C187 JMP $C3F5`), so the first frame the frequency moves
+    is frame 1 -- measured (v0.5.583, 60 s of subtune 0, notes of 10+
+    frames): 22 of 28 vibrato notes move on frame 1, 6 on frame 2 (the
+    free-running counter on the swing's centre at frame 1). The
+    plain program `[41/00 41/00 41/00 FF/00]` withheld calls 1-3 and the
+    frame-1 floor put the oscillator on frame 3."""
+    target = _counter_gate_call(det, multiplier, attack_call, record)
+    if target is not None or not _onset_engine(det, duration_onset):
+        return target
+    return multiplier + attack_call
+
+
+def _onset_engine(det: Detection, duration_onset: bool) -> bool:
+    """Whether `duration_onset` puts this player's oscillator on frame 1: a
+    classic player whose gate is a DURATION threshold, or the LFO-table
+    player, which gates nothing and walks its table on every frame after
+    the fetch (Hollywood_or_Bust, same census: all 120 matched vibrato
+    notes move on frame 1, ours on 19 of them before the option)."""
+    if not duration_onset:
+        return False
+    vg = det.vibrato_gate
+    if det.vibrato_offset is not None:
+        return vg is not None and vg.form == "duration"
+    return det.table_vibrato is not None
+
+
+def _gate_reachable(det: Detection, duration_onset: bool) -> bool:
+    """Whether any record can have a `_gate_target_call`: a counter gate
+    that was read, or an `_onset_engine`."""
+    vg = det.vibrato_gate
+    if (vg is not None and vg.form == "counter"
+            and (vg.gate is not None or vg.table is not None)):
+        return True
+    return _onset_engine(det, duration_onset)
+
+
 def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
                         entries: Optional[List[tuple]] = None,
                         ptr: int = 0, attack_call: int = 1,
-                        record: Optional[int] = None) -> Optional[int]:
+                        record: Optional[int] = None,
+                        duration_onset: bool = False) -> Optional[int]:
     """`vibdelay` the classic loop's own gate asks for, or None.
 
     detect._find_vibrato_gate reads the compare in front of the store. Its
@@ -540,7 +589,8 @@ def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
     No static operand is 0 (detect reads it as UNREAD), so this reaches
     only the stored table.
     """
-    target = _counter_gate_call(det, multiplier, attack_call, record)
+    target = _gate_target_call(det, multiplier, attack_call, record,
+                               duration_onset)
     if target is None:
         return None
     # **Nearest effect call, not the next one.** vibdelay can only start the
@@ -565,7 +615,8 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
                          multiplier: int, row_calls: int,
                          instr_row_calls: Optional[dict] = None,
                          lead: int = 1, no_test_restart: bool = False,
-                         real_firstwave_instruments: tuple = ()) -> dict:
+                         real_firstwave_instruments: tuple = (),
+                         duration_onset: bool = False) -> dict:
     """`vib_ptrs` with each record's counter-gate delay taken against its own
     wavetable program -- the half `_vibrato_layout` cannot know, because the
     wavetable is laid out after it. Unchanged where no counter gate was read.
@@ -577,9 +628,7 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
     it on top would postpone a record whose program withholds the calls.
     """
     mult = max(1, multiplier)
-    vg = det.vibrato_gate
-    if (vg is None or vg.form != "counter" or not vib_ptrs
-            or (vg.gate is None and vg.table is None)):
+    if not vib_ptrs or not _gate_reachable(det, duration_onset):
         return vib_ptrs
     out = {}
     for i, (idx, delay) in vib_ptrs.items():
@@ -589,10 +638,49 @@ def _classic_gate_refine(det: Detection, vib_ptrs: dict,
         own = (instr_row_calls or {}).get(i + lead + 1, row_calls)
         # Same test as `_write_instruments`' firstwave byte.
         real = no_test_restart or (i + lead + 1) in real_firstwave_instruments
+        attack = 0 if real else 1
         got = _classic_gate_delay(det, mult, own, entries, ptr,
-                                  attack_call=0 if real else 1, record=i)
+                                  attack_call=attack, record=i,
+                                  duration_onset=duration_onset)
+        if (got is not None
+                and _counter_gate_call(det, mult, attack, i) is None):
+            # An onset target (`_onset_engine`), not a gate: worth taking
+            # only where nothing re-pitches the note after the oscillator
+            # starts. A program that writes the frequency on a later step
+            # (a waveform-changing one, Deep_Strike's `41/00 01/80 11/00
+            # 01/80 41/00`) zeroes `vibtime` there, so an earlier start
+            # sounds one blip and then restarts from the note.
+            target = _gate_target_call(det, mult, attack, i, duration_onset)
+            calls = _effect_call_list(entries, ptr, target + 0x100, own)
+            start = calls[got - 1] if 0 < got <= len(calls) else None
+            if start is None or _repitch_after(entries, ptr, start,
+                                               target + 0x100):
+                got = None
         out[i] = (idx, delay if got is None else max(1, got))
     return out
+
+
+def _repitch_after(entries: Optional[List[tuple]], ptr: int, start: int,
+                   calls: int) -> bool:
+    """Whether a wavetable step from `ptr` writes the frequency on a call
+    after `start` (and before `calls`), walked as `_effect_call_list`
+    walks it."""
+    wavetime = 0
+    for c in range(1, calls):
+        if not entries or not 0 < ptr <= len(entries):
+            return False
+        wave, note = entries[ptr - 1]
+        if wave <= GT_WAVE_LAST_DELAY and wavetime != wave:
+            wavetime += 1
+            continue
+        wavetime = 0
+        ptr += 1
+        if ptr <= len(entries) and entries[ptr - 1][0] == GT_WAVE_JUMP:
+            ptr = entries[ptr - 1][1]
+        if (c > start and note != GT_WAVE_NO_NOTE
+                and not GT_WAVE_FIRST_CMD <= wave <= GT_WAVE_LAST_CMD):
+            return True
+    return False
 
 
 def _step_calls(entries: List[tuple], ptr: int, calls: int) -> dict:
@@ -633,7 +721,8 @@ def _free_gate_calls(det: Detection, vib_ptrs: dict,
                      instr_row_calls: Optional[dict] = None,
                      lead: int = 1, no_test_restart: bool = False,
                      real_firstwave_instruments: tuple = (),
-                     swelling=(), log=None) -> tuple:
+                     swelling=(), log=None,
+                     duration_onset: bool = False) -> tuple:
     """`(entries, freed)`: the wavetable with each counter-gated record's
     plain program giving its re-pitching steps back to the effects, where
     the program would otherwise hold the frequency over the gate's call.
@@ -686,9 +775,7 @@ def _free_gate_calls(det: Detection, vib_ptrs: dict,
     is the latest reset the program has.)
     """
     mult = max(1, multiplier)
-    vg = det.vibrato_gate
-    if (vg is None or vg.form != "counter" or not vib_ptrs
-            or (vg.gate is None and vg.table is None)):
+    if not vib_ptrs or not _gate_reachable(det, duration_onset):
         return entries, []
     out = list(entries)
     freed: List[int] = []
@@ -697,7 +784,8 @@ def _free_gate_calls(det: Detection, vib_ptrs: dict,
             continue
         gt_number = i + lead + 1
         real = no_test_restart or gt_number in real_firstwave_instruments
-        target = _counter_gate_call(det, mult, 0 if real else 1, i)
+        target = _gate_target_call(det, mult, 0 if real else 1, i,
+                                   duration_onset)
         if target is None:
             continue
         span = []
@@ -1015,7 +1103,8 @@ def _triangle_rate_shift(multiplier: int = 1) -> int:
 
 
 def _table_vibrato_entry(byte: int, tv, multiplier: int,
-                         row_calls: int = 0) -> Optional[tuple]:
+                         row_calls: int = 0,
+                         table_span: bool = False) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the LFO-table format.
 
     The command-table engine's vibrato is a table walked one entry per frame,
@@ -1086,8 +1175,16 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int,
         half = half * (row_calls - 1) / row_calls
     half = max(1, round(half))
     cmp_value = min(0x7F, max(0, half - VIBRATO_CMP_BIAS))
+    # Goattracker's peak-to-peak is `(cmp + 2) * speed` (the even and the
+    # odd `cmp` alike); the player's is the table's span in units. `2 *
+    # peak` is that span only for a symmetric table: with `table_span` the
+    # span read off the table is matched instead (`TableVibrato.spans`).
+    span = 2.0 * peak
+    spans = getattr(tv, "spans", ()) or ()
+    if table_span and index < len(spans) and spans[index]:
+        span = float(spans[index])
     ratio = ((cmp_value + VIBRATO_CMP_BIAS) * (1 << tv.unit_shift)
-             / (2.0 * peak * count))
+             / (span * count))
     rshift = min(max(round(math.log2(ratio)), 0), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
@@ -1098,13 +1195,19 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     lead: int = 1, vibrato_command: bool = False,
                     row_calls: int = 0, effects: bool = False,
                     gate_skip: Optional[int] = None,
-                    instr_row_calls: Optional[dict] = None) -> dict:
+                    instr_row_calls: Optional[dict] = None,
+                    table_span: bool = False) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
 
     `gate_skip` is the reload `O` of an outer gate that is the play routine's
     first instruction with nothing else on its underflow call -- `build_sng`
     passes `outer_gate_skip(sid)` for a player `call_phase.entry_gate`
-    accepts, None for every other. Such a player runs the classic update on
+    accepts with `dispatch=True` (through a subtune dispatch in front of
+    the gate: Formula_1_Simulator, task formula-1-lead-vibrato), None for
+    every other.
+
+    `table_span` matches the LFO table's own peak-to-peak
+    (`TableVibrato.spans`) rather than `2 * peak` (`_table_vibrato_entry`). Such a player runs the classic update on
     `O` calls in `O + 1`, so one update lasts `(O + 1) / O` frames
     (`_classic_vibrato_entry`). A gate that guards only the pattern clock
     leaves the update running every frame, which is why the reload alone is
@@ -1172,7 +1275,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset
         entry_of = lambda b, i: _table_vibrato_entry(
-            b, det.table_vibrato, mult, row_calls)
+            b, det.table_vibrato, mult, row_calls, table_span=table_span)
         engine = "LFO table"
     elif det.triangle_vibrato is not None:
         offset = det.triangle_vibrato
