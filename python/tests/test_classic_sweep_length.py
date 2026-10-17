@@ -156,10 +156,11 @@ def test_tarzans_first_record_sweeps_as_long_as_it_is_told():
     plain, ptrs = _filter_entries(sid, det, n, multiplier=1)
     sized, _ = _filter_entries(sid, det, n, multiplier=1,
                                sweep_calls={min(ptrs): 300})
-    first = plain[:4]
-    assert first[2][0] == FILT_MODULATE and first[3] == (FILT_STOP, 0)
-    step = first[2][1]
-    assert sized[:6] == first[:2] + [(127, step), (127, step), (46, step),
+    first = plain[:5]          # params, params (the strike hold), cutoff, ...
+    assert first[3][0] == FILT_MODULATE and first[4] == (FILT_STOP, 0)
+    step = first[3][1]
+    # one call of the 300 went into the set-cutoff row (_classic_sweep_block)
+    assert sized[:7] == first[:3] + [(127, step), (127, step), (45, step),
                                      (FILT_STOP, 0)]
 
 
@@ -179,7 +180,8 @@ def test_a_table_the_sized_sweeps_overflow_is_the_old_table():
 def test_sanxions_sweep_is_its_longest_gap_in_the_conversion():
     """At the seam, under the shipped presets: record 1's gaps are 6 and 12
     calls, and since `classic_filter_stop` stops the sweep where the voice
-    moves to an unfiltered record the length is the longest gap, 12 (it was 6
+    moves to an unfiltered record the length is the longest gap, 12, minus the call the set-cutoff row
+    carries = 11 (it was 6
     while those stops were the compromise; the original's own sweep is 5
     frames whatever the gap, which `cutoff_sweep` 1.100 -> 1.162 pays for)."""
     import fidelity as F
@@ -188,7 +190,7 @@ def test_sanxions_sweep_is_its_longest_gap_in_the_conversion():
     blob = convert(str(CORPUS / "Sanxion.sid"), log=lambda m: None,
                    **F._preset_opts(doc, "Sanxion.sid"))
     ftbl = parse_sng(blob).tables["FTBL"]
-    assert (12, 28) in ftbl and (FILT_MODULATE, 28) not in ftbl, ftbl
+    assert (11, 28) in ftbl and (FILT_MODULATE, 28) not in ftbl, ftbl
 
 
 def test_commando_is_untouched():

@@ -1746,6 +1746,108 @@ def _attack_hold_pass(patterns: List[List[int]], targets: dict, gate: int,
     return out
 
 
+# --- A slide frame a note ends on: the second program for those notes ----------
+#
+# A written firstwave inherits the pitch the previous note left (see
+# `wave_program._wave_program_entries`, `spans`). `_cut_share` declined the
+# quantised first slide frame of a record for EVERY note of it as soon as one
+# played note ended there -- Auf_Wiedersehen_Monty's record 4, nine 3-frame
+# notes in ~600 -- which cost every longer note the frame's travel gain
+# (travel_ratio 0.9344 -> 0.9308). `cut_note_plan` splits the record in two
+# programs instead: the main block keeps the frame (`keep_slide`), a second
+# one declines it, and `_cut_note_pass` points the notes that can end on it at
+# the second. A record is split only when every such note takes the pointer.
+
+
+def _cut_durations(spans: Optional[dict], frames: list,
+                   row_calls: int) -> set:
+    """The note lengths in rows, among `spans`, whose last play call falls in
+    one of the declined `frames` ((first, last) call ranges)."""
+    if not spans or row_calls <= 0:
+        return set()
+    return {rows for rows in spans
+            if any(a <= rows * row_calls - 1 <= b for a, b in frames)}
+
+
+def _cut_note_pass(patterns: List[List[int]], targets: dict,
+                   tracks: Optional[List[List[int]]] = None,
+                   log=None, stats: Optional[dict] = None
+                   ) -> List[List[int]]:
+    """`CMD_SETWAVEPTR` to the declining program on each note of a `targets`
+    instrument that can end on its declined slide frame.
+
+    `targets` maps a Goattracker instrument number to `(wavetable row of its
+    second program, durations in rows to point)` -- the durations
+    `_cut_durations` read off the played-note histogram. A note's length is
+    read the way `_attack_hold_pass` reads it (its row plus the rests that
+    carry nothing). A note whose block runs to the pattern's end has a length
+    this pattern cannot say, so it is pointed whenever it is no longer than
+    the longest duration: too many pointers cost nothing but a command byte,
+    too few a mis-named attack.
+
+    Counted per instrument into `stats` ({number: {"placed": n, "missed": n}})
+    -- `missed` is a note that wanted the pointer and could not have it (the
+    command column busy, the pattern past the pack limit, the instrument not
+    yet named), which `build_sng` reads as "do not split this record".
+    Changed patterns are COPIES.
+    """
+    if not targets:
+        return patterns
+    entry = _entry_instruments(tracks, patterns) if tracks else {}
+    out: List[List[int]] = []
+    for number, pat in enumerate(patterns):
+        copy = None
+        held = entry.get(number, ())
+        live = next(iter(held)) if len(held) == 1 else 0
+        ambiguous = len(held) > 1 and any(h in targets for h in held)
+        i = 0
+        while i + 3 < len(pat):
+            note, instr = pat[i], pat[i + 1]
+            if instr:
+                live = instr
+            if not GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                i += 4
+                continue
+            end = i + 4
+            while (end + 3 < len(pat) and pat[end] == GT_REST
+                   and (pat[end + 1] == 0
+                        or (pat[end + 1] == live
+                            and pat[end + 2] == CMD_SETSR))):
+                end += 4
+            rows = (end - i) // 4
+            open_end = end + 3 >= len(pat) or pat[end] == 0xFF
+            names = [live] if live else (list(held) if ambiguous else [])
+            wanted = [n for n in names if n in targets
+                      and (rows <= max(targets[n][1], default=-1) if open_end
+                           else rows in targets[n][1])]
+            if wanted:
+                ok = bool(live) and live in wanted
+                cur = copy if copy is not None else pat
+                if ok and (cur[i + 2] or cur[i + 3]):
+                    ok = False
+                if ok:
+                    trial = list(cur)
+                    trial[i + 2] = CMD_SETWAVEPTR
+                    trial[i + 3] = targets[live][0] & 0xFF
+                    if (packed_pattern_size(pattern_rows(trial))
+                            > PACKED_PATTERN_LIMIT):
+                        ok = False
+                    else:
+                        copy = trial
+                for n in (wanted if not ok else [live]):
+                    if stats is not None:
+                        st = stats.setdefault(n, {"placed": 0, "missed": 0})
+                        st["placed" if ok else "missed"] += 1
+            i = end
+        out.append(pat if copy is None else copy)
+    if log and stats:
+        log("Cut-note programs.....: "
+            + ", ".join(f"{n:02X}: {st['placed']} note(s) pointed"
+                        + (f", {st['missed']} missed" if st["missed"] else "")
+                        for n, st in sorted(stats.items())))
+    return out
+
+
 # --- Past-table drum: a `$0000` note whose wave program still sounds ----------
 #
 # `patterns.past_table_rests` reads a note byte that indexes past the player's

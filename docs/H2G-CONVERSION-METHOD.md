@@ -3160,8 +3160,27 @@ lengths, so that cost is inherent to sharing it); ties, `tie_agreement`,
 Auf_Wiedersehen_Monty moves (f983ffa0ef70 -> ba7ef08dbdb1); Pygmies_Revenge
 and Arcade_Classics, the other two written-firstwave `wave_program` files, are
 byte-identical because no played note of theirs ends on a quantised slide
-frame. Exact per-length instruments (a 3-frame clone) would keep the frame for
-the long notes too; not built, the clone machinery is for duty and phase.
+frame.
+
+**Keeping the frame for the longer notes** (task
+keep-auf-wiedersehen-monty-record-4-s, measured at 2b50aee). The sharing cost
+above is avoided by a second program, not by an instrument clone: the record's
+main block is built with `keep_slide` (the quantised count kept on the frame),
+`_wavetable_layout` appends a second block with the frame declined
+(`cut_records` / `cut_starts`), and `_cut_note_pass` writes `CMD_SETWAVEPTR` to
+it on each note that can end on the frame (`_cut_durations`: the played lengths
+whose last call is in a frame `_wave_program_entries` declined, `cut_out`). A
+note whose block runs to its pattern's end is pointed whenever it is no longer
+than the longest such length. `build_sng` splits a record only when a dry run
+of the pass places every wanted pointer (a busy command column, the pack limit
+or an unnamed instrument is a miss and the record keeps the declining program
+for all its notes, the shape before this): Monty's record 5 is split (3 notes
+pointed), its records 3 and 7 stay whole. Measured on Monty subtune 0, -t 180,
+presets: `travel_ratio` 0.9308 -> 0.9344 (`our_travel` 1335003 -> 1340294);
+`our_oscillation` 0.8687 -> 0.8682; melody 0.9876, sequence 0.9684,
+`reversal_ratio`, `tie_ratio` unchanged. Corpus byte-hash under presets: 95
+files, 89 converted, 6 refused, 89 compared, 1 moved (Monty ad6cdd857f20 ->
+8dea0bc5e876); Commando unchanged.
 
 **A vibrating record's slides, at `-S1`, as a portamento chain** (task
 nemesis-counter-gate-age-1-move). Nemesis `$0B09`/`$0C0A`/`$0C5A` moved at

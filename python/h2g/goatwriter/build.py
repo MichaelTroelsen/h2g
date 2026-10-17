@@ -27,6 +27,7 @@ from .filters import (_classic_clearing_instruments, _filter_entries,
                       free_running_start, ilv_filter_routing_plan,
                       sfx_bandpass_plan, _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
+                          _cut_durations, _cut_note_pass,
                           _expanding_vibrato_counter, _expanding_vibrato_pass,
                           legato_tie_clones, legato_tie_rows, note_bit7_rows,
                           past_table_drum_plan, _tied_instrument_envelopes,
@@ -34,6 +35,7 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
 from .vibrato import (_classic_gate_refine, _free_gate_calls,
                       _vibrato_layout)
 from .wavetable import (_wavetable_layout, _write_wavetable)
+from .primitives import _record_row_calls
 from . import arpeggio as _gw_arpeggio
 from . import call_phase as _gw_call_phase
 from . import tempo as _gw_tempo
@@ -1150,6 +1152,44 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                           det.vibrato_gate.gate, tracks, used=used)
         attack_holds = [i for i in attack_holds if i + lead + 1 in used]
     attack_hold_starts: List[int] = []
+    # A record whose first slide frame a played note can end on
+    # (`_cut_share`) keeps the frame for the notes that do not
+    # (`keep_slide`) and gets a second program, declining it, for the ones
+    # that do -- only if the pass can point every one of them.
+    cut_records: List[int] = []
+    cut_starts: List[int] = []
+    cut_targets: dict = {}
+    if stale_spans and wave_program:
+        frames_of = {gt: None for gt in stale_spans}
+        _wavetable_layout(
+            sid, det, instr_used, effects, fmt, table, multiplier,
+            min_notes, lead, two_stage, sfx_drum, wave_program, pitch_seq,
+            note_rows, row_calls, no_test_restart, voice_two_stage,
+            instr_voices, gate_skip, real_firstwave_instruments, None,
+            wave_alternate=wave_alternate, instr_row_calls=instr_row_calls,
+            note_pitches=note_pitches, note_spans=stale_spans,
+            cut_probe=frames_of)
+        durations = {}
+        for gt, frames in frames_of.items():
+            if frames:
+                got = _cut_durations(
+                    stale_spans[gt], frames,
+                    _record_row_calls(instr_row_calls, gt, row_calls))
+                if got:
+                    durations[gt] = got
+        if durations:
+            stats: dict = {}
+            _cut_note_pass(patterns, {gt: (1, d) for gt, d in
+                                      durations.items()}, tracks,
+                           stats=stats)
+            for gt, d in sorted(durations.items()):
+                st = stats.get(gt, {"placed": 0, "missed": 0})
+                if st["placed"] and not st["missed"]:
+                    cut_records.append(gt - lead - 1)
+                    cut_targets[gt] = d
+                elif log:
+                    log(f"Cut-note programs.....: {gt:02X} stays whole "
+                        f"({st['placed']} pointed, {st['missed']} missed)")
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts, arp_starts = _wavetable_layout(
@@ -1174,6 +1214,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         phase_clone_starts=phase_clone_starts, tie_blocks=tie_blocks,
         tie_block_starts=tie_block_starts, attack_holds=attack_holds,
         attack_hold_starts=attack_hold_starts,
+        cut_records=cut_records, cut_starts=cut_starts,
         wave_alternate=wave_alternate, log=log,
         instr_row_calls=instr_row_calls,
         # The byte-code program's `$85` travel at -S1 (`_wave_program_entries`
@@ -1245,6 +1286,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             {i + lead + 1: start
              for i, start in zip(attack_holds, attack_hold_starts) if start},
             det.vibrato_gate.gate, tracks, log)
+    if cut_records:
+        patterns = _cut_note_pass(
+            patterns,
+            {i + lead + 1: (start, cut_targets[i + lead + 1])
+             for i, start in zip(cut_records, cut_starts) if start},
+            tracks, log, stats={})
     # The past-table drum (`past_table_drum_plan`): a KEYOFF the decoder
     # wrote for a `$0000` note becomes a note on a variant of its record
     # whose pitched frames are silent and whose absolute ones sound. After
@@ -1280,6 +1327,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                + phase_clone_starts
                                                + tie_block_starts
                                                + attack_hold_starts
+                                               + cut_starts
                                                + drum_starts) if r])
         if sky is not None:
             patterns = sky.patterns
@@ -1303,7 +1351,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             wave_entries=wave_entries, wave_starts=wave_starts,
             wave_pointers=[r for r in (
                 list(arp_starts) + clone_starts + phase_clone_starts
-                + tie_block_starts + attack_hold_starts + drum_starts) if r])
+                + tie_block_starts + attack_hold_starts + cut_starts
+                + drum_starts) if r])
         if rise is not None:
             patterns = rise.patterns
             if rise.tracks is not None:

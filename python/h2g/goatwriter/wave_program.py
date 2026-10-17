@@ -429,7 +429,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           pitches: Optional[Dict[int, int]] = None,
                           spans: Optional[Dict[int, int]] = None,
                           row_calls: int = 0,
-                          start: Optional[int] = None
+                          start: Optional[int] = None,
+                          cut_out: Optional[list] = None,
+                          keep_slide: bool = False
                           ) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
@@ -510,7 +512,12 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     record's row in play calls. The frame that ENTERS the quantised run is
     written as the note when any played note ends on it (`_cut_share`); a frame
     in the middle of the run keeps its count, because the note between two
-    shifted frames would be a reversal on every longer note.
+    shifted frames would be a reversal on every longer note. `cut_out`, where
+    given, collects the `(first, last)` call range of every frame so declined;
+    `keep_slide` ignores `spans` altogether and keeps the quantised count on
+    that frame -- the program for the notes that do NOT end on it
+    (`note_passes._cut_note_pass`, which points the notes that do at the
+    other one).
 
     **`start`: a program that LOOPS** (`$86 n`, the `$1003` dialect --
     `detect.wave_program_has_jump`). The interpreter jumps to opcode `n` and
@@ -736,9 +743,12 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # already sounds the new note. A quantised slide pitch left there
         # names the next attack a semitone or two off -- Auf_Wiedersehen_Monty's
         # 3-frame notes on `$0F26`, nine attacks, melody 0.9876 -> 0.9830.
-        cut_prone = bool(spans) and not travel and not quantised and _cut_share(
-            spans, row_calls, len(left), len(left) + multiplier - 1
-        ) > SLIDE_CUT_SHARE
+        cut_prone = (bool(spans) and not keep_slide and not travel
+                     and not quantised and _cut_share(
+                         spans, row_calls, len(left), len(left) + multiplier - 1
+                     ) > SLIDE_CUT_SHARE)
+        if cut_prone and cut_out is not None:
+            cut_out.append((len(left), len(left) + multiplier - 1))
         if carried:
             right.append(WAVE_NOTE_KEEP)
         elif cut_prone:

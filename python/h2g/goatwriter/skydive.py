@@ -1501,8 +1501,23 @@ def skydive_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         for key in sorted(set(tie_keys.values()), key=_program_order):
             before = list(table)
             try:
-                prog = skydive_program(*key[0], speed_index, multiplier,
-                                       vib=key[1], speed_row=speed_row)
+                try:
+                    prog = skydive_program(*key[0], speed_index, multiplier,
+                                           vib=key[1], speed_row=speed_row)
+                except OverflowError:
+                    # The full-rate program needs a whole per-call step for
+                    # every store (-S3: k a multiple of 3). The compact
+                    # program steps once a frame at the -S1 rate, which
+                    # always is one; it shares the group's bias so its tail
+                    # can be shared.
+                    if not squeezes(key[0], key):
+                        raise
+                    table[:] = before
+                    gb = group_bias.get(key[0], 0)
+                    prog = skydive_program(
+                        *key[0], lambda k, bias=gb: speed_frame(k, bias),
+                        multiplier, vib=key[1], speed_row=speed_row,
+                        compact=True)
             except OverflowError:
                 table[:] = before
                 tie_declined_now["speed table"] += 1

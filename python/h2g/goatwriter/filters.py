@@ -912,6 +912,35 @@ def _sweep_rows(per_call: int, calls: Optional[int]) -> List[tuple]:
     return rows
 
 
+def _classic_sweep_block(passband: int, resctl: int, cutoff: int,
+                         per_call: int, multiplier: int,
+                         calls: Optional[int]) -> List[tuple]:
+    """Set params, hold the strike frame, set the FIRST swept value, modulate.
+
+    **THE PLAYER NEVER WRITES A NOTE'S START CUTOFF TO $D416.** A fetch frame
+    skips the effects section the filter block sits in, and the fetch
+    resets the voice's accumulator (`LDA #cutoff / STA acc,X`) without
+    writing the chip: the first value the chip sees is `cutoff + step`, a
+    frame after the strike. Sanxion $B3DE (traced with `siddump -w` on
+    $B55B,X): strike frame `8C00` held, next frame `1C00`, then `3800` ...
+    `8C00`, five steps in a six-frame gap. A `[params][set-cutoff start]`
+    head writes `start` on the strike call, so every strike paid the swing
+    to the start value and back (`8C00 -> 0000 -> 1C00` for the player's
+    `8C00 -> 1C00`): `cutoff_sweep` 1.179 on Sanxion, 1.20 on
+    Auf_Wiedersehen_Monty, 1.27 on Knucklebusters.
+
+    The pointer is set on the strike call and its first row runs on that
+    call without moving the chip (gplay.c:265-275), so `multiplier` params
+    rows hold the strike frame, the next one is combined with the set-cutoff
+    row, and that row carries the first stepped value. One frame's worth of
+    modulation moved into the set, so the rows run `multiplier` calls fewer
+    (at least one)."""
+    m = max(1, multiplier)
+    block = [(FILT_SET_PARAMS | passband, resctl)] * (m + 1)
+    block.append((FILT_SET_CUTOFF, (cutoff + per_call * m) & 0xFF))
+    return block + _sweep_rows(per_call, max(1, calls - m) if calls else calls)
+
+
 def _best_sweep_length(gaps: List[tuple]) -> Optional[int]:
     """The length in calls that errs least over a record's occurrences.
 
@@ -938,10 +967,12 @@ def _best_sweep_length(gaps: List[tuple]) -> Optional[int]:
     stop MAJORITY because the same rule on every record moved Sanxion 1.100
     -> 1.364 and Dragons_Lair_Part_II 0.835 -> 0.736, and so did each other
     global variant tried (stops' mean, half-weighted shortfall, a cap at the
-    next strike on any voice): where most gaps lead into another filtered
-    strike the player's sweeps are evidently not the whole gap. Why is not
-    traced; the filter block at Nemesis' $E3AD is skipped on some status
-    bits (`classic-filter-status-bit0-skips-filter`)."""
+    next strike on any voice). **THAT WAS THE START VALUE, NOT THE GAP**
+    (measured at 2b50aee): on Sanxion the player sweeps gap-1 steps and
+    holds, and the conversion's extra travel came from writing the note's
+    start cutoff to $D416 on every strike, which the player never does
+    (`_classic_sweep_block`). With the start hidden a longer length no longer
+    costs a visible swing per strike."""
     best = None
     for length in sorted({g for g, _ in gaps}):
         cost = sum(max(g - length, 0) + (max(length - g, 0) if stop else 0)
@@ -1589,12 +1620,13 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
             block = _clamped_block(filt.passband, resctl, filt.cutoff, step,
                                    per_call)
         else:
-            block = [(FILT_SET_PARAMS | filt.passband, resctl),
-                     (FILT_SET_CUTOFF, filt.cutoff)]
             if per_call:
-                block += _sweep_rows(per_call, (sweep_calls or {}).get(i))
+                block = _classic_sweep_block(
+                    filt.passband, resctl, filt.cutoff, per_call, multiplier,
+                    (sweep_calls or {}).get(i))
             else:
-                block.append((FILT_STOP, 0x00))
+                block = [(FILT_SET_PARAMS | filt.passband, resctl),
+                         (FILT_SET_CUTOFF, filt.cutoff), (FILT_STOP, 0x00)]
         if len(entries) + len(block) > GT_MAX_FILT:
             overflowed = True
             break

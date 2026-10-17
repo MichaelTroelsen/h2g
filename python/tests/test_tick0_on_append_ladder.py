@@ -115,3 +115,35 @@ def test_presets_keep_every_player_and_use_the_rung(presets_run):
     assert "4 of 4 further player(s) appended" in line
     assert RUNG in line
     assert "NOT APPENDED" not in "\n".join(lines)
+
+
+# The exact counts, measured at 2b50aee (pin-the-5-title-tunes-instrument-count).
+# The tests above only bound them by 63; the rung's margin is what protects
+# player 4, so a change pushing the rung's output toward 63 fails here before
+# player 4 is dropped.
+PRESETS_INSTRUMENTS = 48
+COMPACT_OFF_INSTRUMENTS = 50
+COMPACT_OFF_INSTRUMENTS_NO_RUNG = 68
+
+
+def test_presets_instrument_count_is_pinned(presets_run):
+    _, lines = presets_run
+    assert _last_appended_instruments(lines) == PRESETS_INSTRUMENTS
+
+
+def test_compact_off_instrument_count_is_pinned(compact_off):
+    _, lines = compact_off
+    assert _last_appended_instruments(lines) == COMPACT_OFF_INSTRUMENTS
+
+
+def test_the_rung_leaves_a_margin_below_the_cap(compact_off, presets_run):
+    for _, lines in (compact_off, presets_run):
+        assert GT_CAP - _last_appended_instruments(lines) >= 10
+
+
+def test_the_unrung_overflow_count_is_pinned(compact_off_no_rung):
+    """Without the rung: 68 with compact off, so the gap the rung closes
+    (68 -> 50) is a number, not a story."""
+    _, lines = compact_off_no_rung
+    assert (f"*** 4 NOT APPENDED: {COMPACT_OFF_INSTRUMENTS_NO_RUNG} "
+            f"instruments > {GT_CAP} ***") in lines

@@ -95,5 +95,6 @@ def test_nemesis_sweeps_128_calls_in_the_conversion():
     blob = convert(str(CORPUS / "Nemesis_the_Warlock.sid"), log=lambda m: None,
                    **F._preset_opts(doc, "Nemesis_the_Warlock.sid"))
     ftbl = parse_sng(blob).tables["FTBL"]
-    assert ((127, 2) in ftbl and (1, 2) in ftbl
+    # 128 calls less the one the set-cutoff row carries (_classic_sweep_block)
+    assert ((127, 2) in ftbl and (1, 2) not in ftbl
             and (57, 2) not in ftbl and (32, 2) not in ftbl), ftbl

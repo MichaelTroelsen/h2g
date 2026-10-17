@@ -132,18 +132,32 @@ def test_the_tie_window_is_pointed_and_writes_every_call_at_s2(
 
 
 @needs_corpus
-def test_the_tie_window_is_declined_at_s3_for_the_speed_table(monkeypatch):
+def test_the_tie_window_takes_the_compact_program_at_s3(monkeypatch):
     """-S3: store k's per-call step is `$100 * k / 3`, not a whole number of
     frequency units for k not a multiple of 3 (`skydive_speed` None), so the
-    full-rate tie program cannot be written; only the compact program (one
-    -S1 step a frame) exists there, and the tie window does not use it. The
-    decline is counted and the rows after the ties are left alone. Opened as
-    a follow-up: a compact tie program."""
-    plan, lines, _t, _w = _plan(monkeypatch, 3)
+    full-rate tie program cannot be written. The tie window falls back to the
+    compact program (one -S1 step a frame), pointed at from the same rows."""
+    multiplier = 3
+    plan, lines, table, wave = _plan(monkeypatch, multiplier)
+    assert plan is not None
     log = [m for m in lines if m.startswith("Skydive (bit $02)")][0]
-    assert "after a tie: 0 row(s)" in log and "declined: 1 speed table" in log
+    assert "after a tie: 2 row(s)" in log, log
+    assert "declined: 1 speed table" in log, log      # the full layout first
+    wave = wave + plan.entries
+    if plan.base is not None:
+        wave = plan.base + plan.entries
+
+    def index(k):
+        return table.index(S.skydive_speed(k)) + 1
+
+    want = S.skydive_program(0, 35, True, index, multiplier,
+                             compact=True)[:-1]
+    got = []
     for p, r in TIE_NEXT_ROWS:
-        assert plan.patterns[p][4 * r + 2] != CMD_SETWAVEPTR, (p, r)
+        cell = plan.patterns[p][4 * r:4 * r + 4]
+        assert cell[2] == CMD_SETWAVEPTR, (p, r, cell)
+        got.append(_run(wave, cell[3]))
+    assert got == [want, want]
 
 
 @needs_corpus

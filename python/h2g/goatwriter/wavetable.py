@@ -68,7 +68,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        arp_gate_phase: Optional[int] = None,
                        hold_travel: bool = False,
                        pitches: Optional[dict] = None,
-                       spans: Optional[dict] = None) -> tuple:
+                       spans: Optional[dict] = None,
+                       cut_out: Optional[list] = None,
+                       keep_slide: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -197,7 +199,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                      hold_travel=hold_travel,
                                      pitches=pitches,
                                      spans=spans, row_calls=row_calls,
-                                     start=start)
+                                     start=start, cut_out=cut_out,
+                                     keep_slide=keep_slide)
         if prog is not None:
             return prog
 
@@ -1872,6 +1875,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       phase_block_probe: Optional[dict] = None,
                       attack_holds: Optional[List[int]] = None,
                       attack_hold_starts: Optional[list] = None,
+                      cut_records: Optional[List[int]] = None,
+                      cut_starts: Optional[list] = None,
+                      cut_probe: Optional[dict] = None,
                       wave_alternate: bool = False,
                       log=None,
                       instr_row_calls: Optional[dict] = None,
@@ -1951,7 +1957,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
     def record_entries(i: int, start: int, budget: int,
                        step: Optional[int] = None,
                        hold_attack: bool = False,
-                       phase=None, toggled: bool = False) -> tuple:
+                       phase=None, toggled: bool = False,
+                       cut_out: Optional[list] = None,
+                       keep_slide: bool = False) -> tuple:
         # `phase` is a phase clone's residue: an int is the fixed arp's
         # (`arp_phase`), a tuple bit $10's phase cells (`pitch_phase`,
         # `pitch_seq_phase_split_plan`), a `GatePhase` the gated nibble
@@ -2036,7 +2044,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                   pitches=(None if note_pitches is None
                                            else note_pitches.get(gt_number)),
                                   spans=(None if note_spans is None
-                                         else note_spans.get(gt_number)))
+                                         else note_spans.get(gt_number)),
+                                  cut_out=cut_out,
+                                  keep_slide=keep_slide)
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is
@@ -2061,12 +2071,26 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                 else ((got,),) if isinstance(got, int)
                 else tuple(tuple(side) for side in got))
         return entries, starts, []
+    if cut_probe is not None:
+        # `cut_note_plan`'s question: the call ranges of the slide frames a
+        # played note can end on, per record, from the program that declines
+        # them. Answered into `cut_probe` ({GT number: [(first, last)]}).
+        for gt_number in list(cut_probe):
+            i = gt_number - lead - 1
+            frames: list = []
+            if 0 <= i < n:
+                record_entries(i, 1, _gw_constants.GT_MAX_TABLELEN,
+                               cut_out=frames)
+            cut_probe[gt_number] = frames
+        return entries, starts, []
+    cut_split = set(cut_records or ())
     for i in range(n):
         start = len(entries) + 1
         reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
         budget = max(WAVE_ENTRIES_PER_INSTR,
                      _gw_constants.GT_MAX_TABLELEN - len(entries) - reserved)
-        got = record_entries(i, start, budget)
+        got = record_entries(i, start, budget,
+                             keep_slide=i in cut_split)
         if isinstance(got, int):
             # A residue the library holds whole: the record starts INSIDE it.
             starts.append(got)
@@ -2200,6 +2224,26 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
             continue
         if attack_hold_starts is not None:
             attack_hold_starts.append(start)
+        entries += list(zip(*block))
+    # `cut_note_plan`'s second programs, last: the record's own block with
+    # the first slide frame declined (the program the notes that end on it
+    # are pointed at by `_cut_note_pass`). The record's main block, laid out
+    # above, keeps that frame. A record with no room gets start 0 and the
+    # caller keeps it whole on the declining program.
+    for i in (cut_records or []):
+        start = len(entries) + 1
+        block = None
+        if 0 <= i < n and len(entries) < _gw_constants.GT_MAX_TABLELEN:
+            room = _gw_constants.GT_MAX_TABLELEN - len(entries)
+            block = record_entries(i, start, room)
+            if isinstance(block, int):
+                block = None
+        if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
+            if cut_starts is not None:
+                cut_starts.append(0)
+            continue
+        if cut_starts is not None:
+            cut_starts.append(start)
         entries += list(zip(*block))
     return entries, starts, arp_starts
 
