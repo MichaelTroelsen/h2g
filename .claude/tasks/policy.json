@@ -1,0 +1,10 @@
+{
+  "max_open": 60,
+  "max_opened_per_record": 1,
+  "admit_re": "(\\d*\\.\\d+|\\d+)\\s*(->|→)\\s*(\\d*\\.\\d+|\\d+)",
+  "chore_re": "^(\\[\\w+\\]\\s*)?(census|audit|optional|count |list every|record in|add a docs|docs/|correct the|update the|re-?(measure|take|check|grade|run)|check (whether|why)|measure (whether|how)|decide whether|pin |promote |fix the syntaxwarning|after (the )?(merge|merging|sibling))",
+  "hold_re": "ON HOLD|DIGI file|python/hold\\.py",
+  "listen_re": "listen|verdict|by ear|audible|sign-off",
+  "listen_task_id": "listen-current-builds-2026-10",
+  "keep_ids": []
+}
