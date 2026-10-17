@@ -188,6 +188,11 @@ class Detection:
     # the fixed form, and where there is no nibble block.
     arp_nibble_period: Optional["NibbleArpPeriod"] = None
     effect_drum: bool = False   # bit $01: pitch sweep down, then noise
+    # Bit $01 in Tarzan's dialect (`DRUM_FALL16_SHAPE`): from the note's
+    # second tick the 16-bit frequency falls by this many units a frame and
+    # the gate is masked off. 0 where the block is absent. Consulted only
+    # where `effect_drum` matched nothing.
+    drum_fall_step: int = 0
     # Instrument-record offset of the byte that enables the player's per-call
     # re-assert of $D400/$D401 from its own note table, or None where the
     # player has no such block. **This is what decides whether a bit-$01 drum
@@ -2116,6 +2121,14 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
+    if not det.effect_drum:
+        # A fallback spelling of bit $01, consulted only where Warhawk's
+        # drum matched nothing.
+        det.drum_fall_step = _find_drum_fall16(sid, det)
+        if det.drum_fall_step:
+            log(f"Effect bit $01..........: frequency falls "
+                f"${det.drum_fall_step:04X} a frame from the note's second "
+                f"tick, gate off (16-bit drum fall)")
     if not det.effect_rise:
         det.effect_fall = _find_effect_fall(sid, det)
         if det.effect_fall is not None:
@@ -5274,6 +5287,48 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # PULSE_LO_SHAPES for the zero-page dialect (Samantha Fox, Spellbound).
     pulse_lo = _pulse_lo_block(sid.data, load) is not None
     return rise, arp, drum, pulse_lo, arp_up
+
+
+# Bit $01 in Tarzan's dialect: a drum whose fall is a 16-bit subtract rather
+# than Warhawk's `DEC freqhi`. Tarzan $57EA, the only corpus file in this
+# spelling (Flash_Gordon $132C has the same arithmetic but Warhawk's two BEQ
+# guards, so `effect_drum` already reads it):
+#
+#     57EA  AD 06 5A  LDA effect
+#           29 01     AND #$01 / BEQ out
+#           BD FA 59  LDA freqhi,X / BEQ out   ; the fall stops at hi = 0
+#           BD C0 59  LDA ticks,X              ; dead load (no guard)
+#           BD C3 59  LDA dur,X / AND #$1F / SEC / SBC #$01
+#           DD C0 59  CMP ticks,X / BCC noise  ; tick 0 of the note: no fall
+#           BD FD 59  LDA freqlo,X / SBC #$80 / STA freqlo,X
+#           B0 03     BCS / DEC freqhi,X       ; 16-bit: $0080 a frame
+#           A9 FE     LDA #$FE / STA gatemask,X  ; gate off while it falls
+#
+# `ticks` is `dur & $1F` at the fetch and decrements once a tick, so the fall
+# runs from the first frame of the note's SECOND tick to its end (and from
+# frame 1 of a one-tick note, where `dur - 1` borrows to $FF). The play
+# routine writes $D404 as `wave & gatemask` and $D400/1 from the shadows
+# after every effect block ($58C6), so a later block that rewrites the
+# shadows (bit $08's note alternation, bit $40's re-assert) wins.
+DRUM_FALL16_SHAPE = ("29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? BD ?? ?? 29 1F 38 "
+                     "E9 01 DD ?? ?? 90 ?? BD ?? ?? E9 ?? 9D ?? ?? B0 ?? "
+                     "DE ?? ?? A9 FE 9D")
+# Offset of the `SBC #step` operand into DRUM_FALL16_SHAPE.
+DRUM_FALL16_AT_STEP = 29
+
+
+def _find_drum_fall16(sid: SidFile, det: Detection) -> int:
+    """The per-frame step of Tarzan's 16-bit drum fall, or 0."""
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return 0
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    at = search_file(sid.data, f"{load} {DRUM_FALL16_SHAPE}")
+    if at < 1:
+        return 0
+    lead = 2 if zp else 3
+    return sid.data[at + lead + DRUM_FALL16_AT_STEP]
 
 
 # Hubbard's own "skydive" -- bit $02 of the effect byte read as the

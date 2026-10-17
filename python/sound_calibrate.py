@@ -708,7 +708,7 @@ def convert_at(version: str, sid: Path, workdir: Path, gt2reloc: str,
         hist_mult = F._preset_multiplier(hist_doc, sid.name)
     except (OSError, json.JSONDecodeError):
         hist_mult = multiplier
-    packed = F.pack_sid(blob, workdir / sha, gt2reloc, hist_mult)
+    packed = F.pack_sid(blob, workdir / sha, gt2reloc, hist_mult, original=sid)
     return None if packed is None else Converted(sng=out, sid=packed)
 
 
@@ -765,7 +765,7 @@ def convert_as_measured(version: str, sid: Path, workdir: Path,
     blob, _ = F.legalise_restarts(out.read_bytes())
     pack_dir = workdir / f"{sha}m"
     pack_dir.mkdir(parents=True, exist_ok=True)
-    packed = F.pack_sid(blob, pack_dir, gt2reloc, mult)
+    packed = F.pack_sid(blob, pack_dir, gt2reloc, mult, original=sid)
     return None if packed is None else Measured(sng=out, sid=packed, multiplier=mult)
 
 

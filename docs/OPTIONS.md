@@ -2797,6 +2797,35 @@ files (see the comment at `noise` in `_wavetable_entries`), which is why it is
 per song. Census, A/B and the files it is proposed for: run record
 `commando-arp-one-frame-gate`. `tests/test_drum_gate_off.py`.
 
+## `--drum-fall` (Tarzan's bit-$01 drum: the pitch falls, the gate opens)
+
+Tarzan's player has its own spelling of the bit-$01 drum (`$57EA`,
+`detect.DRUM_FALL16_SHAPE`, the only corpus file in it): from the first frame
+of a note's second tick it subtracts `$0080` from the 16-bit frequency every
+frame and masks the gate off, until the note ends or the high byte reaches
+zero. Warhawk's two-guard shape does not match it, so the converter read no
+drum there and held the pitch flat with the gate on to the note's last tick --
+the user's "the base drum is a bit off" on voice 3 (the `$0908` kick, which
+falls `$1168 -> $09E8`, about ten semitones, over 15 frames).
+
+The option puts a `CMD_SETWAVEPTR` on the row after each drum note into a
+head that clears the gate (`wave & $FE`, frequency kept) and steps two, then
+a shared chain of single `$0080` steps ending where the player's own
+high-byte guard would stop the lowest pitch the row is played at
+(`goatwriter/drum_fall.py`). It starts on a row rather than after a wavetable
+delay because Tarzan's subtunes tick at different speeds. The fall's first
+frame is one step high; every later frame is the player's (subtune 0, 120 s:
+2739 of 2740 fall frames exact, gate off on the right frame on all 1052 hits).
+
+**It is a trade, per song, off by default.** Goattracker's init call writes
+`$D404` alone (see `--pitch-lead-tie`), so the next note's first frame now
+sounds the FALLEN pitch where it sounded the unfallen one, and every
+attack-named column reads that frame: at 03eb34f + the option, `-t 180`,
+presets, Tarzan's melody 99% -> 42%, sequence 99% -> 44%, pitch 100% -> 88%,
+against travel 0.31x -> 0.83x and bend 0.29x -> 0.54x (historical).
+`--pitch-lead-tie` cannot lead a two-row note's successor: the row before it
+carries the fall's pointer. Adopting it waits on the user's A/B.
+
 ## `--regrid` (a row that is not a whole number of play calls)
 
 A Goattracker row is a whole number of play calls, so a player whose row is

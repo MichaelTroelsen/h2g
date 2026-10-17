@@ -683,6 +683,14 @@ EXCLUDED_FROM_ALWAYS = {
     # refused corpus-wide for melody on seven files. Not in FIDELITY_TOGGLES.
     # A song entry `"drum_gate_off": true`.
     "drum_gate_off",
+    # `drum_fall`: Tarzan's 16-bit bit-$01 drum fall (goatwriter.drum_fall).
+    # Off by default and per song: a trade -- the fall and gate-off are the
+    # player's, but the next note's init call sounds the fallen frequency
+    # (task tarzan-bass-drum-pitch-fall, 03eb34f + patch, -t 180, presets:
+    # melody 99% -> 42%, travel 0.31x -> 0.83x; historical). Not in
+    # FIDELITY_TOGGLES, as `pitch_lead_tie` is not. A song entry
+    # `"drum_fall": true`.
+    "drum_fall",
 }
 
 
@@ -1707,7 +1715,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         return result
 
     def _score(blob: bytes):
-        packed = F.pack_sid(blob, workdir, gt2reloc, multiplier)
+        packed = F.pack_sid(blob, workdir, gt2reloc, multiplier,
+                            original=sid_path)
         if packed is None:
             return None
         dump = _dump(packed, ours_sub)
@@ -1758,7 +1767,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # numbering does line up is untouched.
     probe = convert(str(sid_path), log=lambda m: None, **base, **FIXED)
     probe, _ = F.legalise_restarts(probe)
-    packed = F.pack_sid(probe, workdir, gt2reloc, multiplier)
+    packed = F.pack_sid(probe, workdir, gt2reloc, multiplier,
+                        original=sid_path)
     # A pinned pair is established evidence, not a guess to re-search.
     if packed is not None and not pinned:
         best = None

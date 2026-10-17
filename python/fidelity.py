@@ -102,6 +102,7 @@ from h2g.patterns import GT_ORDER_RESTART, GT_REPEAT
 from h2g.sidfile import find_freq_table, load_sid
 
 import attack_lateness
+import call_rate
 import vicetrace
 
 # Defaults are the tools as they sit on this machine; every one is overridable
@@ -802,7 +803,8 @@ def greloc_export(lengths: list[tuple[int, int, int]]) -> dict:
 
 
 def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC,
-             multiplier: int = 1, pulse_skip: bool = False) -> Path | None:
+             multiplier: int = 1, pulse_skip: bool = False,
+             original: Path | None = None) -> Path | None:
     """Run gt2reloc, the standalone form of Goattracker's F9 packer.
 
     Returns the packed .sid, or None if gt2reloc refused. Its exit code is
@@ -843,6 +845,16 @@ Stock siddump cannot see it. It calls the play routine `seconds * 50`
     (One Man and his Droid). It costs raster time on real hardware, which is
     what the optimization is for; `pulse_skip=True` restores it for an A/B.
 
+    **`original` carries the original's call rate into the packed bytes.**
+    gt2reloc writes every subtune on the VBI at -S1 and its stub at the VBI
+    rate times -S above it (greloc.c:1606-1659), so a CIA-timed original
+    (Confuzion, Human_Race: PSID speed bit set, 59.996 Hz) came back 1.1969x
+    slow -- invisible to every siddump column, heard by ear 2026-10-17. Given
+    the original .sid, the packed file is retimed per subtune by
+    `call_rate.retime_packed`; a VBI original's bytes are untouched. Pass it
+    wherever the original is known; `call_rate_compare` (the `rate` column)
+    reads the result back.
+
     Options must follow both filenames. gt2reloc reads argv[1] and argv[2]
     positionally, so a leading `-S2` is taken as the input filename and the run
     writes nothing -- silently, indistinguishable from any other refusal.
@@ -860,7 +872,52 @@ Stock siddump cannot see it. It calls the play routine `seconds * 50`
                        capture_output=True, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return None
-    return dst if dst.exists() else None
+    if not dst.exists():
+        return None
+    if original is not None:
+        b = dst.read_bytes()
+        fixed = call_rate.retime_packed(b, original_periods(original, b),
+                                        multiplier)
+        if fixed != b:
+            dst.write_bytes(fixed)
+    return dst
+
+
+def our_to_original_subtune(sid: Path, our_sub: int) -> int:
+    """The original's subtune OUR subtune `our_sub` was converted from:
+    the diagonal, except where `SUBTUNE_COUNTERPART` pins the pair."""
+    pin = SUBTUNE_COUNTERPART.get(Path(sid).name)
+    if pin is not None and our_sub == pin[1]:
+        return pin[0]
+    return our_sub
+
+
+def original_periods(sid: Path, packed: bytes) -> list[int | None]:
+    """`call_rate.original_call_period` for each subtune the packed file
+    carries, read at the original subtune each was converted from."""
+    songs = int.from_bytes(packed[0x0E:0x10], "big")
+    return [call_rate.original_call_period(sid, our_to_original_subtune(sid, i))
+            for i in range(songs)]
+
+
+def call_rate_compare(sid: Path, packed: Path, sub: int, our_sub: int,
+                      multiplier: int) -> dict:
+    """The `rate` column: how fast OUR subtune ticks against the original's,
+    under the PAL clock both are rendered at. 1.00 is right; Confuzion read
+    0.84 before `pack_sid(original=...)` (its CIA speed bit was dropped).
+
+    siddump cannot see this -- it calls both sides once per row whatever
+    either header says -- so every trace column agrees on a tune played at
+    the wrong speed; only this column and the renders know. None (`-`) where
+    the original's rate is not in its header (`call_rate.original_call_period`).
+    """
+    orig = call_rate.original_call_period(sid, sub)
+    if orig is None:
+        return {"call_rate": None}
+    ours = call_rate.packed_call_period(packed.read_bytes(), our_sub) * max(multiplier, 1)
+    return {"call_rate": orig / ours,
+            "orig_call_hz": round(call_rate.PAL_CLOCK / orig, 3),
+            "our_tick_hz": round(call_rate.PAL_CLOCK / ours, 3)}
 
 
 # --------------------------------------------------------------------------
@@ -6865,6 +6922,16 @@ DIMENSIONS = (
               "TO A CLOCK**, as `aud` is: a level envelope at the wrong tempo "
               "is still the right level frame for frame; read `len` and "
               "`drift` for that"),
+    # Not a register either: the call rate is in the PSID header and the CIA
+    # stub, which siddump ignores on both sides (siddump.c:309/325) -- so
+    # until this column a CIA-timed original packed on the VBI (Confuzion,
+    # Human_Race, 1.1969x slow) read melody 100% and drift +0.0.
+    Dimension("call_rate", "rate", ("PSID speed field, CIA timer A",), "ratio",
+              "how fast our subtune ticks against the original's on PAL, "
+              "from the two headers and gt2reloc's CIA stub "
+              "(`call_rate.py`): 1.00 is right, below it we play slow. `-` "
+              "where the original's header does not hold its rate (RSID, "
+              "NTSC-only, or a CIA tune whose timer write is unread)"),
 )
 
 
@@ -7586,11 +7653,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         if our_sub in exp["stub"]:      # `stub` indexes OUR subtunes
             row["traced_subtune_dropped"] = True
 
-    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier, original=sid)
     if packed is None:
         row["status"] = "not packed"
         row["detail"] = "gt2reloc wrote no .sid"
         return row
+    # Read off the two headers, not the traces: siddump runs both sides at
+    # one call a row, so no trace column can see a wrong call rate.
+    row.update(call_rate_compare(sid, packed, sub, our_sub, multiplier))
 
     local_orig = workdir / "o.sid"
     shutil.copyfile(sid, local_orig)
@@ -8023,6 +8093,23 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
 
 def _fmt_pct(x) -> str:
     return "-" if x is None else f"{100 * x:.0f}%"
+
+
+# A tick-rate error this small is a latch rounding (greloc's `$4CC7 / -S`),
+# not a different tempo; anything past it is flagged `!` and summarised.
+RATE_TOLERANCE = 0.001
+
+
+def rate_mismatch(r: dict) -> bool:
+    v = r.get("call_rate")
+    return v is not None and abs(v - 1) > RATE_TOLERANCE
+
+
+def _fmt_rate(r: dict) -> str:
+    v = r.get("call_rate")
+    if v is None:
+        return "-"
+    return f"{v:.2f}" + ("!" if rate_mismatch(r) else "")
 
 
 def blindness_section(rows: list[dict]) -> list[str]:
@@ -8526,9 +8613,16 @@ def report(rows: list[dict], args) -> str:
         "* **loud** -- per-frame agreement of the rendered loudness envelope; "
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
+        "* **rate** -- how fast our subtune ticks against the original's on "
+        "PAL, read from the PSID speed field and gt2reloc's CIA stub on both "
+        "sides (`call_rate.py`); `!` past 0.1%. **Every siddump column is "
+        "blind to it**: siddump calls both sides once a row whatever either "
+        "header says, so a CIA-timed original packed on the VBI read melody "
+        "100% at 0.84x speed. `-` where the original's header does not hold "
+        "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8573,7 +8667,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('passband_agree'))} | "
             f"{_fmt_pct(r.get('passband_note'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
-            f"{status} |")
+            f"{_fmt_rate(r)} | {status} |")
 
     if measured:
         n = len(measured)
@@ -8589,6 +8683,15 @@ def report(rows: list[dict], args) -> str:
             f"- mean sequence similarity: **{_fmt_pct(sum(r['sequence'] for r in measured) / n)}**",
             f"- mean pitch overlap: **{_fmt_pct(sum(r['pitch_jaccard'] for r in measured) / n)}**",
         ]
+        slow = [r for r in measured if rate_mismatch(r)]
+        out.append(
+            f"- call rate: **{len(slow)}** file(s) tick at a rate other than "
+            "the original's"
+            + (": " + "; ".join(
+                f"{r['file']} {r['our_tick_hz']} Hz against "
+                f"{r['orig_call_hz']} Hz" for r in slow) if slow else "")
+            + f"; {sum(r.get('call_rate') is None for r in measured)} "
+            "unread (`-`)")
         waved = [r for r in measured if r.get("wave") is not None]
         if waved:
             o_noise = sum(r.get("orig_noise_frames", 0) for r in waved)
@@ -10623,7 +10726,7 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     except Exception as exc:                                  # noqa: BLE001
         return f"{sid.name}: will not convert -- {type(exc).__name__}: {exc}\n"
     sng, _ = legalise_restarts(sng)
-    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier, original=sid)
     if packed is None:
         return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
     local = workdir / "o.sid"
@@ -10864,7 +10967,8 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
         return f"{sid.name}: will not convert -- {type(exc).__name__}: {exc}\n"
     lengths = song_lengths(sng)
     sng, patched = legalise_restarts(sng)
-    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier,
+                      original=sid)
     if packed is None:
         return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
     local = workdir / "o.sid"
@@ -11347,7 +11451,7 @@ def attack_census_row(sid: Path, workdir: Path, opts: dict, args,
             wd = workdir / f"ours_v{v}"
             wd.mkdir(parents=True, exist_ok=True)
             packed = pack_sid(attack_lateness.swap_sng_voice(sng, v), wd,
-                              args.gt2reloc, multiplier)
+                              args.gt2reloc, multiplier, original=sid)
             if packed is None:
                 rec.error = f"gt2reloc wrote no .sid for voice {v}"
                 return rec
@@ -11501,7 +11605,8 @@ def _run(p, args, workdir: Path) -> int:
                     for o in (base, forced_opts):
                         blob, _n = legalise_restarts(
                             convert(str(sid), log=lambda m: None, **o))
-                        packed = pack_sid(blob, workdir, args.gt2reloc, mult)
+                        packed = pack_sid(blob, workdir, args.gt2reloc, mult,
+                                          original=sid)
                         if packed is None:
                             raise RuntimeError("gt2reloc wrote no .sid")
                         arms.append(run_siddump(packed, args.seconds, our_sub,

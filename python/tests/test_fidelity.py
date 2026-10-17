@@ -1772,6 +1772,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # WITHOUT --sound legitimately omits them, which is what
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
+                 call_rate=1.0,
                  sound_frames=100, sound_lag_ms=0.0,
                  orig_octave_split_frames=0, our_octave_split_frames=0)
     return r

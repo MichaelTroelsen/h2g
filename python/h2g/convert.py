@@ -277,7 +277,8 @@ def convert(sid_path: str, log: Logger = print,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
             pitch_lead_tie: bool = False,
-            drum_gate_off: bool = False) -> bytes:
+            drum_gate_off: bool = False,
+            drum_fall: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -488,6 +489,18 @@ def convert(sid_path: str, log: Logger = print,
     as the original's does, instead of riding its decay. Off by default
     and per song; byte-inert on a file with no such record. See
     goatwriter.wavetable._wavetable_entries.
+
+    drum_fall emits bit $01's 16-bit drum fall where the player has it
+    (`detect.DRUM_FALL16_SHAPE`, Tarzan only): on the row after each drum
+    note a CMD_SETWAVEPTR into a head that clears the gate and a chain of
+    `F2` steps of the player's `$0080` a frame, bounded where the player's
+    own high-byte guard stops it (`goatwriter.drum_fall`). Needs `effects`
+    and gts5. Off by default and per song: it is a trade -- the fall and the
+    gate-off are the player's frame for frame, but the NEXT note's init call
+    (which writes `$D404` alone) now sounds the fallen frequency where it
+    sounded the unfallen one, and every attack-named column reads that
+    frame (Tarzan at -t 180 under presets: melody 99% -> 42%, travel 0.31x
+    -> 0.83x).
 
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
@@ -1323,6 +1336,7 @@ def convert(sid_path: str, log: Logger = print,
                          wave_reserve=reserve,
                          drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,
+                         drum_fall=drum_fall,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence))
 

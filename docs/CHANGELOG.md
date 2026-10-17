@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.585 — 2026-10-17
+
+- CIA-timed tunes pack at the original's rate; drum_fall option
+
 ## 0.5.584 — 2026-10-17
 
 - drum_gate_off: drum/arp records gate off after the attack (off by default)

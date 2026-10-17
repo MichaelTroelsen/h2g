@@ -291,7 +291,8 @@ def test_pack_into_creates_the_directory_the_packer_writes_into(tmp_path):
     import approvals as AP
     called = {}
 
-    def fake_pack_sid(sng, workdir, exe, multiplier=1, pulse_skip=False):
+    def fake_pack_sid(sng, workdir, exe, multiplier=1, pulse_skip=False,
+                      original=None):
         # Asserts the caller's guarantee at the moment pack_sid would rely on
         # it, rather than after the fact.
         called["dir_existed"] = workdir.is_dir()

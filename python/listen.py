@@ -1024,7 +1024,7 @@ def main(argv=None) -> int:
         # is deliberately excluded.
         seconds = render_window(r, args.seconds)
         packed = pack_sid(legalise_restarts(sng)[0], workdir, args.gt2reloc,
-                          multiplier)
+                          multiplier, original=src)
         if packed is None:
             print(f"  {name:44} not packed", file=sys.stderr)
             lines += [f"## {stem} — *{label}*", "",

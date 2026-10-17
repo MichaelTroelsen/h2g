@@ -231,7 +231,7 @@ def _structure_of(orig_trace, trace, seconds: int) -> dict:
 
 
 def pack_into(blob: bytes, workdir: Path, tag: str, gt2reloc: str,
-              multiplier: int) -> Path | None:
+              multiplier: int, original: Path | None = None) -> Path | None:
     """Legalise and pack `blob` into `workdir / tag`, CREATING that directory.
 
     **THE mkdir IS THE WHOLE FUNCTION AND IT IS NOT DEFENSIVE.** `pack_sid`
@@ -249,7 +249,7 @@ def pack_into(blob: bytes, workdir: Path, tag: str, gt2reloc: str,
     """
     b, _ = F.legalise_restarts(blob)
     (workdir / tag).mkdir(parents=True, exist_ok=True)
-    return F.pack_sid(b, workdir / tag, gt2reloc, multiplier)
+    return F.pack_sid(b, workdir / tag, gt2reloc, multiplier, original=original)
 
 
 def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
@@ -292,8 +292,9 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
     sub, our_sub, _pinned = F.resolve_pair(sid, "auto")
     orig_trace = F.run_siddump(sid, seconds, sub, siddump)
 
-    p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult)
-    p_app = pack_into(approved_sng.read_bytes(), workdir, "app", gt2reloc, mult)
+    p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult, sid)
+    p_app = pack_into(approved_sng.read_bytes(), workdir, "app", gt2reloc, mult,
+                      sid)
     if p_cur is None or p_app is None:
         v = inherit({}, {}, {}, {}, None, cause="pack-refused")
         v["failed"] = ["gt2reloc refused a side"]

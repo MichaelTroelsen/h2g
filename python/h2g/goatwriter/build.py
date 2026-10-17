@@ -37,6 +37,7 @@ from .vibrato import (_classic_gate_refine, _free_gate_calls,
 from .wavetable import (_wavetable_layout, _write_wavetable)
 from .primitives import _record_row_calls
 from . import arpeggio as _gw_arpeggio
+from . import drum_fall as _gw_drum_fall
 from . import call_phase as _gw_call_phase
 from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
@@ -530,6 +531,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               tie_restart: bool = False,
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
+              drum_fall: bool = False,
               named_firstwave: bool = False,
               pitch_tie_phase: bool = False,
               rest_program_stop: bool = False,
@@ -1378,6 +1380,19 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 wave_entries = sky.base
                 wave_starts[:] = sky.starts
             wave_entries = wave_entries + sky.entries
+    # Bit $01's 16-bit drum fall (`drum_fall_plan`, Tarzan; the `drum_fall`
+    # option): a CMD_SETWAVEPTR on the row after each drum note, into a
+    # gate-off head and one shared chain appended past every block whose
+    # start is known. Its rows are taken before the passes that fill free
+    # command columns.
+    if drum_fall and effects and det.drum_fall_step:
+        dfall = _gw_drum_fall.drum_fall_plan(sid, det, tracks, patterns, lead,
+                                             instr_used, fmt, multiplier,
+                                             gate_skip, table,
+                                             len(wave_entries), log=log)
+        if dfall is not None:
+            patterns = dfall.patterns
+            wave_entries = wave_entries + dfall.entries
     # The same block without its window (`note_rise_plan`): a store on every
     # other tick of the whole note, one or two a row of two or three ticks,
     # each row pointed at a short program appended past every block whose

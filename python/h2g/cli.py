@@ -293,6 +293,13 @@ def main(argv=None) -> int:
              "the original's does. Per song (a --presets entry's "
              "drum_gate_off); off leaves every conversion byte-identical.")
     parser.add_argument(
+        "--drum-fall", action="store_true",
+        help="emit bit $01's 16-bit drum fall (Tarzan's player): from each "
+             "drum note's second row the gate is cleared and the pitch falls "
+             "the player's $0080 a frame. Needs --format gts5. Per song (a "
+             "--presets entry's drum_fall); off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -736,6 +743,7 @@ def main(argv=None) -> int:
                           ("--pitch-tie-phase", "pitch_tie_phase"),
                           ("--pitch-lead-tie", "pitch_lead_tie"),
                           ("--drum-gate-off", "drum_gate_off"),
+                          ("--drum-fall", "drum_fall"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -853,6 +861,7 @@ def main(argv=None) -> int:
                       pitch_tie_phase=args.pitch_tie_phase,
                       pitch_lead_tie=args.pitch_lead_tie,
                       drum_gate_off=args.drum_gate_off,
+                      drum_fall=args.drum_fall,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

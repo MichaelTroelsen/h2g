@@ -735,7 +735,7 @@ def live_keys_from_approvals(sid_dir: Path, workdir: Path, gt2reloc: str,
         blob, _ = F.legalise_restarts(sng)
         pack_dir = Path(workdir) / "approved" / stem
         pack_dir.mkdir(parents=True, exist_ok=True)
-        packed = F.pack_sid(blob, pack_dir, gt2reloc, mult)
+        packed = F.pack_sid(blob, pack_dir, gt2reloc, mult, original=sid)
         if packed is None:
             missing.append(f"{stem} {entry['version']} (pack failed)")
         else:

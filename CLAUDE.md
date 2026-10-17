@@ -233,6 +233,14 @@ for a human listening check into gitignored `build/listen/`.
   measured 2026-10-03 -- see LESSONS).
 - **The multiplier belongs to our side only.** Trace the original at `-m1` and
   the conversion at `-m{multiplier}`.
+- **Packing carries the original's call rate: `pack_sid(..., original=sid)`.**
+  A PSID speed bit means CIA timer A at the KERNAL's `$4025` (59.996 Hz on
+  PAL); gt2reloc writes every subtune on the VBI (greloc.c:1653-1659), so
+  Confuzion, Human_Race, Battle_of_Britain, Commodore_64_Music_Examples and
+  5_Title_Tunes' third subtune packed 1.1969x slow until `call_rate.py`
+  retimed them (2026-10-17). **siddump is blind to it** -- it calls both sides
+  once a row -- so read the `rate` column, never melody or drift, for a
+  clock. A `.sng` holds no rate at all.
 - **A new `convert()` option is inert until it is in three places**: the
   signature, `presets.py`'s `FIXED`, and `fidelity.py`'s `_preset_opts` (`build_sng`
   in `goatwriter/build.py` sees it only if `convert.py` passes it on). `_preset_opts` derives
