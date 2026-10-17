@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.580 presets.py",
+  "generator": "h2g 0.5.581 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -388,8 +388,6 @@
       "pulse_phase": true
     },
     "Go_Go_Dash.sid": {
-      "arpeggio_default": true,
-      "wave_program": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
@@ -399,8 +397,10 @@
       "rows": 7800,
       "multiplier": 4,
       "two_stage": true,
+      "wave_program": true,
       "max_hard_restart": true,
       "arpeggio": false,
+      "arpeggio_default": true,
       "hard_restart_frames": 4
     },
     "Gremlins.sid": {
@@ -536,7 +536,6 @@
       "max_hard_restart": true
     },
     "Lakers_vs_Celtics.sid": {
-      "arpeggio_default": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
@@ -546,7 +545,8 @@
       "rows": 8775,
       "multiplier": 1,
       "two_stage": true,
-      "arpeggio": false
+      "arpeggio": false,
+      "arpeggio_default": true
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -986,18 +986,18 @@
       "pitch_seq": true
     },
     "Sun_Never_Shines.sid": {
-      "arpeggio_default": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 10888,
+      "bytes": 10691,
       "subtunes": 1,
       "rows": 4998,
       "multiplier": 1,
       "two_stage": true,
       "max_hard_restart": true,
       "arpeggio": false,
+      "arpeggio_default": true,
       "hard_restart_frames": 4
     },
     "Tarzan.sid": {
