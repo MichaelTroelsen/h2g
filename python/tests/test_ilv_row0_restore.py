@@ -94,6 +94,10 @@ def test_sun_no_longer_has_late_rows_and_keeps_its_tempo_rows():
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     opts = F._preset_opts(doc, "Sun_Never_Shines.sid")
+    # The routing walk alone: since v0.5.581 the shipped arpeggio_default
+    # costs one routing row against the ILV tie (pinned in
+    # test_ilv_passband_restore.test_sun_shipped_arpeggio_costs_exactly_one_routing_row).
+    opts["arpeggio_default"] = False
     lines = []
     blob = convert(str(CORPUS / "Sun_Never_Shines.sid"), log=lines.append,
                    **opts)

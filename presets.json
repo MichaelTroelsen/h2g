@@ -388,6 +388,8 @@
       "pulse_phase": true
     },
     "Go_Go_Dash.sid": {
+      "arpeggio_default": true,
+      "wave_program": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
@@ -534,6 +536,7 @@
       "max_hard_restart": true
     },
     "Lakers_vs_Celtics.sid": {
+      "arpeggio_default": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,
@@ -983,6 +986,7 @@
       "pitch_seq": true
     },
     "Sun_Never_Shines.sid": {
+      "arpeggio_default": true,
       "max_rows": 94,
       "pack": true,
       "prune": true,

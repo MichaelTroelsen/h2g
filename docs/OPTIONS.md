@@ -524,6 +524,23 @@ drain, it moved exactly the five ILV files, filtered frames ours -> original:
 - Go_Go_Dash: 6526 -> 1168 (original 1172)
 - Pacific_Coast: 1366 -> 6 (original 0)
 
+## `--arpeggio-default` (the interleaved record's own arpeggio)
+
+An interleaved (ILV) instrument record carries a default arpeggio at byte
++10. At note start the player patches it into the same cell the pattern's
+`$83` command writes (`LDA record+10 / STA` over the `LDA #imm` operand;
+`h2g/ilv_arp_default.py` matches the byte shape), unless a `$83` was read on
+that event, so a note with no `$83` still oscillates. Without the option those
+notes play the bare attack pitch. With it, each such note gets the record's
+arpeggio as a `CMD_SETWAVEPTR` block (the same `drums._arp_block` the `$83`
+path uses); `$83 00` cancels it. Off by default; `presets.json` sets it per
+song. Adopted at v0.5.581 on Go_Go_Dash, Lakers_vs_Celtics and Sun_Never_Shines,
+together with the ILV tie bit and Go_Go_Dash's `wave_program` (A/B -t 180
+--sound against v0.5.580: Go_Go_Dash reversal .255 -> .934, depth .31 -> .93,
+aud .899 -> .918; Lakers reversal .370 -> .570; Sun reversal .506 -> .922).
+Radio_ACE and Pacific_Coast are left off: there it costs melody unless
+`aligned_firstwave` comes with it, which waits on a listening verdict.
+
 ## `--wave-alternate` (the derived alternate-noise dialect)
 
 For players whose bit `$02` derives an alternate noise waveform

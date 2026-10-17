@@ -477,6 +477,16 @@ def main(argv=None) -> int:
              "to a block per (record, operand) pair, because the operand is a "
              "property of the note and not of the instrument"),
     parser.add_argument(
+        "--arpeggio-default", action="store_true",
+        help="emit the interleaved engine's per-instrument default arpeggio: "
+             "record byte +10, which the player copies into the $83 operand "
+             "cell at every note start that has no $83 of its own "
+             "($139F LDA #imm patched from +10). All six ilv files carry it "
+             "(Go_Go_Dash's $0286 is +10 = $C0, an octave trill: 1382 "
+             "reversals in the original). Independent of --arpeggio, which "
+             "emits the $83 command and not this default; both use the same "
+             "block per (record, operand) pair"),
+    parser.add_argument(
         "--tie", action="store_true",
         help="honour the classic players' tie flag: status bit 5 tells the "
              "player not to close the gate at that note's end, so the note "
@@ -711,6 +721,7 @@ def main(argv=None) -> int:
                           ("--pitch-tie-phase", "pitch_tie_phase"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
+                          ("--arpeggio-default", "arpeggio_default"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -825,6 +836,7 @@ def main(argv=None) -> int:
                       pitch_tie_phase=args.pitch_tie_phase,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
+                      arpeggio_default=args.arpeggio_default,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

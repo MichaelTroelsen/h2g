@@ -33,7 +33,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        pattern_references, drop_unplayed_patterns,
                        referenced_patterns, reindex_tracks,
                        collect_pulse_phases, apply_pulse_phase,
-                       inherit_free_rows, inherit_event_rows)
+                       inherit_free_rows, inherit_event_rows, IlvArps)
+from .ilv_arp_default import ilv_default_arps
 from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
@@ -248,6 +249,7 @@ def convert(sid_path: str, log: Logger = print,
             tie: bool = False,
             pitch_seq: bool = False,
             arpeggio: bool = False,
+            arpeggio_default: bool = False,
             filters: bool = False,
             pulse: bool = False,
             vibrato: bool = False,
@@ -641,7 +643,14 @@ def convert(sid_path: str, log: Logger = print,
     # `(record, operand)` pairs into it and emits their INDEX; the wavetable
     # row is not known until `build_sng` lays the table out. None on every
     # other dialect, so nothing else can grow a command column.
-    ilv_arps: list | None = [] if (arpeggio and det.pattern_dialect == "ilv") else None
+    # `arpeggio_default` (`--arpeggio-default`): the same arpeggio cell as `$83`,
+    # but filled by the player from the record's own byte +10 at every note
+    # start (ilv_arp_default.py), so it needs no command in the pattern.
+    ilv_arps: list | None = None
+    if (arpeggio or arpeggio_default) and det.pattern_dialect == "ilv":
+        ilv_arps = IlvArps(
+            commands=arpeggio,
+            defaults=ilv_default_arps(sid, det) if arpeggio_default else None)
     instr_base = 1 if compact_instruments else 2
     # The bounds pulse engine's phase walk (below, beside the triangle
     # engine's) needs the note byte's bit 7 carried out of the decoder per

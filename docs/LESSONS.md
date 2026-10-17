@@ -1533,7 +1533,9 @@ test dependency).
     measured, 3 without one), identical to the v0.5.453 figure to the file.
     **RE-GRADED AGAIN AT v0.5.459, AND BOTH HAVE MOVED -- the line above is
     now HISTORY and is left saying what it said.** wave_program is
-    **10 multispeed / 12 single-speed** (Off_the_Cuff's multiplier moved) and
+    **10 multispeed / 12 single-speed** (Off_the_Cuff's multiplier moved;
+    re-graded at v0.5.581 to **11 multispeed / 12 single-speed** when
+    Go_Go_Dash adopted wave_program at multiplier 4, the 10 now HISTORY) and
     `--regrid` has **14 adoptions** (One_on_One_Jordan_vs_Bird adopted; its
     recorded -37.0pp melody collapse does not reproduce -- melody IMPROVES
     0.9903 -> 0.9952 at 180 s). **What caught both was a TEST, not a reading**:

@@ -600,6 +600,13 @@ EXCLUDED_FROM_ALWAYS = {
     # `--arpeggio` changes NO byte on any other file: 0 of 89 move with it off
     # and exactly 5 with it on, corpus byte-hashed at v0.5.457.
     "arpeggio",
+    # The interleaved engine's DEFAULT arpeggio, record byte +10 (the same
+    # cell as `$83`, filled by the player at every note start that carries no
+    # `$83`; ilv_arp_default.py). Per song and never in `always` for the same
+    # reason as `--arpeggio` above: it is an oscillation gain whose melody
+    # cost the report cannot adjudicate. Moves only the six ilv files; with it
+    # off no byte moves.
+    "arpeggio_default",
     # Bit $02's DERIVED alternate (`det.wave_alternate_noise`: the player's
     # `AND #$07 / ORA #$80`, noise at the voice's own control bits). Per song
     # because the two files it reaches are two populations -- MEASURED AT

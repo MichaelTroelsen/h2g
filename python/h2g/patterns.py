@@ -2199,12 +2199,35 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # the flagged-duration count equals the flagged-note count exactly, so a
 # flagged byte governs one note rather than a run.
 #
-# NOT EMITTED YET, and the obstacle is named rather than guessed: a
-# Goattracker row carries ONE command, `$82` already claims it as
-# CMD_PORTAUP/PORTADOWN on this engine, and `CMD_TONEPORTA` is a third
-# claimant on the same column. That is a decision about precedence, not a
-# decode, so it is left to a task that can measure it.
+# EMITTED since v0.5.580 as `CMD_TONEPORTA 0` on the NEXT note (the flag of the
+# duration byte before note N governs N+1; a rest consumes it; row 0 is never
+# tied). Precedence on the shared command column: `$82` slide, then an armed
+# `$83` arpeggio, then the tie. Corpus byte-hash under presets: the six ILV
+# files move (the five above and Sun_Never_Shines), nothing else; at -t 60
+# melody Go_Go_Dash .950 -> .999, Radio_ACE .945 -> .974, Sun_Never_Shines
+# .884 -> .911, Lakers .887 -> .919, Lion_Heart .900 -> .929, Pacific_Coast
+# .976 -> .983. See tests/test_ilv_tie.py.
 ILV_ARP = 0x83
+
+
+class IlvArps(list):
+    """The `arps` collector, plus what decides which notes feed it.
+
+    A list of the distinct `(record, operand)` pairs, as before. `commands`
+    says whether a `$83 nn` event arms the next note (`--arpeggio`);
+    `defaults` is `{record: operand}` from record byte +10 (`--arpeggio-default`,
+    see ilv_arp_default.py): a note with NO `$83` before it arpeggiates with
+    its record's own operand, which the player copies into the same cell at
+    every note start ($139F LDA #imm patched from +10 / STA $1A55,X). An
+    explicit `$83 00` cancels the default, as it does in the player ($1A61 is
+    set, so the +10 copy is skipped).
+    """
+
+    def __init__(self, commands: bool = True, defaults=None):
+        super().__init__()
+        self.commands = commands
+        self.defaults = dict(defaults or {})
+
 ILV_SLIDE = 0x82
 ILV_TIE = 0x20                  # of a $C0-$FF duration byte; see above
 ILV_COMMAND_OPERANDS = {0x80: 1, ILV_SLIDE: 2, 0x83: 1, 0x84: 0,
@@ -2218,8 +2241,13 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            slides: bool = False,
                            steps: Optional[List[int]] = None,
                            arps: Optional[List[tuple]] = None,
+                           tie: bool = False,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
+
+    With `tie`, the duration byte's `ILV_TIE` bit becomes `CMD_TONEPORTA 0`
+    on the next note (opt-in like every tie emitter:
+    tests/test_hold_rows.py::test_no_note_row_is_tied_unless_tie_is_on).
 
     Returns None rather than guessing on an unrecognised `$80-$BF` byte: the
     player's own dispatch falls through `$11AE BNE $116C` with no INY there
@@ -2253,6 +2281,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     i2 = 0
     pending: Optional[tuple] = None
     armed: Optional[int] = None     # a `$83` operand waiting for its note
+    tieflag = False                 # the last duration byte's `ILV_TIE`
+    nexttie = False                 # that flag, carried to the NEXT note
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -2267,10 +2297,10 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
 
         if b >= 0xC0:                       # duration; emits no row
             # `& 0x1F` is the wait. Bit `ILV_TIE` of this same byte is the
-            # player's no-attack flag and is DROPPED here -- see the block
-            # above for the routine that reads it and for what the drop costs
-            # (one voice per file, +201 attacks on Radio_ACE voice 1).
+            # player's no-attack flag; it is emitted as `CMD_TONEPORTA 0`
+            # on the NEXT note -- see the block above and `nexttie` below.
             wait = b & 0x1F
+            tieflag = bool(b & ILV_TIE)
             i2 += 1
             continue
 
@@ -2283,7 +2313,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             if b == 0x80:
                 record = data[addr + i2 + 1]
                 instrument = record + instr_base
-            elif b == ILV_ARP and arps is not None:
+            elif (b == ILV_ARP and arps is not None
+                  and getattr(arps, 'commands', True)):
                 # Armed for the note that FOLLOWS, and dropped if none does:
                 # the player's own flag is cleared at the next note start.
                 armed = data[addr + i2 + 1]
@@ -2308,17 +2339,38 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
         row = len(events) - 4
+        operand = armed
+        if (operand is None and arps is not None and record is not None
+                and b != ILV_REST):
+            # No `$83` this event: the player copies the record's +10 byte
+            # into the arpeggio cell at the note start (ilv_arp_default).
+            operand = getattr(arps, 'defaults', {}).get(record)
         cmd = _digi_command(pending, steps) if pending is not None else None
+        # Precedence on the one command column: the `$82` slide first, then
+        # the `$83` arpeggio when it is on and armed, then the tie. Measured
+        # both ways at -t 60: only Lion_Heart differs (presets turn
+        # `arpeggio` on there alone), melody .930 tie-first vs .929
+        # arpeggio-first; tie-first dropped 3 shipped arpeggio rows there and
+        # in Sun_Never_Shines, so the shipped option is not displaced. The
+        # tie is carried one note: the flag of the duration byte before note
+        # N governs note N+1, and a rest consumes it without a row to put it
+        # on. A tie never reaches row 0 of a pattern: `nexttie` starts False.
+        tie_cmd = None
+        if (tie and cmd is None and nexttie and b != ILV_REST
+                and not (armed and arps is not None and record is not None)):
+            tie_cmd = cmd = (CMD_TONEPORTA, 0)
+        nexttie = tieflag
+        tieflag = False
         if cmd is not None:
             events[-2], events[-1] = cmd
-        elif (armed and arps is not None and record is not None
+        elif (operand and arps is not None and record is not None
               and b != ILV_REST):
             # One-shot: it points the wavetable at the arpeggio block, and the
             # block loops for as long as the note is held, exactly as the
             # player's counter does. So it belongs on the note's own row and
             # NOT on its hold rows -- the opposite of the continuous `$82`
             # immediately above, which has to be repeated on every one.
-            key = (record, armed)
+            key = (record, operand)
             if key not in arps:
                 arps.append(key)
             events[row + 2] = CMD_SETWAVEPTR
@@ -2326,10 +2378,11 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         armed = None
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
-            if cmd is not None:
+            if cmd is not None and tie_cmd is None:
                 # Continuous, so it is repeated rather than held: gplay.c
                 # executes a command on the row it appears on and nowhere
                 # else. The player's own step lasts exactly this event.
+                # The tie is one-shot (ONE_SHOT_COMMANDS) and is not.
                 events[-2], events[-1] = cmd
         pending = None
         i2 += 1
@@ -2613,7 +2666,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     if det.pattern_dialect == "ilv":
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
-                                      slides=slides, steps=steps, arps=arps)
+                                      slides=slides, steps=steps, arps=arps,
+                                      tie=tie)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,

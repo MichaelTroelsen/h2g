@@ -203,9 +203,10 @@ def test_go_go_dash_onsets_land_on_the_originals_frames_through_the_packed_file(
         tmp_path, monkeypatch):
     """.525 without the startup row, .936 with it (902 of 964 at 60 s; what
     remains are attacks the sequence does not share with the original, not a
-    phase)."""
+    phase). Historical, before the ILV tie was emitted (test_ilv_tie.py),
+    which removes the surplus: .558 without, .994 with at v0.5.579+."""
     off = _share_on_an_original_attack_frame(
         "Go_Go_Dash.sid", tmp_path, monkeypatch, False)
     on = _share_on_an_original_attack_frame(
         "Go_Go_Dash.sid", tmp_path, monkeypatch, True)
-    assert off < 0.55 and on > 0.92, (off, on)
+    assert off < 0.6 and on > 0.92, (off, on)

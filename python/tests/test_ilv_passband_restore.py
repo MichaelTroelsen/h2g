@@ -140,11 +140,12 @@ def test_a_replayed_restore_puts_the_passband_back_without_a_second_copy():
 
 # --- Sun_Never_Shines, the file the spelling exists for ----------------------
 
-def _sun():
+def _sun(**over):
     import fidelity as F
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     opts = F._preset_opts(doc, "Sun_Never_Shines.sid")
+    opts.update(over)
     assert opts.get("ilv_filter_routing"), opts
     lines = []
     blob = convert(str(CORPUS / "Sun_Never_Shines.sid"), log=lines.append,
@@ -160,8 +161,14 @@ def test_sun_takes_the_restore_spelling_and_stops_lagging():
     row 0, which the walk refused); now 0 rows late (an empty row-0 cell is
     taken, tests/test_ilv_row0_restore.py). The last restore, on the
     first note (row 0, which carries the tempo), now takes voice 1's empty
-    row-0 cell: 0 late, 0 rows on the wrong passband."""
-    _song_, line = _sun()
+    row-0 cell: 0 late, 0 rows on the wrong passband.
+
+    Taken with arpeggio_default OFF: this pins the routing walk alone. Since
+    v0.5.581 Sun ships arpeggio_default, whose CMD_SETWAVEPTR rows share the
+    command column with the ILV tie's CMD_TONEPORTA, and together they leave
+    one routing change unplaceable -- pinned exactly by
+    test_sun_shipped_arpeggio_costs_exactly_one_routing_row below."""
+    _song_, line = _sun(arpeggio_default=False)
     assert line.startswith("ILV filter routing......: restore,"), line
     assert " 0 lagged," in line and " 0 row(s) late," in line, line
     assert "1 passband restore(s), 0 late," in line, line
@@ -211,3 +218,15 @@ def test_one_passband_files_keep_their_spelling(stem, mode):
     line = next(m for m in lines if m.startswith("ILV filter routing"))
     assert line.startswith(f"ILV filter routing......: {mode},"), line
     assert "passband restore" not in line, line
+
+
+@needs_corpus
+def test_sun_shipped_arpeggio_costs_exactly_one_routing_row():
+    """Under the SHIPPED preset (arpeggio_default + the ILV tie, v0.5.581)
+    exactly one of Sun's routing changes finds no free command cell and lands
+    a row late. Measured at the join: passband_agree .9999 with or without
+    it, while the arpeggio takes reversal_ratio .53 -> .92, so it is accepted
+    -- but pinned, so a change that loses MORE rows is caught."""
+    _song_, line = _sun()
+    assert " 1 unplaceable," in line and " 1 row(s) late," in line, line
+    assert " 0 lagged," in line, line
