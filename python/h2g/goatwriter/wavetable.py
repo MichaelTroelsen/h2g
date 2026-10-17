@@ -30,7 +30,8 @@ from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _note_alternate_note, _two_stage_entries,
                      _two_stage_frames, _two_stage_pitch_seq_entries,
                      _voice_two_stage_entries, _wave_alternate_entries)
-from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)
+from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries,
+                    _sfx_drum_pitch_seq_entries)
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
@@ -216,8 +217,21 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # block it landed on every tick: exact on Trans-Atlantic, whose bursts
         # happen to line up, and 281 frames against the original's 35 on
         # Pandora. See H2G-CONVERSION-METHOD.md section 7.rrr.
+        second = _fixed_attack_note(sid, det, i)
         hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier,
-                                second_note=_fixed_attack_note(sid, det, i))
+                                second_note=second)
+        # A record setting bit $10 as well plays the arpeggio on the frames
+        # the drum does not fire; only where the phase cell is carried
+        # (`pitch_phase`) and the hit has no $40 prologue.
+        if (hit is not None and pitch_seq and pitch_phase and second is None
+                and (arp_style & EFFECT_PITCH_SEQ_MASK)):
+            pnotes = _pitch_seq_phase_notes(sid, det, i)
+            if pnotes is not None:
+                both = _sfx_drum_pitch_seq_entries(
+                    wave, det.sfx_pitch, det.sfx_period, pnotes, pitch_phase,
+                    multiplier)
+                if both is not None:
+                    hit = both
         if hit is not None:
             left, right, loop = hit
             jump = len(left) + 1

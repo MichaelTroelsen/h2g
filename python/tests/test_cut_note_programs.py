@@ -145,10 +145,19 @@ def test_monty_splits_record_5_and_points_its_short_notes():
 
 @needs_corpus
 def test_a_record_that_cannot_be_pointed_whole_stays_whole():
-    # the lines for 03 and 07 say so: nothing placed, so the record keeps
-    # the declining program for every note (the shape before this pass)
+    # the lines for 03 and 07 used to say so: nothing placed, so the record
+    # keeps the declining program for every note (the shape before this pass).
+    # Those two lines came from `played_duration_histograms` reading the
+    # silent park pattern's one KEYOFF row as a one-row note of whatever
+    # instrument was in effect (36 plays on each of 03 and 07). The pattern's
+    # second row (CMD_SETPULSEPTR 0, tracks.SILENT_PATTERN) makes that read
+    # two rows, which no declined frame ends, so neither record is wanted at
+    # all and no line is logged. What stays pinned: neither is POINTED. The
+    # stays-whole line itself is pinned by the 05 test below.
     _, log = _convert()
-    assert any("03 stays whole" in m for m in log)
+    cut = [m for m in log if m.startswith("Cut-note programs")]
+    assert cut, "the pass logs record 05"
+    assert not any("03" in m or "07" in m for m in cut), cut
 
 
 @needs_corpus

@@ -243,6 +243,24 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                           and r + 7 < len(copy) and copy[r + 4] == GT_REST
                           and copy[r + 6] == CMD_SETAD and copy[r + 7] == 0):
                         copy[r + 2] = CMD_SETSR
+                    # ...and the same pattern when BOTH families were spelt
+                    # (`_move_rest_silence_off_row0`'s combined branch): the
+                    # SETSR sits on hold row 0, this SETWAVE on hold row 1
+                    # and the AD on hold row 2 (or dropped). Without the
+                    # SETWAVE the envelope option alone has SETSR on hold
+                    # row 0 and AD on hold row 1: give the AD this row back
+                    # and clear the one the move placed on the row after.
+                    elif (pat[r] == GT_REST and r >= 8
+                          and pat[r - 4] == GT_REST
+                          and pat[r - 2] == CMD_SETSR and pat[r - 1] == 0
+                          and pat[r - 8] == GT_KEYOFF
+                          and pat[r - 6] == CMD_SETTEMPO):
+                        copy[r + 2] = CMD_SETAD
+                        nxt = r + 4
+                        if (nxt + 3 < len(copy) and copy[nxt] == GT_REST
+                                and copy[nxt + 2] == CMD_SETAD
+                                and copy[nxt + 3] == 0):
+                            copy[nxt + 2] = 0
                 continue
             if cands and not (cands & programmed):
                 stopping += 1

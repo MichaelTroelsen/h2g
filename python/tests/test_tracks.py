@@ -314,7 +314,8 @@ def test_a_parked_track_loops_on_silence_rather_than_restarting_at_zero():
     (`length_delta >= +120.46`, `length_bounded`), with an identical 291
     attacks in both arms.
     """
-    from h2g.tracks import (GT_END_PATTERN, GT_KEYOFF, GT_ORDER_RESTART,
+    from h2g.tracks import (GT_END_PATTERN, GT_KEYOFF, GT_NO_NOTE,
+                            GT_ORDER_RESTART,
                             SILENT_PATTERN, legalise_restarts)
 
     patterns = [[0x60, 1, 0, 0, GT_END_PATTERN, 0, 0, 0]]
@@ -334,12 +335,18 @@ def test_a_parked_track_loops_on_silence_rather_than_restarting_at_zero():
     assert track[songlen + 1] != 0, (
         "restart 0 is the workaround this branch exists to replace")
 
-    # And the pattern parked on has to be silent -- a KEYOFF and nothing else.
+    # And the pattern parked on has to be silent -- a KEYOFF, then a row that
+    # names no note and no instrument (it carries CMD_SETPULSEPTR 0, which stops
+    # the voice's pulse sweep: tests/test_silent_park_stops_pulse.py). This
+    # replaces "a KEYOFF and nothing else ... ends after that one row", which
+    # the pulse stop made untrue.
     parked = patterns[-1]
     assert parked == list(SILENT_PATTERN), parked
     assert parked[0] == GT_KEYOFF and parked[1] == 0, (
         "a parked pattern that names a note or an instrument sounds")
-    assert parked[4] == GT_END_PATTERN, "and it has to end after that one row"
+    assert parked[4] == GT_NO_NOTE and parked[5] == 0, (
+        "the second row must not start a note or load an instrument")
+    assert parked[8] == GT_END_PATTERN, "and it has to end after those two rows"
 
 
 def test_version_11_lifts_a_pattern_transpose_into_the_orderlist():

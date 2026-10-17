@@ -258,7 +258,8 @@ from .vibrato import (CLASSIC_DEPTH_CMP_TRIM, _classic_gate_delay,
                       _table_vibrato_entry, _triangle_rate_shift,
                       _triangle_vibrato_entry,
                       _vibrato_delay, _vibrato_layout)  # noqa: F401
-from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries)  # noqa: F401
+from .drums import (_arp_block, _arp_offsets, _sfx_drum_entries,  # noqa: F401
+                    _sfx_drum_pitch_seq_entries)
 from .notes import (_drum_steps_safe, _phase_note, _pitch_seq_entries,
                     _pitch_seq_note_byte, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries,

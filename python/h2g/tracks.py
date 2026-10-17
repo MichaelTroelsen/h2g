@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
-from .patterns import (CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
-                       GT_KEYOFF, GT_LASTNOTE,
+from .patterns import (CMD_SETPULSEPTR, CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
+                       GT_KEYOFF, GT_LASTNOTE, GT_NO_NOTE,
                        GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
                        MAX_PATTERNS, MAX_TRACK_LEN,
                        cmdtable_transposes, command_floor, decode_entry,
@@ -21,9 +21,23 @@ from .patterns import (CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOT
 # many times the orderlist loops back to it. A Goattracker orderlist has no
 # "stop", so this is the nearest thing to one that the format can express --
 # see legalise_restarts.
-SILENT_PATTERN = [GT_KEYOFF, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+#
+# Its second row is a no-note row carrying CMD_SETPULSEPTR 0 (gplay.c, `case
+# CMD_SETPULSEPTR`: `ptr[PTBL] = param`; the pulse step runs only `if
+# (cptr->ptr[PTBL])`). A KEYOFF closes the gate but leaves the voice's pulse
+# program running, so a parked voice kept sweeping its width on every frame
+# for the rest of the trace -- Kings_of_the_Beach_ingame subtune 4: 4495
+# pulse changes per voice in 90 s against the original's 343, because the
+# original's player stops with the tune (its last pulse write is the frame
+# before its final waveform-0 write). The command is NOT on the KEYOFF row:
+# `filters._fetch_hold_pattern` gives a KEYOFF the row's own free command
+# column for its CMD_SETFILTERPTR hold, and with that column taken Sigma_Seven's
+# voice 0 lost the hold (`no free row`, tests/test_free_running_holds.py).
+SILENT_PATTERN = [GT_KEYOFF, 0, 0, 0, GT_NO_NOTE, 0, CMD_SETPULSEPTR, 0,
+                  GT_END_PATTERN, 0, 0, 0]
 # Its event starts (`TrackIndex.event_rows`, read by the triangle walk): the
-# KEYOFF row is the one event the pattern holds, ENDPATT is not a row.
+# KEYOFF row is the one event the pattern holds; the no-note row after it
+# is not an event and ENDPATT is not a row.
 SILENT_EVENT_ROWS = frozenset({0})
 from .sidfile import SidFile
 

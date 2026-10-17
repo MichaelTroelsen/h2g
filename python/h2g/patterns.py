@@ -4937,6 +4937,18 @@ def _move_rest_silence_off_row0(pattern: List[int]) -> None:
     if (len(pattern) < 8 or pattern[0] != GT_KEYOFF
             or pattern[2] != CMD_SETSR or pattern[3] != 0):
         return
+    if pattern[4:8] == [GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE]:
+        # Both families at once (`rest_wave` + `rest_envelope`): hold row 0
+        # carries the parked waveform and hold row 1 the AD half. The SETSR
+        # takes row 1, the park slides to row 2 in the AD half's place, and
+        # the (inaudible) AD half goes to row 3 where that row is empty.
+        if len(pattern) < 12 or pattern[8:12] != [GT_NO_NOTE, 0, CMD_SETAD, 0]:
+            return
+        pattern[6], pattern[7] = CMD_SETSR, 0
+        pattern[10], pattern[11] = CMD_SETWAVE, REST_SILENT_WAVE
+        if len(pattern) >= 16 and pattern[12:16] == [GT_NO_NOTE, 0, 0, 0]:
+            pattern[14], pattern[15] = CMD_SETAD, 0
+        return
     if pattern[4:8] != [GT_NO_NOTE, 0, CMD_SETAD, 0]:
         return
     pattern[6], pattern[7] = CMD_SETSR, 0

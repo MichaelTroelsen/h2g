@@ -1,6 +1,7 @@
 """Arp block and sfx drum entries (split out of goatwriter.py, text moved unchanged)."""
 from __future__ import annotations
 
+from math import gcd as _gcd
 from typing import (List, Optional)
 
 from .constants import (ARP_HEAD_FRAMES, SFX_DRUM_FRAMES, WAVE_JUMP,
@@ -348,3 +349,45 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
     right.append(note)
     hold(left, right, (period - 1) * m)
     return left, right, loop
+
+
+def _sfx_drum_pitch_seq_entries(wave: int, pitch_hi: int, period: int,
+                                notes: List[int], phases: tuple,
+                                multiplier: int = 1) -> Optional[tuple]:
+    """The bit-$80 drum loop with bit $10's arpeggio on the frames between hits.
+
+    A record setting both $80 and $10 (Nineteen's `$B4`) runs both blocks every
+    frame in the player: the drum, on its hit frame, skips the waveform and
+    frequency writes (`_sfx_drum_entries`), and the arpeggio writes the played
+    note plus the step the global phase cell names on every other frame.
+    `_sfx_drum_entries` alone held the played note on those frames, so the
+    original's `C#6, C#5, -, F#5, C#5, -` six-frame cycle came out as `C#6, C#5`
+    and the F#5 step never sounded (task nineteen-voice-2-s-final-450-frames).
+
+    `notes` is `_pitch_seq_phase_notes` (note byte by cell value) and `phases`
+    `pitch_seq_phases`' cell reading on frames 1, 2, ... after the attack; the
+    drum is on frame 1 and every `period` after, as `_sfx_drum_entries` has it.
+    The two repeat together after `lcm(period, len(phases))` frames, so the loop
+    is that long. One entry per frame, so declined above -S1 (None: the plain
+    drum shape stands) and where a step is out of range.
+    """
+    if multiplier != 1 or pitch_hi <= 0 or period <= 0 or not phases:
+        return None
+    held = _wave_byte((wave & 0xFE) | 0x01)
+    note = _sfx_note_byte(pitch_hi)
+    noise = WAVE_NOISE_GATEOFF | 0x01
+    n = len(phases)
+    span = period * n // _gcd(period, n)
+    left: List[int] = [held]
+    right: List[int] = [WAVE_NOTE_BASE]       # frame 0: the played note
+    for f in range(1, span + 1):
+        if (f - 1) % period == 0:
+            left.append(noise)
+            right.append(note)
+            continue
+        k = phases[(f - 1) % n]
+        if not 0 <= k < len(notes):
+            return None
+        left.append(held)
+        right.append(notes[k])
+    return left, right, 1
