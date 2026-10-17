@@ -16972,6 +16972,15 @@ halves the per-call step to 112 and would fit one modulation row, but the multip
 the whole song's (it doubles the play rate and moves every other column); set rows keep
 the rate.
 
+**Since v0.5.573 the bounds engine spells too, where the table has room**
+(`spell-the-per-record-bounds-engine-s`). `_pulse_layout` tries each bounds-engine record
+spelled (`_pulse_program(..., spell=True)`) against the table and keeps it only if nothing
+is dropped; otherwise the clamp stands. Of the 194 records only 12 are played (on 8 files),
+and all 12 fit (tables 98-224 of 255 rows), so the fallback fires only in its test. The
+phase-block path (`_phase_sweep_params`) still clamps. Measured at `-t 180` under presets:
+IK_plus `pulse_span` .883 -> 1.0, Nemesis_the_Warlock `pulse_phase` .83 -> 1.0,
+Trans-Atlantic `pulse_phase` .91 -> 1.0, no file losing more than .0003 `aud`.
+
 ### 7.jjjjjjjj A rest's silencing `CMD_SETSR $00` keeps its place when the tempo takes row 0: Mega_Apocalypse's "travel under ADSR $0000"
 
 **What the number was.** `bendsplit.py` keys within-note frequency travel by the
