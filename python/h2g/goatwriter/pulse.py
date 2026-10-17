@@ -355,9 +355,14 @@ def _pulse_triangle_wrapped(width: int, low: int, high: int,
 def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                    multiplier: int,
                    tick_ratios: Optional[Mapping[int, Fraction]] = None,
-                   stair: bool = False,
+                   stair: bool = False, spell: bool = False,
                    ) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
+
+    `spell` lays a per-record-bounds sweep whose rate is over
+    `SPELLED_SPEED_MIN` a call as set rows (`_ramp_rows`) instead of
+    clamping it to `GT_MAX_PULSE_SPEED`; it is off here and `_pulse_layout`
+    turns it on record by record where the table has the rows.
 
     Without `pulse`, or where the player has no sweep, this is what H2G has
     always written: one "set pulse width" from record bytes +0/+1, then stop.
@@ -420,8 +425,14 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     # rate 0 is the player's own "do not sweep", and keeps the static width.
     if rate == 0:
         return static, None
-    speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
+    raw = max(1, round(rate / multiplier))
+    speed = min(GT_MAX_PULSE_SPEED, raw)
     width = ((data[base + 1] & 0x0F) << 8) | data[base]
+    if (spell and raw >= SPELLED_SPEED_MIN
+            and _tri_turns(width, rate, low, high) is not None):
+        # Only the lattice legs spell (`_lattice_legs`); a record whose
+        # nibble is never reached keeps the clamped fallback legs.
+        speed = raw
     # high <= low used to keep the static width too, on the reasoning that it
     # "leaves no band to travel". It does not: the player only ever tests the
     # high nibble for EQUALITY with a bound after the step (`ADC #$00 / AND
@@ -554,10 +565,12 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
       sweeps ~1.8x slow" -- true of a modulation row, which is what this
       engine emitted for Commando's records 0 and 6, Zoids' 0 and 14 and
       Gerry_the_Germ's 17 until the change that spelled them. The bounds
-      engine (`_pulse_program`) still clamps: 194 of its records on 19 corpus
-      files have a rate over 134 a call at their multiplier (census at
-      1172704, `pulse._bounds_record`), most at `-S1`, and spelling them is
-      a separate change with a table budget of its own.
+      engine (`_pulse_program`) spells too, record by record where the
+      table has the rows (`_pulse_layout`'s `spell` trial; a record that
+      would push another out keeps its clamp): 194 of its records on 19
+      corpus files have a rate over 134 a call (census at 1172704,
+      `pulse._bounds_record`, first 64 slots, all at `-S1`), 12 of them
+      PLAYED on 8 files, and all 12 fit (tables of 98-224 rows).
     * The player turns around when the high nibble *equals* a bound, on the
       first width of its step lattice inside that nibble, and the legs here
       turn there too (`_pulse_triangle`'s `step`, `_tri_turns`) -- to the
@@ -1156,6 +1169,22 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
         for i in range(nrec):
             alt = _pulse_program(sid, det, i, pulse, multiplier,
                                  tick_ratios, stair=True)
+            if alt == programs[i]:
+                continue
+            trial = programs[:i] + [alt] + programs[i + 1:]
+            t_entries, t_starts, t_dropped, _, _ = _lay_out_pulse(
+                trial, statics, lead, share=False)
+            if not t_dropped:
+                programs = trial
+                entries, starts = t_entries, t_starts
+    if not dropped and pulse and det.pulse_bounds >= 0:
+        # A per-record-bounds step over `SPELLED_SPEED_MIN` a call laid as
+        # set rows costs a row a call, so it is tried record by record
+        # against the table that already fits and a record whose rows would
+        # push anything out keeps its clamp.
+        for i in range(nrec):
+            alt = _pulse_program(sid, det, i, pulse, multiplier,
+                                 tick_ratios, spell=True)
             if alt == programs[i]:
                 continue
             trial = programs[:i] + [alt] + programs[i + 1:]

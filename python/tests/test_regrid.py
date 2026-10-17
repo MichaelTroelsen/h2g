@@ -123,3 +123,32 @@ def test_a_replayed_pattern_does_not_deliver_its_compensation_once_per_play():
         f"delivered {delivered} calls of compensation against a debt of "
         f"{debt_calls}: a pattern played {plays} times delivers its "
         f"{written} written row(s) {plays} times over")
+
+
+def _settempo_rows(pat):
+    return [r for r in range(len(pat) // 4) if pat[r * 4 + 2] == CMD_SETTEMPO]
+
+
+def _one_shot_head(pat_rows, head):
+    """Rows 0..head-1 carry a one-shot command (SETAD, 5), the rest are empty."""
+    out = []
+    for r in range(pat_rows):
+        out += [0xBD, 1, (5 if r < head else 0), (9 if r < head else 0)]
+    return out + [GT_END_PATTERN, 0, 0, 0]
+
+
+def test_all_one_shot_run_to_the_pattern_start_is_treated_as_inherited():
+    """`_inherits_continuous_effect`'s fall-through (every row back to row 0 is
+    one-shot, so a 1XY-4XY from the previous orderlist entry may still run) is
+    reachable from `regrid_tempos`: the wanted row 6 sits behind such a run, so
+    the pair is shifted to row 7. With row 0 empty the walk stops there and the
+    pair stays on row 6. No corpus file takes this branch."""
+    pats, tracks = [_one_shot_head(12, 6)], [[0], [], []]
+    assert regrid_tempos(pats, tracks, [3], [0.25], 1) >= 1
+    assert _settempo_rows(pats[0])[:2] == [7, 8]
+
+    ctl = _one_shot_head(12, 6)
+    ctl[2] = ctl[3] = 0                      # row 0 empty: the walk ends there
+    pats, tracks = [ctl], [[0], [], []]
+    assert regrid_tempos(pats, tracks, [3], [0.25], 1) >= 1
+    assert _settempo_rows(pats[0])[:2] == [6, 7]

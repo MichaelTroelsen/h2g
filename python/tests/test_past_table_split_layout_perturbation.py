@@ -50,7 +50,11 @@ _CASES = [
     ("Formula_1_Simulator.sid", 0, 1, "-E1", 15, 498),
     ("5_Title_Tunes.sid", 1, 0, "-E1", 30, 1050),
     ("Star_Paws.sid", 0, 0, "-E1", 70, 2816),
-    ("Nineteen.sid", 0, 0, "-D1", 95, 4242),
+    # Nineteen: -D1 stopped crossing the page once `spell` added pulse rows
+    # (v0.5.571 + spelled bounds steps shifts the orderlists), and no gt2reloc
+    # option that adds code crosses it now; -W20 moves the player a page and
+    # so the same cell. First control frame measured at 95 s with -W20.
+    ("Nineteen.sid", 0, 0, "-W20", 95, 4254),
     ("Rock_Tells_the_Tale.sid", 0, 0, "-E1", 270, 12967),
 ]
 
@@ -73,7 +77,7 @@ def _pack(fidelity, sng: bytes, wd: Path, mult: int, option: str | None):
         args.append(f"-S{mult}")
     args.append("-O0")
     if option:
-        args.append(option)
+        args.extend(option.split())
     subprocess.run(args, cwd=str(wd), timeout=120, capture_output=True,
                    stdin=subprocess.DEVNULL)
     assert dst.exists(), f"gt2reloc refused ({option})"
@@ -85,7 +89,8 @@ def _differs(fidelity, sng, tmp_path, mult, option, sub, secs, voices=(0, 1, 2))
     the one with `option`; and the two packed sizes (the layout did move)."""
     a = _pack(fidelity, sng, tmp_path / "plain", mult, None)
     b = _pack(fidelity, sng, tmp_path / "opt", mult, option)
-    assert a.stat().st_size != b.stat().st_size, "the option did not move the layout"
+    if not option.startswith("-W"):      # -W moves the player, not its size
+        assert a.stat().st_size != b.stat().st_size, "the option did not move the layout"
     out = {}
     for v in voices:
         fa = _voice_freqs(a, sub, secs, mult, v)
