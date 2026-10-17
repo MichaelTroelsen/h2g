@@ -759,6 +759,10 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
             continue
         if det.pulse_tri_hi < 0:
             continue
+        # The command-table spelling reads its bounds from per-voice cells
+        # ($08/$0F on Hollywood_or_Bust); test_pulse_tri_absx.py owns it.
+        if det.pulse_tri_step_shift:
+            continue
         assert (det.pulse_tri_lo, det.pulse_tri_hi) == (8, 0x0E), path.name
         # anchored on the instrument table this detection already found
         assert sid.data[det.instr_start:det.instr_start + 1]
@@ -771,7 +775,14 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
         found += 1
         gated += det.pulse_tri_gated
     assert (found, gated) == (24, 19), "the triangle's reach changed"
-    assert zp == {"Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"}
+    # ...and so is its absolute,X spelling (PULSE_TRI_ABSX_SHAPE), the
+    # nibble family's eight files, which tests/test_pulse_tri_absx.py and
+    # tests/test_kentilla_gaps.py own.
+    assert zp == {"Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"} | {
+        "Bump_Set_Spike.sid", "Formula_1_Simulator.sid",
+        "International_Karate.sid", "Kentilla.sid",
+        "Las_Vegas_Video_Poker.sid", "Proteus.sid", "Thrust.sid",
+        "Warhawk.sid"}
 
 
 # --- packing: gt2reloc's pulse skipping ------------------------------------

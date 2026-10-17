@@ -54,10 +54,17 @@ def test_the_zero_page_dialect_is_found_on_exactly_its_two_files():
     by name rather than moving a byte-hash nobody re-reads."""
     zp, absolute = set(), set()
     for path in sorted(CORPUS.glob("*.sid")):
-        det = detect(load_sid(str(path)), _quiet)
+        sid = load_sid(str(path))
+        det = detect(sid, _quiet)
         if det.pulse_tri_hi < 0:
             continue
         if det.pulse_tri_per_voice:
+            # The absolute,X and command-table spellings of the same
+            # per-voice engine (PULSE_TRI_ABSX_SHAPE / PULSE_TRI_CMD_SHAPE,
+            # tests/test_pulse_tri_absx.py, tests/test_kentilla_gaps.py) are
+            # the other populations with this flag.
+            if search_file(sid.data, PULSE_TRI_ZP_SHAPE) < 0:
+                continue
             zp.add(path.name)
             assert (det.pulse_tri_lo, det.pulse_tri_hi) == (8, 0x0E), path.name
             assert (det.pulse_tri_step_mask,

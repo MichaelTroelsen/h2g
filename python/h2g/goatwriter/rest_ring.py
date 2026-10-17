@@ -145,7 +145,7 @@ def _ring_occurrences(tracks: list, count: int) -> dict:
 
 
 def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
-                   tracks=None, log=None):
+                   tracks=None, log=None, chains: bool = True):
     """Finish the rest-end markers `_build_raw_pattern` wrote; returns
     `(patterns, tracks)` -- a pattern played where one rest follows and a tie
     elsewhere is copied, and only the positions that want the ring repointed.
@@ -154,6 +154,15 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     the `(ad, sr)` pair emitted without / with `cut_release`. Every marker the
     decoder wrote is either turned into the ring and the cut or taken out
     again, so a pattern that gets neither is the pattern it always was.
+
+    `chains` admits the two rests a tied note's release reaches past the
+    first one: a rest entered ringing (a KEYOFF straight after an uncut rest,
+    whose cut is marked by `patterns` `ring_chain`) and a tied chain that
+    runs off the pattern uncut. False reads both the way this pass did
+    before them -- the caller turns it off where the note rise's per-row
+    programs (`goatwriter.note_rise`, run later) want the same command
+    column through the rest (Chimera, Game_Killer, Battle_of_Britain,
+    Human_Race).
     """
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     successors = _pattern_successors(tracks, len(patterns)) if tracks else {}
@@ -161,6 +170,18 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     unknown = inert = 0
     # (pattern, KEYOFF row, cut-marker row, SR) for every rest that should ring.
     wanted = []
+    # (pattern, KEYOFF row, SR): a rest chain entered from a tied note in this
+    # very pattern that runs off its end with no cut marker -- the bit-5
+    # rests that never cut, or a chain whose cut the 94-row slicing put in the
+    # next pattern. It rings with no cut of its own (see the end of the loop).
+    wanted_open = []
+
+    def held_pair(named, live, held, shared):
+        if named or len(held) == 1:
+            return ring_envelopes.get(live), cut_envelopes.get(live), bool(live)
+        if shared is not None:
+            return shared[0], shared[1], True
+        return None, None, False
     for pn, rows in enumerate(out):
         n = len(rows) // 4
         held = entry.get(pn, set())
@@ -170,6 +191,7 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
         shared = next(iter(pairs)) if len(pairs) == 1 else None
         named = False
         open_at = None
+        tied_open = False
         for r in range(n):
             k = r * 4
             if rows[k] == 0xFF:
@@ -178,6 +200,16 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
                 live = rows[k + 1]
                 named = True
             if rows[k] == GT_KEYOFF:
+                if (open_at is not None and rows[k + 1] == 0
+                        and rows[k + 2] == 0 and rows[k + 3] == 0):
+                    # A rest straight after a rest that did not cut: the
+                    # release that began at the FIRST KEYOFF is still
+                    # sounding (`patterns` `ring_chain`), so the chain rings
+                    # from there and this KEYOFF, on a gate already shut,
+                    # changes nothing.
+                    if not chains:
+                        open_at = None      # its marker becomes an orphan
+                    continue
                 # Free, or the `CMD_TONEPORTA 00` a rest after a tied note is
                 # given (`pending_tie`): the packed player's KEYOFF path
                 # never reads it (player.s `mt_gate` precedes the
@@ -185,17 +217,13 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
                 open_at = r if (rows[k + 1] == 0 and (
                     (rows[k + 2], rows[k + 3]) in ((0, 0), (CMD_TONEPORTA, 0)))
                     ) else None
+                tied_open = (open_at is not None
+                             and rows[k + 2] == CMD_TONEPORTA)
                 continue
             if open_at is not None and _ring_free(rows, r):
                 continue
             if open_at is not None and _ring_marker(rows, r):
-                if named or len(held) == 1:
-                    ring = ring_envelopes.get(live)
-                    cutd = cut_envelopes.get(live)
-                    known = bool(live)
-                else:
-                    ring, cutd = shared if shared is not None else (None, None)
-                    known = shared is not None
+                ring, cutd, known = held_pair(named, live, held, shared)
                 if not known:
                     unknown += 1
                 elif ring is None or cutd is None or ring[1] == cutd[1]:
@@ -208,6 +236,22 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
             elif _ring_marker(rows, r) and r != _ring_last_row(rows):
                 rows[k + 2:k + 4] = [0, 0]          # an orphan: no KEYOFF
             open_at = None
+        if chains and open_at is not None and tied_open and open_at > 0:
+            # The chain is still open where the pattern ends. Its first
+            # KEYOFF carries the `CMD_TONEPORTA 00` of a tied note, so the
+            # gate it shuts was open and the player's rest re-wrote the
+            # record's SR over it (Kentilla `37 77 77 57`, `$AC23`): the
+            # release sounds. Rung with no cut, so a cut the slicing moved
+            # into the next pattern is dropped and the ring runs into the
+            # next attack -- a tick late at most, against a rest that was
+            # silent from its first frame.
+            ring, cutd, known = held_pair(named, live, held, shared)
+            if not known:
+                unknown += 1
+            elif ring is None or cutd is None or ring[1] == cutd[1]:
+                inert += 1
+            else:
+                wanted_open.append((pn, open_at, ring[1] & 0xFF))
 
     opening = {pn: sr for pn, a, _m, sr in wanted if a == 0}
 
@@ -233,6 +277,12 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
         if a > 0 and _ring_free(out[pn], a - 1):
             out[pn][(a - 1) * 4 + 2:(a - 1) * 4 + 4] = [CMD_SETSR, sr]
             mine.update({(pn, a - 1), (pn, m)})
+    rung_open = 0
+    for pn, a, sr in wanted_open:
+        if _ring_free(out[pn], a - 1):
+            out[pn][(a - 1) * 4 + 2:(a - 1) * 4 + 4] = [CMD_SETSR, sr]
+            mine.add((pn, a - 1))
+            rung_open += 1
 
     # The rests that open a pattern put it on the last row of whatever plays
     # before them -- per orderlist POSITION, because a pattern that leads to a
@@ -311,9 +361,11 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
         if packed_pattern_size(pattern_rows(bare)) <= PACKED_PATTERN_LIMIT:
             out[pn] = bare
             rolled += 1
-    if log is not None and (wanted or unknown or inert):
+    if log is not None and (wanted or wanted_open or unknown or inert):
         log(f"Rest ring-out...........: {len(wanted) - declined} rest(s) "
             f"ring at the held instrument's release, cut on their last tick"
+            + (f", {rung_open} tied rest chain(s) ring uncut to the next "
+               "note" if rung_open else "")
             + (f", {clones} pattern copy(ies)" if clones else "")
             + (f", {declined} with no free row before them" if declined
                else "")

@@ -346,13 +346,17 @@ def test_las_vegas_voice_1_rings_through_its_rest():
 
 
 @needs_corpus
-@pytest.mark.parametrize("name,asked", [("Kentilla.sid", False),
+@pytest.mark.parametrize("name,asked", [("Kentilla.sid", True),
                                         ("Master_of_Magic.sid", False),
                                         ("Las_Vegas_Video_Poker.sid", True)])
 def test_the_decoder_is_asked_only_for_a_player_with_the_bit_6_test(
         name, asked, monkeypatch):
-    """Kentilla and Master of Magic cut at a note end but have no BIT/BVS
-    status test: their rests are not events, so nothing here may reach them.
+    """Master of Magic cuts at a note end but has no BIT/BVS status test: its
+    rests are not events, so nothing here may reach it. RETRACTED: "Kentilla
+    and Master of Magic ... have no BIT/BVS status test" -- Kentilla has it,
+    with the wait stored twice before the BIT (`STATUS_BIT6_TWICE_SHAPE`,
+    `$ABC3-$ABD6`), and its rest is Las Vegas's (`DEC $AFC8` into the shared
+    tail), so it is asked like Las Vegas (task kentilla-close-the-gaps).
     The mutation that drops the gate is invisible in the output bytes (the
     dedup key and the pass's cleanup absorb the markers it would write), so
     the gate is pinned where it acts -- on the request the decoder receives."""

@@ -452,7 +452,8 @@ def _heard_splits(heard: set, split_rows: set, copies: dict,
 def _restart_heard(rows: set, tracks: List[List[int]],
                    patterns: List[List[int]], record_of: dict, out,
                    instr_at: int, wave_entries: List[tuple],
-                   pulse_entries: List[tuple], firstwave_of, kind: str) -> set:
+                   pulse_entries: List[tuple], firstwave_of, kind: str,
+                   pulse_restart: bool = False) -> set:
     """The tie rows whose instrument restart the original makes AUDIBLE --
     the ones to respell. The classic start re-writes waveform, pulse, AD
     and SR and restarts the effects (`CLASSIC_TIE_START_SHAPES`); on a tie
@@ -466,7 +467,11 @@ def _restart_heard(rows: set, tracks: List[List[int]],
     init call, so a held sweep would stall a frame per tie (Ninja voice 1,
     $3A8 held two frames at 5174 where the old spelling sweeps on). A tie
     into another record, or onto a block or sweep the restart replays, is
-    heard. An unsettled held instrument counts as another record."""
+    heard. An unsettled held instrument counts as another record.
+
+    The pulse reason counts only with `pulse_restart` (convert()'s
+    `tie_pulse_restart`): respelling those ties costs pitch on the files
+    that reach it (convert()'s docstring), so it is per song."""
     entry = _gw_note_passes._entry_instruments(tracks, patterns)
     heard = set()
     for pn in sorted({p for p, _r in rows}):
@@ -486,7 +491,8 @@ def _restart_heard(rows: set, tracks: List[List[int]],
             if not _block_is_steady(wave_entries, out[rec + 2],
                                     firstwave_of(live)):
                 heard.add((pn, r))
-            elif kind == "voice" and _pulse_sweeps(pulse_entries, out[rec + 3]):
+            elif (kind == "voice" and pulse_restart
+                  and _pulse_sweeps(pulse_entries, out[rec + 3])):
                 heard.add((pn, r))
     return heard
 
@@ -529,6 +535,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               gate_off_firstwave_instruments: tuple = (),
               gatetimer_trim: int = 0,
               tie_restart: bool = False,
+              tie_pulse_restart: bool = False,
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
               drum_fall: bool = False,
@@ -1055,7 +1062,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             {i + lead + 1: record_envelope(sid.data, det, i, sustain_exact,
                                            False)
              for i in range(max(instr_used - lead, 0))},
-            envelopes, tracks, log)
+            envelopes, tracks, log,
+            # The note rise claims the rows through a rest itself, after
+            # this pass; on its files the ring keeps its older reach.
+            chains=not (effects and det.note_rise is not None))
     # After the layout because it needs the speed-table indices it allocated,
     # and before the records because it decides what goes in their byte 5.
     # Triangle-dialect only: it is that player's length gate this expresses,
@@ -1615,7 +1625,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if restart_kind:
             heard = _restart_heard(still, tracks, patterns, record_of, out,
                                    instr_at, wave_entries, pulse_entries,
-                                   clone_firstwave, restart_kind)
+                                   clone_firstwave, restart_kind,
+                                   pulse_restart=tie_pulse_restart)
             if _split_only is None and split_copies:
                 keep = _heard_splits(heard, split_rows, split_copies,
                                      tracks, patterns)

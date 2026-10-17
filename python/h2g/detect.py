@@ -346,6 +346,9 @@ class Detection:
     pulse_tri_step_mask: int = 0xE0
     pulse_tri_delay_mask: int = 0x1F
     pulse_tri_per_voice: bool = False
+    # `(rate & step_mask) >> step_shift` is the step: 1 in the command-table
+    # engine's spelling (PULSE_TRI_CMD_SHAPE's `AND #$F0 / LSR`), else 0.
+    pulse_tri_step_shift: int = 0
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -2208,6 +2211,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             # Fallback, consulted only where the absolute dialect matched
             # nothing: see PULSE_TRI_ZP_SHAPE.
             zp = _find_pulse_tri_zp(sid, det)
+            if zp is None:
+                # The same routine with absolute cells (Bump_Set_Spike),
+                # consulted only where the zero-page spelling matched nothing.
+                zp = _find_pulse_tri_absx(sid, det)
+            if zp is None:
+                # ... and the command-table engine's (Hollywood_or_Bust,
+                # Chicken_Song), consulted only where that matched nothing.
+                cmd = _find_pulse_tri_cmd(sid, det)
+                if cmd is not None:
+                    zp = cmd
+                    det.pulse_tri_step_shift = 1
             if zp is not None:
                 (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
                  det.pulse_tri_step_mask, det.pulse_tri_delay_mask) = zp
@@ -2215,7 +2229,10 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         if det.pulse_tri_hi >= 0:
             log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
                 f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
-                f"(step & ${det.pulse_tri_step_mask:02X}, "
+                f"(step & ${det.pulse_tri_step_mask:02X}"
+                + (f" >> {det.pulse_tri_step_shift}"
+                   if det.pulse_tri_step_shift else "")
+                + f", "
                 f"delay & ${det.pulse_tri_delay_mask:02X})"
                 + (", per-voice accumulator reseeded at note"
                    if det.pulse_tri_per_voice else "")
@@ -4718,6 +4735,23 @@ def _find_status_bit6(data: bytes) -> bool:
 STATUS_BIT6_ZP_SHAPE = "B1 ?? 95 ?? 85 ?? 29 1F 95 ?? 24 ?? 70"
 STATUS_BIT6_LATE_SHAPE = "B1 ?? 95 ?? 8D ?? ?? 29 1F 9D ?? ??"
 STATUS_BIT6_LATE_WINDOW = 24
+# The primary shape with the wait stored TWICE before the test, consulted only
+# where every spelling above matched nothing. Kentilla $ABC3:
+#
+#     ABC3  B1 A9     LDA ($A9),Y     ; the status byte
+#     ABC5  9D BC AF  STA $AFBC,X
+#     ABC8  8D C9 AF  STA $AFC9       ; the scratch copy...
+#     ABCB  29 1F     AND #$1F
+#     ABCD  9D FD AF  STA $AFFD,X     ; the note's full length (bit-0 fall)
+#     ABD0  9D B9 AF  STA $AFB9,X     ; the wait counter
+#     ABD3  2C C9 AF  BIT $AFC9       ; ...tested for bit 6 FIRST
+#     ABD6  70 48     BVS $AC20       ; past the operand and note reads
+#
+# The BVS target is Las Vegas Video Poker's rest (`DEC gatemask` into the
+# shared tail that re-writes the record's AD/SR with the gate masked off),
+# which `goatwriter.rest_ring` already spells. The BIT must test the cell the
+# status byte was stored to. Only Kentilla in the 95-file corpus.
+STATUS_BIT6_TWICE_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 9D ?? ?? 2C ?? ?? 70"
 
 
 def _status_bit6_bvs(data: bytes) -> int:
@@ -4744,6 +4778,9 @@ def _status_bit6_bvs(data: bytes) -> int:
             if (data[k] == 0x2C and data[k + 1:k + 3] == cell
                     and data[k + 3] == 0x70):
                 return k + 4
+    i = search_file(data, STATUS_BIT6_TWICE_SHAPE)
+    if i >= 1 and data[i + 6:i + 8] == data[i + 17:i + 19]:
+        return i + len(STATUS_BIT6_TWICE_SHAPE.split())
     return -1
 
 
@@ -6297,6 +6334,193 @@ def _find_pulse_tri_zp(sid: SidFile, det: Detection):
     if not seeded:
         return None
     lo, hi = d[off + _TRIZ_LO] & 0x0F, d[off + _TRIZ_HI] & 0x0F
+    if hi <= lo:
+        return None
+    return lo, hi, _tri_gated(d, entry, head), step_mask, delay_mask
+
+
+# The per-voice triangle in a THIRD spelling, consulted only where both
+# PULSE_TRI_SHAPE and PULSE_TRI_ZP_SHAPE matched nothing: the zero-page
+# dialect's routine instruction for instruction, every cell ABSOLUTE.
+# Bump_Set_Spike $B2A4 (eight corpus files carry it, read at v0.5.583:
+# Bump_Set_Spike, Formula_1_Simulator, International_Karate, Kentilla,
+# Las_Vegas_Video_Poker, Proteus, Thrust, Warhawk):
+#
+#     B2A4  AD DE B4  LDA rate       ; record +6, copied at $B1C6 (LDA $B519,Y)
+#     B2A7  F0 59     BEQ done
+#     B2A9  AC C2 B4  LDY sidoff
+#     B2AC  29 0F     AND #$0F       ; delay mask
+#     B2AE  DE E6 B4  DEC counter,X
+#     B2B1  10 4F     BPL done
+#     B2B3  9D E6 B4  STA counter,X
+#     B2B6  AD DE B4  LDA rate
+#     B2B9  29 F0     AND #$F0       ; step mask   <- match
+#     B2BB  8D 05 B5  STA step
+#     B2BE  BD E9 B4  LDA dir,X
+#     B2C1  D0 1A     BNE descend
+#     B2C3  AD 05 B5  LDA step / CLC / ADC acc_lo,X ($B50D) / PHA
+#     B2CB  BD 10 B5  LDA acc_hi,X / ADC #0 / AND #$0F / PHA / CMP #$0E
+#     ...             descend: SBC step, ending CMP #$08
+#
+# and the note fetch reseeds the pair exactly as Samantha Fox's does,
+# PULSE_TRI_ZP_SEED then `PLA / STA acc_hi,X / PLA / STA acc_lo,X` with
+# absolute stores (`$B14A`-`$B174`, direction and counter zeroed at `$B167`).
+# A rest falls into the same tail (`$B0E1 BVS $B12B` -> `$B12E`), as in
+# rest_reseed's two files. Before this the record's sweep fell through to
+# the static width: the bass (record 2, rate $40) sat on $080 for the whole
+# tune where the player climbs $080, $0C0, $100, ... every call. Kentilla
+# carries the same routine at $AD96 (cells $AFF7,X / $AFFA,X, seeded at
+# $AC3F-$AC64), its record 7 frozen at $080 where the player sweeps
+# $080 -> $1E0 per note.
+PULSE_TRI_ABSX_SHAPE = (
+    "29 ?? 8D ?? ?? BD ?? ?? D0 ?? AD ?? ?? 18 7D ?? ?? 48 BD ?? ?? 69 00 "
+    "29 0F 48 C9 ?? D0 ?? FE ?? ?? 4C ?? ?? 38 BD ?? ?? ED ?? ?? 48 BD ?? ?? "
+    "E9 00 29 0F 48 C9 ??")
+_TRIA_HI = 27
+_TRIA_LO = 53
+PULSE_TRI_ABSX_HEAD = "29 ?? DE ?? ?? 10 ?? 9D ?? ??"
+
+
+def _find_pulse_tri_absx(sid: SidFile, det: Detection):
+    """`_find_pulse_tri_zp` for PULSE_TRI_ABSX_SHAPE: the same fields, read
+    and cross-checked the same way, with two-byte operands."""
+    d = sid.data
+    off = search_file(d, PULSE_TRI_ABSX_SHAPE)
+    if off < 0:
+        return None
+
+    def w(k: int) -> int:
+        return d[k] | (d[k + 1] << 8)
+
+    step_cell, dir_cell = w(off + 3), w(off + 6)
+    acc_lo, acc_hi = w(off + 15), w(off + 19)
+    if not (w(off + 11) == w(off + 41) == step_cell
+            and w(off + 31) == dir_cell
+            and w(off + 38) == acc_lo and w(off + 45) == acc_hi):
+        return None
+    for load in _rate_loads(d, off):
+        head = off - len(load) - 10
+        entry = head - len(load) - 5
+        if (entry >= 0 and match_at(d, head, PULSE_TRI_ABSX_HEAD)
+                and w(head + 3) == w(head + 8)
+                and bytes(d[entry:entry + len(load)]) == load
+                and match_at(d, entry + len(load), "F0 ?? AC ?? ??")):
+            break
+    else:
+        return None
+    step_mask, delay_mask = d[off + 1], d[head + 1]
+    if not step_mask or step_mask & delay_mask:
+        return None
+    rate_at = sid.to_address(det.instr_start + 6)
+    fill = bytes([0xB9, rate_at & 0xFF, rate_at >> 8]) + (
+        bytes([0x85]) if len(load) == 2 else bytes([0x8D])) + load[1:]
+    if d.find(fill) < 0:
+        return None
+    if not _seeded_from_record(sid, det, acc_lo, acc_hi):
+        return None
+    lo, hi = d[off + _TRIA_LO] & 0x0F, d[off + _TRIA_HI] & 0x0F
+    if hi <= lo:
+        return None
+    return lo, hi, _tri_gated(d, entry, head), step_mask, delay_mask
+
+
+def _seeded_from_record(sid: SidFile, det: Detection, acc_lo: int,
+                        acc_hi: int) -> bool:
+    """Whether a note fetch seeds the absolute per-voice pair from record
+    +0/+1: PULSE_TRI_ZP_SEED, then `PLA / STA acc_hi,X / PLA / STA
+    acc_lo,X` within 64 bytes."""
+    d = sid.data
+    base = sid.to_address(det.instr_start)
+    pulls = bytes([0x68, 0x9D, acc_hi & 0xFF, acc_hi >> 8,
+                   0x68, 0x9D, acc_lo & 0xFF, acc_lo >> 8])
+    at = d.find(pulls)
+    while at >= 0:
+        for k in range(max(0, at - 64), at):
+            if (match_at(d, k, PULSE_TRI_ZP_SEED)
+                    and (d[k + 1] | d[k + 2] << 8) == base
+                    and (d[k + 8] | d[k + 9] << 8) == base + 1):
+                return True
+        at = d.find(pulls, at + 1)
+    return False
+
+
+# The per-voice triangle in the COMMAND-TABLE engine (Hollywood_or_Bust
+# $06AB, Chicken_Song $1291), consulted only where every spelling above
+# matched nothing. PULSE_TRI_ABSX_SHAPE's routine with three differences:
+#
+#     06AB  AD 87 09  LDA rate       ; record +6 ($05C8 LDA $0A01,Y)
+#     06AE  F0 59     BEQ done       ; no LDY sidoff here
+#     06B0  29 0F     AND #$0F / DEC ctr,X / BPL / STA ctr,X
+#     06BA  AD 87 09  LDA rate
+#     06BD  29 F0     AND #$F0       <- match
+#     06BF  4A        LSR            ; THE STEP IS HALVED: rate $80 steps $40
+#     06C0  8D A1 09  STA step
+#     ...             ascent as ABSX, ending CMP $09AB,X  -- the bounds are
+#     ...             descent as ABSX, ending CMP $09AE,X -- per-VOICE CELLS
+#
+# The cells are written only by pattern command handler `$0880 STA $09AB,X /
+# STA $09AE,X`; nothing else stores them, so where no pattern uses that
+# command the image bytes are the bounds for the whole tune. This reading
+# takes them only where all three voices' cells agree; a pattern that uses
+# the command is not checked here (Hollywood_or_Bust's $83 is used by none
+# of its 49 patterns, read at v0.5.583). Chicken_Song therefore declines:
+# its voice 3 cells hold $01/$04 against $08/$0F, and one program per
+# record cannot turn at both. The seed is ABSX's at the shared
+# fetch tail ($054F-$056D, skipped on a tie by `AND #$20 / BNE`).
+PULSE_TRI_CMD_SHAPE = (
+    "29 ?? 4A 8D ?? ?? BD ?? ?? D0 ?? AD ?? ?? 18 7D ?? ?? 48 BD ?? ?? "
+    "69 00 29 0F 48 DD ?? ?? D0 ?? FE ?? ?? 4C ?? ?? 38 BD ?? ?? ED ?? ?? "
+    "48 BD ?? ?? E9 00 29 0F 48 DD ?? ??")
+
+
+def _find_pulse_tri_cmd(sid: SidFile, det: Detection):
+    """(lo, hi, gated, step_mask, delay_mask) for PULSE_TRI_CMD_SHAPE, or
+    None. Cross-checked as `_find_pulse_tri_absx` is."""
+    d = sid.data
+    off = search_file(d, PULSE_TRI_CMD_SHAPE)
+    if off < 0:
+        return None
+
+    def w(k: int) -> int:
+        return d[k] | (d[k + 1] << 8)
+
+    step_cell, dir_cell = w(off + 4), w(off + 7)
+    acc_lo, acc_hi = w(off + 16), w(off + 20)
+    hi_cell, lo_cell = w(off + 28), w(off + 55)
+    if not (w(off + 12) == w(off + 43) == step_cell
+            and w(off + 33) == dir_cell
+            and w(off + 40) == acc_lo and w(off + 47) == acc_hi):
+        return None
+    # The entry is `LDA rate / BEQ`, with `LDY sidoff` after it in
+    # Chicken_Song ($1286) and without in Hollywood_or_Bust ($06AB).
+    for load, after in ((ld, af) for ld in _rate_loads(d, off)
+                        for af in ("F0 ??", "F0 ?? AC ?? ??")):
+        head = off - len(load) - 10
+        entry = head - len(load) - len(after.split())
+        if (entry >= 0 and match_at(d, head, PULSE_TRI_ABSX_HEAD)
+                and w(head + 3) == w(head + 8)
+                and bytes(d[entry:entry + len(load)]) == load
+                and match_at(d, entry + len(load), after)):
+            break
+    else:
+        return None
+    step_mask, delay_mask = d[off + 1], d[head + 1]
+    if not step_mask or step_mask & delay_mask:
+        return None
+    rate_at = sid.to_address(det.instr_start + 6)
+    fill = bytes([0xB9, rate_at & 0xFF, rate_at >> 8]) + (
+        bytes([0x85]) if len(load) == 2 else bytes([0x8D])) + load[1:]
+    if d.find(fill) < 0:
+        return None
+    if not _seeded_from_record(sid, det, acc_lo, acc_hi):
+        return None
+    bounds = []
+    for cell in (lo_cell, hi_cell):
+        at = sid.to_offset(cell)
+        if at < 0 or at + 3 > len(d) or len(set(d[at:at + 3])) != 1:
+            return None
+        bounds.append(d[at] & 0x0F)
+    lo, hi = bounds
     if hi <= lo:
         return None
     return lo, hi, _tri_gated(d, entry, head), step_mask, delay_mask

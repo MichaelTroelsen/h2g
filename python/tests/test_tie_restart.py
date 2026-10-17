@@ -165,10 +165,11 @@ PAT = [0x60, 1, 0, 0,  0x62, 0, *TIE,  0x64, 2, *TIE,  0x65, 3, *TIE,
 TRACKS = [[0, 0xFF, 0x00]] * 3
 
 
-def _heard(out, kind="record"):
+def _heard(out, kind="record", pulse_restart=True):
     return GB._restart_heard({(0, 1), (0, 2), (0, 3)}, TRACKS, [list(PAT)],
                              {1: 0, 2: 1, 3: 1}, out, 0, STEADY + DRUM,
-                             SWEEP + STATIC, lambda g: 0, kind)
+                             SWEEP + STATIC, lambda g: 0, kind,
+                             pulse_restart=pulse_restart)
 
 
 def test_a_tie_into_the_held_record_on_a_steady_block_is_silent():
@@ -187,6 +188,8 @@ def test_a_sweep_is_heard_only_where_the_start_reseeds_it():
     out = _records((1, 1), (1, 4), (1, 4))
     assert _heard(out, "record") == {(0, 2)}
     assert _heard(out, "voice") == {(0, 1), (0, 2)}
+    # ... and only behind convert()'s `tie_pulse_restart` (off by default).
+    assert _heard(out, "voice", pulse_restart=False) == {(0, 2)}
 
 
 # --- the arpeggio counter's phase -------------------------------------------

@@ -278,6 +278,12 @@ def main(argv=None) -> int:
              "the file. Per song (a --presets entry's pitch_tie_phase); off "
              "leaves every conversion byte-identical.")
     parser.add_argument(
+        "--tie-pulse-restart", action="store_true",
+        help="respell a tie whose landing replays only a per-voice pulse "
+             "sweep as a legato clone. Per song (a --presets entry's "
+             "tie_pulse_restart); off leaves every conversion "
+             "byte-identical except the files it was measured on.")
+    parser.add_argument(
         "--pitch-lead-tie", action="store_true",
         help="on the bare rest row before each note whose instrument opens "
              "on a gated real waveform, tie to that note (CMD_TONEPORTA $00) "
@@ -752,6 +758,7 @@ def main(argv=None) -> int:
                           ("--drum-gate-off", "drum_gate_off"),
                           ("--drum-fall", "drum_fall"),
                           ("--vibrato-onset", "vibrato_onset"),
+                          ("--tie-pulse-restart", "tie_pulse_restart"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -871,6 +878,7 @@ def main(argv=None) -> int:
                       drum_gate_off=args.drum_gate_off,
                       drum_fall=args.drum_fall,
                       vibrato_onset=args.vibrato_onset,
+                      tie_pulse_restart=args.tie_pulse_restart,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

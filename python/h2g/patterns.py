@@ -889,6 +889,15 @@ def _build_raw_pattern(data: bytes, addr: int,
     # Set by an event whose status bit 5 is clear-gate-suppressed; consumed by
     # the next event that carries a note. See the `tie` block below.
     pending_tie = False
+    # A bit-6 rest entered with its envelope still sounding (`pending_tie`,
+    # the pattern's first event, or a rest before it that rang) that does
+    # NOT cut at its end -- status bit 5, or a `wait` of 0 that never reaches
+    # `counter == 0` -- leaves the release ringing into the next event. A
+    # rest that follows it is entered ringing the same way, so its own cut
+    # is marked (`goatwriter.rest_ring` rings the whole chain from its first
+    # KEYOFF). Kentilla `37 77 77 57`: tied note, two bit-5 rests that ring
+    # the record's SR $5F, and the cut on the last rest's final tick.
+    ring_chain = False
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -916,6 +925,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         log_record = None
         log_entry = None
         b1 = data[addr + i2]
+        ring_chain_next = False
 
         if b1 == 0xFF:
             if (rest_ring and pending_tie and len(events) >= 4
@@ -1107,8 +1117,13 @@ def _build_raw_pattern(data: bytes, addr: int,
             # shut and a pair it zeroed (Las Vegas 237 -> 241: ADSR `0A0C`
             # re-written into a released envelope at zero), and nothing rings.
             elif (rest_ring and rest_keyoff and wait and not no_adsr
-                    and (pending_tie or ordinal == 0)):
+                    and (pending_tie or ordinal == 0 or ring_chain)):
                 hold_cmds = [(0, 0)] * (wait - 1) + [(CMD_SETSR, 0x00)]
+            ring_chain_next = bool(
+                rest_ring and rest_keyoff and not park_wave
+                and not rest_envelope
+                and (pending_tie or ordinal == 0 or ring_chain)
+                and (no_adsr or not wait))
 
         if get_next:
             i2 += 1
@@ -1644,6 +1659,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         pending_tie = tie and not no_note and not past_rest \
             and not gate_closes and (
                 bool(no_adsr) or (wait == 0 and gate_hold))
+        ring_chain = ring_chain_next
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)

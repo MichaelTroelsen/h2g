@@ -700,6 +700,12 @@ EXCLUDED_FROM_ALWAYS = {
     # (task formula-1-lead-vibrato, v0.5.583, 180 s, historical).
     # Not in FIDELITY_TOGGLES. A song entry `"vibrato_onset": true`.
     "vibrato_onset",
+    # `tie_pulse_restart`: a tie whose landing replays only the per-voice
+    # pulse sweep is respelled as a legato clone. Off by default and per
+    # song: it moved pitch the wrong way on International_Karate and
+    # Formula_1_Simulator (convert()'s docstring). A song entry
+    # `"tie_pulse_restart": true`.
+    "tie_pulse_restart",
 }
 
 

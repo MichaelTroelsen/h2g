@@ -280,7 +280,8 @@ def convert(sid_path: str, log: Logger = print,
             pitch_lead_tie: bool = False,
             drum_gate_off: bool = False,
             drum_fall: bool = False,
-            vibrato_onset: bool = False) -> bytes:
+            vibrato_onset: bool = False,
+            tie_pulse_restart: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -462,6 +463,18 @@ def convert(sid_path: str, log: Logger = print,
     repeats written out so each tie row is fetched in one state. Off by
     default and per song (presets.EXCLUDED_FROM_ALWAYS); byte-inert where it
     is off.
+
+    tie_pulse_restart respells a tie as a legato clone where the only thing
+    its landing replays is the per-voice pulse sweep (the "voice" restart
+    family, `goatwriter.build._restart_heard`): the player reseeds the
+    sweep there. Off by default and per song: the clones cost pitch --
+    measured at 03eb34f + the absolute per-voice triangle reading, 180 s,
+    presets, International_Karate bend_ratio 1.098 -> 1.184 and
+    travel_ratio 1.060 -> 1.095, Formula_1_Simulator bend 0.642 -> 0.627,
+    for pulse_span .099 -> .074 over 1 on International_Karate and aud
+    inside its 0.009 noise on every mover (historical). No corpus file
+    reached the branch before that reading, so off is byte-inert
+    everywhere else.
 
     pitch_lead_tie writes, on the command-free rest row before each note
     whose record's firstwave is a gated real waveform, that note with
@@ -1374,6 +1387,7 @@ def convert(sid_path: str, log: Logger = print,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
                          tie_restart=tie_restart,
+                         tie_pulse_restart=tie_pulse_restart,
                          wave_reserve=reserve,
                          drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,

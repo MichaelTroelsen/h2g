@@ -118,8 +118,17 @@ def test_the_gate_reaches_exactly_its_measured_carriers():
             if step and (_tri_speed(step, delay, mult, gate)
                          != _tri_speed(step, delay, mult, None)):
                 moved.add(name)
+    # The eight files of the absolute per-voice spelling
+    # (detect.PULSE_TRI_ABSX_SHAPE) all carry an outer gate. Measured on
+    # Bump_Set_Spike (-S3, O=9, siddump 60 s, packed and traced at -m3):
+    # ours climbs 57 a frame against the original's 64 on 9 frames in 10
+    # (57.6), where the ungated speed would be 64.
+    absx = {"Bump_Set_Spike.sid", "Formula_1_Simulator.sid",
+            "International_Karate.sid", "Kentilla.sid",
+            "Las_Vegas_Video_Poker.sid", "Proteus.sid", "Thrust.sid",
+            "Warhawk.sid"}
     assert moved == {"Game_Killer.sid", "Ninja.sid",
-                     "Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"}
+                     "Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"} | absx
 
 
 # --- the measurement ----------------------------------------------------------

@@ -751,7 +751,9 @@ def _tri_step_delay(det: Detection, rate: int) -> tuple[int, int]:
     reads the masks off the routine (`Detection.pulse_tri_step_mask`); every
     reader of the rate byte goes through here, so none can keep the other
     dialect's split."""
-    return (rate & det.pulse_tri_step_mask,
+    # The command-table spelling halves the step (`AND #$F0 / LSR`,
+    # `Detection.pulse_tri_step_shift`).
+    return ((rate & det.pulse_tri_step_mask) >> det.pulse_tri_step_shift,
             (rate & det.pulse_tri_delay_mask) + 1)
 
 

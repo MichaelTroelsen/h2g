@@ -63,7 +63,9 @@ def test_the_fallback_spellings_reach_exactly_three_files_and_no_primary_one():
         elif D._find_status_bit6(data):
             rescued.add(path.name)
     assert len(primary) == 61
-    assert rescued == {SAMANTHA, SPELLBOUND, MEGA}
+    # Kentilla stores the wait twice before its BIT (STATUS_BIT6_TWICE_SHAPE,
+    # tests/test_kentilla_gaps.py).
+    assert rescued == {SAMANTHA, SPELLBOUND, MEGA, "Kentilla.sid"}
 
 
 @needs_corpus

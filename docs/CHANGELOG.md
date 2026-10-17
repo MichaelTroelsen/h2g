@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.587 — 2026-10-18
+
+- absolute,X and command-table pulse triangle spellings; Kentilla bit-6 rests and rest-chain ring
+
 ## 0.5.586 — 2026-10-18
 
 - vibrato outer-gate stretch through a subtune dispatch; chord arpeggio command $82

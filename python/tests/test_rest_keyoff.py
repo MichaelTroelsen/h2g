@@ -100,7 +100,10 @@ def test_the_corpus_splits_into_holders_and_silencers():
     # is 42/22 and Commando is a holder. Of the three, Samantha Fox and
     # Spellbound hold (their branch only DECs the gate mask) and
     # Mega_Apocalypse silences ($4B91: LDA #$00 / STA $D406,Y / STA $D405,Y).
-    assert len(holds) + len(silences) == 64
+    # A fourth, Kentilla (STATUS_BIT6_TWICE_SHAPE), holds: its branch DECs
+    # the gate mask like Las Vegas's. 65, split 43/22.
+    assert len(holds) + len(silences) == 65
+    assert "Kentilla.sid" in holds
     assert len(silences) == 22
     assert "Commando.sid" in holds
     assert "IK_plus.sid" in silences and "Ricochet.sid" in silences
