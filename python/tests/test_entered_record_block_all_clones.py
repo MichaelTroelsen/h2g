@@ -26,7 +26,13 @@ from h2g.convert import convert  # noqa: E402
 
 
 @needs_corpus
-def test_hunter_patrol_enters_the_records_block_instead_of_cloning_it():
+def test_hunter_patrol_enters_the_records_block_instead_of_cloning_it(
+        monkeypatch):
+    # The size this pin was taken at is the table before the dead blocks went
+    # (`goatwriter.dead_blocks`; the room they free lets 3 more skydive
+    # programs in, +112 bytes -- test_dead_blocks.py pins that arm).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     import fidelity as F
     doc = json.loads((ROOT / "presets.json").read_text())
     with warnings.catch_warnings():

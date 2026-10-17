@@ -210,12 +210,18 @@ def test_a_budget_of_nothing_carries_nothing():
 
 
 @needs_corpus
-def test_a_compilation_keeps_every_player_the_carried_programs_would_cost_it():
+def test_a_compilation_keeps_every_player_the_carried_programs_would_cost_it(
+        monkeypatch):
     """5_Title_Tunes is five players behind one dispatch, appended into one
     255-row wavetable. Carrying its subtune 1's windows without a limit
     needed 269 rows and left players 2-4 out (the log: `wave table needs 269
     rows > 255`); converted held to what the held layout leaves over it keeps
     all five, and still carries."""
+    # The table this is about is the one before `goatwriter.dead_blocks`
+    # dropped the blocks of the records no pattern names (that arm: see
+    # test_dead_blocks.py).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     import h2g.convert as C
     sng, lines = _converted("5_Title_Tunes")
     assert sng[C.HEADER_LEN] == 5
@@ -305,6 +311,11 @@ def test_the_packed_window_follows_the_originals_frequency_on_every_frame(
     rows of Hunter_Patrol's duplicate instrument blocks instead
     (`note_rise.reclaimable_holes`, `skydive.reusable_runs`): before that it
     stayed on the held program (`carried[0] == held[0]`, 25 frames of 63)."""
+    # The table this is about is the one before `goatwriter.dead_blocks`
+    # dropped the blocks of the records no pattern names (that arm: see
+    # test_dead_blocks.py).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     carried, held, total = _window_frames("Hunter_Patrol", 0, 30, tmp_path,
                                           monkeypatch)
     assert total[0] >= 63 and total[1] >= 63, total
@@ -386,6 +397,11 @@ def test_carrying_never_costs_a_note_row_program_its_place(monkeypatch):
 
     With Zoids' tie windows off (they hold the note-row program, see
     tests/test_skydive_tie_window.py)."""
+    # The table this is about is the one before `goatwriter.dead_blocks`
+    # dropped the blocks of the records no pattern names (that arm: see
+    # test_dead_blocks.py).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     monkeypatch.setattr(S, "SKYDIVE_TIE_NEXT_COMMANDS", frozenset())
     real = S.skydive_program
 

@@ -1288,6 +1288,7 @@ def convert(sid_path: str, log: Logger = print,
                          ilv_filter_routing=ilv_filter_routing,
                          tie_restart=tie_restart,
                          wave_reserve=reserve,
+                         drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence))

@@ -405,8 +405,14 @@ def _swell_loops(lines):
 
 
 @needs_corpus
-def test_mega_apocalypse_writes_the_still_loop_and_the_shared_hold_program():
+def test_mega_apocalypse_writes_the_still_loop_and_the_shared_hold_program(
+        monkeypatch):
     import songview
+    # The rows these numbers count are the table before
+    # `goatwriter.dead_blocks` dropped the dead records' blocks (20 rows
+    # lower: "at 98"; test_dead_blocks.py pins that arm).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     sng, lines = _converted()
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "row(s)" in m]

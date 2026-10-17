@@ -496,8 +496,19 @@ are renumbered rather than dropped. The packed `.sid` is unchanged, since
 gt2reloc already maps unreferenced instruments away. The pulse and filter
 table rows only a dropped record reaches go with it (pointers, jumps and
 `CMD_SETPULSEPTR` / `CMD_SETFILTERPTR` operands renumbered; a block a pattern
-command or a wavetable `$F9`/`$FA` row also names stays); the wavetable is
-left as written. At the tree of 2026-10-17 that is 1,963 of 9,144 pulse rows in
+command or a wavetable `$F9`/`$FA` row also names stays). The wavetable blocks
+of those records go earlier, inside the build (`goatwriter.dead_blocks`,
+behind the same option), so the skydive, note-rise and counter-fall passes and
+the past-table pointer copies see the rows they free: a block stays if any
+kept pointer, pattern `CMD_SETWAVEPTR` operand, jump or `$F8` row reaches it,
+and the pointers, operands and jumps are renumbered. If a later pass names a
+record whose block went, the build is redone without the drop and says so. At
+v0.5.578 under presets, over the 89 files that convert, the wavetable's
+unreachable rows went from 2,821 to 641, 71 files move (65 play the same
+wavetable programs relocated; 6 spend the freed rows: 5_Title_Tunes,
+Battle_of_Britain, Gremlins, Hunter_Patrol, Mega_Apocalypse, W_A_R_Preview; a
+historical figure, re-run `tests/test_dead_blocks.py`'s corpus tests to
+refresh it). At the tree of 2026-10-17 that is 1,963 of 9,144 pulse rows in
 69 files and 71 of 600 filter rows in 6, with the packed `.sid` byte-identical
 on all 69 movers (a historical figure: re-run `instrument_drop` over the corpus
 to refresh it). Off by default because

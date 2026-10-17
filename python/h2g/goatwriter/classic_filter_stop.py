@@ -30,6 +30,18 @@ from .filters import _best_sweep_length, _ilv_voice_rows
 from .pulse import packed_pattern_size, pattern_rows
 
 
+class SweepLengths(dict):
+    """{record: calls}, and in `free` the records whose every gap ends on a
+    filtered strike (or on a stop that has its place): for those any length
+    from the longest gap up costs nothing, because the next strike of the
+    voice restarts or replaces the program. `filters._fit_sized_sweeps`
+    reads it to let such records share one longer block."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.free: set = set()
+
+
 def _stop_row(pattern: List[int], r: int) -> Optional[int]:
     """The row to write `A 00` on for the note at row `r` of `pattern`.
 
@@ -119,7 +131,7 @@ def classic_filter_stops(tracks: List[List[int]], patterns: List[List[int]],
                 stats["disagree"] += n
         if agreed:
             sites[key] = frozenset(agreed)
-    lengths = {}
+    lengths = SweepLengths()
     for rec, entries in per_record.items():
         # a gap is a stop for the length only where its stop has no place
         gaps = [(g, stop and at not in agreed_rows)
@@ -127,6 +139,8 @@ def classic_filter_stops(tracks: List[List[int]], patterns: List[List[int]],
         length = _best_sweep_length(gaps)
         if length:
             lengths[rec] = length
+            if not any(stop for _g, stop in gaps):
+                lengths.free.add(rec)
     return lengths, sites, stats
 
 

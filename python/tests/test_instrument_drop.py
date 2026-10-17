@@ -77,9 +77,42 @@ def _canon(tab, ptr):
                  for r in order for l, rt in [tab[r - 1]])
 
 
+def _wprog(song, ptr):
+    """The wavetable program entered at `ptr`, relocation-normalised: rows
+    numbered in the order they are reached, jump targets by that number, a
+    pulse / filter pointer by the program it enters. The blocks of the dropped
+    records go with them (`goatwriter.dead_blocks`), so the rows of the others
+    move and their programs do not."""
+    if not ptr:
+        return ()
+    wave = song.tables["WTBL"]
+    num, order, i = {ptr: 0}, [ptr], 0
+    while i < len(order):
+        left, right = wave[order[i] - 1]
+        i += 1
+        succ = [] if left == 0xFF else [order[i - 1] + 1]
+        if left in (0xFF, 0xF8) and right:
+            succ.append(right)
+        for t in succ:
+            if 1 <= t <= len(wave) and t not in num:
+                num[t] = len(order)
+                order.append(t)
+    out = []
+    for r in order:
+        left, right = wave[r - 1]
+        if left in (0xFF, 0xF8) and right:
+            right = ("->", num.get(right, -1))
+        elif 0xF0 <= left <= 0xFE:
+            right = _operand(song, left & 0xF, right)
+        out.append((left, right))
+    return tuple(out)
+
+
 def _operand(song, cmd, data):
-    """A pattern or wavetable command operand, a pulse / filter pointer
-    replaced by the program it enters."""
+    """A pattern or wavetable command operand, a pulse / filter / wave
+    pointer replaced by the program it enters."""
+    if data and cmd == 8:
+        return ("W", _wprog(song, data))
     if data and cmd == 9:
         return ("P", _canon(song.tables["PTBL"], data))
     if data and cmd == 0x0A:
@@ -89,7 +122,7 @@ def _operand(song, cmd, data):
 
 def _record(song, number):
     i = song.instruments[number - 1]
-    return (i.ad, i.sr, i.wave_ptr,
+    return (i.ad, i.sr, _wprog(song, i.wave_ptr),
             _canon(song.tables["PTBL"], i.pulse_ptr),
             _canon(song.tables["FTBL"], i.filt_ptr), i.vib_ptr,
             i.vib_delay, i.gatetimer, i.firstwave, i.name)
@@ -102,10 +135,9 @@ def _assert_same_music(before: bytes, after: bytes):
     a, b = parse_sng(before), parse_sng(after)
     assert a.tracks == b.tracks
     assert a.tables["STBL"] == b.tables["STBL"]
-    assert [(l, _operand(a, l & 0xF, rt) if 0xF0 <= l <= 0xFE else rt)
-            for l, rt in a.tables["WTBL"]] == \
-        [(l, _operand(b, l & 0xF, rt) if 0xF0 <= l <= 0xFE else rt)
-         for l, rt in b.tables["WTBL"]]
+    # The wavetable shrinks too (the blocks of the dropped records go); what
+    # each kept record and each CMD_SETWAVEPTR plays is compared below.
+    assert len(b.tables["WTBL"]) <= len(a.tables["WTBL"])
     assert len(a.patterns) == len(b.patterns)
     assert [len(p) for p in a.patterns] == [len(p) for p in b.patterns]
     for pa, pb in zip(a.patterns, b.patterns):
@@ -142,7 +174,12 @@ def test_knucklebusters_carries_no_instrument_for_record_27():
 
 
 @needs_corpus
-def test_option_is_the_drop_applied_to_the_finished_bytes():
+def test_option_is_the_drop_applied_to_the_finished_bytes(monkeypatch):
+    """The records go in the finished bytes; their wavetable blocks, earlier,
+    in the build (`goatwriter.dead_blocks`), which is switched off here so
+    the records' drop is seen alone."""
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     off = _convert(KNUCKLE)
     assert _convert(KNUCKLE, drop_unnamed_instruments=True) == \
         drop_unnamed_instruments(off)
@@ -151,9 +188,16 @@ def test_option_is_the_drop_applied_to_the_finished_bytes():
 @needs_corpus
 @pytest.mark.parametrize("name", ["Human_Race.sid", "Hunter_Patrol.sid",
                                   "Sanxion.sid", "Zoids.sid"])
-def test_clones_after_the_records_are_renumbered_not_dropped(name):
+def test_clones_after_the_records_are_renumbered_not_dropped(name,
+                                                             monkeypatch):
     """Files whose clones (appended after the source records) sit above a
     dropped record: each clone keeps its bytes and its rows follow it."""
+    if name == "Hunter_Patrol.sid":
+        # The rows its dead blocks free let 3 more skydive programs in
+        # (speed table rows too), so on and off are no longer one song; the
+        # renumbering is what is under test here.
+        import h2g.goatwriter.dead_blocks as DB
+        monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     off = _convert(name)
     on = _convert(name, drop_unnamed_instruments=True)
     a = parse_sng(off)

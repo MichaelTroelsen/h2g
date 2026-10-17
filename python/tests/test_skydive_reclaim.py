@@ -86,8 +86,15 @@ def _walk(wt, start):
 @needs_corpus
 @pytest.mark.parametrize("name", ["Hunter_Patrol", "Gremlins"])
 def test_carried_programs_go_over_duplicate_blocks_and_nothing_else_moves(
-        name):
+        name, monkeypatch):
     import songview
+    if name == "Hunter_Patrol":
+        # The rows its dead blocks free (`goatwriter.dead_blocks`, 85 of 182)
+        # hold the carried programs on their own, so no duplicate block is
+        # laid over; this test is about the table without them.
+        from h2g.goatwriter import dead_blocks
+        monkeypatch.setattr(dead_blocks, "plan_dead_blocks",
+                            lambda *a, **k: None)
     sng, lines = _convert(name)
     sky = [m for m in lines if m.startswith("Skydive (bit")]
     assert any(MARK in m and "carrying the vibrato" in m for m in sky), sky

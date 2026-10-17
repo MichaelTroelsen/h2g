@@ -1536,24 +1536,107 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
 
     `sweep_calls` (`classic_sweep_calls`) sizes the classic sweep: see
     `_sweep_rows`. A table too small for the sized sweeps is built again
+    with the records that wrote the same rows sharing one block, then with
+    the costliest sizes given back (`_fit_sized_sweeps`), and only then
     without them, which is the table every earlier version wrote.
     """
     entries, pointers, overflowed = _filter_entries_once(
         sid, det, instr_used, lead, multiplier, clearing_instruments,
         sfx_blips, sweep_calls)
-    if overflowed and sweep_calls:
-        entries, pointers, _ = _filter_entries_once(
+    if overflowed:
+        shared = _fit_sized_sweeps(
             sid, det, instr_used, lead, multiplier, clearing_instruments,
-            sfx_blips, None)
+            sfx_blips, sweep_calls)
+        if shared is not None:
+            return shared
+        if sweep_calls:
+            entries, pointers, _ = _filter_entries_once(
+                sid, det, instr_used, lead, multiplier, clearing_instruments,
+                sfx_blips, None)
     return entries, pointers
+
+
+def _lift_free_sweeps(sid: SidFile, det: Detection, instr_used: int,
+                      lead: int, multiplier: int,
+                      clearing_instruments: set | None,
+                      sfx_blips: dict | None, sizes: dict, free) -> dict:
+    """`sizes` with each group of records that write one program given the
+    group's longest length, for the records in `free`.
+
+    A record whose every gap ends on a filtered strike sweeps exactly as
+    well at any length from its longest gap up (`SweepLengths`), so the
+    records sharing a program (equal blocks unsized: the same resonance
+    and step) can share one sized block too. Star_Paws' five programs were
+    13 blocks of 6 to 13 rows, 88 rows in all; as five they are 39."""
+    free = {rec for rec in free if rec in sizes}
+    if len(free) < 2:
+        return sizes
+    _entries, pointers, _ov = _filter_entries_once(
+        sid, det, instr_used, lead, multiplier, clearing_instruments,
+        sfx_blips, None, share=True)
+    groups: dict = {}
+    for rec in free:
+        if rec in pointers:
+            groups.setdefault(pointers[rec], []).append(rec)
+    lifted = dict(sizes)
+    for recs in groups.values():
+        longest = max(sizes[rec] for rec in recs)
+        for rec in recs:
+            lifted[rec] = longest
+    return lifted
+
+
+def _fit_sized_sweeps(sid: SidFile, det: Detection, instr_used: int,
+                      lead: int, multiplier: int,
+                      clearing_instruments: set | None,
+                      sfx_blips: dict | None, sweep_calls: dict | None):
+    """(entries, pointers) of the first table that fits, or None.
+
+    **A TABLE OVER `GT_MAX_FILT` ROWS USED TO DROP RECORDS, THEN ALL SIZES.**
+    Every classic record wrote its own block, though records of one
+    resonance and step write the same rows: Star_Paws' 13 filtered records
+    are five distinct programs unsized, and its table (6 rows a record at
+    multiplier 2) held 10 of the 13, the other three never got a pointer;
+    sized, it needed 88 rows of 64, so the sizes were thrown away too and
+    its sweeps ran 127 calls where the player runs 190-250
+    (`cutoff_sweep` 0.790). Here a record whose block equals an earlier one
+    takes that block's pointer, and where the sized table still does not fit
+    the sizes that cost rows are given back, the costliest first (the most
+    rows past the first), until it does. A record sized to one $7F row costs
+    no more rows than an unsized one, so those keep their size.
+    """
+    sizes = dict(sweep_calls) if sweep_calls else None
+    m = max(1, multiplier)
+    if sizes:
+        sizes = _lift_free_sweeps(
+            sid, det, instr_used, lead, multiplier, clearing_instruments,
+            sfx_blips, sizes, getattr(sweep_calls, "free", ()))
+    while True:
+        entries, pointers, overflowed = _filter_entries_once(
+            sid, det, instr_used, lead, multiplier, clearing_instruments,
+            sfx_blips, sizes, share=True)
+        if not overflowed:
+            return entries, pointers
+        if not sizes:
+            return None
+        extra = {rec: -(-max(1, calls - m) // FILT_MODULATE) - 1
+                 for rec, calls in sizes.items()}
+        extra = {rec: n for rec, n in extra.items() if n > 0}
+        if extra:
+            del sizes[max(extra, key=lambda rec: (extra[rec], rec))]
+        else:
+            sizes = None
 
 
 def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
                          lead: int, multiplier: int,
                          clearing_instruments: set | None,
                          sfx_blips: dict | None,
-                         sweep_calls: dict | None):
+                         sweep_calls: dict | None, share: bool = False):
     """(entries, pointers, overflowed): `_filter_entries`' one build.
+
+    `share` gives a record whose block equals an earlier record's that
+    block's pointer instead of a copy (`_fit_sized_sweeps`).
 
     `sfx_blips` (`sfx_bandpass_plan`) names the drum records whose program
     carries the drum's one-frame bandpass; the others are written as ever.
@@ -1574,6 +1657,7 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
     data = sid.data
     entries: List[tuple] = []
     pointers: dict = {}
+    shared: dict = {}
     overflowed = False
     for i in range(max(instr_used - 1, 0)):
         base = filt.offset + i * det.instr_stride
@@ -1630,6 +1714,14 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
         if len(entries) + len(block) > GT_MAX_FILT:
             overflowed = True
             break
+        if share and not any(left == FILT_STOP and right for left, right
+                             in block):
+            # A jump to a row is a position in THIS block: not shareable.
+            key = tuple(block)
+            if key in shared:
+                pointers[i] = shared[key]
+                continue
+            shared[key] = len(entries) + 1
         pointers[i] = len(entries) + 1  # table steps are 1-based
         entries += block
     return entries, pointers, overflowed

@@ -27,10 +27,12 @@ The packed `.sid` does not change: greloc.c:291 already maps away every
 instrument no reachable pattern names. What changes is the `.sng` a person
 opens -- no dead slots, and instrument numbers that count only what plays.
 
-The wavetable is left exactly as written: a dropped record's wavetable
-block stays where it is, unreferenced (removing it would repoint every
-CMD_SETWAVEPTR operand and every jump -- a different change with a different
-blast radius). The PULSE and FILTER tables are pruned: the rows only a
+The wavetable is left as written HERE. A dropped record's wavetable block
+goes earlier than this pass: `goatwriter.dead_blocks` drops the blocks of
+the records no pattern names inside the build, behind the same option, so
+that the passes sized against the table's room see the room. On bytes that
+come from the writer without it (appended players, a hand-fed `.sng`) the
+block stays unreferenced here. The PULSE and FILTER tables are pruned: the rows only a
 dropped record reaches are removed and every pointer renumbered (the kept
 records' bytes 3 and 4, CMD_SETPULSEPTR / CMD_SETFILTERPTR operands in the
 patterns and in wavetable $F9 / $FA rows, table jumps) -- `_drop_dead_blocks`.

@@ -341,6 +341,8 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     monkeypatch.setattr(B._gw_note_passes, "expanding_vibrato_split",
                         lambda sid, det, tracks, patterns, *a, **k:
                         (tracks, patterns, {}))
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     _fid, sng = _mega(lambda m: None)
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with

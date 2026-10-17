@@ -193,10 +193,22 @@ def test_a_table_with_nothing_to_share_is_left_alone():
     assert S.compact_wave_tail(entries, [1, 3], []) is None
 
 
+@pytest.fixture
+def without_dead_blocks(monkeypatch):
+    """The table as it was before `goatwriter.dead_blocks` dropped the blocks
+    of the records no pattern names: 217 rows for Last_V8, which is the room
+    the sharing of identical tail programs was written for (and is still
+    tried for; `test_dead_blocks.py` holds the layout with the drop)."""
+    from h2g.goatwriter import dead_blocks
+    monkeypatch.setattr(dead_blocks, "plan_dead_blocks",
+                        lambda *a, **k: None)
+
+
 @needs_corpus
 @pytest.mark.parametrize("name,steps", [("Last_V8", 95),
                                         ("Last_V8_C128_version", 98)])
-def test_both_last_v8s_fit_in_compact_form_in_a_shared_table(name, steps):
+def test_both_last_v8s_fit_in_compact_form_in_a_shared_table(
+        name, steps, without_dead_blocks):
     sng, lines = M._converted(name)
     (msg,) = M._sky(lines)
     assert "not emitted" not in msg, msg
@@ -212,7 +224,8 @@ def test_both_last_v8s_fit_in_compact_form_in_a_shared_table(name, steps):
 
 
 @needs_corpus
-def test_every_instrument_still_plays_the_program_it_had(monkeypatch):
+def test_every_instrument_still_plays_the_program_it_had(
+        monkeypatch, without_dead_blocks):
     """Sharing moves instrument starts and nothing else: read back from the
     song, each instrument's program (up to its stop) is the one the layout
     without sharing gave it."""
@@ -241,7 +254,8 @@ def test_every_instrument_still_plays_the_program_it_had(monkeypatch):
 
 
 @needs_corpus
-def test_the_instrument_records_are_written_with_the_shared_starts(monkeypatch):
+def test_the_instrument_records_are_written_with_the_shared_starts(
+        monkeypatch, without_dead_blocks):
     """The starts `compact_wave_tail` returns are the ones the instrument
     records carry. (Last_V8's used instruments sit ahead of the shared tail,
     so a plan that moved them is faked: record 1 is sent to row 2.)"""

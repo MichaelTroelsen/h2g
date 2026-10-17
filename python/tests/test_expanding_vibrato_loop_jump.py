@@ -174,7 +174,12 @@ def test_a_block_that_does_not_fit_leaves_its_row_alone(monkeypatch):
 # --- Mega_Apocalypse, end to end ---------------------------------------------
 
 @needs_corpus
-def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row():
+def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row(monkeypatch):
+    # A full table is what this is about: with the dead blocks dropped
+    # (`goatwriter.dead_blocks`) Mega has 20 rows more and merges 1 swing, not
+    # 11 (test_dead_blocks.py holds that arm).
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     import fidelity
     from h2g.convert import convert
     path = CORPUS / "Mega_Apocalypse.sid"

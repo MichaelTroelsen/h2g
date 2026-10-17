@@ -165,15 +165,19 @@ def test_tarzans_first_record_sweeps_as_long_as_it_is_told():
 
 
 @needs_corpus
-def test_a_table_the_sized_sweeps_overflow_is_the_old_table():
-    """SABOTAGE TARGET: drop the rebuild in `_filter_entries` and Star_Paws
-    (52 of 64 entries at one row each) loses its later records."""
+def test_a_table_the_sized_sweeps_overflow_gives_sizes_back_not_records():
+    """Was `..._overflow_is_the_old_table` (sizes beyond the table threw every
+    size away); now the records keep their pointers and the costliest sizes
+    are given back until the table fits -- tests/test_filter_table_sharing.py.
+    SABOTAGE TARGET: drop the give-back loop in `_fit_sized_sweeps` and the
+    table overflows, losing its later records."""
+    from h2g.goatwriter import GT_MAX_FILT
     sid, det = _det("Star_Paws")
     n = min(det.instr_used + 1, MAX_INSTRUMENTS)
     plain, ptrs = _filter_entries(sid, det, n, multiplier=1)
     huge, hptrs = _filter_entries(sid, det, n, multiplier=1,
                                   sweep_calls={i: 508 for i in ptrs})
-    assert (huge, hptrs) == (plain, ptrs)
+    assert set(hptrs) == set(ptrs) and len(huge) <= GT_MAX_FILT
 
 
 @needs_corpus

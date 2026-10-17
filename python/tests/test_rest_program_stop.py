@@ -422,12 +422,20 @@ def test_the_option_off_is_the_shipped_conversion():
             == _convert("IK_plus.sid"))
 
 
-def test_thundercats_has_no_program_rest_so_nothing_moves():
+def test_thundercats_has_no_program_rest_so_nothing_moves(monkeypatch):
     """Thundercats ships `--rest-envelope-silence`, whose SETSR / SETAD rows
     the pattern stage rearranges to make room for a SETWAVE. None of its
     rests follows a program instrument, so every one is cleared AND the AD
     goes back to its shipped row: the conversion is the shipped bytes. (Before
-    the AD was given back this moved Thundercats' `adsr` 0.974 -> 0.932.)"""
+    the AD was given back this moved Thundercats' `adsr` 0.974 -> 0.932.)
+
+    Nothing moves because its wavetable is full (255 rows, "no room in the
+    wavetable for the parked program"). With the blocks of its dead records
+    gone (`goatwriter.dead_blocks`) there is room and 12 of its 15 rests do
+    stop their program under the option, which the shipped presets leave off;
+    the table this test is about is the full one."""
     _need_corpus()
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     assert (_convert("Thundercats.sid", rest_program_stop=True)
             == _convert("Thundercats.sid"))

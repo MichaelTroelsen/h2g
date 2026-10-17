@@ -308,6 +308,10 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     slide back in step: `SLIDE_OPERAND_ZP_SHAPE`)."""
     import hashlib
     import h2g.goatwriter.build as B
+    import h2g.goatwriter.dead_blocks as DB
+    # The pin was taken before `goatwriter.dead_blocks` dropped the blocks of
+    # the records no pattern names.
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     # Mega's tied landings are legato clones since ca85ac7's
     # tie-restart-mega-phantoms-note-start; this pin is the arm without them.
     monkeypatch.setattr(B._gw_note_passes, "legato_tie_family", lambda sid, det: False)

@@ -1735,14 +1735,26 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
         tb = register_timeline(b.wf_events, nframes)
         ta, tb = _aligned(ta, tb, lag)
         vb = ve = vr = vs = 0
+        sounded = False
         for x, y in zip(ta, tb):
+            sounded = sounded or bool(x or y)
             # A voice neither side has ever written reads $00 on every frame,
             # which is "gate off" on both -- and would score as perfect
             # agreement for the whole trace. `wave_compare` drops the
             # equivalent frames for the same reason; without this a file with
             # one silent voice scored a third of its frames for free, and a
             # conversion that played nothing at all would have scored 1.00.
-            if x == 0 and y == 0:
+            #
+            # **Only until the voice first sounds.** A `$00` AFTER either
+            # side has selected a waveform is a WRITTEN waveform 0 -- the
+            # original's player parks every voice on WF 00 when the tune
+            # ends -- and both sides' gate is genuinely off there. Skipping
+            # those frames too made the column move for the wrong reason:
+            # Kings_of_the_Beach_ingame's gate .711 -> .554 when our silent
+            # park began writing WF 00, with the disagreeing frames (111
+            # ringing) unchanged and only the agreeing tail (45 a voice)
+            # leaving the denominator.
+            if x == 0 and y == 0 and not sounded:
                 continue
             ox, oy = not (x & 0x01), not (y & 0x01)
             if not (ox or oy):

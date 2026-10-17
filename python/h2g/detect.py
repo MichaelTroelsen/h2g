@@ -4115,9 +4115,23 @@ ENVELOPE_CUT_SHAPES = (
 )
 
 
+# A fallback spelling, consulted only where the two above match nothing: the
+# gate-clear is followed by a `LDA abs,X / BNE +8` guard before the same zeroing
+# (Commodore_64_Music_Examples only in the corpus). The guard is dead: the code is
+# reached only when the row counter `$1412,X` is 0 (`LSR / CMP` equal), so the
+# `BNE` never branches and every note end zeroes AD/SR (675/529/493 of 675/529/493
+# note ends on the three voices, traced at v0.5.581).
+ENVELOPE_CUT_FALLBACK_SHAPES = (
+    "29 FE 99 04 D4 BD ?? ?? D0 08 A9 00 99 05 D4 99 06 D4",
+)
+
+
 def find_envelope_cut(sid: SidFile) -> bool:
     """Whether this player zeroes AD and SR when a note ends (33 files)."""
-    return any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES)
+    if any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES):
+        return True
+    return any(search_file(sid.data, sh) >= 1
+               for sh in ENVELOPE_CUT_FALLBACK_SHAPES)
 
 
 # `LDA stored,X / AND gatemask,X / STA $D404,Y` -- the write of a voice's

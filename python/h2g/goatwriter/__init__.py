@@ -187,7 +187,7 @@ from .tri_clock import (clock_classes, CLOCK_BAND, CLOCK_TOLERANCE,
                         tri_swept, TriClockPlan, _tri_split_once)  # noqa: F401
 from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _best_sweep_length, _classic_sweep_block, _filter_entries_once,
-                      _sweep_rows,
+                      _sweep_rows, _fit_sized_sweeps, _lift_free_sweeps,
                       classic_sweep_calls,
                       free_running_start, _pattern_bytes, _entry_position,
                       _classic_clearing_instruments, _filter_entries,
@@ -200,7 +200,7 @@ from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _sfx_bandpass_block, sfx_bandpass_plan,
                       sfx_drum_hit_lattice, _write_filtertable)  # noqa: F401
 from .classic_filter_stop import (apply_stops, classic_filter_stops,
-                                    _stop_row)  # noqa: F401
+                                    SweepLengths, _stop_row)  # noqa: F401
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass,
                           _entry_instruments, entry_instruments_start,
@@ -363,8 +363,13 @@ from .wave_eor import (_hold, _is_drum, _plays, _record_effect, _row_tempos,
                        has_skip_rows, program_waves, ring0_waves,
                        skip_clock, _effect_runs_into, _orderlist_edges,
                        _leading_rests)  # noqa: F401
+from .dead_blocks import (DeadBlocks, dead_records, named_records, plan_dead_blocks,
+                          reached_rows, remap_rows, remap_setwaveptr,
+                          setwaveptr_operands, WAVE_SETPTR,
+                          _targets)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
-                    _heard_splits, _RetrySplit, build_sng,
+                    _build_sng_split, _heard_splits, _RetryDeadBlocks,
+                    _RetrySplit, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _record_numbers,
                     _restart_heard, _resolve_arp_pointers,
                     _TIE_BLOCK_KINDS, _block_residue_of,

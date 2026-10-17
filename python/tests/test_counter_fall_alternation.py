@@ -302,6 +302,11 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     # tie-restart-mega-phantoms-note-start; this pin is the arm without them.
     monkeypatch.setattr(NP, "legato_tie_family", lambda sid, det: False)
     monkeypatch.setattr(C, "ALTERNATION_MIN_DIPS", 10 ** 6)
+    # Before `goatwriter.dead_blocks` dropped the blocks of the records no
+    # pattern names (test_dead_blocks.py holds the layout with the drop): the
+    # arm this pin was taken on.
+    import h2g.goatwriter.dead_blocks as DB
+    monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     sng, lines = _converted()
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with

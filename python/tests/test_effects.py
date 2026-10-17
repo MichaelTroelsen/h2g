@@ -693,6 +693,25 @@ def test_the_cut_routine_is_read_and_not_assumed():
     assert len(ENVELOPE_CUT_SHAPES) == 2, "Y- and X-indexed"
 
 
+def test_the_guarded_cut_spelling_is_a_fallback_only():
+    """`29 FE 99 04 D4 / LDA abs,X / BNE +8 / LDA #0 / STA $D405,Y / STA $D406,Y`
+    (Commodore_64_Music_Examples): the gate-clear is not adjacent to the zeroing,
+    so neither primary shape matches. The spelling is consulted only after them.
+    """
+    from h2g.detect import ENVELOPE_CUT_FALLBACK_SHAPES, ENVELOPE_CUT_SHAPES
+    from h2g.detect import find_envelope_cut
+
+    class _S:
+        def __init__(self, data):
+            self.data = data
+    guarded = bytes.fromhex("29FE9904D4BD1214D008A9009905D49906D4")
+    assert find_envelope_cut(_S(b"\x00" + guarded))
+    assert not find_envelope_cut(_S(b"\x00" + guarded.replace(
+        bytes.fromhex("D008"), bytes.fromhex("F008")))), "the BNE is part of the shape"
+    assert len(ENVELOPE_CUT_FALLBACK_SHAPES) == 1
+    assert len(ENVELOPE_CUT_SHAPES) == 2, "the primary pair is untouched"
+
+
 def _sr(sid, det, **kw):
     """The emitted sustain/release byte of the one real record.
 

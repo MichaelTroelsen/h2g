@@ -12,7 +12,7 @@ from .constants import (CMD_SETPULSEPTR, CMD_SETWAVEPTR, CMD_TONEPORTA,
                         GT_WAVE_JUMP, GT_WAVE_LAST_CMD, GT_WAVE_LAST_DELAY,
                         GT_WAVE_NO_NOTE, WAVE_SILENT_BASE,
                         FORMATS, GATETIMER_LEGATO, GT_MAX_FILT,
-                        GT_MAX_INSTRUMENTS)
+                        GT_MAX_INSTRUMENTS, WAVE_ENTRIES_PER_INSTR)
 from .instruments import (_build_header, _instruments_used, record_envelope,
                           _table_length_byte, _write_instruments)
 from .arpeggio import (apply_tempo_duty_edits, fixed_arp_phase_split_plan,
@@ -49,6 +49,7 @@ from . import classic_filter_stop as _gw_classic_filter_stop
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
+from . import dead_blocks as _gw_dead_blocks
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 from . import tri_clock as _gw_tri_clock
@@ -415,6 +416,11 @@ def _pulse_sweeps(entries: List[tuple], start: int) -> bool:
     return False
 
 
+class _RetryDeadBlocks(Exception):
+    """`_build_sng`: a pass named a record whose wavetable block
+    `dead_blocks` had dropped; rebuild without dropping any."""
+
+
 class _RetrySplit(Exception):
     """`_build_sng`: some `entry_instrument_split` copy settles only rows
     whose restart is silent; rebuild splitting just `.args[0]`."""
@@ -527,6 +533,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               named_firstwave: bool = False,
               pitch_tie_phase: bool = False,
               rest_program_stop: bool = False,
+              drop_dead_blocks: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1307,6 +1314,39 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         for _record, _variant, block in drum_variants:
             drum_starts.append(len(wave_entries) + 1)
             wave_entries = wave_entries + block
+    # The blocks of the records no pattern names (`dead_blocks`): the finished
+    # file drops those records, and their rows are room the programs below
+    # are sized against. Only behind `drop_dead_blocks` (the option that
+    # drops the records), after every pass that reads the table record by
+    # record and before the ones that append to it.
+    dead_dropped: frozenset = frozenset()
+    if drop_dead_blocks:
+        dead = _gw_dead_blocks.dead_records(patterns, instr_used, lead)
+        library_end = (eor_span[2] + len(_gw_wave_eor.EOR_STOP_PROGRAM) - 1
+                       if eor_span else 0)
+        plan = _gw_dead_blocks.plan_dead_blocks(
+            wave_entries, wave_starts, lead, dead,
+            list(arp_starts) + clone_starts + phase_clone_starts
+            + tie_block_starts + attack_hold_starts + cut_starts
+            + drum_starts,
+            _gw_dead_blocks.setwaveptr_operands(patterns),
+            protect=max(lead * WAVE_ENTRIES_PER_INSTR, library_end))
+        if plan is not None:
+            row_map = plan.row_map
+            for i in plan.dropped:
+                wave_starts[lead + i] = 0
+            for rows in (wave_starts, arp_starts, clone_starts,
+                         phase_clone_starts, tie_block_starts,
+                         attack_hold_starts, cut_starts, drum_starts,
+                         eor_span):
+                _gw_dead_blocks.remap_rows(rows, row_map)
+            _gw_dead_blocks.remap_setwaveptr(patterns, row_map)
+            if log:
+                log(f"Dead wavetable blocks...: {len(plan.dropped)} record(s) "
+                    f"no pattern names, {plan.rows} of {len(wave_entries)} "
+                    f"rows freed")
+            wave_entries = plan.entries
+            dead_dropped = frozenset(i + lead + 1 for i in plan.dropped)
     # Bit $02's skydive (`skydive_plan`): a CMD_SETWAVEPTR on the row each
     # long note's window opens, into a program appended to the wavetable.
     # After every block whose start the records carry, so its own starts are
@@ -1850,6 +1890,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             "only": program_only,
             "lagged": _gw_rest_park.lagged_instruments(
                 out, instr_at, written_instr)}))
+    if dead_dropped:
+        # A record dropped as unnamed, named after all by a pass that ran
+        # later: its pointer is 0 and it would play nothing. Never ship that.
+        revived = dead_dropped & _gw_dead_blocks.named_records(patterns)
+        if revived:
+            raise _RetryDeadBlocks(frozenset(revived))
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
@@ -1956,6 +2002,30 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
 
 
 def build_sng(sid, det, tracks, patterns, *args, **kw):
+    """`_build_sng`; under `drop_dead_blocks` a build in which a later pass
+    named a record whose block was dropped is redone without the drop."""
+    if not kw.get("drop_dead_blocks") or args:
+        return _build_sng_split(sid, det, tracks, patterns, *args, **kw)
+    log = kw.get("log")
+    spare = (copy.deepcopy(tracks), copy.deepcopy(patterns))
+    lines: list = []
+    try:
+        out = _build_sng_split(sid, det, tracks, patterns,
+                               **dict(kw, log=lines.append))
+    except _RetryDeadBlocks as retry:
+        if log is not None:
+            log("Dead wavetable blocks...: record(s) "
+                + ", ".join(f"${g:02X}" for g in sorted(retry.args[0]))
+                + " named after the drop, built again without it")
+        return _build_sng_split(sid, det, spare[0], spare[1],
+                                **dict(kw, drop_dead_blocks=False))
+    if log is not None:
+        for line in lines:
+            log(line)
+    return out
+
+
+def _build_sng_split(sid, det, tracks, patterns, *args, **kw):
     """`_build_sng`; under `tie_restart` a build whose entry-instrument split
     copied a pattern only for quiet restarts (`_heard_splits`) is redone
     without those copies."""

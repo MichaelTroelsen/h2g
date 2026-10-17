@@ -31,8 +31,13 @@ RUNG = "unnamed instruments dropped from the appended players"
 GT_CAP = 63
 
 
-def _convert(rung=True, **over):
-    """(bytes, log) of 5_Title_Tunes under its presets plus `over`."""
+def _convert(rung=True, dead_blocks=True, **over):
+    """(bytes, log) of 5_Title_Tunes under its presets plus `over`.
+
+    `dead_blocks=False` is the table before `goatwriter.dead_blocks` dropped
+    the wavetable blocks of the records no pattern names. The squeeze this
+    file pins is that table's: with the blocks gone the appended players'
+    records share more and the unrung merge needs no more than 63 slots."""
     from h2g import convert as C
     presets = REPO_ROOT / "presets.json"
     if not presets.is_file():
@@ -46,12 +51,17 @@ def _convert(rung=True, **over):
                                           FIVE), **over)
     lines = []
     real_level = C._append_level
+    from h2g.goatwriter import dead_blocks as DB
+    real_plan = DB.plan_dead_blocks
     if not rung:
         C._append_level = lambda *a, drop_unnamed=False, **k: real_level(*a, **k)
+    if not dead_blocks:
+        DB.plan_dead_blocks = lambda *a, **k: None
     try:
         sng = C.convert(str(CORPUS / FIVE), log=lines.append, **opts)
     finally:
         C._append_level = real_level
+        DB.plan_dead_blocks = real_plan
     return sng, lines
 
 
@@ -76,7 +86,7 @@ def compact_off():
 
 @pytest.fixture(scope="module")
 def compact_off_no_rung():
-    return _convert(rung=False, compact_instruments=False)
+    return _convert(rung=False, dead_blocks=False, compact_instruments=False)
 
 
 @pytest.fixture(scope="module")

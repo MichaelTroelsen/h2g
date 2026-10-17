@@ -172,7 +172,17 @@ def _convert_capturing(name):
     def spy(*a, **k):
         r = real(*a, **k)
         if k.get("tie_block_starts") is not None:
-            seen.append((a, dict(k), r))
+            # The lists the layout fills are live, and `dead_blocks` moves
+            # their rows after it (with the entries it returned left as they
+            # were): keep the layout's own rows, and the live list beside
+            # them for what the finished song is compared to.
+            snap = dict(k)
+            for name in ("clone_starts", "phase_clone_starts",
+                         "tie_block_starts", "attack_hold_starts"):
+                if k.get(name) is not None:
+                    snap[name] = list(k[name])
+            snap["final_tie_block_starts"] = k["tie_block_starts"]
+            seen.append((a, snap, r))
         return r
 
     GB._wavetable_layout = spy
@@ -198,6 +208,8 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
                "land on (1 block(s) laid out for them)" in line
                for line in lines), lines
     args, kw, (entries, starts, _arp) = seen[-1]
+    kw = dict(kw)
+    final_ties = kw.pop("final_tie_block_starts")
     assert kw["tie_blocks"] == [(record, residue)]
     (at,) = kw["tie_block_starts"]
     assert at
@@ -221,8 +233,9 @@ def test_a_tie_restarts_the_block_of_the_residue_it_lands_on(
     assert entries[at - 1:at - 1 + 6] != entries[own:own + 6]
     # And a legato clone points at it.
     song = parse_sng(sng)
+    (at_final,) = final_ties
     legato = [i for i in song.instruments
-              if i.wave_ptr == at and i.gatetimer & G.GATETIMER_LEGATO]
+              if i.wave_ptr == at_final and i.gatetimer & G.GATETIMER_LEGATO]
     assert legato, [(i.number, i.wave_ptr) for i in song.instruments]
     assert all(i.firstwave == 0 for i in legato)
 
