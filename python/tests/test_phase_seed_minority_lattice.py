@@ -126,13 +126,15 @@ def test_human_races_seed_records_chain_and_union():
 def test_human_races_shipped_table_turns_exactly_and_is_smaller():
     """Every index entry of the shipped table (18 and 23 among them): its
     first three turns are the player's. 285 of 285 where 351 of 354 were;
-    197 rows where it took 245, record 23 swept in 21's place."""
+    197 rows where it took 245, record 23 swept in 21's place. Re-pinned by
+    lay-pulse-phase-table-adopts-union-groups: 242 rows, 6 records, both
+    unions adopted; the exactness check below runs over every entry."""
     from test_pulse_phase import _forced_table_args
     from h2g.goatwriter import pulse as P
     (sid, det, iu, pulse, mult, phases, _, lead), table = _forced_table_args("Human_Race.sid")
     entries, starts, index = table
-    assert len(entries) == 197
-    assert {k[0] for k in index} == {1, 2, 4, 18, 23}
+    assert len(entries) == 242
+    assert {k[0] for k in index} == {1, 2, 4, 18, 21, 23}
     bad = []
     for (num, w, d), at in sorted(index.items()):
         step = P._phase_sweep_params(sid, det, num - 1 - lead, mult)[5]

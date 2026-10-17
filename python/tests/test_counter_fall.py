@@ -319,7 +319,10 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "8c3819931350"
+    # Re-pinned (edd694616855) by the drop of the pulse and filter rows only a
+    # dropped record reaches (instrument_drop._drop_dead_blocks): same music,
+    # fewer table rows.
+    assert hashlib.sha1(sng).hexdigest()[:12] == "edd694616855"
 
 
 @needs_corpus

@@ -493,7 +493,14 @@ the pattern instrument column to match. Instrument 1 is always kept, because
 both players start every voice on it (gplay.c:62, player.s mt_chninstr). It
 runs on the finished `.sng`, after every clone pass, so the clone instruments
 are renumbered rather than dropped. The packed `.sid` is unchanged, since
-gt2reloc already maps unreferenced instruments away. Off by default because
+gt2reloc already maps unreferenced instruments away. The pulse and filter
+table rows only a dropped record reaches go with it (pointers, jumps and
+`CMD_SETPULSEPTR` / `CMD_SETFILTERPTR` operands renumbered; a block a pattern
+command or a wavetable `$F9`/`$FA` row also names stays); the wavetable is
+left as written. At the tree of 2026-10-17 that is 1,963 of 9,144 pulse rows in
+69 files and 71 of 600 filter rows in 6, with the packed `.sid` byte-identical
+on all 69 movers (a historical figure: re-run `instrument_drop` over the corpus
+to refresh it). Off by default because
 the byte-exact Commando fixture carries one unnamed record (instrument 13).
 It is set in `presets.json`'s always block, where it moves the 71 corpus files
 that carry such a record (measured at v0.5.494). Knucklebusters' empty record

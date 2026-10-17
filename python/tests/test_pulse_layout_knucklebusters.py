@@ -67,7 +67,9 @@ def test_every_record_keeps_its_whole_program_and_gt26_jumps_into_gt14s_loop(
     out, usage, programs, statics, lead = _convert_capturing(monkeypatch)
     song = songview.parse_sng(out)
     ptbl = song.tables["PTBL"]
-    assert len(ptbl) == 245, "the premise: the lattice-turn programs, 245 of 255"
+    # 245 laid out; the drop of unnamed records (presets) removes the 7 rows
+    # only a dropped record reached, so the finished file holds 238.
+    assert len(ptbl) == 238, "the premise: the lattice-turn programs, 238 of 255"
     by_number = {ins.number: ins for ins in song.instruments}
     assert 25 in [i for i, u in enumerate(usage) if u] and usage[25] == 8,         "the premise: GT26 is record 25 and sounds 8 notes"
     short = []

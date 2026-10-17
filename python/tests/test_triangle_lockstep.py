@@ -477,9 +477,13 @@ _REACH = {
     # (their seed phase runs its own loop), the shipped table drops from 245
     # rows to 197 and keeps 23 where it kept 21. Window total 1171 -> 1202:
     # subtune 4 voice 0 173 -> 210, subtune 2 voice 1 69 -> 63.
+    # Re-pinned by lay-pulse-phase-table-adopts-union-groups: the {1, 2}
+    # union is adopted after {18, 23} (242 rows, 6 records kept): window
+    # total 1202 -> 1351, subtune 4 voice 0 210 -> 383, subtune 2 voice 1
+    # 63 -> 39.
     "Human_Race.sid": {(0, 0): (455, 457), (0, 1): (120, 120),
-                       (1, 1): (216, 216), (2, 1): (63, 120),
-                       (3, 0): (138, 138), (4, 0): (210, 386),
+                       (1, 1): (216, 216), (2, 1): (39, 120),
+                       (3, 0): (138, 138), (4, 0): (383, 386),
                        (4, 1): (0, 264)},
 }
 
@@ -509,6 +513,13 @@ def _reach(name: str, seconds: int = 180) -> dict:
         pytest.skip("siddump, gt2reloc or the file not available here")
     kwargs = F._preset_opts(doc, name)
     kwargs["pulse_phase"] = True
+    # The reading pairs a row's CMD_SETPULSEPTR operand with the captured
+    # table's entry NUMBER; the finished file's drop of unnamed records also
+    # removes the pulse rows only they reached and renumbers the rest
+    # (instrument_drop._drop_dead_blocks), so the drop is off here -- the
+    # packed player is byte-identical either way (greloc maps unreached rows
+    # away).
+    kwargs["drop_unnamed_instruments"] = False
     mult = doc["songs"][name].get("multiplier", 1)
     cap: dict = {}
     real_walk, real_table = C.collect_pulse_phases, C.build_pulse_phase_table

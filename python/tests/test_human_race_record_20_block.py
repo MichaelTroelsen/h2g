@@ -198,15 +198,18 @@ _SHIPPED_UNIONS = [[18, 23]]
 
 
 def test_the_shipped_table_places_five_and_degrades_20_and_21():
-    """The starting point: 197 rows (245 before the seed phases ran their own
-    loop), {1, 2, 4, 18, 23} swept, 20 and 21 on a static width, record 2 --
-    the title's second record -- among the swept."""
+    """Retried at lay-pulse-phase-table-adopts-union-groups: {1, 2} did not
+    pay alone, so the one-pass loop shipped 197 rows with {1, 2, 4, 18, 23}
+    swept. Both unions are adopted now (`_lay_pulse_phase_table` retries a
+    refused group): 242 rows, {1, 2, 4, 18, 21, 23} swept, only 20 on a static
+    width, record 2 -- the title's second record -- among the swept. The
+    `_SHIPPED` set below is the one-pass model the later tests start from."""
     from h2g.goatwriter import constants as K
     _, _, (entries, starts, index) = _forced()
-    assert len(entries) == 197 <= K.GT_MAX_TABLELEN
+    assert len(entries) == 242 <= K.GT_MAX_TABLELEN
     swept = {num for (num, _, _) in index}
-    assert swept == _SHIPPED
-    assert {20, 21}.isdisjoint(swept)
+    assert swept == {1, 2, 4, 18, 21, 23}
+    assert 20 not in swept
     assert any(num == 2 for (num, _, _) in index)
 
 

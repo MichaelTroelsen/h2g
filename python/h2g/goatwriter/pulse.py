@@ -2698,17 +2698,27 @@ def _lay_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                                  phases, best_log.append, lead, True, {},
                                  reserve, usage, attack, resume)
     chosen: dict = {}
-    for key, members in _union_groups(sid, det, instr_used, multiplier,
-                                      phases, lead).items():
-        trial_unions = dict(chosen)
-        trial_unions[key] = members
-        trial_log: list = []
-        trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse, multiplier,
-                                      phases, trial_log.append, lead, True,
-                                      trial_unions, reserve, usage, attack,
-                                      resume)
-        if score(trial) < score(best):
-            best, best_log, chosen = trial, trial_log, trial_unions
+    # A group that did not pay on its own may pay on top of one adopted
+    # after it (Human_Race: {1,2} alone loses 477 notes against 437, but
+    # with {18,23} laid it loses 264), so the groups still out are tried
+    # again until a whole sweep adopts none.
+    pending = _union_groups(sid, det, instr_used, multiplier, phases, lead)
+    adopted = True
+    while adopted and pending:
+        adopted = False
+        for key, members in list(pending.items()):
+            trial_unions = dict(chosen)
+            trial_unions[key] = members
+            trial_log: list = []
+            trial = _lay_pulse_phase_pass(sid, det, instr_used, pulse,
+                                          multiplier, phases,
+                                          trial_log.append, lead, True,
+                                          trial_unions, reserve, usage,
+                                          attack, resume)
+            if score(trial) < score(best):
+                best, best_log, chosen = trial, trial_log, trial_unions
+                del pending[key]
+                adopted = True
     if log:
         for line in best_log:
             log(line)

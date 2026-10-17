@@ -142,9 +142,27 @@ def test_the_rung_costs_the_finished_file_nothing(natural, squeezed):
     # Records agree but for the four table pointers, which follow the rows.
     for ra, rb in zip(a.instruments, b.instruments):
         assert ra[:2] == rb[:2] and ra[6:] == rb[6:]
-    for ta, tb in zip(a.tables, b.tables):
-        assert len(tb) <= len(ta)
+    for t in (0, 3):
+        assert len(b.tables[t]) <= len(a.tables[t])
     assert len(b.tables[0]) < len(a.tables[0])      # wave rows left behind
+    # The pulse and filter tables lose the rows only a dropped record reaches
+    # in BOTH files (instrument_drop._drop_dead_blocks), and the rung's
+    # pre-merge drop changes which blocks the merge shares, so their lengths
+    # may differ either way (194 against 192 pulse rows here): what must agree
+    # is the program every kept record enters.
+    def program(song, t, ptr):
+        rows, i = [], ptr - 1
+        while ptr and 0 <= i < len(song.tables[t]):
+            left, right = song.tables[t][i]
+            if left == 0xFF:
+                rows.append((left, right - ptr if right else None))
+                break
+            rows.append((left, right))
+            i += 1
+        return rows
+    for ra, rb in zip(a.instruments, b.instruments):
+        assert program(a, 1, ra[3]) == program(b, 1, rb[3])
+        assert program(a, 2, ra[4]) == program(b, 2, rb[4])
 
 
 @needs_corpus

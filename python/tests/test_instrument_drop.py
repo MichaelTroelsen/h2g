@@ -58,22 +58,60 @@ def _rows(song):
                 yield p, r // 4, body[r + 1]
 
 
+def _canon(tab, ptr):
+    """The pulse / filter program entered at `ptr`, rows renamed by first
+    visit: two layouts of the same program compare equal, a program that
+    differs (a row, a jump target) does not."""
+    if not ptr:
+        return None
+    ids, order, stack = {}, [], [ptr]
+    while stack:
+        r = stack.pop()
+        if r == 0 or r in ids or not 1 <= r <= len(tab):
+            continue
+        ids[r] = len(ids)
+        order.append(r)
+        stack.append(tab[r - 1][1] if tab[r - 1][0] == 0xFF else r + 1)
+    return tuple((l, ids.get(rt, -1) if rt else 0) if l == 0xFF
+                 else (l, rt, ids.get(r + 1, -2))
+                 for r in order for l, rt in [tab[r - 1]])
+
+
+def _operand(song, cmd, data):
+    """A pattern or wavetable command operand, a pulse / filter pointer
+    replaced by the program it enters."""
+    if data and cmd == 9:
+        return ("P", _canon(song.tables["PTBL"], data))
+    if data and cmd == 0x0A:
+        return ("F", _canon(song.tables["FTBL"], data))
+    return data
+
+
 def _record(song, number):
     i = song.instruments[number - 1]
-    return (i.ad, i.sr, i.wave_ptr, i.pulse_ptr, i.filt_ptr, i.vib_ptr,
+    return (i.ad, i.sr, i.wave_ptr,
+            _canon(song.tables["PTBL"], i.pulse_ptr),
+            _canon(song.tables["FTBL"], i.filt_ptr), i.vib_ptr,
             i.vib_delay, i.gatetimer, i.firstwave, i.name)
 
 
 def _assert_same_music(before: bytes, after: bytes):
-    """Everything but the dropped slots is the same, row for row."""
+    """Everything but the dropped slots is the same, row for row. The pulse
+    and filter tables are compared by the programs the pointers enter: the
+    drop removes the rows only a dropped record reaches."""
     a, b = parse_sng(before), parse_sng(after)
     assert a.tracks == b.tracks
-    assert a.tables == b.tables
+    assert a.tables["STBL"] == b.tables["STBL"]
+    assert [(l, _operand(a, l & 0xF, rt) if 0xF0 <= l <= 0xFE else rt)
+            for l, rt in a.tables["WTBL"]] == \
+        [(l, _operand(b, l & 0xF, rt) if 0xF0 <= l <= 0xFE else rt)
+         for l, rt in b.tables["WTBL"]]
     assert len(a.patterns) == len(b.patterns)
     assert [len(p) for p in a.patterns] == [len(p) for p in b.patterns]
     for pa, pb in zip(a.patterns, b.patterns):
         for r in range(0, len(pa), 4):
-            assert (pa[r], pa[r + 2], pa[r + 3]) == (pb[r], pb[r + 2], pb[r + 3])
+            assert (pa[r], pa[r + 2], _operand(a, pa[r + 2], pa[r + 3])) == \
+                (pb[r], pb[r + 2], _operand(b, pb[r + 2], pb[r + 3]))
             assert (pa[r + 1] == 0) == (pb[r + 1] == 0)
     n = len(a.instruments)
     for (p, r, ins_a), (_, _, ins_b) in zip(_rows(a), _rows(b)):
@@ -159,3 +197,155 @@ def test_commando_fixture_is_why_it_is_off_by_default():
     assert 13 not in named_instruments(ref)
     assert len(parse_sng(drop_unnamed_instruments(ref)).instruments) == \
         len(parse_sng(ref).instruments) - 1
+
+
+# --- the pulse and filter blocks of dropped records ------------------------
+
+def _tables_song(records, wave=(), pulse=(), filt=(), rows=(), fmt=b"GTS5"):
+    """A synthetic song: `records` are (pulse_ptr, filter_ptr) pairs, record
+    k's AD byte is k; `rows` are (instrument, command, data) pattern rows."""
+    blob = bytearray(0x64)
+    blob[0:4] = fmt
+    blob += bytes([1, 0, 0, 0, 0, 0, 0])
+    blob.append(len(records))
+    for k, (p, f) in enumerate(records, 1):
+        blob += bytes([k, 0, 0, p, f]) + bytes(20)
+    for tab in (wave, pulse, filt) + ((() ,) if fmt == b"GTS5" else ()):
+        blob.append(len(tab))
+        blob += bytes(l for l, _ in tab) + bytes(r for _, r in tab)
+    blob.append(1)
+    blob.append(len(rows))
+    for ins, cmd, data in rows:
+        blob += bytes([0x60, ins, cmd, data])
+    return bytes(blob)
+
+
+def _pulse_ptrs(song):
+    return [i.pulse_ptr for i in song.instruments]
+
+
+def test_pulse_rows_only_a_dropped_record_reaches_are_removed():
+    # record 2 is named by nothing; its block is rows 4-6, jumping to 4.
+    pulse = [(0x81, 0x00), (0x02, 0x10), (0xFF, 1),
+             (0x82, 0x00), (0x03, 0x20), (0xFF, 4),
+             (0x83, 0x00), (0xFF, 7)]
+    blob = _tables_song([(1, 0), (4, 0), (7, 0)], pulse=pulse,
+                        rows=[(1, 0, 0), (3, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == [(0x81, 0), (0x02, 0x10), (0xFF, 1),
+                                  (0x83, 0), (0xFF, 4)]
+    assert _pulse_ptrs(out) == [1, 4]
+
+
+def test_a_block_a_kept_record_shares_stays():
+    pulse = [(0x81, 0x00), (0x02, 0x10), (0xFF, 1)]
+    blob = _tables_song([(1, 0), (2, 0)], pulse=pulse, rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    # record 2 enters record 1's block part way; nothing is removed.
+    assert out.tables["PTBL"] == pulse
+
+
+def test_a_surviving_jump_is_retargeted_past_removed_rows():
+    pulse = [(0x81, 0), (0xFF, 0), (0x82, 0), (0x83, 0), (0xFF, 4)]
+    blob = _tables_song([(1, 0), (3, 0), (4, 0)], pulse=pulse,
+                        rows=[(1, 0, 0), (3, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == [(0x81, 0), (0xFF, 0), (0x83, 0), (0xFF, 3)]
+    assert _pulse_ptrs(out) == [1, 3]
+
+
+def test_a_set_pulse_ptr_command_keeps_its_block_and_is_renumbered():
+    pulse = [(0x81, 0), (0xFF, 0), (0x82, 0), (0xFF, 0), (0x83, 0), (0xFF, 0)]
+    # record 2 (block 3-4) is dropped; a pattern's CMD_SETPULSEPTR names it.
+    blob = _tables_song([(1, 0), (3, 0)], pulse=pulse, rows=[(1, 9, 3)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == pulse
+    # without the command the block goes, and a SETPULSEPTR to the block
+    # behind it follows its rows down.
+    blob = _tables_song([(1, 0), (3, 0)], pulse=pulse, rows=[(1, 9, 5)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == [(0x81, 0), (0xFF, 0), (0x83, 0), (0xFF, 0)]
+    assert out.patterns[0][3] == 3
+
+
+def test_a_wavetable_set_pulse_ptr_row_keeps_its_block_and_is_renumbered():
+    pulse = [(0x81, 0), (0xFF, 0), (0x83, 0), (0xFF, 0), (0x85, 0), (0xFF, 0)]
+    wave = [(0xF9, 5), (0xFF, 0)]
+    blob = _tables_song([(1, 0), (3, 0)], wave=wave, pulse=pulse,
+                        rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    # record 2's rows 3-4 go; the wavetable row naming row 5 keeps 5-6.
+    assert out.tables["PTBL"] == [(0x81, 0), (0xFF, 0), (0x85, 0), (0xFF, 0)]
+    assert out.tables["WTBL"][0] == (0xF9, 3)
+
+
+def test_filter_rows_only_a_dropped_record_reaches_are_removed():
+    filt = [(0x80, 0x10), (0xFF, 0), (0x80, 0x20), (0xFF, 0)]
+    blob = _tables_song([(0, 1), (0, 3)], filt=filt,
+                        rows=[(1, 0, 0), (1, 0x0A, 3)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    # the command names row 3, which therefore stays; nothing to remove.
+    assert out.tables["FTBL"] == filt
+    blob = _tables_song([(0, 1), (0, 3)], filt=filt, rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["FTBL"] == [(0x80, 0x10), (0xFF, 0)]
+
+
+def test_rows_no_record_reaches_are_left_as_written():
+    pulse = [(0x81, 0), (0xFF, 0), (0x99, 0), (0xFF, 0)]
+    blob = _tables_song([(1, 0), (0, 0)], pulse=pulse, rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == pulse
+
+
+def test_gts2_without_a_speed_table_is_rewritten_too():
+    pulse = [(0x81, 0), (0xFF, 0), (0x82, 0), (0xFF, 0)]
+    blob = _tables_song([(1, 0), (3, 0)], pulse=pulse, rows=[(1, 0, 0)],
+                        fmt=b"GTS2")
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == [(0x81, 0), (0xFF, 0)]
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", ["Knucklebusters.sid", "Lion_Heart.sid",
+                                  "Sanxion.sid"])
+def test_the_drop_shrinks_the_pulse_table_and_keeps_every_program(name):
+    off = _convert(name)
+    on = _convert(name, drop_unnamed_instruments=True)
+    a, b = parse_sng(off), parse_sng(on)
+    assert len(b.tables["PTBL"]) < len(a.tables["PTBL"])
+    _assert_same_music(off, on)
+
+
+def test_a_kept_block_that_jumps_into_a_dropped_records_block_keeps_it():
+    # record 1 (row 1) jumps to row 3, where dropped record 2 also enters.
+    pulse = [(0x81, 0), (0xFF, 3), (0x82, 0), (0xFF, 0)]
+    blob = _tables_song([(1, 0), (3, 0)], pulse=pulse, rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == pulse
+
+
+def test_a_wavetable_pulse_row_keeps_a_block_a_dropped_record_also_enters():
+    pulse = [(0x81, 0), (0xFF, 0), (0x82, 0), (0xFF, 0)]
+    wave = [(0xF9, 3), (0xFF, 0)]
+    blob = _tables_song([(1, 0), (3, 0)], wave=wave, pulse=pulse,
+                        rows=[(1, 0, 0)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == pulse
+    assert out.tables["WTBL"] == wave
+
+
+def test_pulse_and_filter_pointers_are_renumbered_by_their_own_tables():
+    # dropped record 2 owns 2 pulse rows and 5 filter rows.
+    pulse = [(0x81, 0), (0xFF, 0), (0x82, 0), (0xFF, 0), (0x83, 0), (0xFF, 0)]
+    filt = [(0x80, 1), (0xFF, 0), (0x80, 2), (0x00, 3), (0x00, 4), (0xFF, 0),
+            (0x80, 5), (0xFF, 0)]
+    blob = _tables_song([(1, 1), (3, 3), (5, 7)], pulse=pulse, filt=filt,
+                        rows=[(1, 0, 0), (3, 0x0A, 7), (3, 9, 5)])
+    out = parse_sng(drop_unnamed_instruments(blob))
+    assert out.tables["PTBL"] == [(0x81, 0), (0xFF, 0), (0x83, 0), (0xFF, 0)]
+    assert out.tables["FTBL"] == [(0x80, 1), (0xFF, 0), (0x80, 5), (0xFF, 0)]
+    assert [(i.pulse_ptr, i.filt_ptr) for i in out.instruments] == \
+        [(1, 1), (3, 3)]
+    assert (out.patterns[0][6], out.patterns[0][7]) == (0x0A, 3)
+    assert (out.patterns[0][10], out.patterns[0][11]) == (9, 3)

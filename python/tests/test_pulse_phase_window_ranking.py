@@ -158,7 +158,10 @@ def test_human_races_window_reach_total_rises_and_subtune_zero_holds():
     # 1171 until phase-seed-minority-lattice (records 18 and 23 chain, the
     # table keeps 23 in 21's place): subtune 4 voice 0 173 -> 210, subtune 2
     # voice 1 69 -> 63.
-    assert sum(reached.values()) == 1202, reached
+    # 1202 until lay-pulse-phase-table-adopts-union-groups (both unions
+    # adopted, 242 rows): subtune 4 voice 0 210 -> 383, subtune 2 voice 1
+    # 63 -> 39.
+    assert sum(reached.values()) == 1351, reached
 
 
 # --- following the tempo changes the tempo pass wrote ----------------------

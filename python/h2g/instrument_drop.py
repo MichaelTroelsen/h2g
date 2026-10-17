@@ -27,10 +27,17 @@ The packed `.sid` does not change: greloc.c:291 already maps away every
 instrument no reachable pattern names. What changes is the `.sng` a person
 opens -- no dead slots, and instrument numbers that count only what plays.
 
-The tables are left exactly as written. A dropped record's wavetable,
-pulse and filter blocks stay where they are, unreferenced: removing them
-would repoint every surviving record's pointers and every CMD_SET*PTR
-operand, which is a different change with a different blast radius.
+The wavetable is left exactly as written: a dropped record's wavetable
+block stays where it is, unreferenced (removing it would repoint every
+CMD_SETWAVEPTR operand and every jump -- a different change with a different
+blast radius). The PULSE and FILTER tables are pruned: the rows only a
+dropped record reaches are removed and every pointer renumbered (the kept
+records' bytes 3 and 4, CMD_SETPULSEPTR / CMD_SETFILTERPTR operands in the
+patterns and in wavetable $F9 / $FA rows, table jumps) -- `_drop_dead_blocks`.
+A wavetable row of a dropped block that names a pulse block keeps it, and a
+row no record at all reaches is left as written. The packed `.sid` is
+unchanged either way: greloc marks only the rows execution enters
+(`tableused`, greloc.c:902-925).
 
 Instrument numbers above the record count (a dangling reference, which the
 writer already logs) are shifted down by the number dropped, so they stay
@@ -53,6 +60,14 @@ _RECORD_LEN = 25
 _GATETIMER_AT = 7
 _GATETIMER_MASK = 0x3F
 _STARTUP_TEMPO_NAME = "Startup tempo"
+# Record bytes 3 and 4 (songview Instrument.pulse_ptr / filt_ptr), the pattern
+# commands and the wavetable command rows (gplay.c:529, WAVECMD..WAVELASTCMD,
+# the command being the row's low nibble) that name a pulse / filter row.
+_PULSE_AT, _FILTER_AT = 3, 4
+_CMD_SETPULSEPTR, _CMD_SETFILTERPTR = 0x09, 0x0A
+_WAVE_FIRST_CMD, _WAVE_LAST_CMD = 0xF0, 0xFE
+_TABLE_JUMP = 0xFF
+_TABLE_NAMES = ("WTBL", "PTBL", "FTBL", "STBL")
 
 
 def _layout(blob: bytes) -> Tuple[int, int, int, List[Tuple[int, int]]]:
@@ -92,6 +107,117 @@ def named_instruments(blob: bytes) -> set:
             if blob[start + r * 4 + 1]}
 
 
+def _reach(rows: List[Tuple[int, int]], roots) -> set:
+    """The 1-based rows of a pulse or filter table that execution can enter
+    from `roots`: a row falls through to the next unless it is a jump
+    (left $FF, right the target, 0 = stop)."""
+    seen: set = set()
+    todo = list(roots)
+    while todo:
+        r = todo.pop()
+        if r in seen or not 1 <= r <= len(rows):
+            continue
+        seen.add(r)
+        left, right = rows[r - 1]
+        if left == _TABLE_JUMP:
+            if right:
+                todo.append(right)
+        else:
+            todo.append(r + 1)
+    return seen
+
+
+def _drop_dead_blocks(blob: bytes, instr_at: int, tables_at: int, patt_at: int,
+                      patterns: List[Tuple[int, int]], keep: List[int],
+                      log: Optional[Callable[[str], None]]):
+    """(table bytes, pulse map, filter map) with the pulse and filter rows
+    ONLY a dropped record reaches removed, or None where there are none.
+
+    A row is dead when it is reachable from some record of the file as
+    written but not from a kept record, a pattern's CMD_SETPULSEPTR /
+    CMD_SETFILTERPTR, or a wavetable $F9 / $FA command row (every wavetable
+    row counts, reachable or not: the wavetable is not pruned here, and a row
+    that names a pulse block keeps it). Rows no record reaches at all are
+    left as written, as before. The maps renumber a pointer past the removed
+    rows (a removed target, only possible from a row nothing executes, lands
+    on the next kept row)."""
+    count = blob[instr_at]
+    recs = instr_at + 1
+    pos = tables_at
+    raw = []
+    for _ in range(len(_TABLE_NAMES) if blob[:4] == b"GTS5" else 3):
+        n = blob[pos]
+        raw.append((pos, [(blob[pos + 1 + i], blob[pos + 1 + n + i])
+                          for i in range(n)]))
+        pos += 1 + 2 * n
+    wave, pulse, filt = raw[0][1], raw[1][1], raw[2][1]
+    cmd_p, cmd_f = set(), set()
+    for start, rows in patterns:
+        for r in range(rows):
+            cmd, data = blob[start + r * 4 + 2], blob[start + r * 4 + 3]
+            if data and cmd == _CMD_SETPULSEPTR:
+                cmd_p.add(data)
+            elif data and cmd == _CMD_SETFILTERPTR:
+                cmd_f.add(data)
+    for left, right in wave:
+        if right and _WAVE_FIRST_CMD <= left <= _WAVE_LAST_CMD:
+            if left & 0xF == _CMD_SETPULSEPTR:
+                cmd_p.add(right)
+            elif left & 0xF == _CMD_SETFILTERPTR:
+                cmd_f.add(right)
+
+    def pointers(at: int, which: List[int]) -> set:
+        return {blob[recs + (k - 1) * _RECORD_LEN + at] for k in which} - {0}
+
+    removed = []
+    for at, rows, extra in ((_PULSE_AT, pulse, cmd_p),
+                            (_FILTER_AT, filt, cmd_f)):
+        everyone = _reach(rows, pointers(at, list(range(1, count + 1))) | extra)
+        kept = _reach(rows, pointers(at, keep) | extra)
+        removed.append(everyone - kept)
+    if not removed[0] and not removed[1]:
+        return None
+
+    def mapper(rows: List[Tuple[int, int]], gone: set):
+        before = [0]
+        for r in range(1, len(rows) + 1):
+            before.append(before[-1] + (r in gone))
+
+        def m(x: int) -> int:
+            if x == 0:
+                return 0
+            if x <= len(rows):
+                return x - before[x - 1]
+            return x - len(gone)
+        return m
+
+    maps = [mapper(pulse, removed[0]), mapper(filt, removed[1])]
+    out = bytearray()
+    wave_out = []
+    for left, right in wave:
+        if right and _WAVE_FIRST_CMD <= left <= _WAVE_LAST_CMD:
+            if left & 0xF == _CMD_SETPULSEPTR:
+                right = maps[0](right)
+            elif left & 0xF == _CMD_SETFILTERPTR:
+                right = maps[1](right)
+        wave_out.append((left, right))
+    out.append(len(wave_out))
+    out += bytes(left for left, _ in wave_out)
+    out += bytes(right for _, right in wave_out)
+    for (_, rows), gone, m in ((raw[1], removed[0], maps[0]),
+                               (raw[2], removed[1], maps[1])):
+        live = [(left, m(right) if left == _TABLE_JUMP else right)
+                for r, (left, right) in enumerate(rows, 1) if r not in gone]
+        out.append(len(live))
+        out += bytes(left for left, _ in live)
+        out += bytes(right for _, right in live)
+    out += blob[raw[2][0] + 1 + 2 * len(filt):patt_at]
+    if log:
+        log(f"Dropped {len(removed[0])} pulse and {len(removed[1])} filter "
+            f"table row(s) only a dropped instrument reaches")
+    return bytes(out), maps[0], maps[1]
+
+
 def drop_unnamed_instruments(blob: bytes,
                              log: Optional[Callable[[str], None]] = None
                              ) -> bytes:
@@ -110,7 +236,19 @@ def drop_unnamed_instruments(blob: bytes,
     out.append(len(keep))
     for k in keep:
         out += blob[recs + (k - 1) * _RECORD_LEN:recs + k * _RECORD_LEN]
-    out += blob[tables_at:patt_at + 1]
+    tables = _drop_dead_blocks(blob, instr_at, tables_at, patt_at, patterns,
+                               keep, log)
+    if tables is None:
+        out += blob[tables_at:patt_at + 1]
+    else:
+        out += tables[0]
+        # The kept records' pulse / filter pointers, renumbered.
+        for n in range(len(keep)):
+            for at, m in ((_PULSE_AT, tables[1]), (_FILTER_AT, tables[2])):
+                p = recs + n * _RECORD_LEN + at
+                out[p] = m(out[p])
+        out.append(blob[patt_at])
+    pmaps = tables[1:] if tables is not None else None
     for start, rows in patterns:
         out.append(rows)
         body = bytearray(blob[start:start + rows * 4])
@@ -118,6 +256,11 @@ def drop_unnamed_instruments(blob: bytes,
             ins = body[r * 4 + 1]
             if ins:
                 body[r * 4 + 1] = remap[ins] if ins <= count else ins - dropped
+            if pmaps is not None and body[r * 4 + 3]:
+                if body[r * 4 + 2] == _CMD_SETPULSEPTR:
+                    body[r * 4 + 3] = pmaps[0](body[r * 4 + 3])
+                elif body[r * 4 + 2] == _CMD_SETFILTERPTR:
+                    body[r * 4 + 3] = pmaps[1](body[r * 4 + 3])
         out += body
     if log:
         gone = [k for k in range(1, count + 1) if k not in remap]

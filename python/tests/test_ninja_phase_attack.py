@@ -79,6 +79,11 @@ def _packed_run(no_test_restart: bool):
     kwargs = F._preset_opts(doc, _NAME)
     kwargs["pulse_phase"] = True
     kwargs["no_test_restart"] = no_test_restart
+    # The reading pairs an operand with the captured table's entry number; the
+    # drop of unnamed records renumbers the pulse table (it removes the rows
+    # only a dropped record reaches), so it is off here. The packed file is
+    # byte-identical either way.
+    kwargs["drop_unnamed_instruments"] = False
     mult = doc["songs"][_NAME].get("multiplier", 1)
     cap: dict = {}
     real_walk, real_table = C.collect_pulse_phases, C.build_pulse_phase_table

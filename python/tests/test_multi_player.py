@@ -468,10 +468,16 @@ def test_5_title_tunes_subtune_0_is_the_unmerged_conversion_byte_for_byte(five):
     _opts, merged, alone, _lines = five
     a, m = G._parse_song(alone), G._parse_song(merged)
     assert m.tracks[:3] == a.tracks
-    assert m.instruments[:len(a.instruments)] == a.instruments
-    for t in range(4):
+    # The wave and speed tables and the patterns are the unmerged conversion's
+    # own bytes. The pulse and filter tables are not: the final drop removes
+    # the rows only a dropped record reaches, and in the merged file the
+    # appended players' records share (and so keep) some of the dropped
+    # record's rows (5_Title_Tunes: GT 1/05, 2/05, 3/05 enter pulse row 51,
+    # which the unmerged file drops). Those, and the pointers into them, are
+    # compared as the programs they enter.
+    for t in (0, 3):
         assert m.tables[t][:len(a.tables[t])] == a.tables[t], t
-    assert m.patterns[:len(a.patterns)] == a.patterns
+    assert _canon(m, 0) == _canon(a, 0)
 
 
 @needs_corpus
