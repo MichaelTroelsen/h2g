@@ -278,6 +278,13 @@ def main(argv=None) -> int:
              "the file. Per song (a --presets entry's pitch_tie_phase); off "
              "leaves every conversion byte-identical.")
     parser.add_argument(
+        "--pitch-lead-tie", action="store_true",
+        help="on the bare rest row before each note whose instrument opens "
+             "on a gated real waveform, tie to that note (CMD_TONEPORTA $00) "
+             "so its init call sounds its own pitch rather than the previous "
+             "note's. Per song (a --presets entry's pitch_lead_tie); off "
+             "leaves every conversion byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -719,6 +726,7 @@ def main(argv=None) -> int:
                           ("--aligned-firstwave", "aligned_firstwave"),
                           ("--named-firstwave", "named_firstwave"),
                           ("--pitch-tie-phase", "pitch_tie_phase"),
+                          ("--pitch-lead-tie", "pitch_lead_tie"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -834,6 +842,7 @@ def main(argv=None) -> int:
                       aligned_firstwave=args.aligned_firstwave,
                       named_firstwave=args.named_firstwave,
                       pitch_tie_phase=args.pitch_tie_phase,
+                      pitch_lead_tie=args.pitch_lead_tie,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

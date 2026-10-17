@@ -665,6 +665,16 @@ EXCLUDED_FROM_ALWAYS = {
     # FIDELITY_TOGGLES, as `named_firstwave` is not. A song entry
     # `"pitch_tie_phase": true`.
     "pitch_tie_phase",
+    # `pitch_lead_tie`: the bare rest row before a gated-firstwave note ties
+    # to that note, so its init call sounds its own pitch (h2g.pitch_lead).
+    # Off by default and per song: the tie moves the previous note's pitch
+    # for the rest of that row, silent where it has released and heard where
+    # it is still gated -- task drum-attack-first-frame measured that leak at
+    # 39 gated frames on Monty against 2559 on Chicken_Song (7e8c58d, 180 s,
+    # presets; historical). Not in
+    # FIDELITY_TOGGLES, as `pitch_tie_phase` is not. A song entry
+    # `"pitch_lead_tie": true`.
+    "pitch_lead_tie",
 }
 
 

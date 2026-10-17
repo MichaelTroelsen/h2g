@@ -2736,6 +2736,35 @@ booleans together spends a quarter of its combinations on a distinction that
 cannot exist; that pruning is not implemented, because changing the walk needs
 its own two-arm corpus A/B before adoption.
 
+## `--pitch-lead-tie` (drum attacks open on their own pitch)
+
+Goattracker's packed player writes only `$D404` when a new note starts
+(`player.s:909`, `jmp mt_loadregswaveonly`); the frequency follows one call
+later from the wavetable. Hubbard's players write the note's frequency on the
+attack frame. So under a real first waveform every drum hit's first frame
+sounds at the *previous* note's pitch -- the wrong-pitch blip the user heard on
+Auf_Wiedersehen_Monty voice 2 from 0:38.
+
+The option turns the bare rest row before such a note into a tone-portamento
+tie to it (`[note, ins, $03, $00]`; speed `$00` is "tie note", `player.s:410`),
+which loads the channel's frequency a row early without starting the note. A
+row-0 note is led from the previous pattern's last row; where different
+successors want different pitches, the predecessor is copied per pitch (within
+`MAX_PATTERNS`) and a repeat into itself is split. `pitch_lead.py`.
+
+**It is a trade, per song, off by default.** For the rest of the tie row the
+previous note sounds at the new pitch. Measured at v0.5.583 over the 13 files
+it moves (180 s, forced on): stale-pitch drum hits 9115 -> 2661, Monty 880 ->
+77, Tarzan 1643 -> 125, Pacific_Coast 1521 -> 103; it costs little where the
+previous note has released (Monty, Tarzan, Pacific_Coast, Powerplay, Ninja) and
+leaks audibly where it is still gated (Chicken_Song, Hollywood_or_Bust), and
+Pygmies_Revenge gets worse (stale 44 -> 168). `melody` and `sequence` cannot
+judge it: a run where every attack is one note stale reads as the original
+shifted and scores about 1.0, so a partial fix lowers them while attacks get
+right. Judge it on the drum census (`C:/t/drum-attack-first-frame/census.py`,
+not yet a harness column) and on listening. Adopting it in `presets.json` waits
+on the user's A/B.
+
 ## `--regrid` (a row that is not a whole number of play calls)
 
 A Goattracker row is a whole number of play calls, so a player whose row is

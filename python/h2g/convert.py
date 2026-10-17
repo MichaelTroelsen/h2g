@@ -39,6 +39,7 @@ from .instrument_drop import (
     add_startup_tempo,
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
 from .funk_gatetimers import split_funk_gatetimers
+from .pitch_lead import lead_ties
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -274,7 +275,8 @@ def convert(sid_path: str, log: Logger = print,
             regrid_park: bool = False,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
-            pitch_tie_phase: bool = False) -> bytes:
+            pitch_tie_phase: bool = False,
+            pitch_lead_tie: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -456,6 +458,21 @@ def convert(sid_path: str, log: Logger = print,
     repeats written out so each tie row is fetched in one state. Off by
     default and per song (presets.EXCLUDED_FROM_ALWAYS); byte-inert where it
     is off.
+
+    pitch_lead_tie writes, on the command-free rest row before each note
+    whose record's firstwave is a gated real waveform, that note with
+    CMD_TONEPORTA $00, so the voice already holds the note's pitch when the
+    init call -- which writes `$D404` alone (player.s mt_newnoteinit, line
+    909) -- opens the gate. Without it that call sounds the PREVIOUS note's
+    frequency at full level for one frame (Monty voice 2's 0:38 drum: D-3
+    where the original plays E-2). A pattern's row-0 note is led from the
+    last row of the pattern before it; where that pattern is followed by
+    row-0 notes wanting different ties it is copied per tie (and a repeat
+    into itself split), within MAX_PATTERNS. Costs whatever the previous
+    note does with the pitch on the tie row: silent once it has released,
+    heard where it is still gated. Off by default and per song
+    (presets.EXCLUDED_FROM_ALWAYS); byte-inert on a file with no gated
+    firstwave record. See pitch_lead.
 
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
@@ -1347,6 +1364,11 @@ def convert(sid_path: str, log: Logger = print,
                     multiplier, r, wide_hard_restart, max_hard_restart,
                     hard_restart_frames) & 0x3F)
                     - (1 if aligned_firstwave else 0)), log)
+        if pitch_lead_tie:
+            # On the finished rows and records: which records open on a gated
+            # waveform is settled only once every clone pass and the drop
+            # have run (pitch_lead).
+            sng, _led = lead_ties(sng, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,
