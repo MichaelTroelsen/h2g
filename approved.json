@@ -29,6 +29,41 @@
    "version": "0.5.418",
    "at": "2026-08-30",
    "note": "Approved by the listener in session, with no defect reported. TRANSCRIBED rather than generated: the verdict is the human's and was given as 'Devils Galop is human approved'; what this tool supplied is the sha and the date, not the judgement. The sha is the one the listener actually HEARD, checked before writing: abpage reported Devils_Galop as `current`, i.e. the staged Devils_Galop.h2g.wav was rendered from a .sng byte-identical to what the tune converts to at this version. Had it read `behind` this entry would have been wrong to write at today's sha, which is the whole reason approvals key on sng_sha256 rather than on version. NOTE WHAT IT DOES NOT COVER: no listening note names a section or a voice, so this signs off the tune as heard and nothing narrower. Devils_Galop is also the file whose player writes its table addresses over its own code at init (sidfile.find_init_writes), so a future change to that rescue path should re-check this verdict rather than assume it survives."
+  },
+  "Las_Vegas_Video_Poker": {
+   "approved": true,
+   "sng_sha256": "85807acb472cff396d0e0aa5e6ec9b2f639f3a88c4be572b5a079ccd2d401aa7",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; mark as done (user, 2026-10-18)."
+  },
+  "Last_V8": {
+   "approved": true,
+   "sng_sha256": "e2215124b651ee2cb30a932c70b99a081b161d5936ba97afea98ed766a0f4b00",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; mark as done (user, 2026-10-18). Was 96% at v0.5.583."
+  },
+  "Lightforce": {
+   "approved": true,
+   "sng_sha256": "ff8fb7fda479a0feb3c666e5fd3a40c30ea8666512ea633f2aedfa5c6e8d5a90",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; mark as done (user, 2026-10-18)."
+  },
+  "Master_of_Magic": {
+   "approved": true,
+   "sng_sha256": "26bd492a1ef3642ab8ff952d9829ca26ea7f1bd285396ff72a340b08b7d8cd14",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; mark as done (user, 2026-10-18)."
+  },
+  "Mozart": {
+   "approved": true,
+   "sng_sha256": "89edf8d24dfc6101b73f920ea78962cab489ac7b1bcebbe1ba819d9eb8161837",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; mark as done (user, 2026-10-18)."
   }
  }
 }
