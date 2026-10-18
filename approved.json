@@ -64,6 +64,20 @@
    "version": "0.5.588",
    "at": "2026-10-18",
    "note": "99% fidelity by ear; mark as done (user, 2026-10-18)."
+  },
+  "Proteus": {
+   "approved": true,
+   "sng_sha256": "02c4c2eb64f3ae835a1f12042643a46b58d757e12435d1be9d0de010e2785692",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; approved (user, 2026-10-18)."
+  },
+  "Rasputin": {
+   "approved": true,
+   "sng_sha256": "fd9474101b521072b7801bc38eacf675261bf308a6cd008019f543a19cf9e9f7",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; approved (user, 2026-10-18)."
   }
  }
 }
