@@ -168,6 +168,10 @@ def test_the_handler_counter_is_the_two_stage_counter_in_every_file():
             if d[j - 2] in (0x50, 0x70) and d[j] == 0xBD and d[j + 3] == 0xF0 \
                     and d[j + 5] == 0xDE:
                 handler.add(bytes(d[j + 1:j + 3]))
+            # The zero-page countdown (Mega_Apocalypse `$4E24 B5 E0 F0 08
+            # D6 E0`), read by `_find_fixed_pitch_index` since its spelling.
+            if d[j - 2] in (0x50, 0x70) and d[j] == 0xB5 and d[j + 2] == 0xF0                     and d[j + 4] == 0xD6 and d[j + 1] == d[j + 5]:
+                handler.add(bytes(d[j + 1:j + 2]))
             i = d.find(head, i + 1)
         load = (f"A5 {addr:02X}" if zp
                 else f"AD {addr & 0xFF:02X} {addr >> 8:02X}")
@@ -181,7 +185,9 @@ def test_the_handler_counter_is_the_two_stage_counter_in_every_file():
                 break
         assert stage in handler, p.name
         checked += 1
-    assert checked == 43
+    # 43 -> 44: Mega_Apocalypse's zero-page `BIT $EC` handler, whose
+    # countdown `$E0,X` is its two-stage counter too.
+    assert checked == 44
 
 
 @needs_corpus

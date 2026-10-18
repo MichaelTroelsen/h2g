@@ -241,7 +241,16 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _PhasedKey, _player_interval,
                           _respell_on_clones, _successor_heads,
                           _successor_relatch,
-                          _tied_instrument_envelopes, _vibrato_command_pass)  # noqa: F401
+                          _tied_instrument_envelopes, _vibrato_command_pass,
+                          _swell_gate_plan, _swell_row_plan,
+                          _swell_zero_boundaries, _swell_prefix_steps,
+                          _swell_phase_model, SWELL_PHASER,
+                          SWELL_PREFIXED)  # noqa: F401
+from .swell_phase import (SWELL_TRIANGLE_SHAPE, SWELL_PREFIXES,  # noqa: F401
+                          SWELL_PLAN_PERIODS, SWELL_PLAN_TAIL,
+                          swell_triangle, triangle_step,
+                          player_offsets, _vib_call, goat_offsets,
+                          plan_gate)
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
 from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,

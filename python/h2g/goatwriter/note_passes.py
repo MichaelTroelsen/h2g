@@ -21,12 +21,14 @@ from .constants import (CLASSIC_TIE_START_SHAPES, CLASSIC_TIE_START_WINDOW,
                         _SONG_MAX_PATTERNS,
                         SPEED_NOTE_RELATIVE, TEMPO_DUTY_MAX_CLONE,
                         VIBRATO_CMP_BIAS, WAVE_GATE_BIT, WAVE_SILENT_BASE,
-                        WAVE_TEST_BIT, WAVECMD_BASE, GT_MAX_TABLELEN)
+                        WAVE_TEST_BIT, WAVECMD_BASE, GT_MAX_TABLELEN,
+                        WAVECMD_PORTAUP, WAVECMD_PORTADOWN)
 from .attack import (fixed_attack_only)
 from .primitives import (_counter_gate_call, _fixed_pitch_yield_field,
                          _note_freq, _speed_index, _wave_byte)
 from .pulse import (packed_pattern_size, pattern_rows)
 from . import constants as _gw_constants
+from . import swell_phase as _gw_swell_phase
 import contextlib
 import contextvars
 
@@ -2438,7 +2440,8 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                              gate_of: dict, multiplier: int, row_calls: int,
                              instr_row_calls: Optional[dict],
                              choose, ties_end: bool = False,
-                             visits: Optional[dict] = None) -> tuple:
+                             visits: Optional[dict] = None,
+                             triangle: Optional[dict] = None) -> tuple:
     """`(wants, where, off_table)`: the orderlist walk of
     `_expanding_vibrato_pass`, shared with `_expanding_vibrato_loops`.
 
@@ -2473,10 +2476,27 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
         if vis is not None:
             vis.setdefault(key, set()).add(what)
 
+    def want_row(vis, key, what, slot, k, mine) -> None:
+        put(vis, key, what)
+        if what is not None:
+            where.setdefault(key, set()).add((slot, k))
+            mine.append((vis, key))
+
+    def flush(block, mine) -> None:
+        # A block that ended before its gate: its held rows want what the
+        # walk would have given them without the phase plan.
+        if block is not None and len(block) > 11:
+            for vis_, key_, k_, what_ in block[11]:
+                want_row(vis_, key_, what_, block[10], k_, mine)
+            block[11] = []
+
     for ti, track in enumerate(tracks):
         live, transpose, repeat, operand = 0, 0, 1, False
         block = None        # (bound, shift, cmp, base, hi, lo, frames, k, on)
         mine: list = []     # (visit, row) the current block wanted something on
+        tri = [0, 0, 0, 0]  # the player's (position, direction), now and
+        #                     one frame before (`swell_phase`)
+        fetched = None      # whether the row before was a fetch, None at start
         for pos, b in enumerate(track):
             if operand:                  # $FF's restart position
                 operand = False
@@ -2501,7 +2521,24 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                     if note == 0xFF:     # ENDPATT, patterns.GT_END_PATTERN
                         break
                     key = (b, r)
+                    if triangle is not None:
+                        # The row before, now that `live` is what it held:
+                        # every frame but a fetch's steps the triangle.
+                        if fetched is not None:
+                            byte = triangle["bytes"].get(live, 0)
+                            if byte:
+                                rows_f = max(1, ((instr_row_calls or {}).get(
+                                    live) or row_calls) // mult)
+                                bnd = ((byte & VIBRATO_BOUND_MASK)
+                                       >> VIBRATO_BOUND_SHIFT)
+                                for f in range(int(fetched), rows_f):
+                                    tri[2], tri[3] = tri[0], tri[1]
+                                    tri[0], tri[1] = _gw_swell_phase.triangle_step(
+                                        tri[0], tri[1], bnd)
+                        fetched = (GT_FIRST_NOTE <= note <= GT_LAST_NOTE
+                                   or note == GT_KEYOFF)
                     if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                        flush(block, mine)
                         if instr:
                             live = instr
                         if ties_end and pat[r + 2] == CMD_TONEPORTA:
@@ -2521,13 +2558,14 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                         frames = max(1, ((instr_row_calls or {}).get(live)
                                          or row_calls) // mult)
                         block = [bound, shift, cmp_value, base, ivl[0],
-                                 ivl[1], frames, gt_note, 0, False, live]
+                                 ivl[1], frames, gt_note, 0, False, live, []]
                         continue
                     continues = (
                         (note == GT_REST and (instr == 0 or (
                             instr == live and pat[r + 2] == CMD_SETSR)))
                         or (note == GT_KEYOFF and instr in (0, live)))
                     if not continues or block is None:
+                        flush(block, mine)
                         if instr:
                             live = instr
                         # `mine` runs on: a loop entered before this row
@@ -2547,12 +2585,127 @@ def _expanding_vibrato_wants(sid: SidFile, det: Detection,
                         put(vis, key, None)
                         continue
                     want = choose(block, ages)
-                    put(vis, key, want)
-                    if want is not None:
-                        where.setdefault(key, set()).add((live, k))
-                        mine.append((vis, key))
+                    slot = block[10]
+                    gate = (triangle["gate"].get(slot)
+                            if triangle is not None else None)
+                    if gate is None or want is None:
+                        want_row(vis, key, want, slot, k, mine)
+                        continue
+                    if k * frames < gate:
+                        # Held until the gate row says which one phases.
+                        block[11].append((vis, key, k, want))
+                        continue
+                    if k * frames == gate:
+                        want = _swell_gate_plan(
+                            block, want, tri, gate, frames,
+                            triangle["quiet"].get(slot, 0),
+                            lambda v, kk, w: want_row(v, kk[0], w, slot,
+                                                      kk[1], mine))
+                        block.append([want if want[0] != SWELL_PREFIXED
+                                      else want[2],
+                                      _swell_zero_boundaries(
+                                          block[0], tri, frames,
+                                          triangle["attack"].get(slot, 1))])
+                    elif len(block) > 12:
+                        want = _swell_row_plan(
+                            block, want,
+                            (tri[2], tri[3]) if triangle["attack"].get(
+                                slot, 1) else (tri[0], tri[1]))
+                    want_row(vis, key, want, slot, k, mine)
             repeat = 1
+        flush(block, mine)
     return wants, where, off_table
+
+
+def _swell_gate_plan(block: list, want, tri: list, gate: int, frames: int,
+                     quiet_from: int, emit):
+    """The gate row's want under the phase plan (`swell_phase`), the held
+    rows before it emitted with the phaser on the one `plan_gate` picks.
+
+    `block[11]` is the held rows, `(visit, key, k, want)`; a row can be a
+    phaser only where the instrument's own program has stopped by its first
+    call (`quiet_from`, `_expanding_vibrato_remainder` is empty there). The
+    phaser's `m` `00 00` steps start the row; the zero-speed `F4`s run from
+    there to the gate row, so `gate - (k * frames + m)` of them are quiet
+    calls before it."""
+    bound = block[0]
+    held = block[11]
+    block[11] = []
+    options: dict = {}
+    for i, (_vis, _key, k, _w) in enumerate(held):
+        if k * frames < quiet_from:
+            continue
+        for m in range(1, frames + 1):
+            options.setdefault(gate - (k * frames + m), (i, m))
+    cmp_value = want[0] & ~SPEED_NOTE_RELATIVE      # the loop's own `cmp`
+    plan = (_gw_swell_phase.plan_gate(bound, cmp_value, tri[0], tri[1], options)
+            if options and bound >= 2 else None)
+    for i, (vis, key, k, w) in enumerate(held):
+        if plan is not None and options[plan[0]][0] == i:
+            w = (SWELL_PHASER, options[plan[0]][1], cmp_value)
+        emit(vis, (key, k), w)
+    if plan is None:
+        return want
+    return (SWELL_PREFIXED, plan[1], want) if plan[1] else want
+
+
+def _swell_zero_boundaries(bound: int, tri: list, frames: int,
+                           attack: int) -> bool:
+    """Whether a row after the gate ever starts just after a frame the
+    triangle is on the note, from its state at the gate row (`tri`, after
+    the frame before the gate): rows are `frames` apart and a row's first
+    call is frame `k * frames - attack`. Where one does, `_swell_row_plan`
+    re-speeds there alone and needs no re-anchoring block."""
+    offs = _gw_swell_phase.player_offsets(bound, tri[0], tri[1],
+                                    4 * bound * frames + frames)
+    # offs[i] is frame (gate - 1) + 1 + i; the frame before row kg + j's
+    # first call is (gate - 1) + j * frames - attack.
+    return any(offs[j * frames - attack - 1] == 0
+               for j in range(1, 2 * bound + 1)
+               if 0 <= j * frames - attack - 1 < len(offs))
+
+
+def _swell_row_plan(block: list, want, before: tuple):
+    """A hold row after the gate under the phase plan: its want, given the
+    player's triangle `before` -- `(position, direction)` after the frame
+    before the row's first call.
+
+    Goattracker's vibrato accumulates `freq` (gplay.c `cptr->freq +=
+    speed`), so a new speed taken while the triangle is `n` steps off the
+    note moves the centre by `n` times the difference, for good. Mega's
+    `$00B9` grows its step on every frame and rows are three frames, so
+    re-speeding every row walked the centre off the note. A row therefore
+    takes its new speed only where that costs nothing:
+
+    * the frame before is ON the note (`n = 0`): the speed alone;
+    * the frame before is one step below it and the triangle rising, so
+      the row's first frame is the note again: re-anchored -- `00 00`
+      (the note, `vibtime` 0) and, on an odd bound, one `F1` of the new
+      speed, the state `swell_phase.plan_gate` shows the loop matches the
+      player from;
+    * anywhere else the row keeps the loop the row before had.
+
+    The re-anchoring costs a wavetable block per speed, so it is used only
+    on a note whose rows never start just after the note
+    (`_swell_zero_boundaries`): a third of Mega's lead.
+
+    Every phase class of a period meets one of the first two once a
+    period, so the depth still grows once a period."""
+    bound = block[0]
+    n = before[0] - (bound >> 1)
+    if n == 0:
+        block[12][0] = want
+        return want
+    if n == -1 and not before[1] & 0x80 and not block[12][1]:
+        block[12][0] = want
+        return (SWELL_PREFIXED, "HU" if bound & 1 else "H", want)
+    return block[12][0]
+
+
+# The kinds of want the phase plan adds (`_swell_gate_plan`): a phaser,
+# `(SWELL_PHASER, m, cmp)`, and a gate row, `(SWELL_PREFIXED, prefix, entry)`.
+SWELL_PHASER = "phaser"
+SWELL_PREFIXED = "prefixed"
 
 
 # What `_expanding_vibrato_wants(ties_end=True)` adds to a row whose block a
@@ -2575,6 +2728,11 @@ def expanding_vibrato_split(sid: SidFile, det: Detection,
                             instr_row_calls: Optional[dict] = None,
                             loops: bool = False,
                             limit: int = _SONG_MAX_PATTERNS,
+                            wave_entries: Optional[List[tuple]] = None,
+                            wave_starts: Optional[List[int]] = None,
+                            swell_phase: bool = True,
+                            no_test_restart: bool = False,
+                            real_firstwave_instruments: tuple = (),
                             log=None) -> tuple:
     """`(tracks, patterns, {copy: source})`: each pattern the swell's rows
     are wanted on by some orderlist positions and not by others, copied once
@@ -2613,10 +2771,18 @@ def expanding_vibrato_split(sid: SidFile, det: Detection,
     if not by_slot:
         return tracks, patterns, {}
     visits: dict = {}       # (track, position) -> {(pattern, row): wants}
+    # The loops' phase plan, asked here too so that a pattern whose plays
+    # meet the triangle in different phases is copied once per phase.
+    triangle = (_swell_phase_model(sid, det, by_slot, lead, multiplier,
+                                   row_calls, instr_row_calls, wave_entries,
+                                   wave_starts, no_test_restart,
+                                   tuple(real_firstwave_instruments))
+                if loops and swell_phase and wave_entries is not None
+                and wave_starts is not None else None)
     wants, _where, _off = _expanding_vibrato_wants(
         sid, det, tracks, patterns, by_slot, gate_of,
         multiplier, row_calls, instr_row_calls, choose, ties_end=ties_end,
-        visits=visits)
+        visits=visits, triangle=triangle)
     split = {b for (b, _r), e in wants.items()
              if not _expanding_vibrato_unanimous(e)}
     if not split:
@@ -2747,7 +2913,8 @@ def _expanding_vibrato_loop_cost(keys) -> int:
     return total
 
 
-def _expanding_vibrato_loop_share(plan: list, room: int) -> tuple:
+def _expanding_vibrato_loop_share(plan: list, room: int,
+                                  pinned=frozenset()) -> tuple:
     """`(alias, merged, off)`: which swing loops share a block when the
     wavetable has `room` entries for them and the rows in `plan`
     (`(pattern, row, remainder, entry, notes)`) would take more
@@ -2784,6 +2951,8 @@ def _expanding_vibrato_loop_share(plan: list, room: int) -> tuple:
         whole = _expanding_vibrato_loop_cost(held)
         best = None
         for i in held:
+            if i in pinned:
+                continue        # its remainder names its own speed
             freed = whole - _expanding_vibrato_loop_cost(
                 [k for k in held if k != i])
             if freed <= 0:
@@ -2821,6 +2990,7 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
                              instr_row_calls: Optional[dict] = None,
                              no_test_restart: bool = False,
                              real_firstwave_instruments: tuple = (),
+                             swell_phase: bool = True,
                              log=None) -> tuple:
     """`(wave_entries, converted)`: the swell's hold rows moved off the
     command column's oscillator onto a wavetable one that runs on EVERY
@@ -2917,10 +3087,17 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
             seen.setdefault(entry, set()).add(block[7])
         return entry
 
+    triangle = _swell_phase_model(
+        sid, det, by_slot, lead, multiplier, row_calls, instr_row_calls,
+        wave_entries, wave_starts, no_test_restart,
+        tuple(real_firstwave_instruments)) if swell_phase else None
     wants, where, _off = _expanding_vibrato_wants(
         sid, det, tracks, patterns, by_slot, _walk_gates,
-        multiplier, row_calls, instr_row_calls, choose, ties_end=ties_end)
+        multiplier, row_calls, instr_row_calls, choose, ties_end=ties_end,
+        triangle=triangle)
     out = list(wave_entries)
+    pinned: set = set()     # (remainder, entry) the loop share must not move
+    phased = prefixed = 0
     starts: dict = {}           # (remainder, speed index) -> loop start
     converted = taken = disagree = looping = full = early = tied = 0
     plan: list = []     # (pattern, row, remainder, entry, notes) per row
@@ -2937,6 +3114,8 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
                 or (pat[r + 2] == 0 and pat[r + 3] == 0)):
             taken += 1
             continue
+        entry = next(iter(entries))
+        kind = entry[0] if isinstance(entry[0], str) else None
         rests = set()
         soon = False
         for slot, k in where.get((b, r), ()):
@@ -2945,7 +3124,10 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
             ptr = (wave_starts[slot - 1]
                    if 0 < slot <= len(wave_starts) else 0)
             rest = _expanding_vibrato_remainder(out, ptr, first)
-            if gate is not None and first + calls <= gate:
+            if kind == SWELL_PHASER:
+                # Before the gate by construction, on a stopped program.
+                rest = ((0x00, 0x00),) * entry[1] if rest == () else None
+            elif gate is not None and first + calls <= gate:
                 soon = True          # the whole row is before the gate
             elif gate is not None and first < gate and rest is not None:
                 # The gate's call is inside the row: a delay step spans
@@ -2965,13 +3147,24 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
             looping += None in rests
             disagree += None not in rests
             continue
-        entry = next(iter(entries))
-        plan.append((b, r, next(iter(rests)), entry,
+        rest = next(iter(rests))
+        if kind == SWELL_PHASER:
+            entry = (entry[2], 0)        # zero speed: `vibtime` steps alone
+            pinned.add((rest, entry))
+            phased += 1
+        elif kind == SWELL_PREFIXED:
+            entry, steps = entry[2], _swell_prefix_steps(entry[1], entry[2],
+                                                         speed_table)
+            if steps is not None:
+                rest = tuple(rest) + steps
+                pinned.add((rest, entry))
+                prefixed += 1
+        plan.append((b, r, rest, entry,
                      tuple(sorted(seen.get(entry, ())))))
     # Where the loops would not all fit, the rows of the least-used swing
     # go onto the nearest loop of the same remainder that does.
     alias, shared, off = _expanding_vibrato_loop_share(
-        plan, GT_MAX_TABLELEN - len(out))
+        plan, GT_MAX_TABLELEN - len(out), pinned)
     # Each row's (remainder, speed index) once the sharing is applied.
     moved = 0
     rows: list = []
@@ -3027,5 +3220,80 @@ def _expanding_vibrato_loops(sid: SidFile, det: Detection,
             + (f", {tied} in a block a tie ends" if tied else "")
             + (f", {moved} on the nearest loop that fits ({shared} swing(s) "
                f"merged, mean {off * 100:.0f}% off in size)" if moved else "")
-            + (f", {full} with a table full" if full else ""))
+            + (f", {full} with a table full" if full else "")
+            + (f"; {phased} phaser row(s), {prefixed} gate prefix(es) "
+               "on the player's triangle" if phased or prefixed else ""))
     return out, converted
+
+
+def _swell_prefix_steps(prefix: str, entry: tuple,
+                        speed_table: List[tuple]) -> Optional[tuple]:
+    """The wavetable steps of a gate-row prefix (`swell_phase`): `U`/`D`
+    a portamento of the loop's own speed, `S` a zero-speed `F4`. A
+    note-relative entry is its own portamento speed (gplay.c's CMD_PORTAUP
+    takes `speed >= $8000` as the interval shifted by the right byte, the
+    vibrato's reading); an absolute one is `(0, speed)`, since a portamento
+    reads the left byte as the speed's high byte. None with the speed
+    table full."""
+    left, right = entry
+    porta = entry if left & SPEED_NOTE_RELATIVE else (0, right)
+    out = []
+    for step in prefix:
+        if step == "H":
+            out.append((0x00, 0x00))     # the note: `vibtime` 0, gplay.c:731
+            continue
+        if step in "UD":
+            idx = _speed_index(speed_table, porta)
+            cmd = WAVECMD_PORTAUP if step == "U" else WAVECMD_PORTADOWN
+        else:
+            idx = _speed_index(speed_table,
+                               (left & ~SPEED_NOTE_RELATIVE, 0))
+            cmd = WAVECMD_BASE + CMD_VIBRATO
+        if not idx:
+            return None
+        out.append((cmd, idx))
+    return tuple(out)
+
+
+def _swell_phase_model(sid: SidFile, det: Detection, by_slot: dict,
+                       lead: int, multiplier: int, row_calls: int,
+                       instr_row_calls: Optional[dict],
+                       wave_entries: List[tuple],
+                       wave_starts: List[int],
+                       no_test_restart: bool = False,
+                       real_firstwave_instruments: tuple = ()
+                       ) -> Optional[dict]:
+    """What `_expanding_vibrato_wants` needs to run the player's triangle
+    (`swell_phase`), or None where the player does not step it that way or
+    the song packs above -S1: `bytes`, every slot's vibrato byte (a zero
+    byte stops the triangle, `$4C38 BNE`); `gate`, the counter gate of each
+    swelling slot whose gate is a whole number of rows past its note,
+    with at least two rows before it; `quiet`, the first call each such
+    slot's own program has stopped by (`_expanding_vibrato_remainder`)."""
+    if (sid is None or det is None or max(1, multiplier) != 1
+            or det.vibrato_offset is None
+            or not _gw_swell_phase.swell_triangle(sid.data)):
+        return None
+    data = sid.data
+    out: dict = {"bytes": {}, "gate": {}, "quiet": {}, "attack": {}}
+    for slot in range(lead + 1, GT_MAX_INSTRUMENTS + 1):
+        rec = slot - 1 - lead
+        at = det.instr_start + rec * det.instr_stride + det.vibrato_offset
+        if 0 <= at < len(data) and rec < max(det.instr_used, 0):
+            out["bytes"][slot] = data[at]
+    for slot in by_slot:
+        frames = max(1, ((instr_row_calls or {}).get(slot) or row_calls))
+        gate = _expanding_vibrato_gate(det, slot - lead - 1)
+        ptr = wave_starts[slot - 1] if 0 < slot <= len(wave_starts) else 0
+        quiet = next((c for c in range(1, gate + 1)
+                      if _expanding_vibrato_remainder(wave_entries, ptr, c)
+                      == ()), None)
+        if gate < 2 * frames or gate % frames or quiet is None:
+            continue
+        out["gate"][slot] = gate
+        out["quiet"][slot] = quiet
+        # The call the note's audible attack is on (`_counter_gate_call`):
+        # a row's first call is then frame `k * frames - attack`.
+        out["attack"][slot] = (0 if no_test_restart
+                               or slot in real_firstwave_instruments else 1)
+    return out if out["gate"] else None

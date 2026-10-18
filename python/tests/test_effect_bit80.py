@@ -326,7 +326,10 @@ def test_it_reads_across_the_corpus_and_commando_does_not_have_it():
     # were below the >=2 gate and invisible. Both have records with $40
     # actually set (Monty 0 and 3, Sigma Seven 2). This pin is what said the
     # population moved -- keep it exact.
-    assert seen == 43, seen
+    # 43 -> 44: the zero-page `BIT zp / BVC` spelling, consulted only where
+    # the absolute one found nothing, flips Mega_Apocalypse alone (`BIT $EC`
+    # at $4E20; records 1, 11 and 13 set $40).
+    assert seen == 44, seen
 
 
 @needs_corpus

@@ -276,6 +276,10 @@ _FIXED_PITCH_AGREE = {
     # The `$1003` files, once REACH (v0.5.566); `$86 n` jump dialect.
     "Go_Go_Dash.sid", "Lakers_vs_Celtics.sid", "Lion_Heart.sid",
     "Pacific_Coast.sid", "Radio_ACE.sid", "Sun_Never_Shines.sid",
+    # Its `BIT $EC / BVC` and zero-page countdown are read since the
+    # zero-page spelling (mega-apocalypse-expanding-vibrato-and-noise):
+    # handler `$54A3` = wave_program, +0x4D21 both.
+    "Mega_Apocalypse.sid",
 }
 _FIXED_PITCH_DISAGREE = {"After_8.sid"}
 _FIXED_PITCH_REACH = {
@@ -285,7 +289,7 @@ _FIXED_PITCH_REACH = {
     "Sigma_Seven.sid", "Tarzan.sid",
 }
 
-assert len(_FIXED_PITCH_AGREE) == 32
+assert len(_FIXED_PITCH_AGREE) == 33
 assert len(_FIXED_PITCH_DISAGREE) == 1
 assert len(_FIXED_PITCH_REACH) == 10
 assert not (_FIXED_PITCH_AGREE & _FIXED_PITCH_DISAGREE)

@@ -197,5 +197,10 @@ def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row(monkeypatch):
     # v0.5.572 + the drum cut's final hold (3 more rows for the alternation):
     # 12 merged and 1350 rows, 29 more rows converted than at 1321; still no
     # row lost to a full table.
-    assert "(12 swing(s) merged" in swell[0], swell
-    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1350", swell
+    # The swell's phase plan (`goatwriter.swell_phase`): 70 phaser rows and
+    # 135 gate/re-anchor prefixes take wavetable blocks of their own, so 29
+    # swings merge (mean 6% off in size) and 1974 rows are pointed (the
+    # phasers and the rows held for a re-speed included); still no row lost
+    # to a full table.
+    assert "(29 swing(s) merged" in swell[0], swell
+    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1974", swell

@@ -1498,7 +1498,11 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             and _expanding_vibrato_counter(sid, det) is not None):
         tracks, patterns, vib_copies = _gw_note_passes.expanding_vibrato_split(
             sid, det, tracks, patterns, vib_ptrs, table, lead, multiplier,
-            row_calls, instr_row_calls=instr_row_calls, loops=True, log=log)
+            row_calls, instr_row_calls=instr_row_calls, loops=True,
+            wave_entries=wave_entries, wave_starts=wave_starts,
+            no_test_restart=no_test_restart,
+            real_firstwave_instruments=tuple(real_firstwave_instruments),
+            log=log)
         if vib_copies:
             split_copies.update(vib_copies)
             for at, track in zip(track_at, tracks):

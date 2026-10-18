@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.590 — 2026-10-18
+
+- Mega_Apocalypse: swell vibrato phase and zero-page bit-40 drum pitch
+
 ## 0.5.589 — 2026-10-18
 
 - merge: pulse engines, Zoolook rests, IK chorus, Ninja voice_arp, Hollywood snare/LFO, Delta 13 page; drum fixes adopted

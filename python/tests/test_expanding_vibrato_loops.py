@@ -133,8 +133,17 @@ def _block(entries, start):
     asserting it ends `F4 idx / FF -> the F4`."""
     i = start - 1
     prefix = []
-    while entries[i][0] != F4:
-        prefix.append(entries[i])
+    for _ in range(len(entries)):
+        e = entries[i]
+        if e[0] == F4 and entries[i + 1] == (JUMP, i + 1):
+            break                       # the loop itself
+        if e[0] == JUMP:
+            # A swell-phase prefix (`goatwriter.swell_phase`: `00 00`,
+            # `F1`/`F2`, a zero-speed `F4`) ends in a jump onto its
+            # speed's loop.
+            i = e[1] - 1
+            continue
+        prefix.append(e)
         i += 1
     assert entries[i + 1] == (JUMP, i + 1), (start, entries[i:i + 2])
     return prefix, entries[i][1]

@@ -307,8 +307,13 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     # arm this pin was taken on.
     import h2g.goatwriter.dead_blocks as DB
     monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
-    # The pin's arm keeps the test-bit firstwave: since v0.5.588 Mega's
-    # preset names 1..62 in `gate_off_firstwave_instruments`.
+    # The arm without the swell's phase plan (`goatwriter.swell_phase`) and
+    # the zero-page `BIT $EC` reading of effect bit $40: either moves this
+    # sha, and with both off it is the pinned one.
+    import h2g.goatwriter.note_passes as _NP
+    import h2g.detect as _D
+    monkeypatch.setattr(_NP, "_swell_phase_model", lambda *a, **k: None)
+    monkeypatch.setattr(_D, "_find_effect_bit40", lambda sid: False)
     sng, lines = _converted(gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with

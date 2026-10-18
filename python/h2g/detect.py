@@ -3961,6 +3961,17 @@ def _find_effect_bit40(sid: SidFile) -> bool:
             if (data[i] == 0x2C and data[i + 1] == lo and data[i + 2] == hi
                     and data[i + 3] in (0x50, 0x70)):
                 return True
+    # The zero-page spelling, `BIT zp / BVC` (Mega_Apocalypse `$4E20 24 EC
+    # 50 1F`, its effect byte copied to `$EC`), consulted only where the
+    # absolute one found nothing. Required, as above, of a cell tested with
+    # two known masks.
+    for addr, masks in _effect_cells(data).items():
+        if addr > 0xFF or len(masks & set(EFFECT_KNOWN_MASKS)) < 2:
+            continue
+        for i in range(len(data) - 3):
+            if (data[i] == 0x24 and data[i + 1] == addr
+                    and data[i + 2] in (0x50, 0x70)):
+                return True
     return False
 
 
@@ -4036,13 +4047,22 @@ def _find_fixed_pitch_index(sid: SidFile, det: Detection) -> int:
                 continue
             j = i + n + 2
             # LDA abs,X / BEQ / DEC abs,X (same cell) / LDA abs,Y
-            if not (data[j] == 0xBD and data[j + 3] == 0xF0
+            if (data[j] == 0xBD and data[j + 3] == 0xF0
                     and data[j + 5] == 0xDE
                     and data[j + 1:j + 3] == data[j + 6:j + 8]
                     and data[j + 8] == 0xB9):
+                idx = data[j + 9] | data[j + 10] << 8
+                tail = j + 11
+            # The zero-page counter, consulted only where the absolute
+            # spelling did not match: LDA zp,X / BEQ / DEC zp,X / LDA abs,Y
+            # (Mega_Apocalypse `$4E24 B5 E0 F0 08 D6 E0 B9 A3 54`).
+            elif (data[j] == 0xB5 and data[j + 2] == 0xF0
+                    and data[j + 4] == 0xD6 and data[j + 1] == data[j + 5]
+                    and data[j + 6] == 0xB9):
+                idx = data[j + 7] | data[j + 8] << 8
+                tail = j + 9
+            else:
                 continue
-            idx = data[j + 9] | data[j + 10] << 8
-            tail = j + 11
             if data[tail] == 0x4C:
                 tail = sid.to_offset(data[tail + 1] | data[tail + 2] << 8)
             if not 0 <= tail < len(data):

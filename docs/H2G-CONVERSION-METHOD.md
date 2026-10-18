@@ -4142,6 +4142,17 @@ LDA counter,X / BEQ + / DEC counter,X / LDA $116B,Y / JMP fetch
 fetch  ASL / TAY / LDA table,Y / STA freqlo,X / LDA table+1,Y / STA freqhi,X
 ```
 
+**A zero-page spelling exists** (measured at e0b17bd + this change):
+Mega_Apocalypse copies the effect byte to `$EC` and tests the bit with `BIT
+$EC / BVC` (`$4E20 24 EC 50`), its countdown `LDA $E0,X / BEQ / DEC $E0,X /
+LDA $54A3,Y` -- zero-page forms `_find_effect_bit40` and
+`_find_fixed_pitch_index` did not read, so its `$44` records (1, 11, 13)
+sounded the noise frame at the played note. Both readings are consulted only
+where the absolute spelling found nothing, and over the corpus they flip
+Mega_Apocalypse alone. Its `$0848` drum (voice 2, 203 hits in 60 s) now
+sounds `2710/11 22D0/81 2710/11` as the original does, where it read
+`2714/11 2714/81 2714/11`.
+
 Three things had to be pinned, and two of them cost a wrong turn:
 
 * **The two cells are the voice frequency** -- they feed `$D400`/`$D401`
@@ -12881,6 +12892,53 @@ isolated here. Held side effects, measured only: Arcade_Classics 50 -> 70 patter
 naming artefact above); BMX_Kidz 13 -> 16 patterns, bend 0.490 -> 0.389, travel
 0.653 -> 0.714 (slides 1092 -> 949); Ricochet 33 -> 40 patterns, depth 0.680 -> 0.689; Skate_or_Die_intro
 moves by 4 ties and 4 slides (10038 -> 10042, 789 -> 785). Commando is unchanged.
+
+**The player's triangle runs free per voice, and the loops are put on its
+phase** (`goatwriter.swell_phase`, measured at e0b17bd + this change).
+Mega_Apocalypse `$4C4A`-`$4C62` steps a per-voice position `$B0,X` between 0
+and the record's bound on every frame whose record has a vibrato byte,
+except a fetch frame (the fetch leaves by `$4C09 JMP $4E63` past it), and
+only the init's zero-page clear writes it -- so a note's phase at its gate
+is the voice's whole history, and a replayed pattern meets it in another
+phase. The stored pitch is `freq(note) - (bound >> 1) * step + pos * step`:
+on an odd bound the swing is `-1 .. +2` steps about the note. Goattracker's
+vibrato from `vibtime` 0 at `cmp = bound - 2` spans `-2 .. +1` about where it
+starts, so the lead `$00B9` (bound 3) sat a step flat on average in a phase
+the gate row left -- user report 2026-10-18, "the lead is a bit off"; frames
+1665-1682 original `184D 1961 185D 1739 1605 1739`, ours `1678 1579 1678
+17DA 193C 17DA`. The walk now runs the player's triangle (note and key-off
+rows are fetches; checked against the trace on voice 1, 156 of 160 swell
+notes in 180 s, the four others under a slide) and, for a record whose gate
+is a whole number of rows with two before it (`$00B9` gate 12, `$09B7` 6):
+
+- a **phaser** on a row before the gate: `00 00` (the note; gplay.c:731,
+  player.s `mt_wavenote` reset `vibtime`) `m` times, then `F4` on a
+  zero-speed entry `(cmp, 0)` -- `vibtime` steps, nothing moves, while the
+  original holds the note;
+- a **prefix** on the gate row: none, `F1`/`F2` of the loop's own speed, or
+  one zero-speed `F4` (`plan_gate` tries every placement and keeps the one
+  whose offsets equal the player's from the second period on -- every phase
+  of bound 3, all but one of bound 4);
+- after the gate a row takes its new speed only where the triangle was on
+  the note the frame before (Goattracker accumulates `freq`, so a re-speed
+  `n` steps off the note moves the centre by `n` times the difference), or,
+  on a note whose rows never start there, re-anchors with `00 00 / F1` one
+  frame after the triangle rises through the note; elsewhere it keeps the
+  loop before.
+
+The patterns are copied per phase by the same split (1 + 9 copies). 60 s,
+presets: `$00B9` gated frames over half a semitone off 558 -> 101 of 1258,
+mean -0.39 -> -0.05 st (180 s: 1180 -> 202 of 2748; `$09B7` 198 -> 194 of
+1239). Frames 1573-1608 now read `128 256 128 0 -128 0 181 362 181 0 -181 0
+223 446` against the original's `122 244 138 0 -154 0 170 340 186 0 -202 0
+218 436`. The fidelity row (-t 180, --sound): tie_agreement 0.686 -> 0.821,
+reversal ratio 1.038 -> 1.031, travel 1.304 -> 1.269, depth 1.009 -> 0.981,
+aud 0.8855 -> 0.8863, melody and pitch_jaccard unchanged. The cost is
+wavetable: the phasers and prefixes take blocks, and the loop share merges
+19 swings (71 rows, 2% off in size) where it merged 2 (with the dead-block
+prune off, 29 where it merged 12). The zero-page triangle shape
+is Mega_Apocalypse's alone in the corpus; the other four expanding files
+(all held DIGI) spell theirs absolute and are not planned.
 
 ### 7.gggggg The classic vibrato is gated on a per-note frame counter, and the emitter bends from frame 1
 

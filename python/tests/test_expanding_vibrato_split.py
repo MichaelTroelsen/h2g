@@ -343,8 +343,15 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
                         (tracks, patterns, {}))
     import h2g.goatwriter.dead_blocks as DB
     monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
-    # The pin's arm keeps the test-bit firstwave: since v0.5.588 Mega's
-    # preset names 1..62 in `gate_off_firstwave_instruments`.
+    # The arm without the swell's phase plan (`goatwriter.swell_phase`) and
+    # without the zero-page `BIT $EC` reading of effect bit $40 (its drum's
+    # noise frame at $22D0); with either on the sha moves, with both off it
+    # is this one; the test-bit firstwave is forced so a preset naming
+    # `gate_off_firstwave_instruments` cannot move it either (measured: ed3d4ddf7090 both on, 2621a6174267 phase off).
+    monkeypatch.setattr(B._gw_note_passes, "_swell_phase_model",
+                        lambda *a, **k: None)
+    import h2g.detect as D
+    monkeypatch.setattr(D, "_find_effect_bit40", lambda sid: False)
     _fid, sng = _mega(lambda m: None, gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
