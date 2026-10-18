@@ -78,6 +78,27 @@
    "version": "0.5.588",
    "at": "2026-10-18",
    "note": "99% fidelity by ear; approved (user, 2026-10-18)."
+  },
+  "Shockway_Rider": {
+   "approved": true,
+   "sng_sha256": "2812be0dc2efb868152e34faede2de11cd7ea16f6ef18566e2f3d28827a189bb",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; approved (user, 2026-10-18)."
+  },
+  "Sigma_Seven": {
+   "approved": true,
+   "sng_sha256": "8bb131f41d627386b0ec4ffc6dbab3215a86a3f62cd971fe3cc884a9e68f94c4",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; approved (user, 2026-10-18)."
+  },
+  "Thanatos": {
+   "approved": true,
+   "sng_sha256": "d1fa594d6eb2c583764328347b7db1bc4397bbf23f00c37c44ab550c32ffe57c",
+   "version": "0.5.588",
+   "at": "2026-10-18",
+   "note": "99% fidelity by ear; approved (user, 2026-10-18)."
   }
  }
 }
