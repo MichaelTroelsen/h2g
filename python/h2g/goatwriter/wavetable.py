@@ -42,6 +42,7 @@ from . import constants as _gw_constants
 from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
 from . import arpeggio as _gw_arpeggio
+from . import lfo_wave as _gw_lfo_wave
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
@@ -205,6 +206,23 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # Formula_1_Simulator's opcode-spelled block does): None elsewhere.
     arp_up = (nibble_arp_up(sid, det, arp_note)
               if effects and not arp_fixed else None)
+
+    # The LFO-table vibrato's per-frame program (`convert(lfo_wave=)`,
+    # goatwriter.lfo_wave): the whole of a record with no effect bit of its
+    # own, so nothing below it is lost. `det.lfo_wave_phases` names only
+    # records `usable_phases` checked will fit; one that still does not
+    # keeps the plain shape (and, having been skipped by the vibrato layout,
+    # no vibrato).
+    lfo_idx = det.lfo_wave_phases.get(i + lead + 1)
+    if lfo_idx is not None and no_test_restart:
+        lfo = _gw_lfo_wave.lfo_wave_entries(sid, det, i, lfo_idx, wave,
+                                            speed_table, start, budget,
+                                            multiplier)
+        if lfo is not None:
+            return lfo
+        if log:
+            log(f"LFO wave program........: record {i} does not fit its "
+                f"{budget}-entry budget; it keeps the plain shape")
 
     # The byte-code wave program is the whole instrument where it applies: the
     # player's interpreter writes $D404 and $D401 itself and returns, so no
@@ -412,6 +430,39 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         if pair is not None:
             return pair
 
+    # Bit $04's arpeggio where its interval and counter mask are per voice
+    # (Ninja $CB1E, `detect._find_voice_arp`), with bit $01's per-voice
+    # waveform on the same counter where the record sets that bit too
+    # (record 5, effect $05). Before the bit-$01 block below because a record
+    # setting both needs both in one block, and it takes the outer gate's
+    # skipped calls as part of the shape (`voice_arp_skip_phase`). A record
+    # that also sets bit $02 is left to the blocks it had: its attack
+    # waveform is not periodic, and no corpus record sets $02 beside $04.
+    #
+    # Bit $01 alone takes the same block with no interval where the outer
+    # gate's phase is read: its alternation is on the same counter, so it
+    # too holds across the skipped call (records 1 and 12 sounded
+    # `41 81 41 81` where the player sounds `41 81 81 41 81 41 41 81`).
+    # Both halves ride `convert(voice_arp=...)`, which clears the reading
+    # when off: measured alone the bit-$01 half moves Ninja's `wave` .879 ->
+    # .855 and `aud` .851 -> .843 (the harness aligns on the pitch, a frame
+    # behind our gate), so it is not a default either.
+    arp_here = arp_style & 0x04
+    alt_here = (arp_style & 0x01) and det.voice_wave_alternate >= 0
+    if (effects and det.voice_arp_interval >= 0 and (arp_here or alt_here)
+            and not (arp_style & 0x02) and voice is not None):
+        phase = _gw_arpeggio.voice_arp_skip_phase(sid, det)
+        alt = data[det.voice_wave_alternate + voice] if alt_here else None
+        if phase is not None and (alt is None or alt > WAVE_MAX_DELAY):
+            pair = _gw_arpeggio.voice_arp_entries(
+                wave,
+                data[det.voice_arp_interval + voice] if arp_here else 0,
+                data[det.voice_arp_mask + voice] if arp_here else 0,
+                phase, multiplier, start, budget,
+                written=no_test_restart, alt=alt)
+            if pair is not None:
+                return pair
+
     # Bit $01's alternating waveform where its table is per voice (Ninja).
     # Placed after the per-voice two-stage block because the player runs the
     # two in that order and the later write wins: bit $01's block is at
@@ -468,6 +519,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # Warhawk's dialect, and no file has both blocks.
     if effects and (arp_style & 0x02):
         alt_byte, alt_first = None, False
+        own_note = None
         if det.wave_alternate >= 0:
             a = det.wave_alternate + i * det.instr_stride
             if a < len(data):
@@ -481,6 +533,24 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # `AND #$07 / ORA #$80`, noise keeping the voice's control bits.
         elif wave_alternate and det.wave_alternate_noise:
             alt_byte = (wave & 0x07) | 0x80
+            # **Bit $04 rides the pair where its block reads the same
+            # counter** (`det.wave_alternate_arp`, Hollywood or Bust $0792):
+            # at mask $01 the note lowered by the nibble sounds on the
+            # record's own waveform's frames and the note on the noise ones,
+            # so the arpeggio is the own half's right byte. Returning the
+            # alternation without it dropped the arpeggio outright (record 9,
+            # `0C4E/11 1A13/81` in the original, `1A15` on every frame here).
+            # A record on another mask (the octave's `$04`) alternates its
+            # pitch over a longer cycle than the pair: it keeps the arpeggio
+            # shapes below and goes without the noise, as before. No corpus
+            # record reaches that case (`tests/test_wave_alt_arp.py`).
+            if arp:
+                per = det.arp_nibble_period
+                if (det.wave_alternate_arp and per is not None
+                        and per.half(arp_note) == 1):
+                    own_note = _arp_relative(arp_fixed, arp_note, arp_up)
+                else:
+                    alt_byte = None
         # MEASURED AT 1dde44a + uncommitted tree, -t 180, under presets
         # (`fidelity.measure`, `_preset_opts`), option off -> on:
         #
@@ -494,7 +564,11 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         #                     nrun - -> 100%        attacks 3254 (orig 3255)
         #
         # Two populations, so one switch for the corpus is wrong either way:
-        # unconditionally it ships Hollywood's -11.5pp of melody. The earlier
+        # unconditionally it ships Hollywood's -11.5pp of melody.
+        # **SUPERSEDED at v0.5.589**: Hollywood's melody loss was record 9's
+        # arpeggio, dropped by this branch, and `own_note` above carries it
+        # now -- melody .774 -> .774 with the option, wave .833 -> .945
+        # (presets.EXCLUDED_FROM_ALWAYS has the retaken figures). The earlier
         # table here (0aa0d5c, a 60 s window: Chicken_Song `wave 84.1 ->
         # 77.0%  noise 0 -> 545 (orig 654)`) is superseded, not contradicted --
         # the Chicken_Song baseline has since gained noise of its own.
@@ -527,7 +601,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 # and the noise tick, the length `_drum_entries` holds.
                 gate_frames=(1 + _noise_tick_frames(sid, det)
                              if det.drum_gate_off and (drum or tick)
-                             else None))
+                             else None),
+                own_note=own_note)
             if alt is not None:
                 return alt
 
@@ -2156,6 +2231,40 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
     # notes over 20 records would not fit one block per pair).
     chord_blocks: dict = {}
     for record, operand in (arps or []):
+        if isinstance(operand, _gw_lfo_wave.LfoPhase):
+            # The record's LFO program from another walk index
+            # (`lfo_wave.lfo_phase_pointers`); a block that does not fit gets
+            # row 0 and its pointer rows are cleared back onto the record's
+            # own (modal) program.
+            # It jumps into the record's own cycle, so only where the
+            # record's block IS its LFO program, re-derived and compared.
+            start = len(entries) + 1
+            base = det.instr_start + record * det.instr_stride
+            modal = det.lfo_wave_phases.get(record + lead + 1)
+            block = None
+            if (modal is not None and 0 <= base + 2 < len(sid.data)
+                    and 0 <= record + lead < len(starts)):
+                own_at = starts[record + lead]
+                own = _gw_lfo_wave.lfo_wave_entries(
+                    sid, det, record, modal, sid.data[base + 2],
+                    list(speed_table), own_at, _gw_constants.GT_MAX_TABLELEN,
+                    multiplier)
+                if (own is not None and own_at >= 1
+                        and entries[own_at - 1:own_at - 1 + len(own[0])]
+                        == list(zip(*own))):
+                    block = _gw_lfo_wave.lfo_wave_entries(
+                        sid, det, record, operand.idx, sid.data[base + 2],
+                        speed_table, start,
+                        _gw_constants.GT_MAX_TABLELEN - len(entries),
+                        multiplier,
+                        cycle_at=_gw_lfo_wave.cycle_row(
+                            sid, det, record, modal, own_at, multiplier))
+            if block is None:
+                arp_starts.append(0)
+                continue
+            arp_starts.append(start)
+            entries += list(zip(*block))
+            continue
         # A `ChordArp` is the command-table engine's `$82` chord
         # (h2g/cmd_chord.py); an int is the interleaved engine's `$83`.
         chord = isinstance(operand, ChordArp)

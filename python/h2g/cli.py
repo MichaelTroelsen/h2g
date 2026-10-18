@@ -278,6 +278,12 @@ def main(argv=None) -> int:
              "the file. Per song (a --presets entry's pitch_tie_phase); off "
              "leaves every conversion byte-identical.")
     parser.add_argument(
+        "--voice-arp", action="store_true",
+        help="emit effect bit $04's per-voice arpeggio (Ninja), frame by "
+             "frame with the outer gate's skipped calls held. Per song (a "
+             "--presets entry's voice_arp); off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--tie-pulse-restart", action="store_true",
         help="respell a tie whose landing replays only a per-voice pulse "
              "sweep as a legato clone. Per song (a --presets entry's "
@@ -312,6 +318,23 @@ def main(argv=None) -> int:
              "table): free the plain program's re-pitching steps and put "
              "vibdelay on that call. Per song (a --presets entry's "
              "vibrato_onset); off leaves every conversion byte-identical.")
+    parser.add_argument(
+        "--lfo-wave", action="store_true",
+        help="emit the command-table engine's LFO-table vibrato as a "
+             "per-frame wave program (portamento steps by the table's own "
+             "positions, laid out at the walk's phase) instead of "
+             "Goattracker's vibrato. Needs --format gts5. Per song (a "
+             "--presets entry's lfo_wave); off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
+        "--unison-vibrato-phase", action="store_true",
+        help="where two voices play one note on one classic vibrato record "
+             "with their free-running counters apart (International "
+             "Karate's doubled melody), start the lagging voice's vibrato "
+             "late by that offset with a vibdelay clone, so the chorus "
+             "survives Goattracker's per-note restart. Needs --format gts5. "
+             "In presets.json's always block; off leaves every conversion "
+             "byte-identical.")
     parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
@@ -758,7 +781,10 @@ def main(argv=None) -> int:
                           ("--drum-gate-off", "drum_gate_off"),
                           ("--drum-fall", "drum_fall"),
                           ("--vibrato-onset", "vibrato_onset"),
+                          ("--lfo-wave", "lfo_wave"),
                           ("--tie-pulse-restart", "tie_pulse_restart"),
+                          ("--voice-arp", "voice_arp"),
+                          ("--unison-vibrato-phase", "unison_vibrato_phase"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -878,7 +904,10 @@ def main(argv=None) -> int:
                       drum_gate_off=args.drum_gate_off,
                       drum_fall=args.drum_fall,
                       vibrato_onset=args.vibrato_onset,
+                      lfo_wave=args.lfo_wave,
                       tie_pulse_restart=args.tie_pulse_restart,
+                      voice_arp=args.voice_arp,
+                      unison_vibrato_phase=args.unison_vibrato_phase,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

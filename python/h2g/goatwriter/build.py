@@ -38,6 +38,7 @@ from .wavetable import (_wavetable_layout, _write_wavetable)
 from .primitives import _record_row_calls
 from . import arpeggio as _gw_arpeggio
 from . import drum_fall as _gw_drum_fall
+from . import lfo_wave as _gw_lfo_wave
 from . import call_phase as _gw_call_phase
 from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
@@ -545,6 +546,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               rest_program_stop: bool = False,
               drop_dead_blocks: bool = False,
               vibrato_onset: bool = False,
+              lfo_wave: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1010,10 +1012,27 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         tri_plan = (_gw_tri_clock.tri_clock_plan(
             sid, det, tracks, patterns, lead, multiplier, tick_ratios, log)
             if tick_ratios else None)
+    # The LFO-table vibrato as wave programs (`lfo_wave`): which records get
+    # one, at which walk index. Set on `det` so every layout -- the probes
+    # and the real one -- lays the same block out, and cleared otherwise so
+    # a second build under other options sees none. A record that gets a
+    # program gets no Goattracker vibrato: the two would both move it.
+    det.lfo_wave_phases = (_gw_lfo_wave.usable_phases(
+        sid, det, _gw_lfo_wave.lfo_phases(sid, det, tracks, patterns, lead,
+                                          multiplier),
+        lead, multiplier, list(table))
+        if lfo_wave and vibrato and fmt == FORMAT_GTS5 and no_test_restart
+        else {})
+    if det.lfo_wave_phases and log:
+        log("LFO wave programs.......: "
+            + ", ".join(f"{gt:02X} from index {x}"
+                        for gt, x in sorted(det.lfo_wave_phases.items())))
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead,
+                               skip=frozenset(gt - lead - 1 for gt in
+                                              det.lfo_wave_phases),
                                vibrato_command=vibrato_command,
                                row_calls=row_calls, effects=effects,
                                gate_skip=(_gw_tempo.outer_gate_skip(sid)
@@ -1213,6 +1232,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 elif log:
                     log(f"Cut-note programs.....: {gt:02X} stays whole "
                         f"({st['placed']} pointed, {st['missed']} missed)")
+    # The LFO programs at each note's own phase where the record's modal one
+    # misses it (`lfo_wave.lfo_phase_pointers`): pointer rows through the
+    # `arps` route, so before the layout that appends their blocks.
+    if det.lfo_wave_phases:
+        if arps is None:
+            arps = []
+        patterns = _gw_lfo_wave.lfo_phase_pointers(
+            sid, det, tracks, patterns, lead, multiplier, arps, log)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts, arp_starts = _wavetable_layout(

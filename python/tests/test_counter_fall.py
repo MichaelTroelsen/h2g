@@ -319,7 +319,9 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
                         lambda *a, **k: None)
     monkeypatch.setattr(B._gw_counter_fall, "unroll_fall_repeats",
                         lambda sid, det, tracks, *a, **k: tracks)
-    sng, _ = _converted()
+    # The pin's arm keeps the test-bit firstwave: since v0.5.588 Mega's
+    # preset names 1..62 in `gate_off_firstwave_instruments`.
+    sng, _ = _converted(gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.

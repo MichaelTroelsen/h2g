@@ -26,9 +26,9 @@ grouped by the ORIGINAL's modal change gap and step):
   It is the same by-construction excess `_tri_speed`'s docstring records for
   the outer gate ("read `pspan` and the per-frame travel instead").
 * The 1.34x total understates it: the third class, 112 notes whose width the
-  original moves +8 a frame, is missing from ours entirely (see
-  `test_the_pulse_lo_notes_sweep_in_the_original_only`), which hides 1040 of
-  the 2201 surplus changes.
+  original moves +8 a frame, was missing from ours entirely, which hid 1040 of
+  the 2201 surplus changes. It sweeps since the folded accumulate spelling
+  was read (`test_the_pulse_lo_notes_sweep_on_both_sides`).
 """
 import json
 import shutil
@@ -167,20 +167,22 @@ def test_the_count_doubles_while_the_travel_matches(name, pulse_phase):
 @needs_corpus
 @pytest.mark.parametrize("name", LAST_V8)
 @pytest.mark.parametrize("pulse_phase", [False, True])
-def test_the_pulse_lo_notes_sweep_in_the_original_only(name, pulse_phase):
+def test_the_pulse_lo_notes_sweep_on_both_sides(name, pulse_phase):
     """The (1, 8) class: records 2 and 5 carry effect bit $08 (record +6 = 8),
     the accumulate engine, and the original moves their width +8 a frame
     (with `ORA #$40` folded in: $AD33 `AND #$08 / BEQ / LDY / LDA instr,Y /
-    ADC rate / ORA #$40 / STA instr,Y / LDY / STA $D402,Y`). Ours holds the
-    seed: 0 changes. This is a SEPARATE defect from the granularity above, and
-    it lowers ours' total, so the voice's 4718-vs-3515 is two errors that
-    partly cancel. `detect._find_pulse_lo` is never consulted (`effect_pulse_lo`
-    is False on this file) and `PULSE_LO_SHAPES` has no `ORA #$40` spelling.
-    The day this test fails because ours moves, a spelling was added: re-pin
-    the figures in this file's docstring."""
+    ADC rate / ORA #$40 / STA instr,Y / LDY / STA $D402,Y`). RETRACTED: "Ours
+    holds the seed: 0 changes" -- true until `detect.PULSE_LO_ORA_SHAPES` read
+    the folded spelling (task frozen-pulse-phantoms-ninja-pygmies-nineteen).
+    Re-pinned at e0b17bd + that change, 90 s window of `_traces`: 32 notes,
+    328 changes on both sides, travel 7498 (C128: 7496) against ours 6608 --
+    every frame the original moves ours moves; the travel is short because
+    our sweep restarts at the record's width with each note, where the
+    player's runs on in the record."""
     F, orig, ours = _traces(name, pulse_phase)
     classes = _classes(F, orig, ours)
     assert (1, 8) in classes, sorted(classes, key=str)
     notes, co, cb, to, tb = classes[(1, 8)]
     assert notes >= 10 and co > 100, (notes, co)
-    assert cb == 0 and tb == 0, (cb, tb)
+    assert cb == co, (co, cb)
+    assert 0.8 <= tb / to <= 1.0, (to, tb)

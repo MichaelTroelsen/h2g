@@ -64,8 +64,14 @@ def test_the_fallback_spellings_reach_exactly_three_files_and_no_primary_one():
             rescued.add(path.name)
     assert len(primary) == 61
     # Kentilla stores the wait twice before its BIT (STATUS_BIT6_TWICE_SHAPE,
-    # tests/test_kentilla_gaps.py).
-    assert rescued == {SAMANTHA, SPELLBOUND, MEGA, "Kentilla.sid"}
+    # tests/test_kentilla_gaps.py); the nine after it spell the late window
+    # with an absolute,X first store (STATUS_BIT6_LATE_ABS_SHAPE,
+    # tests/test_status_bit6_late_abs.py).
+    assert rescued == {SAMANTHA, SPELLBOUND, MEGA, "Kentilla.sid",
+                       "Chain_Reaction.sid", "Delta.sid", "Devils_Galop.sid",
+                       "Formula_1_Simulator.sid", "Master_of_Magic.sid",
+                       "Proteus.sid", "Thing_on_a_Spring.sid", "Zoids.sid",
+                       "Zoolook.sid"}
 
 
 @needs_corpus

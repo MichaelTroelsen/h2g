@@ -2417,6 +2417,7 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 instr_base: int = 2,
                                 arps: Optional[List[tuple]] = None,
                                 chords: Optional[Dict[int, tuple]] = None,
+                                top_rows: Optional[Dict[int, int]] = None,
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
 
@@ -2515,6 +2516,15 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                         arp = None      # the operand is one byte
                     if arp is not None:
                         raw = lifted
+            # Entries 93-95 are real in the player's table and the note
+            # column stops at 92: `top_rows` records by how many, exactly as
+            # the classic decoder does, and `past_table_wave` plays the
+            # difference from the wavetable. Hollywood_or_Bust's snare
+            # (record 10) plays A-7, `$5D`, which the clamp sounded as G#7.
+            if (top_rows is not None and arp is None
+                    and CMDTABLE_MAX_NOTE < raw <= 0x5F
+                    and raw + note_base < 96):
+                top_rows[len(events) // 4] = raw - CMDTABLE_MAX_NOTE
             note = max(0, min(raw, CMDTABLE_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
             addr += 2
@@ -2726,7 +2736,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             note_base=det.note_base, slides=slides,
             slide_cmd=det.cmd_slide, slide_mask=det.cmd_slide_mask or 0x3F,
             steps=steps, instr_base=instr_base,
-            arps=arps, chords=det.cmd_chord_notes.get(i))
+            arps=arps, chords=det.cmd_chord_notes.get(i),
+            top_rows=top_rows)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               instr_mask=_instrument_mask(det.instr_stride),
@@ -3335,9 +3346,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     starts: Dict[int, Optional[List[int]]] = {}
     want_ev = event_rows and det.pattern_dialect == "classic"
     # Entry -> {raw row: entries above 92}, or None where unknown (a
-    # variant, or any dialect but the classic one). Only when asked for.
+    # variant, or any dialect but the classic and command-table ones). Only when asked for.
     tops: Dict[int, Optional[Dict[int, int]]] = {}
-    want_top = top_cols is not None and det.pattern_dialect == "classic"
+    want_top = top_cols is not None and det.pattern_dialect in ("classic",
+                                                               "cmdtable")
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range

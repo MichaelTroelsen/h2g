@@ -648,6 +648,22 @@ corpus file's melody by a point at its presets; Commando has the shape but
 no `$C0-$FE` byte in any played pattern, so the byte-exact fixture holds
 even with the flag on.
 
+Thirteen more files spell the test otherwise and are read by fallbacks
+consulted only where the shape matched nothing (`detect._status_bit6_bvs`).
+The last of them, `STATUS_BIT6_LATE_ABS_SHAPE`, is the shape with code (a
+volume calculation) between the counter store and the `BIT` -- Zoolook
+`$40DA-$40F9`, whose `BVS $4139` is `DEC $44D3,X`, the gate mask
+`$43C3 AND $44D3,X / STA $D404,Y` writes the waveform through. Nine files
+spell it so (Chain_Reaction, Delta, Devils_Galop, Formula_1_Simulator,
+Master_of_Magic, Proteus, Thing_on_a_Spring, Zoids, Zoolook). Undetected,
+their `$4x` rests decoded as hold rows, so the note before a rest held its
+gate through it: Zoolook's bass `03 14 | 4B` gated off 32 frames after the
+original did. Detected, the rest is a KEYOFF. At `-t 180` under presets
+(v0.5.588 + this change, Zoolook with `drum_gate_off`): `gate` Zoolook
+67% -> 97%, Chain_Reaction 66% -> 100%, Thing_on_a_Spring 54% -> 65%,
+Devils_Galop 59% -> 68%, the other five +0-2 pp; melody, wave, adsr,
+attacks and `release_tail_agreement` unmoved on all nine.
+
 **3. Legato → tone portamento.** If `NoADSR` is set and the *same instrument
 was used twice in a row*, emit GT command `$3` (tone portamento):
 
@@ -4826,6 +4842,11 @@ classic form maps cleanly, and it is worth noticing that it holds here for a
 *better* reason: this player takes `freq(note+1) − freq(note)`, the semitone
 **above** the note, which is exactly what Goattracker's note-relative speed
 computes. The classic players take the one below, about 6% of a semitone out.
+**RETRACTED (v0.5.589):** the note table starts at `$08A7` (the arpeggio's
+`LDA $08A7,Y` with `Y = note × 2`), so `LDA $08A7,Y / SBC $08A5,Y` is
+`freq(note) − freq(note−1)`, the semitone **below**; measured on the original,
+sub 2 note 79 (`$684C`), count 4 steps `$174` = `($684C − $6270) >> 4 × 4`, not
+`$18C`. Every mapping of this vibrato onto Goattracker's speed is about 6% deep.
 Solving leaves
 
 ```
@@ -4874,6 +4895,35 @@ It is consulted **only where `_find_vibrato` found nothing** — the same rule
 can rescue a file that vibrates not at all; it can never disturb one that
 already reads. Across all 95 corpus files exactly two match, which a test
 asserts by sweeping the corpus rather than by naming the two.
+
+#### The per-frame program (`--lfo-wave`, v0.5.589, per song)
+
+The triangle cannot say what the table does: table 1 spans `-1..+2`, so a
+note on it sits half a unit sharp on average, and the plain program's
+`41/00` steps suspend Goattracker's vibrato for the note's first calls.
+Hollywood or Bust sub 2's lead (record 6, `$14`) read `684C 66D8 684C 69C0
+6B34 69C0` from each onset in the original against `6853 6853 6853 6B6D 6853
+6853` converted. `goatwriter.lfo_wave` spells the walk instead: entry 0 is
+the note, then one step a frame by the change in table position -- `F1`/`F2`
+(wavetable portamento, executed on every call) at a note-relative speed of
+the player's unit, `(interval above) >> (4 - log2 count)` -- looping over the
+table's period. Only records with no effect bit of their own and a
+power-of-two count qualify (Hollywood 0, 6 and 12; Chicken Song 0, 14, 18,
+21).
+
+**The phase is replayed, not guessed.** The index steps on every frame the
+voice's current record vibrates (a rest included) and is never reset by a
+note, from the image's `$09B1` bytes (`04 00 02`). That model, replayed frame
+by frame on siddump of the original (subtunes 0-2, 180 s), predicts the
+measured positions of 1793 of 1821 vibrato onsets; the rest read a slide's or
+a tie's pitch. `lfo_phases` walks the finished orderlists with it, each record
+gets the index most of its untied notes open on, and a note row whose own
+index differs takes a `CMD_SETWAVEPTR` to a short block (note, lead, jump into
+the record's cycle) where its command column is free and every visit of the
+row agrees. After it, record 6's frames 1-4 sit within 0.12 semitone of the
+original on 103 of 111 onsets in sub 2 (0 before), record 12's on 188 of 252
+(0 before; the rest are rows the full wavetable or a disagreeing visit leaves
+on the modal phase).
 
 ---
 
@@ -17344,3 +17394,73 @@ orderlists says why it stops after 5; the accumulator reaching bit 7 is the cand
 cases. Two narrower rules (the old length for every record whose stops are not a majority; the old length
 everywhere, only the stops added) bring Sanxion to 1.042, push Dragons_Lair_Part_II to 0.748 and leave Deep_Strike
 (0.892), so they move the error between files rather than remove it.
+
+### 7.NEW Two pulse engines that were not read: the folded accumulate and the pulse program
+
+Both left every record using them on its seed width -- a frozen duty cycle, reported by ear as "drums and perc are
+off" (Phantoms_of_the_Asteroid), "instruments are not correct" (Ninja), "the lead is off" (Star_Paws, Thundercats).
+
+**The folded accumulate engine** (`detect.PULSE_LO_ORA_SHAPES`, read into `Detection.pulse_lo_fold`) is the
+bit-`$08` accumulate block with `ORA #$40` between the `ADC rate` and the store (Ninja `$CA1F`; Phantoms stores
+through `JSR $F04E`, a `STA $D402,Y` subroutine, which `_find_pulse_lo` checks). The low byte lives in `$40-$7F` and
+`$C0-$FF`: Phantoms' record 2 (rate 4, seed `$100`) traces 140, 144 ... 17C, 1C0 ... 1FC, 140. Eight files carry it
+(Chimera, Crazy_Comets, Game_Killer, Human_Race, Last_V8 and its C128 version, Ninja, Phantoms), none the plain
+spelling as well. `goatwriter.pulse._pulse_lo_fold_program` runs the player's arithmetic a tick at a time on the
+triangle's clock (`_tri_call_speed_ratio`, so Ninja's and Game_Killer's outer gates count): plain ticks are a leg,
+a fold or wrap tick a set row held for the tick, the fetch tick a held set, and one lap is looped from the first
+fold -- exactly the player's cycle where it fits in `LO_FOLD_MAX_ROWS` (Phantoms' record 2, every frame end), else
+closing where the width comes back nearest. A rate under half a unit a call (Game_Killer's rate-1 records at -S9) is
+a unit-and-hold stair that does not fold. Like the plain spelling, it restarts with each note where the player's
+width runs on in the record; Phantoms' voice 3 notes are 8 frames long against a 32-frame cycle, so per note we
+sweep 142-15C where the original crosses the band over four notes.
+
+**The pulse-program engine** (`detect.PULSE_PROG_SHAPE`, Star_Paws `$B27D`) is per voice: record +6 numbers a
+program of (frames - 1, signed delta) pairs, bit 7 of the count resetting the width to the seed, `$FE` holding and
+`$FF` looping in the same frame; the program restarts at note fetch and steps once a frame (Thundercats at -S3
+moves on every frame of its 21-frame +$10 leg, so the block is outside its outer gate). It is a Goattracker pulse
+table row for row (`_pulse_prog_program`): a held set for the fetch frame, each pair a leg of `frames * multiplier`
+calls in two integer speeds that end exactly on the player's width (`_spread_rows`). Seven files: Star_Paws,
+Thundercats, Bangkok_Knights and the held DIGI files Arcade_Classics, BMX_Kidz, Ricochet, Skate_or_Die_intro.
+
+**Powerplay_Hockey's bounds sweep** was the third frozen file of the census (2756 of 2758 pulse frames on voices 1
+and 2). It carries two copies of the player, and `_find_pulse_sweep` paired the first `PULSE_SWEEP` and
+`PULSE_SETUP` matches -- the `$37xx` copy, 8-byte records -- with the detected table, the `$45xx` copy's 16-byte
+records, so the rate field came out negative and the engine was refused (the "42, not 43" of `tests/test_pulse.py`
+since v0.5.277). A fallback consulted only where that pair reads nothing tries every later copy of the block with
+the setup in either stride's spelling (`PULSE_SETUP_16`, four `ASL`s) and keeps the pair that ties the setup's rate
+cell to the sweep's own load: bounds at record +13, rate at +6. 2756 to 120 frozen frames a voice; `pulse_span`
+0.359 to 1.000, `aud` 0.878 to 0.879.
+
+**Measured** (presets, `fidelity.py -t 180 --sound`, base e0b17bd): 16 files' bytes move, these 15 and Powerplay;
+Commando's do not. `pulse_span` Star_Paws 0.624 to 0.971, Thundercats 0.892 to 0.998, Bangkok_Knights 0.647 to 1.000,
+Chimera 0.746 to 0.787, Crazy_Comets 0.979 to 0.999, Game_Killer 0.926 to 0.950, Skate_or_Die_intro 0.485 to 0.995,
+Arcade_Classics 0.519 to 1.000, BMX_Kidz 0.220 to 1.000, Ricochet 0.451 to 1.204; Phantoms 0.999 to 0.995 and Ninja
+0.980 to 0.980 (the column measures a span both already had: a 90 s probe counting gated pulse frames where the
+original's width moves and ours holds reads Phantoms voice 3 1988 to 0 of 2386, Ninja voice 1 481 to 19 of 1496).
+`aud` within the 0.009 noise on every file but BMX_Kidz (held), 0.766 to 0.748; `wave` and `melody` unchanged on all
+15. Pinned by `tests/test_pulse_lo_fold_and_prog.py`, which runs the emitted rows through gplay.c's pulse step
+against transcriptions of both players.
+
+### 7.NEW Two voices doubling one vibrato note keep the original's counter offset: International_Karate's chorus
+
+The classic `$78/$07` vibrato's counter and direction are per voice and nothing resets them at a note, so a voice's
+phase is whatever its history left. International_Karate's `$AE00` player keeps them at `$B2DD,X` / `$B2FF,X`,
+written only by the update at `$AFF7` (`LDA dir,X / BPL / DEC ctr,X / BNE / INC dir,X / BPL / INC ctr,X / LDA
+bound,X / CMP ctr,X / BCS / STA ctr,X / DEC dir,X / DEC ctr,X`); the note fetch leaves through `JMP $B1E2` before it,
+so the counter holds on a fetch. The image holds `02 01 04` / `FF 00 FF`, and no vibrato record runs on voices 1 or
+3 before frame 425, where both start doubling the melody on record 6 (`$2B`, bound 5). Voice 3 then sits two updates
+behind voice 1 for the whole passage (siddump-rt -w, 1271 of 1271 frames):
+
+    frame      425  426  427  428  429  430  431  432
+    orig v1   14AF 148B 1467 148B 14AF 14D3 14F7 151B
+    orig v3   14AF 14D3 14AF 148B 1467 148B 14AF 14D3
+    ours v1   14B3 14C7 14EF 1513 14FB 14D3 14AF 1487     (both voices, before)
+    ours v3   14B3 14B3 14B3 14BF 14E7 150F 1503 14DB     (with unison_vibrato_phase)
+
+Goattracker zeroes `vibtime` at each note, so the doubled note started in phase on both voices. `unison_vibrato.py`
+simulates each voice's counter over the finished rows (`frames` passing calls a row, a step on every call whose
+record has a vibrato byte except the fetch) and, where two voices fetch one note on one vibrato byte while still in
+lockstep from the image, gives the lagging voice a clone of its record with `vibdelay` longer by the offset's share
+of the entry's period (`_gt_period`, gplay.c:795-801: 2/10 of 106 calls). Only the absolute phase is still
+Goattracker's. A tie through a slide (`CMD_TONEPORTA` zeroes `vibtime`, and `vibdelay` is not reloaded) puts the two
+voices back in phase where the original keeps them apart; that half is not reached.

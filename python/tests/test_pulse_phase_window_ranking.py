@@ -12,6 +12,8 @@ Synthetic plans here; the corpus effect is measured in the task's record
 """
 from __future__ import annotations
 
+import pytest
+
 import sys
 from pathlib import Path
 
@@ -237,3 +239,12 @@ def test_a_funktempo_value_leaves_the_constant_clock():
     _run_cpf(*a, [1.0], None)
     _run_cpf(*b, [1.0], CPF)
     assert a[0] == b[0] and a[1] == b[1]
+
+
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

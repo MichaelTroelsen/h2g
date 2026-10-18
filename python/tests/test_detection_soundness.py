@@ -111,6 +111,13 @@ _PULSE_RESEED_OTHER = {
     "Sun_Never_Shines.sid",
 }
 _PULSE_RESEED_UNMATCHED = {"IK_plus.sid"}
+# Powerplay_Hockey's sweep is read from its SECOND copy of the player since
+# `_find_pulse_sweep`'s fallback (PULSE_SETUP_16), but the reseed spelling is
+# searched file-wide and lands on the FIRST copy's `LDA $3B53 / BMI` ($3762):
+# "lda_bmi". Its own copy gates the reseed with `LDA $499A / BNE` ($455D), the
+# "other" shape. Pinned as read, NOT validated: only `pulse_phase` (not in its
+# presets) hands the bounds walk this rule.
+_PULSE_RESEED_FIRST_COPY = {"Powerplay_Hockey_USA_vs_USSR.sid"}
 
 assert len(_PULSE_RESEED_LDA_BMI) == 28
 assert len(_PULSE_RESEED_OTHER) == 13
@@ -119,7 +126,8 @@ assert not (_PULSE_RESEED_LDA_BMI & _PULSE_RESEED_OTHER
             & _PULSE_RESEED_UNMATCHED)
 
 _ALL_BOUNDS_ENGINE_FILES = (_PULSE_RESEED_LDA_BMI | _PULSE_RESEED_OTHER
-                            | _PULSE_RESEED_UNMATCHED)
+                            | _PULSE_RESEED_UNMATCHED
+                            | _PULSE_RESEED_FIRST_COPY)
 
 
 def _detect_all_bounds_engine_files():
@@ -155,7 +163,7 @@ def test_pulse_reseed_gate_census_matches_pinned_population():
         "the set of bounds-engine files presets.json names has changed -- "
         "re-derive the three groups below, do not just widen this set")
     for name, det in dets.items():
-        if name in _PULSE_RESEED_LDA_BMI:
+        if name in _PULSE_RESEED_LDA_BMI | _PULSE_RESEED_FIRST_COPY:
             want = "lda_bmi"
         elif name in _PULSE_RESEED_OTHER:
             want = "other"

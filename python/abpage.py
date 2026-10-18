@@ -44,6 +44,7 @@ from datetime import datetime
 from pathlib import Path
 
 import hold
+from extra_pages import EXTRA_PAGES
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -283,8 +284,12 @@ def conversion_shas() -> dict[str, str]:
     except (OSError, ValueError):
         return {}
     out: dict[str, str] = {}
-    for name in (doc.get("songs") or {}):
-        stem = name[:-4] if name.endswith(".sid") else name
+    # (page name, file whose presets and original it uses): every preset song
+    # is its own page, and each EXTRA_PAGES key is a page of its source file.
+    pages = [(n, n) for n in (doc.get("songs") or {})]
+    pages += [(k, v["source"]) for k, v in EXTRA_PAGES.items()]
+    for page, name in pages:
+        stem = page[:-4] if page.endswith(".sid") else page
         if not (LISTEN / ("%s.original.wav" % stem)).exists():
             continue
         sid = find_sid(name)

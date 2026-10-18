@@ -134,7 +134,13 @@ def test_the_derived_alternate_keeps_the_voices_control_bits():
     """Chicken Song record 17: `+2` is $15 (triangle | ring | gate) and the
     player's alternate is `($15 & $07) | $80` = $85 -- noise with ring and
     gate kept. A bare $81 or a missing $80 (= $05, a delay entry) are both
-    wrong, and the second is declined outright."""
+    wrong, and the second is declined outright.
+
+    Its effect byte is $56, so bit $04's nibble arpeggio (nibble 5, mask
+    $01) runs on the same counter (`det.wave_alternate_arp`): the record's
+    own half sounds the note 5 semitones down (`$80 - 5`) and the noise
+    half the note -- since v0.5.589, which is the right side's `$7B`, on
+    the frame-0 lead as on the pair's own half."""
     sid, det = _chicken_song()
     assert det.wave_alternate_noise and det.wave_alternate < 0
     rec = 17
@@ -142,7 +148,7 @@ def test_the_derived_alternate_keeps_the_voices_control_bits():
     assert sid.data[o + 2] == 0x15 and sid.data[o + 7] & 0x02
     on = _wavetable_entries(sid, det, rec, True, "gts5", [], 1, start=6,
                             budget=12, wave_alternate=True)
-    assert on == ([0x15, 0x15, 0x85, 0xFF], [0x00, 0x00, 0x00, 7])
+    assert on == ([0x15, 0x15, 0x85, 0xFF], [0x80 - 5, 0x80 - 5, 0x00, 7])
 
 
 def test_the_derived_alternate_is_off_by_default():

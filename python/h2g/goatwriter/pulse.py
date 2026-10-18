@@ -414,6 +414,10 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                 tick_ratio=(tick_ratios or {}).get(i), stair=stair)
             if program is not None:
                 return program
+        if det.pulse_prog_table >= 0:
+            program = _pulse_prog_program(sid, det, i, multiplier)
+            if program is not None:
+                return program
         return static, None
     bounds_at = det.pulse_bounds + i * det.instr_stride
     rate_at = base + det.pulse_rate_field
@@ -485,10 +489,224 @@ def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
     if rate == 0:
         return None
     lo, hi = data[rec], data[rec + 1]
+    if det.pulse_lo_fold:
+        return _pulse_lo_fold_program(
+            ((hi & 0x0F) << 8) | lo, rate, det.pulse_lo_fold,
+            _tri_call_speed_ratio(multiplier, outer_gate_skip(sid)))
     speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
     entries = [((0x80 | (hi & 0x0F)) & 0xFF, lo)]
     entries += [(t, speed) for t in _split_ticks(max(1, 0x100 // speed))]
     return entries, 0
+
+
+def _spread_rows(total: int, calls: int) -> List[tuple]:
+    """`calls` modulation calls moving the width by `total` in all: the two
+    integer speeds either side of `total / calls`, the lower first, so the
+    leg ends exactly on `total` (Thundercats' $10 a frame at -S3 is 5 and 6
+    a call, not 5 rounded). Speeds are signed bytes (gplay.c:889-899)."""
+    if calls <= 0:
+        return []
+    q, k = divmod(total, calls)
+    out: List[tuple] = []
+    for n, v in ((calls - k, q), (k, q + 1)):
+        if n > 0:
+            out += [(t, v & 0xFF) for t in _split_ticks(n)]
+    return out
+
+
+def _pulse_prog_program(sid: SidFile, det: Detection, i: int,
+                        multiplier: int) -> tuple[List[tuple], int | None] | None:
+    """The pulse-PROGRAM engine's entries (`detect.PULSE_PROG_SHAPE`), or
+    None where the record names no program, or one past the table.
+
+    The player's program is a list of (frames - 1, signed delta) pairs, the
+    count's bit 7 resetting the width to the seed first, `$FE` holding and
+    `$FF` looping to the start in the same frame; the delta is added once a
+    FRAME (Thundercats at -S3 moves every frame of a 21-frame +$10 leg, so
+    this block is outside its outer gate) and the program restarts with each
+    note. That is a Goattracker pulse table nearly row for row: a set to the
+    seed held through the rest of the fetch frame (the player reads its
+    first pair the frame after), each pair a leg of `frames * multiplier`
+    calls that ends exactly on the player's width (`_spread_rows`), a reset
+    pair a set to `seed + delta` -- the player resets and adds in one frame
+    -- then the leg, `$FE` the table's stop, `$FF` a jump to the first pair.
+    Until this was read the width held its seed: Star_Paws' bass (record 0,
+    `0C 41 FE`, +$41 for 13 frames) and Thundercats' lead never moved.
+    """
+    data = sid.data
+    rec = det.instr_start + i * det.instr_stride
+    if rec + 7 >= len(data):
+        return None
+    num = data[rec + 6]
+    if not 0 < num <= det.pulse_prog_count:
+        return None
+    lo = data[det.pulse_prog_table + num - 1]
+    hi = data[det.pulse_prog_table + det.pulse_prog_count + num - 1]
+    at = sid.to_offset(lo | (hi << 8))
+    if at < 0:
+        return None
+    m = max(1, multiplier)
+    seed = ((data[rec + 1] & 0x0F) << 8) | data[rec]
+    entries: List[tuple] = [_setrow(seed)]
+    entries += [(t, 0) for t in _split_ticks(m - 1)] if m > 1 else []
+    loop = len(entries)
+    pos = 0
+    while True:
+        if at + pos >= len(data) or pos > 64:
+            return None
+        op = data[at + pos]
+        if op == 0xFE:
+            return entries + [(0xFF, 0x00)], None
+        if op == 0xFF:
+            if pos == 0:
+                return None
+            return entries, loop
+        if at + pos + 1 >= len(data):
+            return None
+        delta = data[at + pos + 1]
+        delta -= 0x100 if delta & 0x80 else 0
+        frames = (op & 0x7F) + 1
+        calls = frames * m
+        if op & 0x80:
+            entries.append(_setrow((seed + delta) & 0xFFF))
+            entries += _spread_rows((frames - 1) * delta + 0, calls - 1)
+        else:
+            entries += _spread_rows(frames * delta, calls)
+        pos += 2
+        if len(entries) > 48:
+            return None
+
+
+def _pulse_lo_fold_program(width: int, rate: int, fold: int,
+                           ticks_per_call: Fraction,
+                           ) -> tuple[List[tuple], int] | None:
+    """The FOLDED accumulate engine's entries (`detect.PULSE_LO_ORA_SHAPES`),
+    or None where no lap fits `LO_FOLD_MAX_ROWS`.
+
+    The player keeps `lo = (lo + rate) | fold` in the record once a tick and
+    writes only $D402, so with Ninja's and Phantoms' `ORA #$40` the low byte
+    lives in $40-$7F and $C0-$FF: it climbs a half, jumps $40 into the other
+    half (`$7C + 4 -> $80 | $40 = $C0`), climbs that, and wraps back to the
+    first (`$FC + 4 -> $00 | $40 = $40`) -- traced on Phantoms' record 2,
+    rate 4: 140, 144, ... 17C, 1C0, ... 1FC, 140. Until this was read the
+    engine was not detected at all and the width held its seed: 1988 of
+    Phantoms voice 3's 2386 pulse frames moved in the original and not here.
+
+    In Goattracker rows: the player's arithmetic is run a TICK at a time, and
+    each tick laid over the calls it lasts for us (the triangle's clock,
+    `_tri_call_speed_ratio`: our calls past the outer gate). A tick that only
+    adds the rate is a leg at `speed = rate * ticks_per_call` a call, merged
+    with its neighbours; a tick where the low byte folds or wraps opens on a
+    SET row -- a set spends its call on the width and does not modulate
+    (gplay.c:874-879), and no modulation row can carry the -$C0 a wrap is --
+    held for the rest of the tick. A rate that folds every tick (Phantoms' record
+    8, rate $41) is a set row a tick and plays the two-width alternation it
+    is; per CALL at half the rate it would alias to one width at -S2.
+
+    The loop starts at the first fold after the seed, so it opens on a set
+    row, and closes after at least the ticks the rate takes to cross the
+    band, where the player's width comes back nearest the loop's first --
+    exactly the player's cycle where one fits in `LO_FOLD_MAX_ROWS`
+    (Phantoms' record 2: 32 ticks, 6 rows); elsewhere the player's phase
+    drifts each lap and ours snaps back by the miss. Like the plain spelling, this restarts at
+    the record's width with each note, where the player carries the running
+    width in the record across notes -- the rate and the band carry over, the
+    phase at a note start does not.
+    """
+    speed = round(rate * ticks_per_call)
+    calls_per_tick = 1 / ticks_per_call
+    if speed < 1:
+        # Under half a unit a call (Game_Killer's records 3 and 9: rate 1 at
+        # 10 of our calls a tick): one unit, then a hold, looped -- the
+        # player's own +1 a tick, which the 1-a-call floor would play 10x
+        # fast. It does not fold: a stair this slow takes 64 ticks to reach
+        # the fold (~1.4 s at Game_Killer's -S9), and past it plays the
+        # $80-$BF widths the player skips, a step of $40 in 4096.
+        every = round(calls_per_tick / rate)
+        if every < 2:
+            return None
+        return ([_setrow(width), (1, 1)]
+                + [(n, 0) for n in _split_ticks(every - 1)]), 1
+    hi, lo = width & 0xF00, width & 0xFF
+    size = 0x100 >> bin(fold & 0xFF).count("1")
+
+    def tick_calls(t: int) -> int:     # our calls in the player's tick t >= 1
+        return (round((t + 1) * calls_per_tick)
+                - round(t * calls_per_tick))
+
+    # The player's own arithmetic, a tick at a time: the widths, and which
+    # ticks are not a plain add (a fold or a wrap -- or every tick, where the
+    # speed is past what a modulation row carries).
+    seq, jumps = [lo], [False]
+    for _t in range(1, 0x200):
+        v = seq[-1]
+        w = ((v + rate) & 0xFF) | fold
+        seq.append(w)
+        jumps.append(w != v + rate or speed > GT_MAX_PULSE_SPEED)
+    first = next((t for t in range(1, len(seq)) if jumps[t]), None)
+    if first is None:
+        return None
+
+    def rows(start: int, end: int) -> List[tuple]:
+        """Ticks [start, end) as rows: plain ticks a leg at `speed`; a fold
+        tick a set to the fold's width held for the tick's other calls --
+        the player holds it that long too, and a leg into or out of it
+        would cross widths outside the fold (or carry into the high
+        nibble)."""
+        out: List[tuple] = []
+        run = 0
+
+        def flush() -> None:
+            nonlocal run
+            out.extend((n, speed) for n in _split_ticks(run)) if run else None
+            run = 0
+
+        for t in range(start, end):
+            n = tick_calls(t)
+            if n <= 0:
+                continue
+            if not jumps[t]:
+                run += n
+                continue
+            flush()
+            out.append(_setrow(hi | seq[t]))
+            if n > 1:
+                out.extend((k, 0) for k in _split_ticks(n - 1))
+        flush()
+        return out
+
+    # The loop: from the first fold, one lap or more, closing where the
+    # player's width comes back nearest the lap's first (exactly, where a
+    # lap divides the cycle); never shorter than the ticks it takes the
+    # rate to cross the band, or a short loop would snap back before it
+    # moved.
+    shortest = max(1, size // rate)
+    best = None
+    for span in range(shortest, 0x101):
+        body = rows(first, first + span)
+        if len(body) > LO_FOLD_MAX_ROWS:
+            break
+        miss = abs(seq[first + span] - seq[first])
+        if best is None or miss < best[0]:
+            best = (miss, body)
+        if miss == 0:
+            break
+    if best is None:
+        return None
+    # The fetch tick holds the record's width for all its calls: the player
+    # writes it and steps from the next tick (Phantoms' 1FC on the fetch
+    # frame, 140 the frame after).
+    fetch = round(calls_per_tick) - 1
+    entries: List[tuple] = [_setrow(width)]
+    entries += [(n, 0) for n in _split_ticks(fetch)] if fetch > 0 else []
+    entries += rows(1, first)
+    return entries + best[1], len(entries)
+
+
+# The most rows one folded-accumulate lap may take (`_pulse_lo_fold_program`):
+# a lap of a rate that folds every tick is a set row per tick, and the table
+# is shared by every instrument.
+LO_FOLD_MAX_ROWS = 16
 
 
 def _pulse_tri_program(sid: SidFile, det: Detection, i: int,

@@ -1146,9 +1146,11 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int,
     for the packed player's tick-0 effect skip, exactly as
     `_classic_vibrato_entry` does; 0 and 1 leave the entry unchanged.
 
-    One approximation the classic mapping has and this does not: the player
-    takes the interval *above* the note here (`freq(note+1) - freq(note)`),
-    which is the one Goattracker computes. What remains is the shape: the
+    **The player takes the interval BELOW the note** (`freq(note) -
+    freq(note-1)`, detect.TABLE_VIBRATO_SHAPE's comment has the measurement)
+    and Goattracker the one above, so this mapping is about 6% deep on top
+    of the shift's rounding; until v0.5.589 this said the reverse. What
+    remains beyond that is the shape: the
     player's table is a position sequence sampled per frame where Goattracker
     integrates a step per call, so the two triangles agree in period and
     excursion and differ in how they get there whenever the table is not
@@ -1196,8 +1198,12 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     row_calls: int = 0, effects: bool = False,
                     gate_skip: Optional[int] = None,
                     instr_row_calls: Optional[dict] = None,
-                    table_span: bool = False) -> dict:
+                    table_span: bool = False,
+                    skip: frozenset = frozenset()) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    `skip` names records (0-based) that get no entry: those whose vibrato is
+    a wave program instead (`goatwriter.lfo_wave`, `convert(lfo_wave=)`).
 
     `gate_skip` is the reload `O` of an outer gate that is the play routine's
     first instruction with nothing else on its underflow call -- `build_sng`
@@ -1300,7 +1306,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     overwritten = 0
     for i in range(max(instr_used - lead, 0)):
         base = det.instr_start + i * det.instr_stride + offset
-        if base >= len(data):
+        if base >= len(data) or i in skip:
             continue
         effect = det.instr_start + i * det.instr_stride + 7
         if (duty_mask is not None and effect < len(data)

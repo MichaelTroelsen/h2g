@@ -133,6 +133,17 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          # one note each loses its CMD_SETPULSEPTR while the packed width at
          # the attack is still the planned one.
          "tie_restart": True,
+         # ik-opposite-phase-vibrato-chorus: a doubled note's lagging voice
+         # takes a vibdelay clone so the original's free-running classic
+         # counters' offset survives Goattracker's per-note restart
+         # (h2g.unison_vibrato). Forced on over the shipped presets
+         # (e0b17bd + the change, 2026-10-18): International_Karate is the
+         # only mover of 89 converting files, Commando unchanged. -t 180
+         # A/B on it: aud .8965 -> .8962, reversal .8692 -> .8687, travel
+         # 1.0605 -> 1.0601, melody/pitch_jaccard/depth unchanged; voice
+         # 1/3 frames within 0.5 st but unequal 2 -> 237 against the
+         # original's 599 (C:/t/ik-chorus/chorus_census.py).
+         "unison_vibrato_phase": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
 # HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
@@ -188,6 +199,9 @@ LIVE_ON = {
     # kept the old spelling), 26 once its rows on one gate residue were
     # respelled (lvvp-tie-rows-off-gate-residue).
     "tie_restart": 26,
+    # Forced on over the shipped presets at e0b17bd + the change: only
+    # International_Karate moves (tests/test_unison_vibrato.py).
+    "unison_vibrato_phase": 1,
 }
 
 # rest_instrument reads 0 in LIVE_ON because compact_instruments MASKS it:
@@ -608,7 +622,20 @@ EXCLUDED_FROM_ALWAYS = {
     # off no byte moves.
     "arpeggio_default",
     # Bit $02's DERIVED alternate (`det.wave_alternate_noise`: the player's
-    # `AND #$07 / ORA #$80`, noise at the voice's own control bits). Per song
+    # `AND #$07 / ORA #$80`, noise at the voice's own control bits).
+    # **RETAKEN at v0.5.588 + the change that carries bit $04's arpeggio on
+    # the pair (`det.wave_alternate_arp`; run record
+    # hollywood-snare-and-lfo-vibrato), -t 180 under presets, option off ->
+    # on: the melody cost below is gone.** Hollywood_or_Bust melody .774 ->
+    # .774, wave .833 -> .945, noise 0 -> 2998 (orig 4500), aud .914 ->
+    # .926; Chicken_Song melody unmoved, wave .919 -> .965, aud .883 ->
+    # .897. What is left against it is `onset_frame_agreement` (Hollywood
+    # .889 -> .833, Chicken .827 -> .788), which reads each side at its own
+    # gate edge -- ours is the init call, a frame before the pitch, so the
+    # noise lands a frame "late" by that anchor and on the frame by every
+    # lag-aligned column. Still per song, so adopting it stays a song entry.
+    # The figures below are the ones that kept it out, historical:
+    # Per song
     # because the two files it reaches are two populations -- MEASURED AT
     # v0.5.494 + uncommitted tree (1dde44a), -t 180, under presets:
     # Chicken_Song trades `wave` 88.3 -> 83.5% for noise frames 2556 -> 3780
@@ -675,6 +702,12 @@ EXCLUDED_FROM_ALWAYS = {
     # FIDELITY_TOGGLES, as `pitch_tie_phase` is not. A song entry
     # `"pitch_lead_tie": true`.
     "pitch_lead_tie",
+    # `voice_arp`: Ninja's per-voice bit-$04 arpeggio (detect._find_voice_arp,
+    # goatwriter.arpeggio.voice_arp_entries). Off by default and per song:
+    # a trade -- `aud` and `onset` gain while `melody`/`seq` lose, because
+    # they name our note by its first post-attack pitch (see convert()).
+    # Not in FIDELITY_TOGGLES. A song entry `"voice_arp": true`.
+    "voice_arp",
     # `drum_gate_off`: the drum block's gate-off on drum+arpeggio records
     # (the noise tick at -S1 and, for a sustaining one, the tail) and under
     # bit $02's alternation (goatwriter.wavetable._wavetable_entries).
@@ -706,6 +739,21 @@ EXCLUDED_FROM_ALWAYS = {
     # Formula_1_Simulator (convert()'s docstring). A song entry
     # `"tie_pulse_restart": true`.
     "tie_pulse_restart",
+    # `lfo_wave`: the command-table engine's LFO-table vibrato as a
+    # per-frame wave program at the walk's phase (goatwriter.lfo_wave)
+    # instead of Goattracker's vibrato. Off by default and per song: forced
+    # on at -t 180 under presets (v0.5.588 + the change, run record
+    # hollywood-snare-and-lfo-vibrato), Hollywood_or_Bust travel 0.83 ->
+    # 0.94, bend 0.44 -> 0.64, pitch_jaccard .900 -> .915, depth 1.00 ->
+    # 1.06 (the 6% the interval above costs), but melody .774 -> .744 and
+    # `vib` 1.16 -> 1.19; Chicken_Song travel 2.85 -> 0.81, pitch_jaccard
+    # .824 -> .857, depth 1.07 -> 1.12. The melody loss is the attack
+    # frame's stale pitch: our attack is the note-init call, which writes
+    # only $D404 and sounds the PREVIOUS note's last frequency, and the
+    # program ends notes on another offset than the vibrato did -- read on
+    # our pitch frame (attack + 1) voice 1's melody is .825 in both arms.
+    # Not in FIDELITY_TOGGLES. A song entry `"lfo_wave": true`.
+    "lfo_wave",
 }
 
 

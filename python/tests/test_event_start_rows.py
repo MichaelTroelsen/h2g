@@ -208,14 +208,19 @@ def test_the_walk_spends_a_tick_on_a_fetch_the_bytes_cannot_see():
 # walk's patterns, per file, presets + pulse_phase forced, measured at
 # 8586101 + this change. Every other corpus file with the triangle walk has
 # none, and no file has a row the bytes call a fetch that is not a start.
-HIDDEN = {"Devils_Galop.sid": 4, "Master_of_Magic.sid": 31,
-          "Thing_on_a_Spring.sid": 34, "Zoids.sid": 6}
+# Since zoolook-tight-cutoffs every one of them was a bit-6 rest the detector
+# missed (STATUS_BIT6_LATE_ABS_SHAPE): those are KEYOFF rows now, which the
+# bytes call fetches, so none is left hidden and no walk plans differently.
+# The four stay parametrized below at zero.
+HIDDEN: dict = {}
+FORMERLY_HIDDEN = ["Devils_Galop.sid", "Master_of_Magic.sid",
+                   "Thing_on_a_Spring.sid", "Zoids.sid"]
 # The files whose first walk plans differently with the event starts than
 # by bytes alone (measured on the merged tree; see the module docstring).
-MOVES = {"Thing_on_a_Spring.sid"}
+MOVES: set = set()
 
 
-@pytest.mark.parametrize("name", sorted(HIDDEN) + ["Game_Killer.sid"])
+@pytest.mark.parametrize("name", FORMERLY_HIDDEN + ["Game_Killer.sid"])
 def test_the_walk_receives_the_hidden_fetches(name):
     presets = REPO_ROOT / "presets.json"
     corpus = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")

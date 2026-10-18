@@ -41,6 +41,7 @@ from .instrument_drop import (
     drop_unnamed_instruments as drop_unnamed_instruments_from, onset_rows)
 from .funk_gatetimers import split_funk_gatetimers
 from .pitch_lead import lead_ties
+from .unison_vibrato import chorus_doubled_notes
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -281,7 +282,10 @@ def convert(sid_path: str, log: Logger = print,
             drum_gate_off: bool = False,
             drum_fall: bool = False,
             vibrato_onset: bool = False,
-            tie_pulse_restart: bool = False) -> bytes:
+            tie_pulse_restart: bool = False,
+            lfo_wave: bool = False,
+            voice_arp: bool = False,
+            unison_vibrato_phase: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -412,10 +416,13 @@ def convert(sid_path: str, log: Logger = print,
     wave_alternate emits effect bit $02's DERIVED alternate waveform
     (det.wave_alternate_noise: `AND #$07 / ORA #$80`, noise at the voice's
     own control bits) in the two players that derive it rather than table it
-    -- Chicken Song and Hollywood or Bust. Per song and off by default: it
-    trades Chicken Song `wave` for noise frames and costs Hollywood or Bust
-    11.5 points of melody (figures beside the emission in goatwriter, and
-    in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every other file.
+    -- Chicken Song and Hollywood or Bust. Per song and off by default. It
+    cost Hollywood or Bust 11.5 points of melody until v0.5.589, because the
+    alternation dropped the record's bit-$04 arpeggio, which reads the same
+    counter (`det.wave_alternate_arp`); it now carries it, and the melody
+    cost is gone -- what is left is the gate-edge-anchored onset column
+    (figures in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every other
+    file.
 
     aligned_firstwave puts the note-init call's gate write on the pitch's
     frame. Goattracker's init call writes only `$D404` (player.s
@@ -476,6 +483,30 @@ def convert(sid_path: str, log: Logger = print,
     reached the branch before that reading, so off is byte-inert
     everywhere else.
 
+    voice_arp emits effect bit $04's per-VOICE arpeggio (Ninja $CB1E,
+    detect._find_voice_arp: note + interval,X wherever the per-note counter
+    AND mask,X is nonzero), frame by frame with the outer gate's skipped
+    calls held (goatwriter.arpeggio.voice_arp_entries). Off by default and
+    per song: a trade on the harness -- Ninja's voice 2 pitch at the
+    gate-aligned lag goes from 1536 to 512 frames >0.5 st off in 90 s (the
+    512 are the init call's frame, which writes no frequency), `aud`
+    .851 -> .880 and `onset` 75% -> 100%, but `melody`/`seq` read 100% ->
+    61% because they name ours by its first post-attack pitch, which is now
+    the interval (task missing-pitch-effects-pygmies-ninja-nemesis, e0b17bd,
+    -t 180, presets; historical). Bit $01's per-voice alternation on the
+    same counter takes the same skip-aware block, under this option too
+    (alone it reads `wave` .879 -> .855, `aud` .851 -> .843). Byte-inert on
+    every file without the block.
+
+    unison_vibrato_phase starts a doubled note late on the voice whose
+    classic vibrato counter lags the other's in the original
+    (`unison_vibrato`): two voices on one note and one vibrato record carry
+    their free-running counters' offset as a chorus, which Goattracker's
+    per-note restart puts back in phase. The lagging voice's note takes a
+    clone of its record with `vibdelay` longer by the offset's share of the
+    entry's period; its patterns are copied. Only the clamp-then-step-back
+    update, all absolute,X (International_Karate's `$AFF7`), is read.
+
     pitch_lead_tie writes, on the command-free rest row before each note
     whose record's firstwave is a gated real waveform, that note with
     CMD_TONEPORTA $00, so the voice already holds the note's pitch when the
@@ -516,6 +547,18 @@ def convert(sid_path: str, log: Logger = print,
     sounded the unfallen one, and every attack-named column reads that
     frame (Tarzan at -t 180 under presets: melody 99% -> 42%, travel 0.31x
     -> 0.83x).
+
+    lfo_wave emits the command-table engine's LFO-table vibrato
+    (detect.TableVibrato: Hollywood or Bust, Chicken Song) as a per-frame
+    wave program instead of Goattracker's vibrato: entry 0 the note, then
+    one portamento step a frame by the table's own change in position, at
+    a note-relative speed of the player's unit, looping over the table's
+    period from the index the walk replays for the record's notes
+    (goatwriter.lfo_wave). Only records with no effect bit of their own and
+    a power-of-two count, at -S1 and GTS5. Off by default and per song: it
+    trades (a slide under such a record moves only on its held frames;
+    figures in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every file
+    without the LFO table.
 
     vibrato_onset starts the instrument vibrato on frame 1 of the note
     where the original's does -- a classic player whose vibrato gate is a
@@ -650,6 +693,9 @@ def convert(sid_path: str, log: Logger = print,
     log("-----------------------------------------------------SEARCHING---")
     sid, det = _detect_tables(sid, log, engine)
     det.drum_gate_off = drum_gate_off
+    if not voice_arp:
+        # The reading stays in the log; only its emission is per song.
+        det.voice_arp_interval = det.voice_arp_mask = -1
 
     log("--------------------------------------------------------STATUS---")
     if not det.can_convert:
@@ -1384,6 +1430,7 @@ def convert(sid_path: str, log: Logger = print,
                          named_firstwave=named_firstwave,
                          pitch_tie_phase=pitch_tie_phase,
                          vibrato_onset=vibrato_onset,
+                         lfo_wave=lfo_wave,
                          arps=pattern_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
@@ -1455,6 +1502,11 @@ def convert(sid_path: str, log: Logger = print,
             # waveform is settled only once every clone pass and the drop
             # have run (pitch_lead).
             sng, _led = lead_ties(sng, log)
+        if unison_vibrato_phase:
+            # On the finished rows and records, after every pass that writes
+            # or renumbers an instrument column; before the startup record,
+            # which keeps instrument 63.
+            sng = chorus_doubled_notes(sng, sid, det, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

@@ -566,6 +566,18 @@ fires, and on Hollywood `keeps_notes` does. So it is listed in
 `presets.EXCLUDED_FROM_ALWAYS` rather than in the always block or the search
 toggles. Adopting it is a listening decision.
 
+**Retaken at v0.5.588 + the arpeggio fix (v0.5.589): the melody cost is
+gone.** Hollywood's record 9 (`$D6`) also sets bit `$04`, whose nibble block
+reads the same counter (`detect.WAVE_ALT_ARP_SHAPE`): at mask `$01` the note
+lowered by the nibble sounds on the record's own waveform's frames
+(`0C4E/11 1A13/81` in the original). The emission dropped that arpeggio; it now
+carries it on the pair's own half. At -t 180 under presets, option off -> on:
+Hollywood melody .774 -> .774, wave .833 -> .945, noise 0 -> 2998 (original
+4500), aud .914 -> .926; Chicken_Song melody unmoved, wave .919 -> .965, aud
+.883 -> .897. Against it is `onset_frame_agreement` (Hollywood .889 -> .833,
+Chicken .827 -> .788), which anchors each side on its own gate edge -- ours is
+the init call, a frame before the pitch.
+
 ## `--rest-instrument` (the instrument change that clicked)
 
 An instrument change landing on a rest used to be emitted as a fake `C-0` on
@@ -2759,6 +2771,55 @@ reversals go 1.002 -> 0.860, and Mozart's original moves on frame 2 or later
 on every note measured, so it goes early (onset exact 14 -> 0). `aud` moves
 on no file beyond its noise.
 
+## `--lfo-wave` (the LFO-table vibrato as a per-frame program)
+
+The command-table player's vibrato (Hollywood or Bust, Chicken Song;
+H2G-CONVERSION-METHOD.md § 7.kk) writes a table POSITION every frame from a
+per-voice index no note resets. This emits it as a wave program -- the note,
+then a portamento step a frame by the table's change in position, looping over
+its period -- laid out at the index the record's notes open on (replayed from
+the image's index bytes through the orderlists), with a pointer to a phase
+block on rows whose own index differs. The record gets no Goattracker vibrato.
+Only records with no effect bit of their own and a power-of-two count, at -S1.
+
+**A trade, per song, off by default.** Forced on at -t 180 under presets
+(v0.5.588 + the change): Hollywood_or_Bust travel 0.83 -> 0.94, bend 0.44 ->
+0.64, pitch_jaccard .900 -> .915, depth 1.00 -> 1.06 (the semitone above is
+Goattracker's interval, the one below the player's); Chicken_Song travel
+2.85 -> 0.81, pitch_jaccard .824 -> .857. Hollywood's melody falls .774 ->
+.744 and `vib` 1.16 -> 1.19: the attack frame is our note-init call, which
+sounds the previous note's last frequency, and that frequency now carries an
+LFO offset -- read on the pitch frame (attack + 1), voice 1's melody is .825
+with and without it. A slide under such a record moves only on its held
+frames (the wavetable command takes the call).
+
+## `--unison-vibrato-phase` (a doubled note keeps its chorus)
+
+The classic `$78/$07` vibrato keeps its counter and direction per voice and
+never resets them at a note, so two voices doubling a melody on one record
+carry a fixed offset between their oscillators: a chorus. Goattracker restarts
+`vibtime` at every note (gplay.c:723), so both voices of a doubled note start
+in phase and stay equal. International_Karate's voices 1 and 3 (record 6,
+vibrato byte `$2B`, frames 425-1270, the user's "0:08 ... slightly off each
+other, giving a roaming sound") sit two updates apart: the image holds
+counters `02 01 04` / directions `FF 00 FF` at `$B2DD`/`$B2FF`, only the update
+at `$AFF7` writes them, and nothing before frame 425 runs a vibrato record on
+either voice.
+
+The option simulates each voice's counter over the finished rows from the
+image (`h2g/unison_vibrato.py`) and gives the lagging voice's doubled note a
+clone of its record whose `vibdelay` is longer by the offset's share of the
+entry's own period (IK: 2/10 of 106 calls = 21), copying the patterns that
+voice plays. Read only for the all-absolute clamp-then-step-back update, three
+voices, no init-time clear of the cells, and a pair whose voices stepped alike
+since the image (Thrust's start records `$00`/`$30`/`$11` decline it). Forced
+on over the shipped presets (e0b17bd + the change, 2026-10-18) it moves only
+International_Karate: voice 1/3 frames within 0.5 st but unequal 2 -> 237
+against the original's 599 at -t 180; `aud` .8965 -> .8962, reversal .8692 ->
+.8687. Notes the original carries out of phase through a slide and tie are not
+reached: the tie's `CMD_TONEPORTA` zeroes `vibtime` and `vibdelay` is not
+reloaded (361 frames left).
+
 ## `--pitch-lead-tie` (drum attacks open on their own pitch)
 
 Goattracker's packed player writes only `$D404` when a new note starts
@@ -2787,6 +2848,32 @@ shifted and scores about 1.0, so a partial fix lowers them while attacks get
 right. Judge it on the drum census (`C:/t/drum-attack-first-frame/census.py`,
 not yet a harness column) and on listening. Adopting it in `presets.json` waits
 on the user's A/B.
+
+## `--voice-arp` (Ninja's per-voice arpeggio, with the outer gate's skips)
+
+Ninja's player reads effect bit `$04` as an arpeggio whose interval and counter
+mask are per *voice* (`$CB1E`: `LDA counter,X / AND mask,X / BEQ / LDA note,X /
+ADC interval,X`, tables `$CC69` = `FB FB 20`, `$CC6C` = `03 03 01`). Neither
+arpeggio shape the converter knew matches it, so records 3, 5, 6 and 9 played
+plain notes: voice 2's lead (`$380A`) held one pitch where the player sounds a
+fourth below on three working calls in four. `detect._find_voice_arp` reads it
+and `goatwriter.arpeggio.voice_arp_entries` lays one block per record frame by
+frame, holding the frame the outer gate skips (`$C806`, one call in four, on
+the same frame of every note: `voice_arp_skip_phase` steps the two counters
+from their file bytes). Bit `$01`'s per-voice waveform alternation rides the
+same counter and gets the same block (record 5 both, records 1 and 12 bit
+`$01` alone).
+
+**A trade on the harness, per song, off by default.** Measured at e0b17bd
+(-t 180, presets, Ninja forced on; historical): `aud` .851 -> .878, `onset` 75%
+-> 100%, while `melody`/`seq` read 100% -> 61% and `pitch` 97% -> 82%: they name
+our note by its first post-attack pitch, and the init call writes no frequency
+(see `--pitch-lead-tie`), so a note whose second frame is the interval is named
+as the interval. At the gate-aligned lag (5 frames) voice 2's frames more than
+half a semitone off go 1536 -> 512 of 2048 in 90 s, the 512 being exactly that
+init frame. Bit `$01` alone reads `wave` .879 -> .855 (the harness aligns on the
+pitch, a frame behind our gate), so it is not a default either. Only Ninja has
+the block (corpus census, 95 files).
 
 ## `--drum-gate-off` (the drum block's gate-off, where the gate was held)
 

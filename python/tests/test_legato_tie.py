@@ -24,6 +24,7 @@ import pytest
 from h2g import goatwriter as G
 from h2g.convert import convert
 from h2g.detect import detect
+from h2g.goatwriter.instruments import gate_off_firstwave
 from h2g.sidfile import load_sid
 from songview import parse_sng
 
@@ -241,7 +242,8 @@ def test_monty_respells_exactly_its_unflagged_ties(monty):
 @needs_corpus
 @pytest.mark.parametrize("name, replaced", [
     ("Auf_Wiedersehen_Monty.sid", 0),   # its preset writes real firstwaves
-    ("Pandora.sid", 3),                 # every record on FIRSTWAVE_TESTBIT (2 before tied slides)
+    ("Pandora.sid", 3),                 # every record on FIRSTWAVE_TESTBIT (2 before tied slides);
+                                        # since v0.5.588 its preset's gate-off byte instead
 ])
 def test_clones_are_their_record_with_the_legato_bit_and_real_wave(name, replaced):
     old = parse_sng(_convert(name, legato=False)[0])
@@ -267,8 +269,13 @@ def test_clones_are_their_record_with_the_legato_bit_and_real_wave(name, replace
                 clone.filt_ptr, clone.vib_ptr, clone.vib_delay) == (
             rec.ad, rec.sr, rec.wave_ptr, rec.pulse_ptr, rec.filt_ptr,
             rec.vib_ptr, rec.vib_delay)
-        if rec.firstwave == G.FIRSTWAVE_TESTBIT:
-            at = det.instr_start + (base - lead - 1) * det.instr_stride + 2
+        at = det.instr_start + (base - lead - 1) * det.instr_stride + 2
+        # The record's lead byte is the testbit or, where its preset names it
+        # in `gate_off_firstwave_instruments` (Pandora since v0.5.588), the
+        # same waveform with the gate CLEAR: neither is a waveform a held
+        # note may take, so the clone's byte is derived alike.
+        if rec.firstwave in (G.FIRSTWAVE_TESTBIT,
+                             gate_off_firstwave(sid.data[at])):
             # A clone whose wavetable opens with a waveform entry takes
             # firstwave 0 (tests/test_legato_clone_firstwave.py: the init
             # call would write the waveform on the OLD pitch); otherwise the

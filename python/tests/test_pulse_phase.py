@@ -72,6 +72,7 @@ are written drops nothing: those four patterns pack to 217 there and only
 cross 256 once the vibrato pass has put its commands on 53-68 more rows.
 Rasputin at -S2 packs with 44 commands dropped from those four patterns.
 """
+import pytest
 import json
 import sys
 from pathlib import Path
@@ -683,10 +684,15 @@ def test_the_bounds_engine_population_and_how_its_players_reseed():
         multispeed += entry.get("multiplier", 1) > 1
         bmi += search_file(sid.data, reseed_bmi) > 0
         turns += all(search_file(sid.data, t) > 0 for t in turn)
-    assert engine == 42, f"the bounds pulse engine reaches {engine} files"
+    # 43 and 29 since `_find_pulse_sweep` reads Powerplay_Hockey's second
+    # copy of the player (PULSE_SETUP_16); its BMI match is the FIRST copy's
+    # ($3762), its own copy gating with `LDA $499A / BNE` -- so the walk's
+    # rule reaches it unvalidated, under `pulse_phase` only, which its
+    # presets do not set (tests/test_detection_soundness.py).
+    assert engine == 43, f"the bounds pulse engine reaches {engine} files"
     assert multispeed == 23, multispeed
     assert turns == engine, "a player turns its sweep some other way"
-    assert bmi == 28, f"{bmi} players carry the LDA/BMI reseed gate"
+    assert bmi == 29, f"{bmi} players carry the LDA/BMI reseed gate"
 
 
 def _forced_pulse_phase_logs(name: str) -> list[str]:
@@ -903,6 +909,7 @@ def test_shared_ramps_play_the_widths_the_per_phase_ramps_played():
                         == _play_pulse_table(ref_entries, b, calls)), (name, num)
 
 
+@pytest.mark.usefixtures("folds_unread")
 def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8(monkeypatch):
     """`build_pulse_phase_table` used to return None outright once one
     instrument's phase set overflowed `GT_MAX_TABLELEN`, and convert.py's
@@ -963,6 +970,7 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8(monkeypatc
         "instruments that kept one -- got:\n" + "\n".join(lines))
 
 
+@pytest.mark.usefixtures("folds_unread")
 def test_last_v8_fits_on_the_lattice_legs():
     """The loops turn on the sweep's lattice (`_phase_cycle`): Last_V8's
     records 2, 7, 8 and 9 loop 1344-1536 wide instead of bound to bound, and
@@ -1004,3 +1012,6 @@ def test_gerry_the_germ_has_the_least_headroom_that_has_not_yet_overflowed():
         "PTBL headroom figure in docs/LESSONS.md before treating this as a "
         "regression; it may simply mean this file has finally crossed the "
         "line the docstring warned about:\n" + "\n".join(lines))
+
+
+from corpus import folds_unread  # noqa: E402,F401

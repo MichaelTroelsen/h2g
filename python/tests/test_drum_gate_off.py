@@ -49,8 +49,14 @@ def _quiet(sid, **kw) -> bytes:
 
 
 def _opts(name: str) -> dict:
+    """The song's preset options WITHOUT `drum_gate_off`: since v0.5.588's
+    adoption the preset itself turns it on for Commando and Deep Strike, so
+    every test here names the option's state explicitly and an absent key
+    is the converter's default (off)."""
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
-    return fidelity._preset_opts(doc, name)
+    opts = fidelity._preset_opts(doc, name)
+    opts.pop("drum_gate_off", None)
+    return opts
 
 
 def _records(sid, monkeypatch, **kw) -> dict:

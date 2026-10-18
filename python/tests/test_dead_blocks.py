@@ -317,12 +317,16 @@ def test_the_last_v8s_skydive_fits_compact_without_sharing_any_tail(name,
 
 @needs_corpus
 @pytest.mark.parametrize("name,dead,freed,then", [
-    # the freed rows are spent by the passes that were short of them
-    ("Hunter_Patrol", "17 record(s)", "85 of 182 rows freed",
+    # the freed rows are spent by the passes that were short of them.
+    # Hunter_Patrol 85 of 182 and W_A_R_Preview 136 of 255 until v0.5.588,
+    # when their presets took `drum_gate_off` (re-measured: Hunter_Patrol's
+    # table is 2 rows shorter, W_A_R_Preview frees 2 fewer; the passes still
+    # spend what is freed).
+    ("Hunter_Patrol", "17 record(s)", "85 of 180 rows freed",
      ("Skydive (bit $02)", "5 program(s)")),
     ("Gremlins", "11 record(s)", "55 of 174 rows freed",
      ("Skydive (bit $02)", "7 program(s)")),
-    ("W_A_R_Preview", "20 record(s)", "136 of 255 rows freed",
+    ("W_A_R_Preview", "20 record(s)", "134 of 255 rows freed",
      ("Past-table wave split", "play one of 1 pinned copy(ies)")),
     ("Mega_Apocalypse", "4 record(s)", "20 of 117 rows freed",
      ("Expanding vibrato loops", "(2 swing(s) merged")),

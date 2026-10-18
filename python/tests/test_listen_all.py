@@ -17,6 +17,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import listen as L  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_extra_pages(monkeypatch):
+    # These pin which list --all reads; extra pages are covered in test_listen_extra.
+    monkeypatch.setattr(L, "EXTRA_PAGES", {})
+
+
 def _presets(tmp_path, songs):
     p = tmp_path / "presets.json"
     p.write_text(json.dumps({"always": {}, "songs": songs}), encoding="utf-8")

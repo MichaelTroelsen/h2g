@@ -19,7 +19,7 @@ from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         FIXED_ARP_SPLIT_FACTOR, FIXED_ARP_TIE_SHARE,
                         GT_FIRST_NOTE, GT_LAST_NOTE, NIBBLE_GATE_MAX_HALVES,
                         OUTER_GATE, OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE,
-                        SPEED_GATE_ZP,
+                        SPEED_GATE_IMM, SPEED_GATE_ZP,
                         TEMPO_DUTY_MAX_CLONE, WAVE_JUMP, WAVE_MAX_DELAY,
                         WAVE_NOTE_BASE)
 from .primitives import (_fixed_arp_block, _gate_calls, _wave_hold_byte)
@@ -3649,3 +3649,127 @@ def gateoff_nibble_arp_budget_pair(half_calls) -> tuple:
     cyc = _half_cycle(half_calls)
     total = min(33, round(2 * Fraction(sum(cyc), len(cyc))))
     return (total - total // 2, total // 2)
+
+
+def voice_arp_skip_phase(sid: SidFile, det: Detection) -> Optional[tuple]:
+    """(O, s): the outer gate's reload and the frame, counted from a note's
+    first, of the first call that gate skips -- or None where it is not read.
+
+    For `voice_arp_entries`, the per-voice arpeggio's player (Ninja `$C806`):
+    `DEC outer / BPL / reload O / RTS` does nothing on one call in `O + 1`,
+    and the speed gate behind it (`$C83D DEC inner / BPL / LDA #R / STA
+    inner`, then `LDA inner / CMP #R / BNE`) fetches a row on the call that
+    reloads it. A note starts on a fetch, so where a row is a whole number of
+    outer cycles (`R + 1` a multiple of `O`) every note meets the skipped
+    call on the same frame of itself. Both cells start the song holding the
+    bytes in the file (the init clears only the per-voice cells, `$CFDC`),
+    so the two counters are stepped from those bytes here rather than
+    assumed: Ninja's `0`/`1` give `s = 2`, the frame its trace holds (siddump
+    `-wcc5b`: voice 2's counter reads 1 2 2 3 4 5 5 6 across a note's frames
+    0-7, frame 6 being the next skip).
+
+    None unless the outer gate's byte (`nibble_gate_byte`) and reload, and
+    the speed gate's immediate spelling with its counter's byte, are all read
+    and every subtune runs the one reload of each.
+    """
+    o0 = nibble_gate_byte(sid)
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    if o0 is None or speeds is None:
+        return None
+    subs = max(sid.subtunes, 1)
+    outs = {outer_gate_skip(sid, s) for s in range(subs)}
+    frames = set(speeds.frames[:subs])
+    if len(outs) != 1 or len(frames) != 1:
+        return None
+    (outer,), (rows,) = outs, frames
+    if not outer or not rows or rows % outer:
+        return None
+    data = sid.data
+    cells = []
+    for m in SPEED_GATE_IMM.finditer(data):
+        if m.group(1) == m.group(3) and m.group(2)[0] == rows - 1:
+            cells.append((abs(m.start() - det.instr_start),
+                          m.group(1)[0] | m.group(1)[1] << 8))
+    if not cells:
+        return None
+    off = sid.to_offset(min(cells)[1])
+    if not 0 <= off < len(data):
+        return None
+    o, i, reload = o0, data[off], rows - 1
+    tick = None
+    for call in range(4 * (outer + 1) * rows + 8):
+        o -= 1
+        if o < 0:
+            o = outer
+            if tick is not None:
+                return outer, call - tick
+            continue
+        i -= 1
+        if i < 0:
+            i = reload
+        if i == reload and tick is None:
+            tick = call
+    return None
+
+
+def voice_arp_entries(wave: int, interval: int, mask: int, phase: tuple,
+                      multiplier: int = 1, start: Optional[int] = None,
+                      budget: int = 5, written: bool = False,
+                      alt: Optional[int] = None) -> Optional[tuple]:
+    """Bit $04's per-voice arpeggio as a wavetable block, or None.
+
+    `detect._find_voice_arp`: on each WORKING call after a note's first the
+    player reads a per-note counter `k` (1 on the second call: the note-start
+    path skips the block, and the counter is zeroed then incremented on it)
+    and sounds `note + interval` where `k & mask` is nonzero, else the note.
+    `alt` is bit $01's per-voice waveform on the same counter (`k & 1` odd
+    sounds it, `detect.VOICE_WAVE_ALT_SHAPE`), None where the record does not
+    set that bit. A `mask` of 0 is bit $01 alone: the waveform alternates on
+    the counter and the note stays (Ninja records 1 and 12, effect $01).
+
+    **The skipped calls are part of the shape.** The outer gate skips one
+    call in `O + 1` and nothing is written on it, so the frame holds the one
+    before; `phase` is `voice_arp_skip_phase`'s `(O, s)`. Every note meets
+    the skips on the same frames of itself, so one block per record says it
+    exactly: frames 1.. laid out one per frame until the counter's pattern
+    and the gate's have both come round, then a jump back to frame 1. A
+    frame is `multiplier` calls, held the way `_wave_alternate_entries`'
+    halves are.
+    """
+    outer, s = phase
+    if (start is None or not (mask or alt is not None) or not (wave & 0xF0)
+            or outer < 1):
+        return None
+    period = 1 << mask.bit_length()
+    if alt is not None:
+        period = max(period, 2)
+    t = 1
+    while (t * outer) % period:
+        t += 1
+    frames = t * (outer + 1)
+    delta = interval - 0x100 if interval & 0x80 else interval
+    if not -0x20 <= delta <= 0x5F:
+        return None
+    up = delta if delta >= 0 else 0x80 + delta
+    lead, lead_r = _gw_primitives._first_frame_lead(wave, multiplier,
+                                                    written=written)
+    left, right = list(lead), list(lead_r)
+    k, state = 0, (wave, WAVE_NOTE_BASE)
+    m = max(1, multiplier)
+    for r in range(1, frames + 1):
+        if r % (outer + 1) != s % (outer + 1):
+            k += 1
+            w = alt if (alt is not None and k & 1) else wave
+            state = (w, up if k & mask else WAVE_NOTE_BASE)
+        w, n = state
+        left.append(_gw_primitives._wave_byte(w))
+        right.append(n)
+        if m == 2:
+            left.append(_gw_primitives._wave_byte(w))
+            right.append(n)
+        elif m > 2:
+            left.append(min(m - 2, WAVE_MAX_DELAY))
+            right.append(n)
+    if len(left) + 1 > budget:
+        return None
+    return left + [WAVE_JUMP], right + [(start + len(lead)) & 0xFF]

@@ -173,3 +173,12 @@ def test_trans_atlantic_bounds_record_plays_both_phases_exactly():
            for (num, w, d), at in index.items()}
     assert got == {(0x100, +1): ["0x802", "0xfa", "0x802"],
                    (0xA80, +1): ["0x800", "0xfe", "0x800"]}, got
+
+
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

@@ -404,10 +404,15 @@ def test_ticked_records_carry_the_octave_on_the_tick():
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     sng, _, _ = _converted("Commando")
-    assert _wavetable_of(sng, 2) == [(0x41, 0x00), (0x81, 0x0C), (0x81, 0x00),
-                                     (0x41, 0x0C), (0x41, 0x00), (0xFF, 0x09)]
+    # Since v0.5.588 Commando's preset carries `drum_gate_off`: the left
+    # column is the drum block's `41 80 80 40 40` (tests/test_drum_gate_off.py)
+    # where it was `41 81 81 41 41`; the octave column is unchanged.
+    assert _wavetable_of(sng, 2) == [(0x41, 0x00), (0x80, 0x0C), (0x80, 0x00),
+                                     (0x40, 0x0C), (0x40, 0x00), (0xFF, 0x09)]
     sng, _, _ = _converted("Crazy_Comets")
-    assert _wavetable_of(sng, 1) == [(0x11, 0x00), (0x81, 0x00), (0x81, 0x0C),
+    # ... and Crazy_Comets' too: its noise tick is written gate-off
+    # (`_drum_tick_noise`), `80 80` where it was `81 81`.
+    assert _wavetable_of(sng, 1) == [(0x11, 0x00), (0x80, 0x00), (0x80, 0x0C),
                                      (0x10, 0x00), (0x10, 0x0C), (0xFF, 0x04)]
 
 
@@ -583,8 +588,11 @@ def test_the_duty_reaches_the_sng_and_the_parity_files_keep_theirs():
     assert left[0] == 0x41 and left[-1] == 0xFF
     assert _profile(left, right, 0x0C, 17, start=34) == "buubbbbuuuubbbbuu"
     sng, _, _ = _converted("Commando")
-    assert _wavetable_of(sng, 2) == [(0x41, 0x00), (0x81, 0x0C), (0x81, 0x00),
-                                     (0x41, 0x0C), (0x41, 0x00), (0xFF, 0x09)]
+    # Since v0.5.588 Commando's preset carries `drum_gate_off`: the left
+    # column is the drum block's `41 80 80 40 40` (tests/test_drum_gate_off.py)
+    # where it was `41 81 81 41 41`; the octave column is unchanged.
+    assert _wavetable_of(sng, 2) == [(0x41, 0x00), (0x80, 0x0C), (0x80, 0x00),
+                                     (0x40, 0x0C), (0x40, 0x00), (0xFF, 0x09)]
 
 
 @needs_corpus

@@ -209,7 +209,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             written: bool = False,
                             alt_first: bool = False,
                             alt_note: Optional[int] = None,
-                            gate_frames: Optional[int] = None) -> Optional[tuple]:
+                            gate_frames: Optional[int] = None,
+                            own_note: Optional[int] = None) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -249,9 +250,15 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     the alternate pitch would simply stay. See `_hold_wave_program_entry`,
     where reading those two bytes the other way round made the whole
     `program` bucket of `VIBRATO.md` read zero.
+
+    **`own_note` is the record's own half's right byte**, `$00` (the played
+    note) where None. The derived dialect's nibble arpeggio reads the
+    alternation's counter (`detect.WAVE_ALT_ARP_SHAPE`), so a mask-$01 record
+    sounds its note lowered by the nibble on the record's own waveform's
+    frames: the caller passes that relative byte here.
     """
     if (alt <= WAVE_MAX_DELAY
-            or (alt == wave and alt_note is None)
+            or (alt == wave and alt_note is None and own_note is None)
             or not (wave & 0xF0)):
         # An alternate in the delay range is not a waveform; an alternate
         # equal to `+2` alternates with itself; and a record with no waveform
@@ -295,6 +302,11 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     if start is None:
         return None
     lead, lead_r = _first_frame_lead(wave, multiplier, written=written)
+    if own_note is not None:
+        # The lead is frame 0 on the record's own waveform, and the
+        # arpeggio's lowered note is on those frames from the first: the
+        # player runs both blocks on the note's own frame.
+        lead_r = [own_note if r == WAVE_NOTE_BASE else r for r in lead_r]
 
     def half(w: int, note: int = WAVE_NOTE_BASE) -> tuple:
         # **`$00` re-asserts the played note and `$80` writes nothing.** This
@@ -341,8 +353,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     # one branch, one phase -- the player's two blocks read the same cell with
     # the same `AND #$01 / BEQ`, so the frame that sounds the alternate
     # waveform is the frame that sounds the alternate pitch.
-    own_note = WAVE_NOTE_BASE
-    alt_r = own_note if alt_note is None else alt_note
+    alt_r = WAVE_NOTE_BASE if alt_note is None else alt_note
+    own_note = WAVE_NOTE_BASE if own_note is None else own_note
     first, second = (alt, wave) if alt_first else (wave, alt)
     first_r, second_r = ((alt_r, own_note) if alt_first
                          else (own_note, alt_r))

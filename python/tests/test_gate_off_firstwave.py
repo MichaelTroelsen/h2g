@@ -54,7 +54,13 @@ def _opts(name: str) -> dict:
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return fidelity._preset_opts(doc, name)
+        opts = fidelity._preset_opts(doc, name)
+    # The song's preset WITHOUT this option: since v0.5.588's adoption the
+    # preset names 1..62 for Delta, Star_Paws, Knucklebusters and Monty, so a
+    # test reading it would compare the option against itself. Absent is the
+    # converter's default (off); every test here names the state it wants.
+    opts.pop("gate_off_firstwave_instruments", None)
+    return opts
 
 
 def _firstwave_offsets(sng: bytes) -> list[int]:

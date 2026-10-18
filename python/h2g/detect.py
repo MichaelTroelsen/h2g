@@ -273,6 +273,12 @@ class Detection:
     # control bits -- and the counter is global rather than per voice. True
     # where that block was found; `wave_alternate` stays -1 for it.
     wave_alternate_noise: bool = False
+    # The derived dialect's nibble arpeggio, where it directly follows the
+    # alternation and tests the SAME global counter with `AND mask / BNE
+    # note` (WAVE_ALT_ARP_SHAPE): then a record whose mask is $01 sounds
+    # the note minus its nibble on exactly the frames the alternation gives
+    # the record's own waveform, and the note on its noise frames.
+    wave_alternate_arp: bool = False
     # A THIRD reading of bit $02, Ninja $CAFD: a two-stage attack whose
     # waveform and duration are per *voice* rather than per instrument -- two
     # static three-byte tables the player indexes by the voice it is
@@ -286,6 +292,13 @@ class Detection:
     # instrument. File offset of that table, or -1 -- see
     # _find_voice_wave_alternate().
     voice_wave_alternate: int = -1
+    # Bit $04 in the same player, and the per-voice spelling of an arpeggio:
+    # the note alternates with `note + interval` wherever a per-note frame
+    # counter AND a per-voice mask is nonzero, interval and mask both from
+    # three-byte tables indexed by voice. File offsets of the two tables, or
+    # -1 -- see _find_voice_arp().
+    voice_arp_interval: int = -1
+    voice_arp_mask: int = -1
     # Bit $08 on the SAME counter as `wave_alternate`, and the *note* rather
     # than the waveform: the voice's pitch alternates every frame between the
     # played note and a fixed note number held in a parallel per-instrument
@@ -321,6 +334,14 @@ class Detection:
     # +0/+1 seed the 12-bit width at note start and whose +6 is added to the
     # low byte every frame. -1 when the block is absent or unreadable.
     pulse_lo_base: int = -1
+    # The accumulate block's `ORA #imm` (PULSE_LO_ORA_SHAPES): the record keeps
+    # `(lo + rate) | fold`. 0 in the plain spellings.
+    pulse_lo_fold: int = 0
+    # The fourth engine (PULSE_PROG_SHAPE): file offset of the program
+    # pointer table's low bytes (the high bytes follow, `pulse_prog_count`
+    # later), and how many programs there are; -1 / 0 when absent.
+    pulse_prog_table: int = -1
+    pulse_prog_count: int = 0
     # The third pulse engine -- see _find_pulse_tri(). A triangle across the
     # 12-bit width like `pulse_bounds`, but its turnaround nibbles are constants
     # in the routine rather than a per-record array, and its rate byte packs
@@ -407,6 +428,11 @@ class Detection:
     duration_table: int = -1
     cmd_operands: tuple = ()
     cmd_instrument: int = -1
+    # The per-voice instrument-index cell the note fetch reads (the
+    # CMDTABLE_INSTR_CELL `LDA cell,X`), as a C64 address; -1 elsewhere. Its
+    # image bytes are the record each voice holds before a pattern names one
+    # (goatwriter.lfo_wave's walk reads them).
+    cmd_instr_cell: int = -1
     # "cmdtable" dialect: which $8x command is the pitch slide, and the mask
     # its handler applies to the second operand to get the step's high half.
     # -1 when the shape is absent. See _cmdtable_slide().
@@ -422,6 +448,10 @@ class Detection:
     # intro wave, intro frames)}} -- filled by convert() from cmd_chord.chord_note_cycles
     # (it needs the orderlists), empty everywhere else.
     cmd_chord_notes: Dict[int, Dict[int, tuple]] = field(default_factory=dict)
+    # {Goattracker instrument: LFO walk index} of the records whose
+    # LFO-table vibrato is a wave program (`convert(lfo_wave=)`), set by
+    # goatwriter.build_sng on every build -- empty everywhere else.
+    lfo_wave_phases: Dict[int, int] = field(default_factory=dict)
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
@@ -1186,6 +1216,7 @@ def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     det.duration_table = duration
     det.cmd_operands = tuple(operands)
     det.cmd_instrument = instrument
+    det.cmd_instr_cell = instr_cell
     det.cmd_slide, det.cmd_slide_mask = _cmdtable_slide(
         sid, data, cmd_lo, cmd_hi, count)
     if det.cmd_slide >= 0:
@@ -2201,8 +2232,11 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.effect_pulse_lo:
         det.pulse_lo_base = _find_pulse_lo(sid, det)
         if det.pulse_lo_base >= 0:
+            det.pulse_lo_fold = _pulse_lo_fold_of(sid, det)
             log(f"Pulse-width accumulate..: state array at file "
-                f"+0x{det.pulse_lo_base:04X} (+0 lo, +1 hi, +6 rate)")
+                f"+0x{det.pulse_lo_base:04X} (+0 lo, +1 hi, +6 rate)"
+                + (f", low byte ORA #${det.pulse_lo_fold:02X}"
+                   if det.pulse_lo_fold else ""))
 
     # Consulted whatever the two above found: this engine is a *branch* of the
     # same routine as the accumulate one in 19 of its 24 files, so finding that
@@ -2241,6 +2275,15 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                    if det.pulse_tri_per_voice else "")
                 + ("" if det.pulse_tri_gated
                    else " -- every record, no bit $08 test"))
+
+    # The fourth engine, a per-voice pulse PROGRAM -- see PULSE_PROG_SHAPE.
+    # Consulted only where none of the three above was read.
+    if (det.pulse_bounds < 0 and det.pulse_lo_base < 0
+            and det.pulse_tri_hi < 0):
+        det.pulse_prog_table, det.pulse_prog_count = _find_pulse_prog(sid, det)
+        if det.pulse_prog_table >= 0:
+            log(f"Pulse-width program.....: {det.pulse_prog_count} programs, "
+                "number at record +6 (dur/delta pairs, $FE hold, $FF loop)")
 
     det.track_fd_ends, det.track_fe_command = _find_track_terminators(sid)
     det.track_fe_restarts_gate = (det.track_fe_command
@@ -2300,6 +2343,11 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                 log("Instrument effect byte..: bit $02 alternates the "
                     "waveform every frame with noise at its own control bits "
                     "(not the rise)")
+                det.wave_alternate_arp = _wave_alt_arp(sid.data, ld)
+                if det.wave_alternate_arp:
+                    log("Instrument effect byte..: bit $04's nibble arpeggio "
+                        "reads the alternation's counter: at mask $01 its "
+                        "lowered note rides the record's own waveform")
         (det.voice_two_stage_alt,
          det.voice_two_stage_frames) = _find_voice_two_stage(sid, det)
         if det.voice_two_stage_alt >= 0:
@@ -2351,6 +2399,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Instrument effect byte..: bit $01 alternates the waveform every "
             "call with a per-VOICE table -- "
             + "/".join(f"${b:02X}" for b in alt) + " (not the drum)")
+
+    # Bit $04's per-voice arpeggio (Ninja $CB1E). Outside the effect-routine
+    # probe because neither of its arpeggio shapes reads a table indexed by
+    # voice; consulted only where both found nothing (`effect_arp` False).
+    det.voice_arp_interval, det.voice_arp_mask = _find_voice_arp(sid, det)
+    if det.voice_arp_interval >= 0:
+        iv = sid.data[det.voice_arp_interval:det.voice_arp_interval + VOICES]
+        mk = sid.data[det.voice_arp_mask:det.voice_arp_mask + VOICES]
+        log("Instrument effect byte..: bit $04 is an arpeggio with per-VOICE "
+            "intervals " + "/".join(f"${b:02X}" for b in iv)
+            + " on frame-counter masks " + "/".join(f"${b:02X}" for b in mk))
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
@@ -3553,10 +3612,16 @@ def _find_vibrato_dwell(sid: SidFile, at: int) -> bool:
 # table PEAK gives the excursion and its LENGTH the period; the arithmetic is
 # in goatwriter._table_vibrato_entry.
 #
-# One thing the classic form has and this does not: the interval here is
-# `freq(note+1) - freq(note)`, the semitone ABOVE the note, which is exactly
-# what Goattracker note-relative speed computes. The classic players take the
-# one below, about 6% of a semitone out. This mapping has no such error.
+# **The interval is the semitone BELOW the note**, `freq(note) -
+# freq(note-1)`: the note table starts at $08A7 in Hollywood or Bust (the
+# arpeggio's `LDA $08A7,Y` with Y = note * 2), so the walk's `LDA $08A7,Y /
+# SBC $08A5,Y` subtracts the entry before it. Measured on the original, sub 2
+# voice 0 note 79 ($684C): the unit at count 4 is $174 = ($684C - $6270) >> 4
+# * 4, not ($6E84 - $684C) >> 4 * 4 = $18C. Goattracker's note-relative speed
+# takes the one ABOVE (gplay.c:631), so every mapping of this vibrato is
+# about 6% (a semitone's ratio) deep. Until v0.5.589 this comment said the
+# reverse ("the semitone ABOVE ... This mapping has no such error"),
+# reading the table base as $08A5.
 TABLE_VIBRATO_SHAPE = ("B9 ?? ?? D0 03 4C ?? ?? 48 29 0F 8D ?? ?? 68 29 F0 "
                        "4A 4A 4A 4A AA BD ?? ?? 8D ?? ?? BD ?? ?? 8D ?? ??")
 
@@ -3600,6 +3665,11 @@ class TableVibrato:
     unit_shift: int
     shapes: Tuple[Tuple[int, int], ...]
     spans: Tuple[int, ...] = ()
+    # The walk's per-voice index cell (`LDY cell,X / INC cell,X`, a C64
+    # address; -1 unread) and each table's C64 address, by high nibble (0
+    # where unreadable) -- what `goatwriter.lfo_wave` replays the walk with.
+    index_cell: int = -1
+    bases: Tuple[int, ...] = ()
 
 
 def _table_vibrato_unit_shift(data: bytes) -> Optional[int]:
@@ -3661,7 +3731,8 @@ def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
     at = search_file(data, TABLE_VIBRATO_SHAPE)
     if at < 1:
         return None
-    if search_file(data, TABLE_VIBRATO_LFO_SHAPE) < 1:
+    walk = search_file(data, TABLE_VIBRATO_LFO_SHAPE)
+    if walk < 1:
         return None
     unit_shift = _table_vibrato_unit_shift(data)
     if unit_shift is None:
@@ -3682,15 +3753,23 @@ def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
         return None
     shapes = []
     spans = []
+    bases = []
     for i in range(count):
         a, b = sid.to_offset(lo + i), sid.to_offset(hi + i)
         if not (0 <= a < len(data) and 0 <= b < len(data)):
             return None
         shapes.append(_read_lfo_table(sid, data[a] | data[b] << 8))
         spans.append(_lfo_table_span(sid, data[a] | data[b] << 8))
+        bases.append((data[a] | data[b] << 8) if shapes[-1][0] else 0)
     if not any(s[0] for s in shapes):
         return None
-    return TableVibrato(offset, unit_shift, tuple(shapes), tuple(spans))
+    # `LDY cell,X` and `INC cell,X` must name one cell, or this is not the
+    # walk the comment above reads.
+    index_cell = data[walk + 1] | data[walk + 2] << 8
+    if (data[walk + 4] | data[walk + 5] << 8) != index_cell:
+        index_cell = -1
+    return TableVibrato(offset, unit_shift, tuple(shapes), tuple(spans),
+                        index_cell, tuple(bases))
 
 
 # The status-byte fetch that tests bit 6 first, and alone. Commando $50C2
@@ -3793,7 +3872,7 @@ def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
 # so a status byte of $C0-$FE consumes nothing but itself, where a decoder
 # that honours bit 7 first reads an operand and a note it never read and
 # desynchronises the rest of the pattern. 61 of 95 corpus files have this
-# shape, and three more spell it otherwise (`_status_bit6_bvs`); the rest
+# shape, and thirteen more spell it otherwise (`_status_bit6_bvs`); the rest
 # (the digi and cmdtable engines among them) fetch differently and are not
 # touched by the flag this gates.
 STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
@@ -4755,6 +4834,26 @@ STATUS_BIT6_LATE_WINDOW = 24
 # which `goatwriter.rest_ring` already spells. The BIT must test the cell the
 # status byte was stored to. Only Kentilla in the 95-file corpus.
 STATUS_BIT6_TWICE_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 9D ?? ?? 2C ?? ?? 70"
+# The primary shape with code between the counter store and the BIT -- the
+# late window above with an ABSOLUTE,X first store where Spellbound's is
+# zero-page. Consulted only where every spelling above matched nothing.
+# Zoolook $40DA:
+#
+#     40DA  B1 B2     LDA ($B2),Y     ; the status byte
+#     40DC  9D C7 44  STA $44C7,X
+#     40DF  8D D6 44  STA $44D6       ; the scratch copy...
+#     40E2  29 1F     AND #$1F
+#     40E4  9D C4 44  STA $44C4,X     ; the wait counter
+#     40E7  A9 4F ... 8D 18 D4        ; the volume ($40E7-$40F5, no pattern read)
+#     40F6  2C D6 44  BIT $44D6       ; ...tested for bit 6 FIRST
+#     40F9  70 3E     BVS $4139       ; DEC $44D3,X: the gate mask, a rest
+#
+# Eight more corpus files spell it so (Chain_Reaction, Delta, Devils_Galop,
+# Formula_1_Simulator, Master_of_Magic, Proteus, Thing_on_a_Spring, Zoids),
+# every one's BVS landing on a DEC of its gate cell. Undetected, each `$4x`
+# rest decoded as a hold row and the note before it rang through the rest:
+# Zoolook's bass gated 32 frames late after `03 n14 | 4B`.
+STATUS_BIT6_LATE_ABS_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ??"
 
 
 def _status_bit6_bvs(data: bytes) -> int:
@@ -4770,20 +4869,32 @@ def _status_bit6_bvs(data: bytes) -> int:
         return i + len(STATUS_BIT6_ZP_SHAPE.split())
     i = search_file(data, STATUS_BIT6_LATE_SHAPE)
     if i >= 1:
-        cell = data[i + 5:i + 7]
-        start = i + len(STATUS_BIT6_LATE_SHAPE.split())
-        for k in range(start, min(start + STATUS_BIT6_LATE_WINDOW,
-                                  len(data) - 4)):
-            # INY / LDA (zp),Y: the operand read came first, so whatever
-            # bit 6 does later is not the test that skips it.
-            if data[k] == 0xC8 and data[k + 1] == 0xB1:
-                return -1
-            if (data[k] == 0x2C and data[k + 1:k + 3] == cell
-                    and data[k + 3] == 0x70):
-                return k + 4
+        return _late_bit6_bvs(data, i, data[i + 5:i + 7],
+                              len(STATUS_BIT6_LATE_SHAPE.split()))
     i = search_file(data, STATUS_BIT6_TWICE_SHAPE)
     if i >= 1 and data[i + 6:i + 8] == data[i + 17:i + 19]:
         return i + len(STATUS_BIT6_TWICE_SHAPE.split())
+    i = search_file(data, STATUS_BIT6_LATE_ABS_SHAPE)
+    if i >= 1:
+        return _late_bit6_bvs(data, i, data[i + 6:i + 8],
+                              len(STATUS_BIT6_LATE_ABS_SHAPE.split()))
+    return -1
+
+
+def _late_bit6_bvs(data: bytes, i: int, cell: bytes, size: int) -> int:
+    """The BVS operand's offset for a late-window spelling matched at `i`:
+    the first `BIT cell / BVS` within STATUS_BIT6_LATE_WINDOW bytes of the
+    shape's end, or -1 where an operand read comes first."""
+    start = i + size
+    for k in range(start, min(start + STATUS_BIT6_LATE_WINDOW,
+                              len(data) - 4)):
+        # INY / LDA (zp),Y: the operand read came first, so whatever
+        # bit 6 does later is not the test that skips it.
+        if data[k] == 0xC8 and data[k + 1] == 0xB1:
+            return -1
+        if (data[k] == 0x2C and data[k + 1:k + 3] == cell
+                and data[k + 3] == 0x70):
+            return k + 4
     return -1
 
 
@@ -5156,6 +5267,45 @@ def _find_pulse_sweep(sid: SidFile, det: Detection):
     j = search_file(sid.data, PULSE_SETUP)
     if i < 1 or j < 1:
         return -1, -1
+    found = _pulse_sweep_pair(sid, det, i, j)
+    if found == (-1, -1):
+        # Fallback, consulted only where the first matches read nothing: a
+        # file carrying two copies of the player (Powerplay_Hockey: $37xx
+        # with 8-byte records, $45xx with 16) -- every later copy of the
+        # block, with the setup in either stride's spelling, taking the one
+        # pair that indexes this detection's own records.
+        for i2 in _all_matches(sid.data, PULSE_SWEEP):
+            for j2 in (_all_matches(sid.data, PULSE_SETUP)
+                       + _all_matches(sid.data, PULSE_SETUP_16)):
+                if (i2, j2) != (i, j):
+                    pair = _pulse_sweep_pair(sid, det, i2, j2)
+                    if pair != (-1, -1):
+                        return pair
+    return found
+
+
+# The setup block for 16-byte records (`ASL` x4): Powerplay_Hockey $45C9,
+# the copy of the player its patterns belong to.
+PULSE_SETUP_16 = ("0A 0A 0A 0A A8 8C ?? ?? B9 ?? ?? 8D ?? ?? B9 ?? ?? "
+                  "8D ?? ??")
+
+
+def _all_matches(d: bytes, pattern: str) -> list[int]:
+    """Every offset `search_file` would find `pattern` at, in order."""
+    out, base = [], 0
+    while True:
+        k = search_file(d[base:], pattern)
+        if k < 1:
+            return out
+        out.append(base + k)
+        base += k
+
+
+def _pulse_sweep_pair(sid: SidFile, det: Detection, i: int, j: int):
+    """`_find_pulse_sweep` for one (sweep block, setup block) pair."""
+    # The 16-byte spelling has one more ASL: shift it onto the 8-byte one's
+    # offsets.
+    j += 1 if sid.data[j + 3] == 0x0A else 0
     bounds_addr = sid.data[i + 4] | sid.data[i + 5] << 8
     rate_addr = sid.data[j + 14] | sid.data[j + 15] << 8
     # The sweep must read the cell the setup writes, or the two blocks belong
@@ -6065,6 +6215,15 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
     d = sid.data
     base = d[lda + 1] | (d[lda + 2] << 8)
     sta = rate + (3 if d[rate] == 0x6D else 2)
+    if spelling >= len(PULSE_LO_SHAPES):
+        sta += 2                                   # past the `ORA #imm`
+        if d[sta + 6] == 0x20:
+            # The JSR spelling: the subroutine must be the one that stores
+            # the accumulator to $D402,Y (Phantoms $F04E: `INC $E6 / STA
+            # $D402,Y / DEC $E6 / RTS`).
+            sub = sid.to_offset(d[sta + 7] | (d[sta + 8] << 8))
+            if sub < 0 or d.find(b"\x99\x02\xD4", sub, sub + 6) < 0:
+                return -1
     # The store must name the same array the load read, or this is not the
     # accumulate-in-place shape and nothing here is trustworthy.
     if (d[sta + 1] | (d[sta + 2] << 8)) != base:
@@ -6126,16 +6285,138 @@ PULSE_LO_SHAPES = (
 )
 
 
+# The same block FOLDED: an `ORA #imm` between the ADC and the store, so the
+# low byte the record keeps is `(lo + rate) | imm`. Consulted only where every
+# PULSE_LO_SHAPES spelling matched nothing, and numbered after them. Ninja
+# $CA0F (Chimera, Crazy_Comets, Game_Killer, Human_Race, Last_V8 and its C128
+# version are the same bytes but for their operands):
+#
+#     CA0F  AD 56 CC  LDA effect
+#           29 08     AND #$08 / BEQ tri ($CA2D)
+#     CA16  AC 48 CC  LDY idx
+#     CA19  B9 6F CC  LDA instr,Y      ; the record's running low byte
+#     CA1C  6D 3A CC  ADC rate         ; record +6 (no CLC: the carry rides)
+#     CA1F  09 40     ORA #$40         ; bit 6 forced on
+#     CA21  99 6F CC  STA instr,Y
+#     CA24  AC 1E CC  LDY sidoff
+#     CA27  99 02 D4  STA $D402,Y      ; $D403 never written here
+#
+# Phantoms_of_the_Asteroid $E1F6 is the same block storing through a
+# subroutine: `JSR $F04E` where $F04E is `INC $E6 / STA $D402,Y / DEC $E6 /
+# RTS` -- `_find_pulse_lo` checks the target writes $D402,Y. The `$40` makes
+# the low byte skip $00-$3F and $80-$BF: traced on Ninja's record 18 (rate
+# $18) the width runs 100, 158, 170, 1C8, 1E0, 1F8, 151 -- the plain spelling
+# would read 118, 130, 148 and never carry the fold. Censused over the corpus:
+# these 8 files, the operand $40 in all of them, and no file carries both
+# this and a PULSE_LO_SHAPES spelling.
+PULSE_LO_ORA_SHAPES = (
+    "29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? 09 ?? 99 ?? ?? AC ?? ?? 99 02 D4",
+    "29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? 09 ?? 99 ?? ?? AC ?? ?? 20 ?? ??",
+)
+
+
 def _pulse_lo_block(d: bytes, load: str):
     """(offset of `LDA instr,Y`, offset of `ADC rate`, spelling index) for the
-    first PULSE_LO_SHAPES spelling found after `load`, or None."""
+    first PULSE_LO_SHAPES spelling found after `load`, then the first
+    PULSE_LO_ORA_SHAPES one (numbered after them), or None."""
     lead = len(load.split())
-    for spelling, shape in enumerate(PULSE_LO_SHAPES):
+    for spelling, shape in enumerate(PULSE_LO_SHAPES + PULSE_LO_ORA_SHAPES):
         off = search_file(d, f"{load} {shape}")
         if off >= 1:
             lda = off + lead + shape.split().index("B9")
             return lda, lda + 3, spelling
     return None
+
+
+def _pulse_lo_fold_of(sid: SidFile, det: Detection) -> int:
+    """`pulse_lo_fold` of the block `_find_pulse_lo` read, or 0."""
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return 0
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    block = _pulse_lo_block(sid.data, load)
+    return pulse_lo_fold(sid.data, block[1]) if block else 0
+
+
+def pulse_lo_fold(d: bytes, rate: int) -> int:
+    """The `ORA #imm` operand right after the accumulate block's `ADC rate`
+    at offset `rate` (PULSE_LO_ORA_SHAPES), or 0 for the plain spellings."""
+    adc = 3 if d[rate] == 0x6D else 2
+    return d[rate + adc + 1] if d[rate + adc] == 0x09 else 0
+
+
+# The fourth pulse engine: a per-voice pulse PROGRAM, consulted only where
+# none of the bounds, accumulate or triangle engines was read. Star_Paws
+# $B27D (Thundercats, Bangkok_Knights and four held DIGI files -- Arcade_
+# Classics, BMX_Kidz, Ricochet, Skate_or_Die_intro -- are the same bytes but
+# for their operands):
+#
+#     B27D  AD A1 B6  LDA prog        ; record +6, `LDA $B979,Y / STA` at $B1C5
+#           F0 6D     BEQ done        ; program 0: the width holds its seed
+#           A8 88     TAY / DEY
+#           B9 11 B9  LDA lo,Y / STA $FC
+#           B9 13 B9  LDA hi,Y / STA $FD  ; pointer table: lo bytes, then hi
+#           DE A4 B8  DEC count,X / BPL add
+#           BC A1 B8  LDY pos,X
+#     B296  B1 FC     LDA (ptr),Y / BPL entry
+#           C9 FE     CMP #$FE / BNE +  ; $FE: count = $FE, skip the add --
+#           9D A4 B8  STA count,X       ; read again every frame: a hold
+#           4C EF B2  JMP done
+#           C9 FF     CMP #$FF / BNE +  ; $FF: back to byte 0, same frame
+#           A0 00 F0  LDY #0 / BEQ $B296
+#           29 7F 48  AND #$7F / PHA    ; bit 7: the width back to its seed
+#           ...       (seed copies -> running width) / PLA
+#     B2BC  9D A4 B8  STA count,X       ; frames = byte + 1
+#           C8 B1 FC  INY / LDA (ptr),Y / STA delta,X / INY / TYA / STA pos,X
+#     B2CA  18 ...    CLC / width += delta, sign-extended, 16 bits
+#           99 03 D4  STA $D403,Y / PLA / STA $D402,Y
+#
+# Every voice resets `pos` and `count` and copies record +0/+1 into the
+# running width and the seed at note fetch ($B12E-$B17E), so a program
+# restarts with its note -- what a Goattracker pulse table does. Traced on
+# Star_Paws' record 0 (program 2, `0C 41 FE`, seed $480): 480 on the fetch
+# frame, then 4C1, 502, ... +$41 a frame, the program's first entry read
+# the frame after the fetch.
+PULSE_PROG_SHAPE = (
+    "AD ?? ?? F0 ?? A8 88 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? DE ?? ?? 10 ?? "
+    "BC ?? ?? B1 ?? 10 ?? C9 FE D0 ?? 9D ?? ?? 4C ?? ?? C9 FF D0 ?? A0 00 "
+    "F0 ?? 29 7F 48")
+PULSE_PROG_STORE = "99 03 D4 68 99 02 D4"
+
+
+def _find_pulse_prog(sid: SidFile, det: Detection) -> tuple[int, int]:
+    """(file offset of the program pointer table's low bytes, program count)
+    for PULSE_PROG_SHAPE, or (-1, 0).
+
+    Anchored three ways: the program-number cell must be filled from record
+    +6 (`LDA instr+6,Y / STA cell`), the two pointer tables must be adjacent
+    (low bytes, then the high bytes `count` later -- their distance is the
+    program count: 2 in Star_Paws, Thundercats, Bangkok_Knights, BMX_Kidz
+    and Skate_or_Die_intro, 22 in Ricochet, 37 in Arcade_Classics), and the
+    block must end in the $D403/$D402 store within 128 bytes."""
+    d = sid.data
+    off = search_file(d, PULSE_PROG_SHAPE)
+    if off < 0 or det.instr_start < 0:
+        return -1, 0
+    word = lambda k: d[off + k] | (d[off + k + 1] << 8)
+    cell, lo, hi = word(1), word(8), word(13)
+    count = hi - lo
+    if not 0 < count <= 64:
+        return -1, 0
+    try:
+        six = sid.to_address(det.instr_start) + 6
+    except Exception:  # noqa: BLE001
+        return -1, 0
+    fill = bytes([0xB9, six & 0xFF, six >> 8, 0x8D, cell & 0xFF, cell >> 8])
+    if d.find(fill) < 0:
+        return -1, 0
+    if search_file(d[off:off + 128], PULSE_PROG_STORE) < 0:
+        return -1, 0
+    at = sid.to_offset(lo)
+    if at < 0 or at + 2 * count > len(d):
+        return -1, 0
+    return at, count
 
 
 # The triangle sweep, in full, because every field this converter needs is an
@@ -7345,6 +7626,39 @@ WAVE_ALT_SHAPE = ("{load} 29 02 F0 ?? AC ?? ?? BD ?? ?? 29 01 F0 ?? "
 # specific: this block writes the chip itself.
 WAVE_ALT_NOISE_SHAPE = ("{load} 29 02 F0 ?? AD ?? ?? 29 01 F0 ?? "
                         "BD ?? ?? 29 07 09 80 4C ?? ?? BD ?? ?? 99 04 D4")
+# ... and the nibble arpeggio straight after it (Hollywood or Bust $0792,
+# Chicken Song $1392), on the same global counter:
+#
+#     077B  LDA $09A2 / AND #$01 / BEQ own    ; the alternation: odd -> noise
+#     0792  LDA effect / AND #$04 / BEQ out
+#     0799  LDA effect / LSR x4 / STA $07BA   ; the nibble -> the SBC operand
+#     07A3  LDY #$04 / CMP #$0C / BEQ / LDY #$01 / STY $07B2  ; the mask
+#     07AE  LDA $09A2 / AND #mask / BNE note  ; set -> the note itself
+#     07B5  LDA note,X / SEC / SBC #nibble    ; clear -> the note lowered
+#
+# The two `LDA`s name one cell, which is what the backreference-free search
+# cannot say: the counter's bytes are captured from the first and the second
+# is matched against them in `_wave_alt_arp` -- so at mask $01 the lowered
+# note sounds on the record's own waveform's frames and the note on the
+# noise frames. Measured on the original, Hollywood_or_Bust sub 2 record 9
+# (effect $D6, nibble 13): `0C4E/11 1A13/81 0C4E/11 1A13/81` on all 124
+# onsets.
+WAVE_ALT_ARP_SHAPE = ("{load} 29 02 F0 ?? AD ?? ?? 29 01 F0 ?? "
+                      "BD ?? ?? 29 07 09 80 4C ?? ?? BD ?? ?? 99 04 D4 "
+                      "{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D ?? ?? "
+                      "A0 ?? C9 ?? F0 02 A0 ?? 8C ?? ?? AD ?? ?? 29 ?? D0")
+
+
+def _wave_alt_arp(data: bytes, load: str) -> bool:
+    """WAVE_ALT_ARP_SHAPE matched, its two counter loads naming one cell."""
+    shape = WAVE_ALT_ARP_SHAPE.format(load=load)
+    at = search_file(data, shape)
+    if at < 1:
+        return False
+    n = len(shape.split())
+    first = at + len(load.split()) + 5        # AD lo hi after `29 02 F0 ??`
+    last = at + n - 5                         # AD lo hi before `29 ?? D0`
+    return data[first:first + 2] == data[last:last + 2]
 
 
 def _find_wave_alternate(sid: SidFile, det: Detection) -> int:
@@ -7538,6 +7852,68 @@ def _find_voice_wave_alternate(sid: SidFile, det: Detection) -> int:
     if not (0 <= off and off + VOICES <= len(data)):
         return -1
     return off
+
+
+# Ninja $CB1E, 33 bytes below bit $01's block above and the third per-voice
+# reading in this player -- bit $04's arpeggio:
+#
+#     CB1E  LDA effect / AND #$04 / BEQ out
+#     CB25  LDA counter,X / AND mask,X / BEQ own  ; the per-note frame counter
+#     CB2D  LDA note,X / CLC / ADC interval,X     ; nonzero -> note + interval
+#     CB34  JMP fetch
+#     CB37  own: LDA note,X                       ; zero    -> the played note
+#     CB3A  fetch: ASL / TAY / LDA freqtable,Y ... STA $D401,Y
+#
+#     interval $CC69  FB FB 20     -5, -5, +32 semitones
+#     mask     $CC6C  03 03 01
+#
+# Neither arpeggio shape in `_find_effect_routines` matches it: the nibble form
+# shifts the effect byte for its interval and the fixed form loads the counter
+# with `AD` and adds an immediate, where this one masks the counter with an
+# indexed `AND` and adds an indexed table byte. So `effect_arp` stays False and
+# a record setting bit $04 here was converted as a plain note: Ninja's voice 2
+# record 9 (`$380A`, effect `$54`) holds one pitch where the player sounds the
+# note a fourth below on three working calls in four.
+VOICE_ARP_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? 3D ?? ?? F0 ?? "
+                   "BD ?? ?? 18 7D ?? ?? 4C ?? ?? BD ?? ?? 0A A8")
+
+
+def _find_voice_arp(sid: SidFile, det: Detection):
+    """(interval table, mask table) file offsets for bit $04, or (-1, -1).
+
+    Read on the terms `_find_voice_two_stage` sets: the counter must be
+    something the file increments (`INC counter,X`), and both tables must be
+    three bytes inside the image, because the voices are three. Consulted
+    only where neither arpeggio dialect `_find_effect_routines` reads was
+    found, so a file is never given two readings of one bit.
+    """
+    if det.effect_arp:
+        return -1, -1
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return -1, -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, VOICE_ARP_SHAPE.format(load=load))
+    if i <= -1:
+        return -1, -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 31 >= len(data):
+        return -1, -1
+    counter = data[p + 5] | data[p + 6] << 8
+    mask = data[p + 8] | data[p + 9] << 8
+    note = data[p + 13] | data[p + 14] << 8
+    interval = data[p + 17] | data[p + 18] << 8
+    if note != (data[p + 23] | data[p + 24] << 8):
+        return -1, -1                   # the two paths must load one note
+    if search_file(data, "FE %02X %02X" % (counter & 0xFF, counter >> 8)) <= -1:
+        return -1, -1                   # nothing increments it: not a counter
+    iv_off, mk_off = sid.to_offset(interval), sid.to_offset(mask)
+    for off in (iv_off, mk_off):
+        if not (0 <= off and off + VOICES <= len(data)):
+            return -1, -1
+    return iv_off, mk_off
 
 
 # Effect bit $08, in the same block family and on the same counter as

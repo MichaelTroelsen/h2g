@@ -165,11 +165,11 @@ def test_a_song_without_vibrato_records_is_left_alone():
 # ---------------------------------------------------------------------------
 # Mega_Apocalypse, the one unheld file this moves most.
 
-def _mega(log):
+def _mega(log, **extra):
     import fidelity
     from h2g.convert import convert
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
-    opts = fidelity._preset_opts(doc, "Mega_Apocalypse.sid")
+    opts = {**fidelity._preset_opts(doc, "Mega_Apocalypse.sid"), **extra}
     return fidelity, convert(str(CORPUS / "Mega_Apocalypse.sid"), log, **opts)
 
 
@@ -343,7 +343,9 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
                         (tracks, patterns, {}))
     import h2g.goatwriter.dead_blocks as DB
     monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
-    _fid, sng = _mega(lambda m: None)
+    # The pin's arm keeps the test-bit firstwave: since v0.5.588 Mega's
+    # preset names 1..62 in `gate_off_firstwave_instruments`.
+    _fid, sng = _mega(lambda m: None, gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
     # note_pitches=None in convert() the old sha comes back.

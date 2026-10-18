@@ -277,3 +277,13 @@ def test_the_uncommanded_phases_are_record_13_the_full_table_dropped():
     _, uncommanded = _reading(run, lag=1, shift=1)
     assert uncommanded == {13}, uncommanded
     assert any("PULSE TABLE FULL UNDER --pulse-phase" in m for m in run["log"])
+
+
+import pytest  # noqa: E402
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

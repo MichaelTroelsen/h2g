@@ -75,6 +75,12 @@ def _the_clamp(monkeypatch):
     # `phase-seed-minority-lattice`): the cycle an identity would make every
     # phase a minority.
     monkeypatch.setattr(P, "_minority_cycles", lambda want, cycle, step: {})
+    # ... and Last_V8's folded accumulate records (2 and 5: `ORA #$40`,
+    # detect.PULSE_LO_ORA_SHAPES, read since task
+    # frozen-pulse-phantoms-ninja-pygmies-nineteen) on the static width they
+    # had when this was measured, before the spelling was read: their
+    # programs take rows the clauses here never counted.
+    monkeypatch.setattr(P, "_pulse_lo_fold_program", lambda *a, **k: None)
 
 
 def _capture(name: str) -> dict:

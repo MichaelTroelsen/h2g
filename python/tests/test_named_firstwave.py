@@ -184,8 +184,12 @@ def test_at_s1_nothing_is_carried_only_reclassified(tmp_path):
     is no longer sub-$10; the same frames are still `tie_orig_only` and
     `tie_same_frame` is unchanged."""
     name = "Mega_Apocalypse.sid"
-    base = _row(tmp_path, name, 60)
-    got = _row(tmp_path, name, 60, named_firstwave=True)
+    # Both arms with `gate_off_firstwave_instruments` off: since v0.5.588
+    # Mega's preset names 1..62, whose gate-off byte is a waveform (not
+    # sub-$10) and so already reclassifies the frames this measures.
+    off = dict(gate_off_firstwave_instruments=[])
+    base = _row(tmp_path, name, 60, **off)
+    got = _row(tmp_path, name, 60, named_firstwave=True, **off)
     assert base["multiplier"] == 1
     assert base["tie_orig_only_firstwave"] > 100
     assert got["tie_orig_only_firstwave"] == 0

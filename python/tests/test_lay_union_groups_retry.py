@@ -10,6 +10,8 @@ Scripts in C:/t/lay-pulse-phase-table-adopts-union-groups.
 """
 from __future__ import annotations
 
+import pytest
+
 import sys
 from pathlib import Path
 
@@ -43,3 +45,12 @@ def test_human_race_keeps_six_records_with_both_unions():
                                  lead, True)
     assert len(t[0]) <= 255
     assert t[6] >= 6
+
+
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

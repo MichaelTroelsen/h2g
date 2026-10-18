@@ -46,6 +46,7 @@ from fidelity import (_preset_opts, _preset_multiplier, legalise_restarts,
                       run_siddump,
                       traced_window, GT2RELOC, SIDDUMP, WORKDIR)
 from h2g import __version__
+from extra_pages import EXTRA_PAGES, extra_for
 from h2g.convert import convert
 
 SID2WAV = r"C:\Users\mit\claude\c64server\SIDM2\tools\SID2WAV.EXE"
@@ -595,7 +596,8 @@ def select_names(files, stage_all: bool, presets: str) -> list[str]:
     songs = doc.get("songs") or {}
     if not songs:
         raise ValueError(f"{presets} records no songs")
-    return sorted(set(names) | set(songs), key=str.lower)
+    # EXTRA_PAGES keys are page names (no .sid): a second subtune of a file.
+    return sorted(set(names) | set(songs) | set(EXTRA_PAGES), key=str.lower)
 
 
 def _load_fidelity_rows(path: Path) -> list[dict]:
@@ -945,7 +947,11 @@ def main(argv=None) -> int:
     paired_by_identity: list[str] = []
     for label, r in chosen:
         name = r["file"]
-        src = (sid_dir / name) if sid_dir else Path(name)
+        extra = extra_for(name)
+        # An extra page converts and renders its SOURCE file with the source's
+        # presets; only the staged file names carry the page name.
+        pname = extra["source"] if extra else name
+        src = (sid_dir / pname) if sid_dir else Path(pname)
         if not src.exists():
             print(f"  {name:44} missing", file=sys.stderr)
             continue
@@ -960,14 +966,18 @@ def main(argv=None) -> int:
             print(f"  {name:44} refused: {exc}", file=sys.stderr)
             continue
 
-        sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
-                                          matched_subtunes.get(name))
-        if ("matched_subtune" not in r and name not in matched_subtunes
+        if extra:
+            sub_orig = int(extra["subtune"])
+            sub_ours = int(extra.get("ours", sub_orig))
+        else:
+            sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
+                                              matched_subtunes.get(name))
+        if (not extra and "matched_subtune" not in r and name not in matched_subtunes
                 and not resolve_pair(src, args.subtune)[2]):
             paired_by_identity.append(name)
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 
-        if name not in (doc.get("songs") or {}):
+        if pname not in (doc.get("songs") or {}):
             # Counted as well as printed: _preset_opts warns through
             # warnings.warn, which Python DEDUPLICATES per call site, so a run
             # keying every name wrongly (a bare stem where presets.json keys
@@ -978,7 +988,7 @@ def main(argv=None) -> int:
             print(f"  {name:44} not in {Path(args.presets).name}; "
                   "converting with default options", file=sys.stderr)
         try:
-            sng = convert(str(src), log=lambda m: None, **_preset_opts(doc, name))
+            sng = convert(str(src), log=lambda m: None, **_preset_opts(doc, pname))
         except Exception as exc:  # noqa: BLE001
             print(f"  {name:44} not converted", file=sys.stderr)
             lines += [f"## {stem} — *{label}*", "",
@@ -1017,7 +1027,7 @@ def main(argv=None) -> int:
         # whole window, so ties swing the other way per note even as the
         # total falls -- calls=1 both hides real notes and manufactures
         # extra tied ones out of the notes it can still see.
-        multiplier = _preset_multiplier(doc, name)
+        multiplier = _preset_multiplier(doc, pname)
         # -t (a policy value shared by the whole pass) unless THIS row's own
         # length rule widened or shortened the window it was measured over --
         # see render_window's docstring for why the plain `seconds` fallback
@@ -1113,7 +1123,10 @@ def main(argv=None) -> int:
                       + (f" against **{sub_ours}** of ours (our numbering "
                          f"shifted when a subtune was dropped)"
                          if sub_ours != sub_orig else "")
-                      + ", the PSID header's own `startSong`.", ""]
+                      + (", an extra page (`extra_pages.EXTRA_PAGES`): song "
+                         f"{sub_orig + 1} of {pname}, not its `startSong`."
+                         if extra else ", the PSID header's own `startSong`."),
+                      ""]
         if name in paired_by_identity:
             lines += ["*No measured subtune correspondence was available "
                       "for this pairing (no `--from-json` row, and no "

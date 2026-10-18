@@ -322,7 +322,12 @@ def test_a_record_dialect_clone_holds_the_pulse_only_on_its_own_record(
     clone = song.instruments[-1]
     assert clone.name == record
     assert clone.gatetimer == base.gatetimer | G.GATETIMER_LEGATO
-    assert clone.firstwave == 0 and base.firstwave == G.FIRSTWAVE_TESTBIT
+    # The base's lead byte: the testbit, or since v0.5.588 (Monty's preset
+    # names 1..62 in `gate_off_firstwave_instruments`) the record's waveform
+    # with the gate CLEAR (`instruments.gate_off_firstwave`).
+    assert clone.firstwave == 0 and (
+        base.firstwave == G.FIRSTWAVE_TESTBIT
+        or (base.firstwave >= 0x10 and not base.firstwave & 0x01)), base
     assert clone.pulse_ptr == (0 if held else base.pulse_ptr)
     assert base.pulse_ptr
 

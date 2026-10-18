@@ -1632,6 +1632,13 @@ test dependency).
     (828c4c688679 -> 7c3e3ee909db); the other five converter patches leave the
     row byte-identical. WHY that change costs the gate is still not measured,
     and whether the loss is accepted is a user decision.
+    **RE-GRADED AT v0.5.588 (`build/fidelity.json` at 07c986d-dirty,
+    `-t 180`, presets with the `gate_off_firstwave_instruments` adoption):
+    the live pair is `wave` 96.6% / `gate` 78.1%.** The 94.1% / 71.1% pair
+    above is HISTORICAL. Measured as a single-file A/B at 07c986d (`-t 180
+    --sound`, committed presets.json against the adopted one): 94.1% / 71.1%
+    -> 96.6% / 78.1%, output_sha 81b08d8a8b64 -> 0b70a3cc7bca -- the
+    adoption alone moves it; the 5tt fall is recovered only in part.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes

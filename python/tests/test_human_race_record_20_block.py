@@ -323,3 +323,12 @@ def test_a_better_set_exists_but_does_not_hold_record_20():
     assert laid((1, 2)) == (233, [1, 2, 4, 18, 21], 477)
     assert laid((18, 23)) == (197, [1, 2, 4, 18, 23], 437)
     assert laid((1, 2), (18, 23)) == (242, [1, 2, 4, 18, 21, 23], 264)
+
+
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

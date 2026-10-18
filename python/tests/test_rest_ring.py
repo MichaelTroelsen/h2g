@@ -347,7 +347,7 @@ def test_las_vegas_voice_1_rings_through_its_rest():
 
 @needs_corpus
 @pytest.mark.parametrize("name,asked", [("Kentilla.sid", True),
-                                        ("Master_of_Magic.sid", False),
+                                        ("Master_of_Magic.sid", True),
                                         ("Las_Vegas_Video_Poker.sid", True)])
 def test_the_decoder_is_asked_only_for_a_player_with_the_bit_6_test(
         name, asked, monkeypatch):
@@ -357,6 +357,10 @@ def test_the_decoder_is_asked_only_for_a_player_with_the_bit_6_test(
     with the wait stored twice before the BIT (`STATUS_BIT6_TWICE_SHAPE`,
     `$ABC3-$ABD6`), and its rest is Las Vegas's (`DEC $AFC8` into the shared
     tail), so it is asked like Las Vegas (task kentilla-close-the-gaps).
+    RETRACTED too for Master of Magic: it has the test, spelled with the
+    volume between the counter store and the BIT (`$C0B3`-style,
+    STATUS_BIT6_LATE_ABS_SHAPE), its rest a `DEC $C408` like Las Vegas's,
+    so it is asked (task zoolook-tight-cutoffs).
     The mutation that drops the gate is invisible in the output bytes (the
     dedup key and the pass's cleanup absorb the markers it would write), so
     the gate is pinned where it acts -- on the request the decoder receives."""

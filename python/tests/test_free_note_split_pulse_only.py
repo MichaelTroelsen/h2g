@@ -50,7 +50,9 @@ def test_delta_splits_for_its_pulse_only_records():
             "1 last row, successor entered holding another instrument)"
             ) in free[0], free[0]
     split = [ln for ln in lines if ln.startswith("Entry instrument split")]
-    assert split and "5 pattern cop(ies) of 02, 03" in split[0], split
+    # 6 and pattern 53 since status-bit6-late-abs (Delta's rests detected,
+    # so they are KEYOFF rows): 53 now enters with two instruments too.
+    assert split and "6 pattern cop(ies) of 02, 03, 53" in split[0], split
 
 
 @needs_corpus

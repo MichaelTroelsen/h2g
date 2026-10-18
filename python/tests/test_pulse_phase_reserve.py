@@ -171,3 +171,13 @@ def test_the_reserve_leaves_no_record_without_a_width_at_any_limit():
         silent = [(share, cap, held[4])
                   for share, cap, _, held in _sweep_limits(name) if held[4]]
         assert not silent, (name, silent[:4])
+
+
+import pytest  # noqa: E402
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

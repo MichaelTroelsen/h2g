@@ -80,6 +80,7 @@ gets fixed, not here.
 """
 from __future__ import annotations
 
+import pytest
 import shutil
 import sys
 import tempfile
@@ -435,7 +436,10 @@ def test_thing_on_a_springs_frame_1153_fetch_is_the_decoders():
         if e[5] != b[5]:
             hidden.append((tick, e[2], e[3], e[5]))
         tick += tempo
-    assert hidden == [(1153, 72, "row", True), (1177, 84, "row", True)], hidden
+    # Since zoolook-tight-cutoffs both were rests the detector missed
+    # (STATUS_BIT6_LATE_ABS_SHAPE): they are KEYOFF rows now, so the bytes
+    # call them fetches too and nothing is left hidden.
+    assert hidden == [], hidden
     wd = Path(tempfile.mkdtemp(prefix="tri_lockstep_tos_"))
     try:
         local = wd / "o.sid"
@@ -651,6 +655,7 @@ def _reach(name: str, seconds: int = 180) -> dict:
     return out
 
 
+@pytest.mark.usefixtures("folds_unread")
 def test_what_reaches_the_packed_output():
     """Where the lockstep's plan reaches the finished, packed file, and what
     its extra writes cost (the `_REACH` table). Chimera and
@@ -666,3 +671,6 @@ def test_what_reaches_the_packed_output():
         if got != want:
             bad[name] = (got, want)
     assert not bad, bad
+
+
+from corpus import folds_unread  # noqa: E402,F401

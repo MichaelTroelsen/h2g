@@ -35,3 +35,16 @@ CORPUS = pathlib.Path(os.environ.get("H2G_CORPUS", DEFAULT))
 needs_corpus = pytest.mark.skipif(
     not CORPUS.is_dir(),
     reason=f"Hubbard corpus not found at {CORPUS} -- set H2G_CORPUS")
+
+
+@pytest.fixture
+def folds_unread(monkeypatch):
+    """Lay the FOLDED accumulate records (`ORA #$40`,
+    detect.PULSE_LO_ORA_SHAPES) on their static width, as every layout
+    measured before that spelling was read had them (task
+    frozen-pulse-phantoms-ninja-pygmies-nineteen). For the tests that pin a
+    forced-`pulse_phase` table on Human_Race, Last_V8, Ninja or Phantoms:
+    their figures count rows those programs now take. What the programs
+    cost there is pinned in tests/test_pulse_lo_fold_and_prog.py."""
+    from h2g.goatwriter import pulse as P
+    monkeypatch.setattr(P, "_pulse_lo_fold_program", lambda *a, **k: None)

@@ -223,3 +223,13 @@ def test_unions_buy_rows_and_records():
         assert (len(got[0]), {k[0] for k in got[2]}) == with_u, name
         assert (len(alone[0]), {k[0] for k in alone[2]}) == without, name
         assert got[4] == 0 and alone[4] == 0, name
+
+
+import pytest  # noqa: E402
+from corpus import folds_unread  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def _folds_as_measured(folds_unread):
+    """The layouts here were measured before the folded accumulate spelling
+    was read; see `corpus.folds_unread`."""

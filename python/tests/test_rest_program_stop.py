@@ -276,6 +276,13 @@ def _convert(name, **extra):
     return convert(str(CORPUS / name), log=lambda *a, **k: None, **opts)
 
 
+# IK+'s records on the test-bit firstwave ($09), the state the two park
+# tests below were measured in: since v0.5.588 its preset names 1..62 in
+# `gate_off_firstwave_instruments`, whose firstwave is a waveform, so the
+# park would carry no delay row in front of it.
+TESTBIT_LEAD = {"gate_off_firstwave_instruments": ()}
+
+
 def _need_corpus():
     if not CORPUS.exists() or not PRESETS.exists():
         pytest.skip("corpus or presets not present")
@@ -324,8 +331,9 @@ def test_ik_plus_every_rest_is_stopped_or_a_plain_keyoff():
     pointer; the park is two rows."""
     _need_corpus()
     import songview as S
-    base = S.parse_sng(_convert("IK_plus.sid"))
-    song = S.parse_sng(_convert("IK_plus.sid", rest_program_stop=True))
+    base = S.parse_sng(_convert("IK_plus.sid", **TESTBIT_LEAD))
+    song = S.parse_sng(_convert("IK_plus.sid", rest_program_stop=True,
+                                **TESTBIT_LEAD))
     w = song.tables["WTBL"]
     at = [i + 1 for i in range(len(w) - 1)
           if w[i] == PARK[0] and w[i + 1] == PARK[1]]
@@ -350,9 +358,10 @@ def test_ik_plus_the_stop_ends_the_program_the_original_ends():
     (the `$09F8` surplus); with it the voice reads `$08` and the pointer is 0."""
     _need_corpus()
     import songview as S
-    song = S.parse_sng(_convert("IK_plus.sid", rest_program_stop=True))
+    song = S.parse_sng(_convert("IK_plus.sid", rest_program_stop=True,
+                                **TESTBIT_LEAD))
     w = song.tables["WTBL"]
-    park = [i for i in range(len(w) - 1)
+    park =[i for i in range(len(w) - 1)
             if w[i] == PARK[0] and w[i + 1] == PARK[1]][0]   # the delay row
     prog = [i for i in song.instruments
             if i.effect_byte and i.effect_byte & 0x08 and i.wave_ptr]

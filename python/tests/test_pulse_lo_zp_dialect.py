@@ -33,6 +33,14 @@ ACCUMULATE_FILES = {
     "Zoids",
 } | set(ZP_DIALECT)
 
+# The folded spelling (`ORA #$40`, detect.PULSE_LO_ORA_SHAPES), numbered
+# after PULSE_LO_SHAPES: the STA spelling in seven files, the JSR one in
+# Phantoms_of_the_Asteroid (tests/test_pulse_lo_fold_and_prog.py).
+FOLD_DIALECT = {s: 3 for s in ("Chimera", "Crazy_Comets", "Game_Killer",
+                               "Human_Race", "Last_V8",
+                               "Last_V8_C128_version", "Ninja")}
+FOLD_DIALECT["Phantoms_of_the_Asteroid"] = 4
+
 
 def _load(stem):
     sid = load_sid(str(CORPUS / f"{stem}.sid"))
@@ -68,9 +76,10 @@ def test_the_corpus_population_is_exactly_these_files():
         if det.pulse_lo_base >= 0:
             found.add(path.stem)
             spellings[path.stem] = _block(sid, det)[2]
-    assert found == ACCUMULATE_FILES
-    # The fallbacks reach exactly the two files and no absolute-dialect file.
-    assert {s: k for s, k in spellings.items() if k} == ZP_DIALECT
+    assert found == ACCUMULATE_FILES | set(FOLD_DIALECT)
+    # The fallbacks reach exactly these files and no absolute-dialect file.
+    assert {s: k for s, k in spellings.items() if k} == {**ZP_DIALECT,
+                                                         **FOLD_DIALECT}
 
 
 def _mutated(sid, old: bytes, new: bytes):

@@ -72,7 +72,12 @@ def test_trans_atlantic_clones_leave_the_waveform_to_the_wavetable():
     # the 8 still leaves its waveform to the wavetable.
     assert len(pairs) == 8
     for clone, base in pairs:
-        assert base.firstwave == G.FIRSTWAVE_TESTBIT
+        # The testbit, or since v0.5.588 (its preset names 1..62 in
+        # `gate_off_firstwave_instruments`) the record's waveform with the
+        # gate CLEAR (`instruments.gate_off_firstwave`): either way not a
+        # gated waveform a clone could copy.
+        assert base.firstwave == G.FIRSTWAVE_TESTBIT or (
+            base.firstwave >= 0x10 and not base.firstwave & 0x01), base
         assert _opens_on_a_waveform(song, clone)
         assert clone.firstwave == 0, clone
 
