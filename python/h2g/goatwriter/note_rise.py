@@ -589,7 +589,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                     wave_starts: Optional[List[int]] = None,
                     wave_pointers: Optional[List[int]] = None,
                     extend: bool = True, info: Optional[dict] = None,
-                    isolate: bool = True, copies: int = 0
+                    isolate: bool = True, copies: int = 0,
+                    subtune_row_calls: tuple = ()
                     ) -> Optional[_gw_skydive.SkydivePlan]:
     """The rows holding a store of every long note on a bit-$02 record, each
     pointed at its store's program, or None where nothing is taken.
@@ -660,8 +661,17 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         if dur > NOTE_RISE_MAX_DURATION or dur < nr.min_length:
             continue                     # the block's own length test: none
         frames = speeds.frames_for(ti // 3)
+        # The subtune's own row where convert passed one (its CMD_SETTEMPO,
+        # `group_tempos`), else the file-wide one. The file-wide value is the
+        # SHORTEST row (`short_row_calls`), so with it every subtune slower
+        # than the fastest was declined: Gerry_the_Germ's tempos are
+        # [3, 3, 2, 3, 3, 4, 3] and only subtune 2's rows were taken, not
+        # subtune 0's $A0F0 lead.
+        sub = ti // 3
+        want = (subtune_row_calls[sub] if sub < len(subtune_row_calls)
+                else row_calls)
         if (frames not in NOTE_RISE_ROW_TICKS
-                or frames * tick_calls != row_calls):
+                or frames * tick_calls != want):
             decline("rows not two or three ticks")
             continue
         if not delays_fit(frames, tick_calls):
@@ -673,8 +683,12 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         high = _gw_skydive._high_byte(sid, note)
         # The `BEQ` on savehi: a rising byte stops once it wraps to zero, a
         # falling one after it stores 1.
-        cap = (0x100 - high) if nr.step > 0 else high
-        kcap = min(cap, NOTE_RISE_MAX_STEP + 1)
+        # A block stepping twice a store (Gerry_the_Germ, `step` 2) meets
+        # zero only from an even byte; from an odd one it would wrap past
+        # it, which a 16-bit portamento cannot follow, so it is cut there.
+        size = abs(nr.step)
+        cap = -(-((0x100 - high) if nr.step > 0 else high) // size)
+        kcap = min(cap, NOTE_RISE_MAX_STEP // size + 1)
         stores = store_rows(phase, lag, frames, length, kcap)
         kbase = max([kbase] + [k for v in stores.values() for k, _h in v])
         more = (continuation(rows, patterns, a, length, nr.min_length)
@@ -744,7 +758,7 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                     fmt, multiplier, gate_skip, row_calls, speed_table,
                     wave_used, no_test_restart, real_firstwave, log, reserve,
                     wave_entries, wave_starts, wave_pointers, extend, info,
-                    False, made)
+                    False, made, subtune_row_calls=subtune_row_calls)
                 if again is not None:
                     return _dc_replace(again, tracks=new_tracks)
     taken: Dict[tuple, tuple] = {}
@@ -835,7 +849,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                 yield trial_values, trial_rows
 
     def speed_index(k: int) -> int:
-        entry = (k, 0x00)
+        # Store k is `step * k` high-byte steps above (below) the note.
+        entry = (k * abs(nr.step), 0x00)
         if entry not in speed_table:
             speed_table.append(entry)
         return speed_table.index(entry) + 1
@@ -997,7 +1012,8 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
            if dropped_stores else " (nearest)")
     say(f"{edited} store row(s) on instrument(s) {sorted(numbers)}, "
         f"{len(chosen)} of {kmax} store value(s){how}, "
-        f"{'+' if nr.step > 0 else '-'}$100 a step on the rows' "
+        f"{'+' if nr.step > 0 else '-'}${0x100 * abs(nr.step):X} a step "
+        f"on the rows' "
         f"{'/'.join(names[h] for h in halves)} tick, "
         f"{tick_calls} calls a tick, {len(entries)} wavetable step(s) at "
         f"{wave_used + 1}"
@@ -1085,7 +1101,8 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                    log=None, reserve: int = 0,
                    wave_entries: Optional[List[tuple]] = None,
                    wave_starts: Optional[List[int]] = None,
-                   wave_pointers: Optional[List[int]] = None
+                   wave_pointers: Optional[List[int]] = None,
+                   subtune_row_calls: tuple = ()
                    ) -> Optional[_gw_skydive.SkydivePlan]:
     """`_rise_plan_once`, with the rise carried on through the rest after a note
     (`continuation`) where that costs the notes' own stores nothing.
@@ -1109,7 +1126,8 @@ def note_rise_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
             gate_skip, row_calls, table, wave_used, no_test_restart,
             real_firstwave, lines.append, reserve, wave_entries, wave_starts,
-            wave_pointers, extend, info)
+            wave_pointers, extend, info,
+            subtune_row_calls=tuple(subtune_row_calls))
         return plan, table, lines, info
 
     kept = run(True)

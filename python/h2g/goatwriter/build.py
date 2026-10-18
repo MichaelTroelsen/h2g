@@ -520,6 +520,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               pitch_seq: bool = False,
               note_rows: Optional[dict] = None,
               row_calls: int = 0,
+              subtune_row_calls: tuple = (),
               voice_two_stage: bool = False,
               instr_voices: Optional[dict] = None,
               instr_row_calls: Optional[dict] = None,
@@ -1421,7 +1422,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             wave_pointers=[r for r in (
                 list(arp_starts) + clone_starts + phase_clone_starts
                 + tie_block_starts + attack_hold_starts + cut_starts
-                + drum_starts) if r])
+                + drum_starts) if r],
+            subtune_row_calls=subtune_row_calls)
         if rise is not None:
             patterns = rise.patterns
             if rise.tracks is not None:

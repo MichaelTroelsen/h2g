@@ -1376,6 +1376,7 @@ def convert(sid_path: str, log: Logger = print,
                          note_spans=played_duration_histograms(
                              tracks, new_patterns),
                          row_calls=short_row_calls,
+                         subtune_row_calls=tuple(group_tempos or ()),
                          compact_instruments=compact_instruments,
                          real_firstwave_instruments=real_firstwave_instruments,
                          gate_off_firstwave_instruments=gate_off,

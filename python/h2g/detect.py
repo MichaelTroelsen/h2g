@@ -2157,7 +2157,10 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             if det.note_rise is not None:
                 nr = det.note_rise
                 log(f"Effect bit $02..........: high byte "
-                    f"{'up' if nr.step > 0 else 'down'} a step every other "
+                    f"{'up' if nr.step > 0 else 'down'} "
+                    + ("a step" if abs(nr.step) == 1
+                       else f"${abs(nr.step):02X} a store")
+                    + " every other "
                     f"tick of notes of length >= {nr.min_length}, on "
                     f"${nr.counter:04X}")
     if det.effect_arp and not det.arp_fixed_up:
@@ -5511,6 +5514,33 @@ NOTE_RISE_AT_COUNTER = 14
 NOTE_RISE_AT_SAVE = 21
 NOTE_RISE_AT_STEP = 25          # the opcode: $FE INC, $DE DEC
 NOTE_RISE_STEPS = {0xFE: 1, 0xDE: -1}
+# The same block stepping TWICE a store, Gerry_the_Germ $E339 (Commando
+# $5339 and Geoff_Capes $1339 the same; a byte scan of the 95 files for this
+# shape finds those three and no other, the single-step shape the five above):
+#
+#     E34D  BD 1F E5  LDA savehi,X / BEQ out
+#           FE 1F E5  INC savehi,X
+#           FE 1F E5  INC savehi,X   ; +2 a store
+#           AC EB E4  LDY voiceofs
+#           99 01 D4  STA $D401,Y    ; A holds the value BEFORE both steps
+#
+# siddump of Gerry, voice 1 from its $A0F0 note at frame 3841: `1D46 ...
+# 1F46 1D46 2146 1D46 2346 1D46 2546 ...` -- the record's note re-assert
+# (+5 nonzero) on the even frames, the byte rising $02 a store on the odd
+# ones. A fallback, consulted only where NOTE_RISE_SHAPE matched nothing.
+NOTE_RISE_DOUBLE_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? AD ?? ?? "
+                          "29 01 F0 ?? BD ?? ?? F0 ?? ?? ?? ?? ?? ?? ?? AC "
+                          "?? ?? 99 01 D4")
+
+
+def _note_rise_block(data: bytes, load: str) -> Tuple[int, int]:
+    """(file offset of the block's `AND #$02`, its step instructions), or
+    (-1, 0): NOTE_RISE_SHAPE, else NOTE_RISE_DOUBLE_SHAPE."""
+    for shape, count in ((NOTE_RISE_SHAPE, 1), (NOTE_RISE_DOUBLE_SHAPE, 2)):
+        at = search_file(data, f"{load} {shape}")
+        if at >= 1:
+            return at, count
+    return -1, 0
 
 
 @dataclass(frozen=True)
@@ -5518,7 +5548,9 @@ class NoteRise:
     """The window-less skydive block's operands, read from the block itself."""
     counter: int        # address of the every-other-tick counter
     min_length: int     # a note whose `dur & $1F` is below this has none
-    step: int           # +1 where the block INCs savehi, -1 where it DECs
+    # +1 where the block INCs savehi, -1 where it DECs; +2 / -2 where it
+    # steps it twice a store (NOTE_RISE_DOUBLE_SHAPE)
+    step: int
 
 
 @dataclass(frozen=True)
@@ -5596,18 +5628,25 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     lead = 2 if zp else 3
     data = sid.data
-    at = search_file(data, f"{load} {NOTE_RISE_SHAPE}")
+    at, count = _note_rise_block(data, load)
     if at < 1:
         return None
     b = at + lead
     step = NOTE_RISE_STEPS.get(data[b + NOTE_RISE_AT_STEP])
-    if step is None or data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2] \
-            != data[b + NOTE_RISE_AT_STEP + 1:b + NOTE_RISE_AT_STEP + 3]:
+    if step is None:
         return None
+    # Every step instruction the same `INC`/`DEC` of the cell `LDA savehi`
+    # read: the doubled spelling is two of them, never one of each.
+    for n in range(count):
+        s = b + NOTE_RISE_AT_STEP + 3 * n
+        if (data[s] != data[b + NOTE_RISE_AT_STEP]
+                or data[s + 1:s + 3]
+                != data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2]):
+            return None
     return NoteRise(
         counter=data[b + NOTE_RISE_AT_COUNTER]
         | data[b + NOTE_RISE_AT_COUNTER + 1] << 8,
-        min_length=data[b + NOTE_RISE_AT_MIN], step=step)
+        min_length=data[b + NOTE_RISE_AT_MIN], step=step * count)
 
 
 # How far into the bit-6 branch to look for a store to the stepped byte.
@@ -5641,7 +5680,7 @@ def note_rise_rest_carries_on(sid: SidFile, det: Detection) -> bool:
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     data = sid.data
-    at = search_file(data, f"{load} {NOTE_RISE_SHAPE}")
+    at, _count = _note_rise_block(data, load)
     if at < 1:
         return False
     b = at + (2 if zp else 3)

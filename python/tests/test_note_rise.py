@@ -11,6 +11,7 @@ our 479 at -t 180 (re-measured on 6e467ff + the c6 merge, under presets),
 1173 of the file's 1186 missing. Battle_of_Britain $82CC is the same block
 with DEC.
 """
+import dataclasses
 import json
 import pathlib
 import re
@@ -46,6 +47,11 @@ BLOCKS = {
     "Crazy_Comets": (0x5509, 0x11, -1),
     "Game_Killer": (0x0C8B, 0x11, 1),
     "Human_Race": (0x0DE2, 0x11, 1),
+    # NOTE_RISE_DOUBLE_SHAPE: two INCs a store. Commando has the block and
+    # no record with bit $02, so nothing is emitted for it.
+    "Commando": (0x5525, 0x03, 2),
+    "Geoff_Capes_Strongman_Challenge": (0x152A, 0x03, 2),
+    "Gerry_the_Germ": (0xE52A, 0x03, 2),
 }
 
 
@@ -65,7 +71,7 @@ def _converted(name, **extra):
 
 
 @needs_corpus
-def test_the_block_is_read_in_exactly_the_five_files_that_carry_it():
+def test_the_block_is_read_in_exactly_the_eight_files_that_carry_it():
     found = {}
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))
@@ -329,3 +335,84 @@ def test_battle_of_britains_falling_stores_are_on_the_rows_second_tick(
     without = _agreement("Battle_of_Britain", 2, 120, 0x0FF, keep, tmp_path, "none")
     assert all(without[vi][1] <= emitted[vi][0] // 50 for vi in (0, 1)), \
         without
+
+
+@needs_corpus
+def test_the_doubled_block_reads_a_step_of_two():
+    """Gerry_the_Germ $E34D: `INC savehi,X` twice before the store
+    (NOTE_RISE_DOUBLE_SHAPE), so the step is 2, not the 1 the single-INC
+    reading would give."""
+    _sid, det = _det("Gerry_the_Germ")
+    assert det.note_rise == NoteRise(counter=0xE52A, min_length=3, step=2)
+
+
+@needs_corpus
+@needs_siddump
+def test_gerrys_original_steps_the_byte_by_two_on_alternate_frames():
+    """Voice 1's $A0F0 note at frame 3841 reads the note's own $1D46 on
+    every even frame (the record's note re-assert) and $1D + 2k over its low
+    byte on the odd ones from 3843 (k = 0, 1, ...)."""
+    orig = fidelity.run_siddump(CORPUS / "Gerry_the_Germ.sid", 80, 0)
+    fq = fidelity.register_timeline(orig[1].freq_events, 3860)
+    assert fq[3841] == 0x1D46
+    for k in range(8):
+        assert fq[3843 + 2 * k] == 0x1D46 + 0x200 * k, (k, hex(fq[3843 + 2 * k]))
+        assert fq[3844 + 2 * k] == 0x1D46, k
+
+
+def _gerry_lead(tmp_path, sub):
+    """(the original's voice-1 frames 3848-3857, ours at the startup lag,
+    the store agreement of `_agreement` on the $A0F record over 100 s)."""
+    def keep(hi, onset):
+        return 2 <= hi - onset <= 0x40
+    orig = fidelity.run_siddump(CORPUS / "Gerry_the_Germ.sid", 100, 0)
+    sng, _, _ = _converted("Gerry_the_Germ")
+    work = tmp_path / sub
+    work.mkdir()
+    packed = fidelity.pack_sid(sng, work, multiplier=1)
+    assert packed is not None and packed.exists(), sub
+    ours = fidelity.run_siddump(packed, 102, 0, calls=1)
+    lag = fidelity.startup_lag(orig, ours)[0]
+    fo = fidelity.register_timeline(orig[1].freq_events, 3860)
+    fu = fidelity.register_timeline(ours[1].freq_events, 3860 + lag)
+    stores = _hi_frames(orig, 5000, 0xA0F, keep)
+    fa = {vi: fidelity.register_timeline(ours[vi].freq_events, 5000 + lag + 1)
+          for vi in stores}
+    total = sum(len(g) for g in stores.values())
+    same = sum(fa[vi][f + lag] >> 8 == hi
+               for vi, g in stores.items() for f, hi in g.items())
+    return ([fo[f] for f in range(3848, 3858)],
+            [fu[f + lag] for f in range(3848, 3858)], total, same)
+
+
+@needs_corpus
+@needs_siddump
+@needs_gt2reloc
+def test_gerrys_lead_alternates_like_the_original(tmp_path, monkeypatch):
+    """Through gt2reloc and siddump under presets (-S1): voice 1's frames
+    3848-3857, `1D46 2346 1D46 2546 1D46 2746 1D46 2946 1D46 2B46` in the
+    original, are the same ten values in ours (they were $1D46 on every frame
+    before the doubled block was read), and of the frames any $A0F note sits
+    2 or more above its note's high byte over 100 s ours reads the same
+    byte on most. Read as one INC a store the rise climbs half as fast and
+    the window misses; with the file-wide shortest row (`row_calls`, 2
+    calls) in place of subtune 0's own 3, the lead is declined and held."""
+    orig, ours, total, same = _gerry_lead(tmp_path, "emitted")
+    assert ours == orig, ([f"{x:04X}" for x in orig], [f"{x:04X}" for x in ours])
+    assert total >= 200 and same >= 0.6 * total, (total, same)
+
+    real = R._rise_plan_once
+
+    def one_a_store(sid, det, *a, **k):
+        nr = det.note_rise
+        return real(sid, dataclasses.replace(
+            det, note_rise=NoteRise(nr.counter, nr.min_length, 1)), *a, **k)
+    monkeypatch.setattr(R, "_rise_plan_once", one_a_store)
+    _o, single, _t, single_same = _gerry_lead(tmp_path, "single")
+    assert single != orig and single_same <= same // 4, (single_same, same)
+
+    def file_wide_row(*a, subtune_row_calls=(), **k):
+        return real(*a, **k)
+    monkeypatch.setattr(R, "_rise_plan_once", file_wide_row)
+    _o, held, _t, held_same = _gerry_lead(tmp_path, "file_wide")
+    assert held == [0x1D46] * 10 and held_same <= same // 4, (held, held_same)

@@ -70,6 +70,10 @@ def test_a_row_of_three_ticks_of_nine_calls_is_declined(monkeypatch):
     def wrapped(*a, **k):
         a = list(a)
         a[9] = 27                                   # row_calls
+        # ... and every subtune's own row too (`subtune_row_calls`, which
+        # the plan reads before the file-wide one)
+        k["subtune_row_calls"] = tuple(27 for _ in k.get(
+            "subtune_row_calls", ()))
         return real(*a, **k)
     monkeypatch.setattr(R, "_gate_calls", lambda m, g: 9)
     monkeypatch.setattr(R, "note_rise_plan", wrapped)

@@ -186,7 +186,9 @@ def test_the_five_rise_players_carry_the_byte_through_a_bit6_event():
 
 @needs_corpus
 def test_a_player_without_the_block_carries_nothing():
-    sid = load_sid(str(CORPUS / "Commando.sid"))
+    # Not Commando any more: it carries the two-INC spelling
+    # (NOTE_RISE_DOUBLE_SHAPE), with no record that sets the bit.
+    sid = load_sid(str(CORPUS / "Monty_on_the_Run.sid"))
     det = D.detect(sid, lambda *a, **k: None)
     assert det.note_rise is None
     assert not D.note_rise_rest_carries_on(sid, det)

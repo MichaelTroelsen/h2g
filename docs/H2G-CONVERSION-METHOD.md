@@ -14755,6 +14755,37 @@ narrow window 186 -> 174 when the first version did). Game_Killer `-t 180`:
 12.1 -> 4.45. The byte-hash moves Battle_of_Britain and Game_Killer.
 `tests/test_note_rise_pin_release.py`.
 
+**Two `INC`s a store: Gerry_the_Germ's lead** (on 843b6de,
+`gerry-the-germ-alternating-lead`; measured -t 180 under presets). Three more files carry the block with
+`savehi` stepped twice before the store (`NOTE_RISE_DOUBLE_SHAPE`, a
+fallback consulted only where `NOTE_RISE_SHAPE` matched nothing): Gerry
+`$E339`, Commando `$5339`, Geoff_Capes `$1339`, all MIN `$03`:
+
+```
+E34D  LDA savehi,X / BEQ out
+      INC savehi,X / INC savehi,X       ; +2 a store
+      LDY voice    / STA $D401,Y        ; the byte BEFORE both INCs
+```
+
+`NoteRise.step` is then `+2`, store k is a speed-table jump of `$200 * k`
+and the cap is where the byte would wrap. Gerry's record with ADSR `$A0F0`
+carries the note re-assert (+5 nonzero), so siddump of voice 1 from its
+note at frame 3841 reads `$1D46` on every even frame and `$1D46 + $200k` on
+the odd ones; frames 3848-3857 are `1D46 2346 1D46 2546 1D46 2746 1D46 2946
+1D46 2B46`. Ours held `$1D46` on every frame, for two reasons: the
+shape did not match, and the plan's row test compared every subtune
+against the file-wide SHORTEST row (`short_row_calls`, 2 calls; Gerry's
+tempos are `[3, 3, 2, 3, 3, 4, 3]`), so only subtune 2's notes were ever
+taken. `convert` now passes each subtune's own row (`group_tempos`) as
+`subtune_row_calls`. Under presets the ten frames above now read the same
+ten values; over 95 s the frames where the original alternates a fixed
+pitch with a monotonic one went from 594 held to 0 held and 594 exact.
+No `FIDELITY.md` column sees it -- `travel` drops a step over the note
+cutoff and `$200` is one, `aud` -.0004 within noise. The byte-hash moves
+Gerry_the_Germ and Geoff_Capes (subtunes 3 and 5; the measured subtune 0
+is unchanged); Commando has the block and no record with the bit, and is
+byte-identical. `tests/test_note_rise.py`.
+
 ### 7.aaaaaaaa Effect bit `$02`'s fourth reading: Rasputin's EOR toggle, emitted per note
 
 Rasputin's player reads bit `$02` a fourth way. It is not the rise, the
