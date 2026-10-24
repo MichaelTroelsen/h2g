@@ -898,6 +898,7 @@
 {"id":"regrid-occupied-column-guard-only-checks-voice-0","summary":null}
 {"id":"regrid-over-supplies-a-subtune-whose-exclusive-patterns-replay","summary":null}
 {"id":"regrid-per-play-greedy-shortfall","summary":"_regrid_per_play gains a repair pass that lowers one exclusive pattern and refills the rest: Star_Paws now pays 147 of 147.28 calls (was 135); 0 movers under presets. Merged."}
+{"id":"regrid-per-play-per-song-adoption","summary":"regrid_per_play adopted for Auf_Wiedersehen_Monty, Nineteen and One_on_One_Jordan_vs_Bird (v0.5.594): wave +5.1/+6.2/+5.1pp, gate +16.3/+5.5/+14.3pp, no scored column down; converted bytes differ on exactly those 3 files."}
 {"id":"regrid-tie-row-compensation","summary":"regrid_tempos moves a compensation pair a tie row occupies to the nearest clean free row instead of skipping it. 11 regrid adopters move under presets (incl. held Arcade_Classics)."}
 {"id":"regrid-unplaced-pairs-slides","summary":"A regrid pair no clean row can take now goes inside a run of identical 1XY/2XY cells (patterns._slide_covered_regrid_spot); Nineteen's one pair placed, drift_per_1000 -1.606 -> -1.457; the 6 tie-blocked pairs stay unplaced (follow-up opened)."}
 {"id":"reject-phantoms-and-rest-instrument-are-live-on-zero-files","summary":"Finished: presets.json regenerated at 317c259 and its always block no longer carries reject_phantoms; every verify clause now holds."}

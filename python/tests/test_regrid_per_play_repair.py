@@ -83,7 +83,7 @@ def test_regrid_per_play_is_off_by_default():
     from h2g.convert import convert
     assert inspect.signature(convert).parameters["regrid_per_play"].default is False
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
-    blocks = [doc["always"]] + list(doc["songs"].values())
+    blocks = [doc["always"]]  # per-song adopters are allowed (v0.5.594)
     assert not any(b.get("regrid_per_play") for b in blocks)
 
 

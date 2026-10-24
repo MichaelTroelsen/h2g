@@ -132,5 +132,6 @@ def test_bangkok_knights_is_never_late_at_a_play_boundary(monkeypatch):
 @needs_corpus
 def test_monty_is_never_late_at_a_play_boundary(monkeypatch):
     name = "Auf_Wiedersehen_Monty.sid"
-    assert max(_corpus_ledger(monkeypatch, name, regrid_full_debt=True)) > 1
+    assert max(_corpus_ledger(monkeypatch, name, regrid_full_debt=True,
+                              regrid_per_play=False)) > 1
     assert max(_corpus_ledger(monkeypatch, name, regrid_per_play=True)) <= 1e-9

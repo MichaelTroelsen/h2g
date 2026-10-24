@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.593 presets.py",
+  "generator": "h2g 0.5.594 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -259,6 +259,7 @@
         16
       ],
       "regrid": true,
+      "regrid_per_play": true,
       "rest_envelope_silence": true
     },
     "Bangkok_Knights.sid": {
@@ -1865,7 +1866,8 @@
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true,
-      "regrid_full_debt": true
+      "regrid_full_debt": true,
+      "regrid_per_play": true
     },
     "Ninja.sid": {
       "max_rows": 128,
@@ -1982,7 +1984,8 @@
       "two_stage": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3,
-      "regrid": true
+      "regrid": true,
+      "regrid_per_play": true
     },
     "Pacific_Coast.sid": {
       "max_rows": 94,

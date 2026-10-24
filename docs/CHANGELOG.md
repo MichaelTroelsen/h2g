@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.594 — 2026-10-24
+
+- regrid_per_play adopted for Auf_Wiedersehen_Monty, Nineteen and One_on_One_Jordan_vs_Bird: wave and gate up, no scored column down
+
 ## 0.5.593 — 2026-10-24
 
 - aligned_firstwave adopted for Chicken_Song and Ninja; Tarzan takes the gate-off firstwave arm (no_test_restart off): melody, wave and onset up, no scored column down
