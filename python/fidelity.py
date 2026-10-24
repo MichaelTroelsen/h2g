@@ -5238,6 +5238,80 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
     return out
 
 
+CTRL_SYNC = 0x02
+CTRL_RING = 0x04
+CTRL_BITS = CTRL_SYNC | CTRL_RING | WF_TEST     # $D404 bits 1-3
+
+
+def _ours_firstwave_frame(t: list[int], f: int) -> bool:
+    """Our `$09` firstwave frame: no waveform selected, test and gate set.
+
+    The frame the converter spends opening every note (FIRSTWAVE_TESTBIT) --
+    by construction, so it is not a test bit the player chose. Timeline-only
+    on purpose, so the siddump and --vice paths share it.
+    """
+    return (not t[f] & 0xF0) and bool(t[f] & WF_TEST) and bool(t[f] & GATE_BIT)
+
+
+def _ctrl_stats(pairs: list[tuple[list[int], list[int]]], lag: int) -> dict:
+    """`ctrl_bits_compare`'s arithmetic on per-voice (orig, ours) $D404
+    timelines, unaligned. Ours has its firstwave frames' test bit cleared
+    first, so the `$09` that opens each note is charged to neither the test
+    count nor `ctrl`."""
+    o = {"sync": 0, "ring": 0, "test": 0}
+    u = {"sync": 0, "ring": 0, "test": 0}
+    fw = agree = total = 0
+    for ta, tb in pairs:
+        tb = list(tb)
+        for f in range(len(tb)):
+            if _ours_firstwave_frame(tb, f):
+                tb[f] &= ~WF_TEST
+                fw += 1
+        for side, t in ((o, ta), (u, tb)):
+            for x in t:
+                side["sync"] += bool(x & CTRL_SYNC)
+                side["ring"] += bool(x & CTRL_RING)
+                side["test"] += bool(x & WF_TEST)
+        for x, y in zip(*_aligned(ta, tb, lag)):
+            if (x | y) & CTRL_BITS:
+                total += 3
+                agree += 3 - bin((x ^ y) & CTRL_BITS).count("1")
+    out: dict = {f"{side}_{k}_frames": v[k]
+                 for side, v in (("orig", o), ("our", u)) for k in v}
+    out["our_test_firstwave_frames"] = fw
+    for k in ("sync", "ring"):
+        out[k] = (u[k] / o[k]) if o[k] else None
+    out["ctrl"] = (agree / total) if total else None
+    out["ctrl_frames"] = total // 3
+    return out
+
+
+def ctrl_bits_compare(orig: list[Voice], ours: list[Voice], nframes: int,
+                      lag: int = 0) -> dict:
+    """$D404's bits 1-3 -- sync, ring-mod, test -- which `wave` masks away
+    (`& $F0`), so a lost ring modulation or sync read 100% there.
+
+    `sync` and `ring` are one-sided frame counts, ours over the original's
+    (summed over voices, unaligned like `noise`), `None` when the ORIGINAL has
+    none: a ratio against nothing is not a score, and 1.0 there would read a
+    file that never uses the bit as a file that keeps it. Below 1.0 is a bit
+    we lost; above it, one we invented. `ctrl` is the bitwise agreement of
+    bits 1-3 over the lag-aligned frames on which either side sets one,
+    three bits a frame.
+
+    The `$09` firstwave frame opening each of our notes
+    (`_ours_firstwave_frame`) carries the test bit by construction and is not
+    charged; `our_test_firstwave_frames` counts them. A test bit the ORIGINAL
+    sets is always charged. Caveat: under `no_test_restart` our firstwave is
+    `$FF`-shaped (a waveform plus every control bit) and IS charged, ring and
+    sync included -- that is the converter writing bits the player did not.
+    """
+    return _ctrl_stats(
+        [(register_timeline(a.wf_events, nframes),
+          register_timeline(b.wf_events, nframes))
+         for a, b in zip(orig, ours)], lag)
+
+
 def _volume_stats(ta: list[int], tb: list[int]) -> dict:
     """`volume_compare`'s arithmetic on two already-aligned nibble timelines.
 
@@ -5516,6 +5590,11 @@ def vice_register_compare(orig_samples: list, our_samples: list,
         cells = vicetrace.frame_cells_global(samples, lambda s: s.modevol)
         return [c.representative() & 0xF for c in cells][:nframes]
     out.update(_volume_stats(vol_col(orig_samples), vol_col(our_samples)))
+    # --- sync/ring/test: the same bits wave masks, no lag (as the rest) -----
+    out.update(_ctrl_stats(
+        [([wave_cells_o[f][vi].representative(mode) for f in range(nframes)],
+          [wave_cells_u[f][vi].representative(mode) for f in range(nframes)])
+         for vi in range(3)], 0))
     out["vice_frames"] = nframes
     out["vice_reduce"] = mode
     return out
@@ -7080,6 +7159,25 @@ DIMENSIONS = (
               "not as a volume. `vol_ratio` in --json is our modal nibble "
               "over the original's, comparable to `loud_ratio`; "
               "`vol_informative` marks the files where either side leaves $F"),
+    # $D404's bits 1-3. `wave` masks them (`& $F0`), so a conversion that drops
+    # a ring modulation or a sync read 100% there. Ring is on in 44 originals,
+    # sync in 26, test in 14 (any voice, census 2026-10-24).
+    Dimension("sync", "sync", ("$D404",), "ratio",
+              "frames with the sync bit (bit 1) set, ours over the original's "
+              "(`orig_sync_frames`/`our_sync_frames` in --json); `-` where the "
+              "original never syncs, so a file that does not use it is not "
+              "scored as one that keeps it. Below 1.00 is sync we lost"),
+    Dimension("ring", "ring", ("$D404",), "ratio",
+              "frames with the ring-mod bit (bit 2) set, ours over the "
+              "original's; `-` where the original has none. Below 1.00 is a "
+              "ring modulation we lost, which `wave` (`& $F0`) cannot see"),
+    Dimension("ctrl", "ctrl", ("$D404",), "fraction",
+              "bitwise agreement of $D404 bits 1-3 (sync, ring, test) over the "
+              "lag-aligned frames on which either side sets one. The `$09` "
+              "firstwave frame opening each of our notes is not charged as a "
+              "test bit; a test bit the original sets always is. Under "
+              "`no_test_restart` our firstwave is a full `$FF`-shaped byte and "
+              "is charged"),
     Dimension("call_rate", "rate", ("PSID speed field, CIA timer A",), "ratio",
               "how fast our subtune ticks against the original's on PAL, "
               "from the two headers and gt2reloc's CIA stub "
@@ -8206,6 +8304,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                       lag=lag))
             row.update(volume_compare(a.filter, best_dump.filter, nframes,
                                       lag))
+            row.update(ctrl_bits_compare(a, best_dump, nframes, lag))
             row.update(passband_note_relative(a, best_dump, nframes))
         if row.get("depth_refusal") == "gated":
             # Which of the player's two exclusions emptied the population,
@@ -8249,6 +8348,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
 
 def _fmt_pct(x) -> str:
     return "-" if x is None else f"{100 * x:.0f}%"
+
+
+def _fmt_ratio(x) -> str:
+    return "-" if x is None else f"{x:.2f}"
 
 
 # A tick-rate error this small is a latch rounding (greloc's `$4CC7 / -S`),
@@ -8784,8 +8887,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8831,6 +8934,8 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('passband_note'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{_fmt_pct(r.get('vol'))} | "
+            f"{_fmt_ratio(r.get('sync'))} | {_fmt_ratio(r.get('ring'))} | "
+            f"{_fmt_pct(r.get('ctrl'))} | "
             f"{_fmt_rate(r)} | {status} |")
 
     if measured:
@@ -11661,6 +11766,7 @@ def _run(p, args, workdir: Path) -> int:
         row.update(pulse_compare(da, db, nframes))
         row.update(filter_compare(da.filter, db.filter, nframes))
         row.update(volume_compare(da.filter, db.filter, nframes))
+        row.update(ctrl_bits_compare(da, db, nframes))
         row.update(passband_note_relative(da, db, nframes))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)

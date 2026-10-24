@@ -1772,7 +1772,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # WITHOUT --sound legitimately omits them, which is what
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
-                 call_rate=1.0, vol=melody,
+                 call_rate=1.0, vol=melody, sync=1.0, ring=1.0, ctrl=melody,
                  sound_frames=100, sound_lag_ms=0.0,
                  orig_octave_split_frames=0, our_octave_split_frames=0)
     return r
@@ -5291,3 +5291,64 @@ def test_vol_vice_path_reads_the_nibble_only():
     diff = fidelity.vice_register_compare(trace(0x18), trace(0x1F))
     assert diff["vol"] == 0.0 and diff["vol_ratio"] == pytest.approx(15 / 8)
     assert diff["orig_volume_values"] == [8]
+
+
+# --------------------------------------------------------------------------
+# `sync` / `ring` / `ctrl`: $D404 bits 1-3, which `wave` masks (fbs-ctrl-bits-column)
+# --------------------------------------------------------------------------
+
+
+def _wv(*events):
+    """One voice from (frame, $D404) events; the other two are silent."""
+    return [fidelity.Voice(wf_events=list(events)), fidelity.Voice(),
+            fidelity.Voice()]
+
+
+def test_ring_lost():
+    orig, ours = _wv((0, 0x15)), _wv((0, 0x11))
+    got = fidelity.ctrl_bits_compare(orig, ours, 10, 0)
+    assert got["orig_ring_frames"] == 10 and got["our_ring_frames"] == 0
+    assert got["ring"] == 0.0
+    assert got["ctrl"] == pytest.approx(2 / 3)
+    assert got["sync"] is None
+
+
+def test_sync_and_ring_are_separate_bits():
+    got = fidelity.ctrl_bits_compare(_wv((0, 0x43)), _wv((0, 0x41)), 10, 0)
+    assert got["sync"] == 0.0 and got["ring"] is None
+    assert got["orig_sync_frames"] == 10 and got["orig_ring_frames"] == 0
+
+
+def test_firstwave_test_bit_not_charged():
+    """Ours opens a note on $09; the original never sets the test bit."""
+    orig = _wv((0, 0x41))
+    ours = _wv((0, 0x09), (1, 0x41))
+    got = fidelity.ctrl_bits_compare(orig, ours, 10, 0)
+    assert got["our_test_frames"] == 0
+    assert got["our_test_firstwave_frames"] == 1
+    assert got["ctrl"] is None            # no frame sets a control bit
+
+
+def test_orig_test_bit_is_charged():
+    orig = _wv((0, 0x09), (1, 0x41))
+    ours = _wv((0, 0x41))
+    got = fidelity.ctrl_bits_compare(orig, ours, 10, 0)
+    assert got["orig_test_frames"] == 1
+    assert got["ctrl"] == pytest.approx(2 / 3)
+
+
+def test_wave_unaffected_by_ring_loss():
+    orig, ours = _wv((0, 0x15)), _wv((0, 0x11))
+    assert fidelity.wave_compare(orig, ours, 10, 0)["wave"] == 1.0
+
+
+def test_ring_declines_when_original_has_none():
+    got = fidelity.ctrl_bits_compare(_wv((0, 0x41)), _wv((0, 0x45)), 10, 0)
+    assert got["ring"] is None and got["our_ring_frames"] == 10
+    assert got["ctrl"] == pytest.approx(2 / 3)
+
+
+def test_ctrl_dimensions_registered():
+    keys = {d.key: d for d in fidelity.DIMENSIONS}
+    assert keys["sync"].kind == keys["ring"].kind == "ratio"
+    assert keys["ctrl"].kind == "fraction"
