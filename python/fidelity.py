@@ -3882,6 +3882,18 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
 ONSET_TIMING_WINDOW = 2
 
 
+def pitch_anchor_shift(ours: list[Voice]) -> int:
+    """Frames `startup_lag`'s pitched anchor sits after our gate-rise anchor:
+    the earliest pitched first attack minus the earliest first attack, over the
+    voices with attacks (0 or 1). The same two minima `startup_lag` takes, so
+    `lag - pitch_anchor_shift(ours)` is the lag the gate rises themselves give."""
+    vs = [v for v in ours if v.attack_frames]
+    if not vs:
+        return 0
+    return (min(pitched_attack_frame(v) for v in vs)
+            - min(min(v.attack_frames) for v in vs))
+
+
 def onset_timing_compare(orig: list[Voice], ours: list[Voice],
                          nframes: int, lag: int = 0) -> dict:
     """Do our notes open on the frame the original's do, once `startup_lag`
@@ -3911,6 +3923,11 @@ def onset_timing_compare(orig: list[Voice], ours: list[Voice],
     `onset_timing_late` and `onset_timing_early` (ours after / before the
     shifted original), and `onset_timing_offset`, the median signed offset.
     """
+    # `lag` was read with our first note anchored on its PITCH frame; this
+    # column reads our GATE rises, so take back the frame that anchor added
+    # (`pitch_anchor_shift`) or every note whose gate leads its pitch reads one
+    # early -- all 1455 of Pygmies_Revenge's paired notes at lag 6, none at 5.
+    lag -= pitch_anchor_shift(ours)
     zero = late = early = 0
     offsets: list[int] = []
     for a, b in zip(orig, ours):

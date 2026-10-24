@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.601 — 2026-10-25
+
+- onset_timing reads gate rises against the gate-rise lag (pitch_anchor_shift)
+
 ## 0.5.600 — 2026-10-25
 
 - res/route columns: fidelity compares $D417 resonance and per-voice routing over filtered frames
