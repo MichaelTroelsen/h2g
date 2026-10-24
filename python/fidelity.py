@@ -5220,9 +5220,12 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
       player's sweep is bounded by its own counter, which is the shape of
       overshoot to expect.
 
-    Volume ($D418's low nibble) is parsed and not compared here: it is a
-    master level, one write per file in nearly every original, and nothing the
-    converter emits can move it.
+    Volume ($D418's low nibble) is not compared here; `volume_compare` reads it.
+    (Retracted: "it is a master level, one write per file in nearly every
+    original, and nothing the converter emits can move it". 20 of 95 originals
+    leave the nibble off $F, Mega_Apocalypse and Pygmies_Revenge at $8 for the
+    whole window; and GoatTracker CAN set it -- CMD_SETMASTERVOL 13, `DXY`,
+    gcommon.h:17 -- it is only that the converter emits none today.)
     """
     o = _filter_side(orig, nframes)
     u = _filter_side(ours, nframes)
@@ -5233,6 +5236,57 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
     if lag is not None:
         out.update(passband_agreement(orig, ours, nframes, lag))
     return out
+
+
+def _volume_stats(ta: list[int], tb: list[int]) -> dict:
+    """`volume_compare`'s arithmetic on two already-aligned nibble timelines.
+
+    Split out so the siddump path (sparse events, lag-aligned) and the --vice
+    path (one representative value a frame) cannot disagree about it.
+    """
+    n = min(len(ta), len(tb))
+    ta, tb = ta[:n], tb[:n]
+    if not n:
+        return {"vol": None, "vol_ratio": None, "orig_volume_values": [],
+                "our_volume_values": [], "vol_informative": False}
+    ov, uv = sorted(set(ta)), sorted(set(tb))
+    mode_o = Counter(ta).most_common(1)[0][0]
+    mode_u = Counter(tb).most_common(1)[0][0]
+    agree = sum(1 for x, y in zip(ta, tb) if x == y)
+    return {"vol": agree / n,
+            "vol_ratio": (mode_u / mode_o) if mode_o else None,
+            "orig_volume_values": ov,
+            "our_volume_values": uv,
+            "vol_informative": any(v != 0xF for v in ov + uv) or ov != uv}
+
+
+def volume_compare(orig: FilterState, ours: FilterState, nframes: int,
+                   lag: int = 0) -> dict:
+    """The master-volume nibble ($D418 & $F), frame against frame, lag-aligned.
+
+    `vol` is the share of aligned frames on which the two nibbles are equal --
+    ALL aligned frames: a FilterState carries no voice state, so "frames
+    either side sounds" is not available here, and a nibble is a level, not a
+    note. A one-frame init blip (Chain_Reaction, Confuzion, Master_of_Magic,
+    Thing_on_a_Spring, Zoolook open on a frame of `$0`) costs one frame.
+    `vol_ratio` is the modal nibble ours over the original's, linear, so it is
+    comparable to `loud_ratio` (a constant $8 against $F predicts 15/8).
+
+    `vol_informative` is the population flag: True when either side is ever
+    off $F or the two differ. Everything else reads 1.0 by construction and
+    says nothing -- count the flag, not the mean.
+
+    **End-of-frame blindness**: siddump keeps the register's state at the end
+    of the play call. A digi engine that drives $D418 many times inside the
+    frame (After_8, Rikky read `$0` for all 3000 frames) shows its last write,
+    not a level; `vol` there measures the sample engine, not the master volume.
+    """
+    if not nframes:
+        return _volume_stats([], [])
+    ta, tb = _aligned(
+        [v & 0xF for v in register_timeline(orig.volume_events, nframes)],
+        [v & 0xF for v in register_timeline(ours.volume_events, nframes)], lag)
+    return _volume_stats(ta, tb)
 
 
 def _shared_silence(a, b, silent=0) -> float:
@@ -5457,6 +5511,11 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     out.update({f"our_{k}": v for k, v in u.items()})
     out["cutoff_sweep"] = (u["cutoff_travel"] / o["cutoff_travel"]
                            if o["cutoff_travel"] else None)
+    # --- volume: $D418's low nibble, no lag (as the rest of this path) -------
+    def vol_col(samples):
+        cells = vicetrace.frame_cells_global(samples, lambda s: s.modevol)
+        return [c.representative() & 0xF for c in cells][:nframes]
+    out.update(_volume_stats(vol_col(orig_samples), vol_col(our_samples)))
     out["vice_frames"] = nframes
     out["vice_reduce"] = mode
     return out
@@ -6266,10 +6325,12 @@ NOT_MEASURED = (
     "that is the right length is still not something any column measures -- see --pace",
     "**anything outside the traced window or subtune** -- one subtune per "
     "file, its first few seconds",
-    "**master volume** -- `$D418`'s low nibble. The register is listed as "
-    "read because `filt` reads the passband bits of the same byte, which is "
-    "as fine as a per-register account can be; nothing compares the volume "
-    "nibble, and nothing the converter emits can move it",
+    "**master volume beyond a level** -- `$D418`'s low nibble is compared "
+    "frame for frame by `vol`, but siddump keeps only the END-of-frame value, "
+    "so a digi engine driving the register inside the frame reads as a level "
+    "it is not. (Retracted: \"nothing compares the volume nibble, and "
+    "nothing the converter emits can move it\" -- `vol` compares it, and "
+    "GoatTracker has CMD_SETMASTERVOL, `DXY`; the converter emits none today.)",
 )
 
 
@@ -7006,6 +7067,19 @@ DIMENSIONS = (
     # stub, which siddump ignores on both sides (siddump.c:309/325) -- so
     # until this column a CIA-timed original packed on the VBI (Confuzion,
     # Human_Race, 1.1969x slow) read melody 100% and drift +0.0.
+    # The register-side twin of `loud`/`loud_ratio`: a `vol` finding predicts
+    # a `loud_ratio` (Mega_Apocalypse and Pygmies_Revenge hold $8, 15/8 =
+    # 1.875 against loud_ratio 1.94/1.80). Read `vol_informative` for the
+    # population: 75 of 95 originals sit at $F and read 100% by construction.
+    Dimension("vol", "vol", ("$D418",), "fraction",
+              "share of lag-aligned frames on which the $D418 low nibble "
+              "(master volume) is equal. **END-OF-FRAME BLIND**: siddump "
+              "keeps the register's state at the end of the play call, so a "
+              "digi engine that drives $D418 inside the frame reads as the "
+              "level of its last write (After_8, Rikky: `$0` throughout) and "
+              "not as a volume. `vol_ratio` in --json is our modal nibble "
+              "over the original's, comparable to `loud_ratio`; "
+              "`vol_informative` marks the files where either side leaves $F"),
     Dimension("call_rate", "rate", ("PSID speed field, CIA timer A",), "ratio",
               "how fast our subtune ticks against the original's on PAL, "
               "from the two headers and gt2reloc's CIA stub "
@@ -8130,6 +8204,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                     args.siddump, vib_keys, traced_calls))
             row.update(filter_compare(a.filter, best_dump.filter, nframes,
                                       lag=lag))
+            row.update(volume_compare(a.filter, best_dump.filter, nframes,
+                                      lag))
             row.update(passband_note_relative(a, best_dump, nframes))
         if row.get("depth_refusal") == "gated":
             # Which of the player's two exclusions emptied the population,
@@ -8691,8 +8767,15 @@ def report(rows: list[dict], args) -> str:
         "0.0077 floor (Monty 0.5.394 -> 0.5.395, evidence "
         "C:/t/monty-drum-aud/classes.txt); read `our_noise_pitch` for it.",
         "* **loud** -- per-frame agreement of the rendered loudness envelope; "
-        "the only column that reads the master-volume nibble. `--json` also "
+        "reads the master-volume nibble through the render. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
+        "* **vol** -- the $D418 low nibble (master volume) frame for frame, "
+        "lag-aligned; the register-side twin of **loud**. `--json` carries "
+        "`vol_ratio` (modal nibble, ours over the original's, comparable to "
+        "`loud_ratio`) and `vol_informative` (either side off $F). "
+        "**End-of-frame blind**: siddump keeps the register's value at the "
+        "end of the play call, so a digi engine driving $D418 within the "
+        "frame reads as a level.",
         "* **rate** -- how fast our subtune ticks against the original's on "
         "PAL, read from the PSID speed field and gt2reloc's CIA stub on both "
         "sides (`call_rate.py`); `!` past 0.1%. **Every siddump column is "
@@ -8701,8 +8784,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8747,6 +8830,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('passband_agree'))} | "
             f"{_fmt_pct(r.get('passband_note'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
+            f"{_fmt_pct(r.get('vol'))} | "
             f"{_fmt_rate(r)} | {status} |")
 
     if measured:
@@ -9369,9 +9453,9 @@ def report(rows: list[dict], args) -> str:
         "travels, neither of which says the sweep runs in the same direction "
         "or at the same moment. Resonance is inside the same $D417 byte as "
         "the routing and siddump never separates them, so resonance is not "
-        "scored on its own, and master volume ($D418's low nibble) is parsed "
-        "and never compared even though `filt` reads the passband bits of "
-        "that same byte.",
+        "scored on its own. Master volume ($D418's low nibble) is compared "
+        "by `vol` (it was \"parsed and never compared\" before it), but "
+        "only as the end-of-frame value siddump keeps.",
     ]
     out.append("")
     return "\n".join(out)
@@ -11576,6 +11660,7 @@ def _run(p, args, workdir: Path) -> int:
         row.update(adsr_compare(da, db, nframes))
         row.update(pulse_compare(da, db, nframes))
         row.update(filter_compare(da.filter, db.filter, nframes))
+        row.update(volume_compare(da.filter, db.filter, nframes))
         row.update(passband_note_relative(da, db, nframes))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)

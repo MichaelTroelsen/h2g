@@ -1772,7 +1772,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # WITHOUT --sound legitimately omits them, which is what
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
-                 call_rate=1.0,
+                 call_rate=1.0, vol=melody,
                  sound_frames=100, sound_lag_ms=0.0,
                  orig_octave_split_frames=0, our_octave_split_frames=0)
     return r
@@ -5218,3 +5218,76 @@ def test_prior_seconds_reads_the_first_readable_run(tmp_path):
     assert fidelity._prior_seconds(str(tmp_path / "missing.json"), None,
                                    str(good)) == {"a.sid": 12.5}
     assert fidelity._prior_seconds(None) == {}
+
+
+# --------------------------------------------------------------------------
+# `vol`: the $D418 master-volume nibble (fbs-vol-column)
+# --------------------------------------------------------------------------
+
+
+def test_vol_identical_is_one():
+    f = _filt(volume=[(0, 0xF), (100, 0x8)])
+    got = fidelity.volume_compare(f, f, 500, 0)
+    assert got["vol"] == 1.0 and got["vol_ratio"] == pytest.approx(1.0)
+    assert got["vol_informative"] is True  # a $8 stretch: off $F
+
+
+def test_vol_constant_eight_against_f_is_zero():
+    got = fidelity.volume_compare(_filt(volume=[(0, 8)]),
+                                  _filt(volume=[(0, 15)]), 500, 0)
+    assert got["vol"] == 0.0
+    assert got["vol_ratio"] == pytest.approx(15 / 8)
+    assert got["orig_volume_values"] == [8]
+    assert got["our_volume_values"] == [15]
+    assert got["vol_informative"] is True
+
+
+def test_vol_lag_invariant():
+    lag = 7
+    orig = _filt(volume=[(0, 0xF), (100, 0x8), (300, 0xF)])
+    ours = _filt(volume=[(0, 0xF), (100 + lag, 0x8), (300 + lag, 0xF)])
+    assert fidelity.volume_compare(orig, ours, 500, lag)["vol"] == 1.0
+    # without the lag the same pair is charged for the offset
+    assert fidelity.volume_compare(orig, ours, 500, 0)["vol"] < 1.0
+
+
+def test_vol_init_blip_is_one_frame():
+    got = fidelity.volume_compare(_filt(volume=[(0, 0), (1, 15)]),
+                                  _filt(volume=[(0, 15)]), 500, 0)
+    assert got["vol"] == pytest.approx(499 / 500)
+    assert got["vol_informative"] is True  # a $0 frame is off $F
+
+
+def test_vol_population_flag():
+    f = _filt(volume=[(0, 0xF)])
+    got = fidelity.volume_compare(f, f, 500, 0)
+    assert got["vol"] == 1.0 and got["vol_informative"] is False
+    assert fidelity.volume_compare(f, f, 0, 0)["vol"] is None
+
+
+def test_vol_dimension_states_end_of_frame_blindness():
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "vol")
+    assert d.reads == ("$D418",) and d.kind == "fraction"
+    assert "end-of-frame" in " ".join(d.of.split()).lower()
+
+
+def test_vol_masks_the_nibble():
+    """The register is $D418: bits 4-6 are the passband, not the volume. A
+    byte differing only there is the same volume."""
+    got = fidelity.volume_compare(_filt(volume=[(0, 0x1F)]),
+                                  _filt(volume=[(0, 0x0F)]), 100, 0)
+    assert got["vol"] == 1.0 and got["orig_volume_values"] == [15]
+
+
+def test_vol_vice_path_reads_the_nibble_only():
+    import vicetrace as VT
+
+    def trace(modevol, frames=4):
+        return [VT.Sample(voices=[VT.VoiceLine() for _ in range(3)],
+                          modevol=modevol)
+                for _ in range(frames * VT.PAL_LINES_PER_FRAME)]
+    same = fidelity.vice_register_compare(trace(0x1F), trace(0x0F))
+    assert same["vol"] == 1.0 and same["vol_informative"] is False
+    diff = fidelity.vice_register_compare(trace(0x18), trace(0x1F))
+    assert diff["vol"] == 0.0 and diff["vol_ratio"] == pytest.approx(15 / 8)
+    assert diff["orig_volume_values"] == [8]
