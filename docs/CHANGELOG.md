@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.597 — 2026-10-24
+
+- residual.py: rank non-held songs by the rendered-sound deficit mean(wave, adsr, gate) does not explain
+
 ## 0.5.596 — 2026-10-24
 
 - Bump_Set_Spike wavetable economy (GT13 last-event-through-empty-pattern, clone reserve); startup_lag ignores an unmatched opening attack

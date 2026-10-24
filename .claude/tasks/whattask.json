@@ -1,15 +1,17 @@
 {
  "generated_from": {
-  "head": "5346077",
+  "head": "d684d0e",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at ad45412, 26 tasks)",
-   ".claude/tasks/runs.jsonl (whole file, 1505 lines; 1 task done since: star-paws-regrid-leftover-debt)",
-   ".claude/tasks/decisions.jsonl (whole file; no decision touches a surviving task differently)",
+   ".claude/tasks/whattask.json (previous plan at 5346077, 25 tasks)",
+   ".claude/tasks/runs.jsonl (whole file, 1507 lines; 2 tasks done since: pygmies-revenge-startup-lag-reads-21-where-both-voices, bump-set-spike-wavetable-economy)",
+   ".claude/tasks/decisions.jsonl (whole file; the bump-set decision is now executed)",
    "hooks/prune.js with .claude/tasks/policy.json",
-   "todo.md, whats-next.md, docs/BACKLOG.md (not re-read; unchanged)",
-   "graphify-out/graph.json (graphify update at 5346077: no topology change)",
-   "gh: no open issues or PRs"
+   "todo.md (new entry at the end of ## Open: cut the full test suite to ~20 min)",
+   "whats-next.md, docs/BACKLOG.md (not re-read; unchanged)",
+   "graphify-out/graph.json (graphify update at d684d0e)",
+   "gh: unreachable (connection timeout), file sources only",
+   "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md (15 fbs-* tasks, merged this pass from the draft built at 5346077, rebuilt against this plan)"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work."
  },
@@ -64,7 +66,7 @@
    "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
    "why_offload": null,
    "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 19 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -97,7 +99,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "a declared path overlaps 14 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 26 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -130,7 +132,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "a declared path overlaps 14 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 26 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -163,7 +165,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "a declared path overlaps 14 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 26 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -197,7 +199,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "a declared path overlaps 14 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 26 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
@@ -233,7 +235,7 @@
    "why_effort": "the code has to be understood before it can be safely changed",
    "why_offload": null,
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "tempo-alignment-rounding-decision",
@@ -266,7 +268,7 @@
    "why_effort": "a judgement between two measured costs",
    "why_offload": null,
    "why_mode": "blocked on a decision about which error a listener prefers",
-   "why_lane": "a declared path overlaps 3 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 2 other task(s) where at least one side writes"
   },
   {
    "id": "classic-duration-gate-per-note-command",
@@ -296,7 +298,7 @@
    "why_effort": "the player's call ordering decides it",
    "why_offload": null,
    "why_mode": "one emitter and its test",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no declared path overlaps another task's with a writer on either side"
   },
   {
    "id": "mega-apocalypse-age-gated-second-effect",
@@ -326,7 +328,7 @@
    "why_effort": "unfamiliar routine",
    "why_offload": null,
    "why_mode": "read-only finding",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no declared path overlaps another task's with a writer on either side"
   },
   {
    "id": "pygmies-slide-under-vibrato",
@@ -356,7 +358,7 @@
    "why_effort": "unfamiliar routine",
    "why_offload": null,
    "why_mode": "read-only finding",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no declared path overlaps another task's with a writer on either side"
   },
   {
    "id": "rasputin-r3-duty",
@@ -386,127 +388,7 @@
    "why_effort": "a plausible improvement can be noise",
    "why_offload": null,
    "why_mode": "one emitter and its test",
-   "why_lane": "no declared path overlaps another task where either side writes"
-  },
-  {
-   "id": "kentilla-rec20-entry-trade",
-   "title": "Decide whether Kentilla record 20 takes 2 wavetable entries from record 4",
-   "source": "runs.jsonl#kentilla-r20-gateoff-pair-measure",
-   "model": "sonnet",
-   "effort": "low",
-   "offload": null,
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "rw:build/listen",
-    "rw:host:C:/t/kentilla-rec20-entry-trade"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": [
-    "take-from-rec4",
-    "keep"
-   ],
-   "branch": null,
-   "blocked_on": "a trade between two starved records",
-   "decision": null,
-   "verify": "OPENED at 6e467ff by kentilla-r20-gateoff-pair-measure (figures historical): Record 20's gate-off pair (17,16) is measured short of the player's 22-call half; an exact (22,22) needs 7 entries, and record 4 is already clipped 95 -> 81. Done when the user's answer is recorded in decisions.jsonl. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
-   "why_effort": "the work either side is staging and recording an answer",
-   "why_offload": null,
-   "why_mode": "a policy or listening choice is the instrument",
-   "why_lane": "a declared path overlaps 4 other task(s) where at least one side writes"
-  },
-  {
-   "id": "kentilla-rec20-exact-fit",
-   "title": "Grant Kentilla record 20 its exact-fit gate-off entries from record 4",
-   "source": "runs.jsonl#kentilla-r20-gateoff-pair-measure",
-   "model": "sonnet",
-   "effort": "high",
-   "offload": null,
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/kentilla-rec20-exact-fit"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "kentilla-rec20-entry-trade"
-   ],
-   "fork": null,
-   "branch": {
-    "kentilla-rec20-entry-trade": "take-from-rec4"
-   },
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 6e467ff by kentilla-r20-gateoff-pair-measure (figures historical; re-measure on the current tree, 55630a5 or later): Change the wavetable allocator to give gate-off records their exact-fit entries from the greedy record. Done when Kentilla is A/B'd at -t 1800 with record 20's pair and record 4's clip both reported. Corpus byte-hash under presets (fidelity._preset_opts) reports converted/refused/compared/moved and NAMES every mover; Commando.sng stays byte-identical (tests/test_commando.py). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
-   "why_effort": "a real diagnosis against the disassembly and a trace, not a mechanical change",
-   "why_offload": null,
-   "why_mode": "self-contained in its own worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no declared path overlaps another task where either side writes"
-  },
-  {
-   "id": "bump-set-spike-wavetable-economy",
-   "title": "Bump_Set_Spike's wavetable is 255/255; record index 1 takes 21 entries",
-   "source": "runs.jsonl#bump-set-spike-0f0c-per-subtune-drum-row",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/bump-set-spike-wavetable-economy"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": "Merge C:/t/bump-set-spike-wavetable-economy/final.patch (GT13 fix plus clone reserve), accepting the Thrust gate .8694->.8666 and Chimera note-rise 51->48 movers; re-run the affected tests and the Commando byte check, then bump, regenerate and commit.",
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 0d18fce by bump-set-spike-0f0c-per-subtune-drum-row (figures historical; re-measure on the current tree, 5fdcf5a or later): GT2 holds 24 CMD_PORTADOWN steps with note_rows None, so the duration bound is absent. Reclaiming them would pay for instrument 21's lost tick hold and make a clone per row length possible. Done when entries are reclaimed with no fidelity column worse on Bump_Set_Spike, or shown unreclaimable. Corpus byte-hash under presets (fidelity._preset_opts) reports converted/refused/compared/moved and NAMES every mover; Commando.sng stays byte-identical (tests/test_commando.py). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) || PARTIAL at 9a0a452: PATCH: C:/t/bump-set-spike-wavetable-economy/final.patch (git diff 9a0a452, 9 files; git apply --check -R exit 0). FALLBACK, GT13-only (no clone reserve, so no Thrust mover and no test_gate_phase_split edit): C:/t/bump-set-spike-wavetable-economy/patch_gt13_only.patch (patterns.py + test_last_event_through_empty_pattern.py; apply-checked; its tests plus test_commando pass on a base copy, (tests named in the run record) || PARTIAL at 9a0a452: Partial, not merged: GT13's 24 uncapped portamento steps come from a last event whose successor is an empty 1-row pattern; the fix plus a clone reserve frees the entries but moves Chimera and Thrust with mixed columns and costs Bump_Set_Spike travel .8017 -> .8009 (a sweep the original never makes).",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "the work either side of the decision is bounded",
-   "why_offload": null,
-   "why_mode": "the attempt produced a measured trade; only the user can accept it",
-   "why_lane": "no declared path overlaps another task where either side writes"
-  },
-  {
-   "id": "last-v8-pulse-lo-ora40-spelling",
-   "title": "Last_V8's accumulate pulse engine is undetected: PULSE_LO_SHAPES lacks the ORA #$40 spelling",
-   "source": "runs.jsonl#last-v8-voice0-pulse-changes-surplus",
-   "model": "sonnet",
-   "effort": "medium",
-   "offload": null,
-   "mode": "requires-user",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/last-v8-pulse-lo-ora40-spelling"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": "Adopt the ORA #$40 pulse-lo spelling (patch C:/t/last-v8-pulse-lo-ora40-spelling/final.patch)? A real engine in 7 files; pulse-change counts approach the original on Chimera, Crazy_Comets and Game_Killer but move away on Last_V8 (13000 -> 18400 vs 9798) and Ninja; Last_V8_C128 aud -0.0013.",
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. OPENED at 2b64d25 by last-v8-voice0-pulse-changes-surplus (figures historical; re-measure on the current tree, 5fdcf5a or later): The routine at $02AE is `AND #8 / BEQ / LDY / LDA instr,Y / ADC rate / ORA #$40 / STA instr,Y / LDY / STA $D402,Y`, so effect_pulse_lo is False; records 2 and 5 (rate 8) hold their seed in ours while the original moves +8 a frame over 112 voice-0 notes (1040 changes in 180 s). Add the spelling as a fallback consulted only where the others match nothing, model the OR, and check 'restart at the seed' against it. Done when Last_V8 and its C128 version move and test_pulse_tri_last_v8_granularity.py's test_the_pulse_lo_notes_sweep_in_the_original_only is flipped to pin the new sweep. Corpus byte-hash under presets (fidelity._preset_opts) reports converted/refused/compared/moved and NAMES every mover; Commando.sng stays byte-identical (tests/test_commando.py). SABOTAGE-VERIFY: 0 failed, and each named mutation of the code under test makes a named test fail, with the mutated region printed from disk to prove it landed; where the change has no natural mutation, say so and name the property that would have to break. (grep for the quoted text rather than trusting any line number here) || PARTIAL at 9a0a452: BASE 9a0a452; worktree clean at start; base exported to C:/t/last-v8-pulse-lo-ora40-spelling/base; siddump.exe copied into the worktree and the base export.\n\nCHANGE (patch: C:/t/last-v8-pulse-lo-ora40-spelling/final.patch, 10 files, +380/-42, `git apply --check -R` exit 0):\n- python/h2g/detect.py: PULSE_LO_SHAPES gets a 4th spelling, absolute dialect with `09 40` between ADC and STA (tried last, s || PARTIAL at 9a0a452: Partial, not merged: the ORA #$40 spelling is a real pulse-lo engine in 7 files; the A/B is mixed -- pulse-change counts approach the original on Chimera, Crazy_Comets and Game_Killer but move away on the target Last_V8 (13000 -> 18400 vs 9798) and Ninja.",
-   "why_model": "the work either side of the decision is bounded -- Sonnet 5.5, the default tier (user 2026-10-08)",
-   "why_effort": "the work either side of the decision is bounded",
-   "why_offload": null,
-   "why_mode": "the attempt produced a measured trade; only the user can accept it",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no declared path overlaps another task's with a writer on either side"
   },
   {
    "id": "i-ball-regrid-full-debt-adoption",
@@ -553,7 +435,7 @@
    "why_effort": "the adoption decision depends on reading several columns honestly",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 18 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 31 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
    "id": "hand-adopt-named-firstwave-on-the-s2",
@@ -585,7 +467,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "if-the-user-wants-mega-s-adsr",
@@ -617,7 +499,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "pandora-0c99-rest-wave-silence-alone-cuts",
@@ -649,7 +531,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "add-rest-program-stop-true-to-the",
@@ -681,7 +563,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "add-max-hard-restart-to-the-presets",
@@ -713,7 +595,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "search-wave-program-and-no-test-restart",
@@ -745,7 +627,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
   },
   {
    "id": "listen-current-builds-2026-10",
@@ -776,7 +658,7 @@
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "a declared path overlaps 4 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 2 other task(s) where at least one side writes"
   },
   {
    "id": "food-feud-try-pitch-seq-in-its",
@@ -811,12 +693,47 @@
    "why_effort": "one song's A/B plus the routine regeneration",
    "why_offload": null,
    "why_mode": "edits presets.json and regenerates artefacts, main-session work",
-   "why_lane": "a declared path overlaps 17 other task(s) where at least one side writes"
+   "why_lane": "a declared path overlaps 30 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
   },
   {
-   "id": "pygmies-revenge-startup-lag-reads-21-where-both-voices",
-   "title": "Pygmies_Revenge startup_lag reads 21 where both voices' first notes align at 5: make fidelity.startup_lag ignore an unmatched opening attack",
-   "source": "runs.jsonl opened by pygmies-revenge-gets-worse-under-pitch-lead (head 841cf3d)",
+   "id": "cut-the-full-test-suite-from-53-minutes-to-at-most-20",
+   "title": "Cut the full pytest suite from ~53 minutes to at most ~20 minutes wall-clock",
+   "source": "todo.md#cut-the-full-test-suite",
+   "model": "session",
+   "effort": "high",
+   "offload": null,
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/tests",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:Commando.sng",
+    "r:Commando.sid",
+    "rw:host:C:/t/cut-the-full-test-suite-from-53-minutes-to-at-most-20",
+    "rw:todo.md"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "runs the whole suite (about 50 minutes serial) several times and edits shared test infrastructure; no delegated agent should hold the machine for that",
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "MEASURE FIRST: `python -m pytest tests/ --durations=40` from python/, recorded with where the time goes (conversion, gt2reloc pack, siddump trace, import) before any change. Done when a full run on a quiet machine takes at most about 20 minutes wall-clock, with the tool and options that achieved it named (for example pytest-xdist with -n sized to MEMORY not cores, a session-scoped cache of repeated conversions or traces, a trimmed corpus loop). Invariants the change owns: the collected test count is not lower than before (report both numbers, a delta not a total); the set of passing and skipping tests equals a serial run's, with 0 failed; no assertion is deleted or weakened in python/tests (git diff -- python/tests shows no removed assert line without an equal replacement, listed in evidence); tests/test_commando.py still compares bytes against Commando.sng; a parallel run does not share a scratch path between tests. This adds no new behaviour test, so SABOTAGE-VERIFY does not apply, but a cache must be shown to be invalidated by a change to its input (one named case). python/tests/conftest.py does not exist at this head; any new fixture lives there or in an own file. User said 2026-10-24 it may run overnight.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "a wrong cache or a shared scratch path makes tests pass for the wrong reason, which is hard to see afterwards",
+   "why_offload": null,
+   "why_mode": "needs the whole suite and the shared test infrastructure",
+   "why_lane": "a declared path overlaps 16 other task(s) where at least one side writes"
+  },
+  {
+   "id": "pygmies-revenge-onset-timing-997-0-0",
+   "title": "Pygmies_Revenge onset_timing .997 -> 0.0 (offset 0 -> -1) once startup_lag reads 6 instead of 21: find why",
+   "source": "runs.jsonl opened by pygmies-revenge-startup-lag-reads-21-where-both-voices (head 5346077)",
    "model": "sonnet",
    "effort": "high",
    "offload": null,
@@ -825,10 +742,11 @@
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
+    "r:build/fidelity.json",
     "rw:python/fidelity.py",
-    "rw:python/tests/test_startup_lag_pitched_attack.py",
-    "rw:python/tests/test_startup_lag_unmatched_opening.py",
-    "rw:host:C:/t/pygmies-revenge-startup-lag-reads-21-where-both-voices"
+    "rw:python/tests/test_fidelity.py",
+    "rw:python/tests/test_startup_lag_onset_timing.py",
+    "rw:host:C:/t/pygmies-revenge-onset-timing-997-0-0"
    ],
    "mcp": [],
    "needs_main": false,
@@ -838,15 +756,554 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 841cf3d: Pygmies_Revenge's startup_lag reads 21 where both voices' first notes align at 5 (voice 1 18->23, voice 2 514->519); at lag 5 versus 21 its base conversion measures wave .736 -> .941, adsr .744 -> 1.000, gate .571 -> .845, tiefr .113 -> .201. Done when fidelity.startup_lag ignores an original opening attack that ours has no counterpart for, Pygmies_Revenge reads a lag within 2 frames of 5, and every other file's startup_lag is unchanged or shown to move for the same reason (list each mover with before and after); python/tests/test_startup_lag_pitched_attack.py exists and new coverage goes in python/tests/test_startup_lag_unmatched_opening.py. SABOTAGE-VERIFY: 0 failed, and each named mutation of fidelity.startup_lag makes a named test fail, with the mutated region printed from disk to prove it landed. Commando.sng stays byte-identical (tests/test_commando.py). (grep for the quoted text rather than trusting any line number here)",
+   "verify": "OPENED at 5346077 (figures historical; re-measure on the current tree): at startup_lag 6 Pygmies_Revenge's onset_timing reads 0.0 with offset -1 (early 4 -> 1455, paired 1196 -> 1455) where it read .997 at lag 21; ours' gate rise 23 sits one frame before the pitched anchor 24. build/fidelity.json already shows the same 0.0 / offset -1 shape on Pacific_Coast, Radio_ACE, Hollywood_or_Bust and Sigma_Seven. Done when the cause is attributed in writing as either the lag estimate's anchor (pitched attack vs gate rise) or a real one-frame shift, and either fidelity's onset_timing is corrected for the cause, with every other file's onset_timing before and after listed by name, or the column is left alone with the reason. If python/fidelity.py changes, new coverage goes in python/tests/test_startup_lag_onset_timing.py (does not exist at this head) and the verify is SABOTAGE-VERIFY: 0 failed, and each named mutation of the changed region makes a named test fail, with the mutated region printed from disk to prove it landed. Commando.sng stays byte-identical (tests/test_commando.py). No one-off of Pygmies_Revenge's lag may be reintroduced.",
    "why_model": "diagnosis against a trace in a shared harness function; not the critical class",
-   "why_effort": "startup_lag feeds every per-frame column, so a plausible-looking wrong fix shifts the whole corpus",
+   "why_effort": "onset_timing feeds the preset search's acceptance terms, so a plausible wrong fix shifts every file's verdict",
    "why_offload": null,
-   "why_mode": "confined to python/fidelity.py in its own worktree, verified by a corpus comparison of the lag column",
-   "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
+   "why_mode": "confined to python/fidelity.py in its own worktree, verified by a corpus comparison of the onset column",
+   "why_lane": "a declared path overlaps 23 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-residual-triage",
+   "title": "Residual triage: rank non-held songs by rendered-sound deficit that mean(wave, adsr, gate) does not explain (python/residual.py)",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-a-residual-triage-report-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "medium",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:python/hold.py",
+    "rw:python/residual.py",
+    "rw:python/tests/test_residual.py",
+    "rw:build/residual.md",
+    "rw:host:C:/t/fbs-residual-triage"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "PREPARED, NOT LANDED: a patch implementing exactly this (10 tests, 4 sabotage mutations each caught, coverage flag skips window_coverage_bounded rows) is at C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/5033b5e7-8f32-4576-872e-d675adc9d65b/scratchpad/fbs-residual/fbs-residual-triage.patch; apply it, re-run the checks below on the tree it lands in, and record. Work in a worktree off HEAD; copy siddump.exe in first. Done when python/residual.py exists with residuals(rows) returning per song file, aud, loud, loud_ratio, reg_mean over wave/adsr/gate only (melody excluded), residual, multiplier, window_seconds, held, hold_reason, explained_by; held rows are listed in their own table and never ranked; rows with window_seconds < 60 carry 'short-window'; a JSON with no aud raises ValueError; the report header prints the corpus median residual. New coverage in python/tests/test_residual.py (it does not exist at this head): test_ranks_by_residual, test_held_rows_are_separated (Mr_Meaner.sid), test_refuses_rows_without_aud, test_short_window_is_flagged, test_melody_is_not_in_reg_mean. SABOTAGE-VERIFY: 0 failed, and each of three mutations makes a named test fail with the mutated region printed from disk: (1) add melody back into reg_mean, (2) drop the held filter, (3) return [] instead of raising on no aud. Run on build/fidelity.json writes build/residual.md whose ranked table names no held file.",
+   "why_model": "bounded new read-only module over an existing JSON, ordinary judgement",
+   "why_effort": "small module with a known shape; the hold and window filters are the only traps",
+   "why_offload": null,
+   "why_mode": "self-contained new file, mechanical conclusion, verified by its own tests",
+   "why_lane": "a declared path overlaps 4 other task(s) where at least one side writes"
+  },
+  {
+   "id": "fbs-vol-column",
+   "title": "vol column: compare the $D418 master-volume nibble (20 originals are not $F; Mega_Apocalypse and Pygmies_Revenge sit at $8)",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-b-vol-master-volume-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/fbs-vol-column"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. No test fixture, lead or queue entry targets a file in hold.ON_HOLD. Done when fidelity.volume_compare(orig, ours, nframes, lag) exists and a Dimension with key 'vol' reading '$D418' is in fidelity.DIMENSIONS, whose `of` text states the end-of-frame blindness; rows carry vol, vol_ratio, orig_volume_values, our_volume_values, vol_informative; the --vice path reads the volume nibble too; and the sentence claiming nothing the converter emits can move the volume nibble is rewritten, quoting what it retracts (grep fidelity.py for 'nothing the converter emits can move it'). New tests in python/tests/test_fidelity.py: test_vol_identical_is_one, test_vol_constant_eight_against_f_is_zero (vol 0.0, vol_ratio approx 15/8), test_vol_lag_invariant, test_vol_init_blip_is_one_frame, test_vol_population_flag, test_vol_dimension_states_end_of_frame_blindness. SABOTAGE-VERIFY: 0 failed, and each of three mutations makes a named test fail, mutated region printed from disk: (1) ignore lag, (2) compare $D418 whole instead of & $F, (3) set vol_informative always True. A scratch register-only corpus run (H2G_ALLOW_MISSING_FLAG=1 set on purpose and said so; --json into the task's scratch dir, never build/fidelity.json) lists every vol_informative file with vol, vol_ratio and loud_ratio, held files separately; if Mega_Apocalypse and Pygmies_Revenge do not read vol 0.0 with vol_ratio near loud_ratio, stop and report rather than tune. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "new comparison inside the shared harness, needs the FilterState/--vice paths understood; not the critical class",
+   "why_effort": "a column that reads clean while blind is the expensive failure, so the known-bad and population checks matter",
+   "why_offload": null,
+   "why_mode": "confined to fidelity.py and its test in a worktree, verified by tests plus a scratch corpus run",
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-ctrl-bits-column",
+   "title": "sync/ring/test columns: wave masks $D404 & $F0, so a lost ring-mod or sync is invisible (ring in 44 originals, sync 26, test 14)",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-c-ctrl-sync-ring-test-bits-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/fbs-ctrl-bits-column"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. No test fixture, lead or queue entry targets a file in hold.ON_HOLD. Done when fidelity.ctrl_bits_compare(orig, ours, nframes, lag) exists and Dimensions 'sync', 'ring' (one-sided count ratios like noise, None when the original has none) and 'ctrl' (bitwise agreement of bits 1-3 over frames either side sets one) are in fidelity.DIMENSIONS; the $09 firstwave frame opening each of our notes is not charged as test-bit. New tests in python/tests/test_fidelity.py: test_ring_lost, test_firstwave_test_bit_not_charged, test_orig_test_bit_is_charged, test_wave_unaffected_by_ring_loss, test_ring_declines_when_original_has_none. SABOTAGE-VERIFY: 0 failed, and each of three mutations makes a named test fail, mutated region printed from disk: (1) stop excluding the firstwave frame, (2) read bit 2 as sync, (3) return 1.0 when the original has none. A scratch register-only corpus run (H2G_ALLOW_MISSING_FLAG=1, scratch --json) reports per-direction populations; any non-held file losing ring or sync is named as a lead. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "new per-voice comparison in the shared harness with a documented firstwave exception",
+   "why_effort": "three bit meanings and an exception that would make every noise file read wrong",
+   "why_offload": null,
+   "why_mode": "confined to fidelity.py and its test in a worktree, verified by tests plus a scratch corpus run",
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-res-route-columns",
+   "title": "res/route columns: band ignores resonance and which voices are routed (resonance in 30 originals, routing changes in 28)",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-d-res--route-resonance-and-per-voice-routing-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/fbs-res-route-columns"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. No test fixture, lead or queue entry targets a file in hold.ON_HOLD. Done when fidelity.filter_ctrl_compare(orig, ours, nframes, lag) exists and Dimensions 'res' (equal $D417 high nibble over frames either side filters, using the predicate fidelity._filter_side uses for filtered_frames: a voice routed AND a passband selected) and 'route' (per-voice agreement of bits 0-2 over the same frames) are in fidelity.DIMENSIONS, both None when neither side filters. New tests in python/tests/test_fidelity.py: test_res_known_bad, test_route_voice_swap (route 0.0 while passband_agree reads 1.0), test_res_ignores_unfiltered_frames, test_res_declines_when_neither_filters. SABOTAGE-VERIFY: 0 failed, and each of three mutations makes a named test fail, mutated region printed from disk: (1) count unfiltered frames, (2) compare the whole $D417 byte for res, (3) drop the lag. Whether --vice's RES field is the whole byte is settled from vicetrace.py and stated, or left as a named TODO. A scratch register-only corpus run reports both populations and IK_plus's two readings. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "new comparison over the global filter cell in the shared harness",
+   "why_effort": "a predicate copied wrong silently charges unfiltered frames",
+   "why_offload": null,
+   "why_mode": "confined to fidelity.py and its test in a worktree, verified by tests plus a scratch corpus run",
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-aud-timeline",
+   "title": "aud_timeline and aud_first_dip_s: per-second rendered-sound agreement so a deficit has a time, validated on sound_calibrate.KNOWN_BAD",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-e-aud_timeline-where-in-the-song-the-sides-part-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/sound_calibrate.py",
+    "rw:python/sound.py",
+    "rw:python/tests/test_sound.py",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:python/abpage.py",
+    "rw:python/tests/test_abpage.py",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-aud-timeline"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. Done when sound.compare_features also returns per_second (sounding-frame weighted) and fidelity rows carry aud_timeline (2 dp) and aud_first_dip_s (first of 3 consecutive seconds below the song's own median by more than the noise floor, None when none), and abpage.py prints the dip second. New tests: test_per_second_weighted_mean_matches_aud (within 1e-6) and test_first_dip_located and test_no_dip_is_none in python/tests/test_sound.py. SABOTAGE-VERIFY: 0 failed, and each of two mutations makes a named test fail, mutated region printed from disk: (1) unweighted per-second mean, (2) dip on 1 second instead of 3. Validation on real pairs, no synthetic stand-in: rebuilt with sound_calibrate.convert_at, W_A_R 0.5.399 -> 0.5.400 dips inside 20-60 s and Action_Biker 0.5.371 -> 0.5.372 dips near 0 s; if either fails, stop and report. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "extends the audio comparison and validates on recorded regressions; diagnosis-grade, not the critical class",
+   "why_effort": "the weighting must reproduce aud exactly or the timeline disagrees with the score it explains",
+   "why_offload": null,
+   "why_mode": "confined to sound.py/fidelity.py/abpage.py and their tests in a worktree, verified by tests plus two known-bad pairs",
+   "why_lane": "a declared path overlaps 28 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-aud-voices",
+   "title": "aud_voices: per-voice solo renders (sidplayfp -u) paired by wave agreement, filling the tier-4 voice_deficits slot",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-f-aud_voices-per-voice-rendered-sound-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/listen.py",
+    "r:python/fidelity_queue.py",
+    "r:build/residual.md",
+    "rw:python/sound.py",
+    "rw:python/tests/test_sound.py",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:python/tests/test_queue.py",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-aud-voices"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-aud-timeline",
+    "fbs-residual-triage"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. No test fixture, lead or queue entry targets a file in hold.ON_HOLD. Done when sound.compare_sids accepts mute, sound.content_key folds the mute set into the key, render_cached passes it to the renderer, and fidelity.py behind a new --sound-voices flag writes aud_voices (three values) and aud_voice_pairing (voices paired by wave_voices agreement, not by index). New tests: test_cache_key_differs_by_mute and test_solo_render_passes_mutes in python/tests/test_sound.py, test_pairing_follows_wave_not_index in python/tests/test_fidelity.py, test_voice_deficits_fires in python/tests/test_queue.py. SABOTAGE-VERIFY: 0 failed, and each of three mutations makes a named test fail, mutated region printed from disk: (1) drop mute from the cache key, (2) pair by index, (3) pass mute=() to the renderer. Run on the top five non-held rows of build/residual.md, recording which voice carries each residual and the measured render-time multiple (do not assume 3x). Adoption into the routine refresh is NOT part of this task. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "cache-key and pairing logic in the audio path; diagnosis-grade",
+   "why_effort": "a mix render served for a solo key reads plausible and is wrong",
+   "why_offload": null,
+   "why_mode": "confined to sound.py/fidelity.py and tests in a worktree; the adoption decision is split out to main",
+   "why_lane": "a declared path overlaps 30 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-all-subtunes-build",
+   "title": "--all-subtunes: measure every subtune of ours against its original counterpart (158 subtunes unmeasured), separate JSON and report",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-g---all-subtunes-sweep-subagent-sonnet-55-build---main-run",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/fbs-all-subtunes-build"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. Done when fidelity.py --all-subtunes enumerates every subtune of ours, pairs each to the original through the existing subtune_matrix / SUBTUNE_COUNTERPART machinery, records an unpaired or stub pair as 'unpaired' instead of scoring it, records a dropped subtune with the reason convert reports, and writes build/fidelity_subtunes.json and docs/SUBTUNE-FIDELITY.md without touching docs/FIDELITY.md or build/fidelity.json. New tests in python/tests/test_fidelity.py: test_all_subtunes_enumerates, test_all_subtunes_never_scores_a_stub, test_dropped_subtune_is_recorded. SABOTAGE-VERIFY: 0 failed, and each of two mutations makes a named test fail, mutated region printed from disk: (1) score every pair regardless of the matrix, (2) skip dropped subtunes silently. A two-file smoke run writes only into the task's scratch dir. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "the subtune pairing is the hardest part of the harness; Sonnet at high effort, not the critical class",
+   "why_effort": "a stub scored as a tune is the documented 'what not to do' failure",
+   "why_offload": null,
+   "why_mode": "confined to fidelity.py and its test in a worktree; the corpus run is split out to main",
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-all-subtunes-run",
+   "title": "Corpus --all-subtunes run at -t 60: list subtunes 10+ points below their file's default on aud or melody",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-g---all-subtunes-sweep-subagent-sonnet-55-build---main-run",
+   "model": "session",
+   "effort": "medium",
+   "offload": null,
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "rw:build/fidelity_subtunes.json",
+    "rw:docs/SUBTUNE-FIDELITY.md",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-all-subtunes-run"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "a sharded corpus run with renders, longer than a delegated agent's ceiling",
+   "depends_on": [
+    "fbs-all-subtunes-build"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Done when build/fidelity_subtunes.json and docs/SUBTUNE-FIDELITY.md exist from a sharded --all-subtunes --sound run at -t 60 (the header says -t 60 and why), taken from a clean converter (a detached worktree of HEAD with build/ junctioned in, per CLAUDE.md), and the report lists each subtune at least 10 points below its own file's default subtune on aud or melody, held files in their own section. docs/FIDELITY.md and build/fidelity.json are unchanged by this task.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "a mechanical run with one judgement: whether the stub refusals look right",
+   "why_offload": null,
+   "why_mode": "a long corpus run with renders that outlives a delegated agent and writes a generated artefact",
+   "why_lane": "a declared path overlaps 19 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-sound-floors-at-head",
+   "title": "Sound calibration floors at HEAD: SOUND-CALIBRATION.md reads FAIL at v0.5.490, before --delay=0",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-h-re-take-the-sound-floors-main",
+   "model": "session",
+   "effort": "medium",
+   "offload": null,
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/sound_calibrate.py",
+    "rw:docs/SOUND-CALIBRATION.md",
+    "rw:build/sound_calibration.json",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-sound-floors-at-head"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerates a tracked artefact and the shared render cache",
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Done when docs/SOUND-CALIBRATION.md is regenerated by python sound_calibrate.py at the current HEAD (its header names that version), checks 2-4 are read at both 60 s and the whole window, and the noise and closeness floors the fbs-* aud decisions use are stated with their version; if it still reads FAIL, the failing check is named and every fbs-* aud threshold stays relative to each song's own median.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "runs an existing calibrator; the reading is the only judgement",
+   "why_offload": null,
+   "why_mode": "regenerates a tracked doc and a renders cache the refresh shares",
+   "why_lane": "a declared path overlaps 13 other task(s) where at least one side writes"
+  },
+  {
+   "id": "fbs-queue-holds-and-new-keys",
+   "title": "fidelity_queue: held entries separated and untagged; aud_first_dip_s and vol/res/route/ctrl causes get their own entries",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-j-queue-learns-holds-and-the-new-keys-subagent-sonnet-55",
+   "model": "sonnet",
+   "effort": "medium",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/hold.py",
+    "r:build/fidelity.json",
+    "rw:python/fidelity_queue.py",
+    "rw:python/tests/test_queue.py",
+    "rw:host:C:/t/fbs-queue-holds-and-new-keys"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-vol-column",
+    "fbs-ctrl-bits-column",
+    "fbs-res-route-columns",
+    "fbs-aud-timeline"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. Done when every fidelity_queue entry carries held from hold.held() and a held entry renders under 'On hold: DIGI' with no tag, an entry exists per aud_first_dip_s naming the second, and the vol/res/route/ctrl outliers carry cause text (column_outliers already emits their rows; it is not rewritten). New tests in python/tests/test_queue.py: test_held_entries_are_separated_and_untagged, test_dip_entry_names_the_second, test_vol_outlier_cause_names_loud_ratio. SABOTAGE-VERIFY: 0 failed, and each of two mutations makes a named test fail, mutated region printed from disk: (1) ignore held, (2) drop the dip entry. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "bounded edit to one module against known row keys",
+   "why_effort": "ordinary judgement once the new keys exist",
+   "why_offload": null,
+   "why_mode": "confined to fidelity_queue.py and its test in a worktree",
+   "why_lane": "a declared path overlaps 4 other task(s) where at least one side writes"
+  },
+  {
+   "id": "fbs-volume-fix-design",
+   "title": "Mega_Apocalypse and Pygmies_Revenge play at $F where the original holds $8: decide where a DXY master-volume command goes without costing row 0's tempo",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-k-investigate-each-top-finding-subagent-per-finding-opus-55-for-root-cause",
+   "model": "session",
+   "effort": "xhigh",
+   "offload": null,
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/fbs-volume-fix-design"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-vol-column"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Done when a written design (in the task's scratch dir and summarised in the run record) states where the volume command is emitted, how it coexists with CLAUDE.md's row-0 rule (patterns.TEMPO_OVERWRITABLE and ONE_SHOT_COMMANDS; grep CLAUDE.md for 'Row 0's command column belongs to the subtune's clock'), which of the 20 non-$F originals it applies to (held ones listed, none worked), and the A/B that would prove it (vol and loud_ratio on both songs, corpus byte-hash naming every mover). No converter change is made by this task; the implementation is opened as its own task.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "the row-0 collision is exactly the class where a plausible answer is wrong",
+   "why_offload": null,
+   "why_mode": "an architectural decision touching a hard invariant, not delegable",
+   "why_lane": "a declared path overlaps 15 other task(s) where at least one side writes"
+  },
+  {
+   "id": "fbs-kotb-ingame-rest-wave-silence",
+   "title": "Kings_of_the_Beach_ingame rings every note where the original writes waveform $00 (gate_ours_ringing 84/84): A/B rest_wave_silence",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-k-investigate-each-top-finding-subagent-per-finding-opus-55-for-root-cause",
+   "model": "sonnet",
+   "effort": "high",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-kotb-ingame-rest-wave-silence"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. Done when an A/B of Kings_of_the_Beach_ingame with and without rest_wave_silence (presets otherwise as shipped, --sound, its own window, written to the task's scratch dir) reports gate_ours_ringing, gate, wave, aud and loud both ways, and the same option is A/B'd on every non-held file whose gate_ours_ringing exceeds half its notes (listed from build/fidelity.json). The run record names the files it helps and hurts; it adopts nothing into presets.json. Note the 8 s window beside every figure.",
+   "why_model": "a measured A/B with a named option; the mechanism candidate is already given",
+   "why_effort": "the cross-song census decides whether this is a fix or a one-song shim",
+   "why_offload": null,
+   "why_mode": "a measurement with a mechanical conclusion; adoption stays with main",
+   "why_lane": "a declared path overlaps 19 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-localise-confuzion-chicken-song",
+   "title": "Localise Confuzion (aud 0.80, adsr_exact 0.24) and Chicken_Song (loud_ratio 0.83 at volume $F) to a voice and a second, then name the mechanism",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-k-investigate-each-top-finding-subagent-per-finding-opus-55-for-root-cause",
+   "model": "opus",
+   "effort": "xhigh",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "r:python/sound.py",
+    "r:python/vicetrace.py",
+    "r:python/songview.py",
+    "rw:build/audio",
+    "rw:host:C:/t/fbs-localise-confuzion-chicken-song"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-aud-voices",
+    "fbs-aud-timeline"
+   ],
+   "fork": [
+    "envelope-unseen",
+    "other"
+   ],
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. No test fixture, lead or queue entry targets a file in hold.ON_HOLD. Done when, for each of Confuzion and Chicken_Song, the run record names the voice (aud_voices) and the second (aud_first_dip_s) carrying the deficit, shows the two sides' registers there (--diagnose and --vice), names the mechanism, and censuses that mechanism across the corpus with the files that share it. The fork answer is 'envelope-unseen' only if the mechanism is an envelope shape or timing that neither tail nor adsr_exact reads; otherwise 'other'. Stop on refuted; no converter change.",
+   "why_model": "root cause where a confident wrong mechanism is the expensive failure (the critical class)",
+   "why_effort": "two songs, a fork answer that gates a model build, and a census",
+   "why_offload": null,
+   "why_mode": "a root-cause hunt delegated with read-only scope, its conclusion checked by the census",
+   "why_lane": "a declared path overlaps 19 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-envelope-column",
+   "title": "env column: envelope-level trajectory built on fidelity.py's existing SID rate/decay constants, only if a localisation names envelope shape",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-i-env-envelope-level-trajectory-subagent-opus-55-conditional",
+   "model": "opus",
+   "effort": "xhigh",
+   "offload": null,
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json",
+    "r:python/h2g",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/fbs-envelope-column"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-localise-confuzion-chicken-song"
+   ],
+   "fork": null,
+   "branch": {
+    "fbs-localise-confuzion-chicken-song": "envelope-unseen"
+   },
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Work in a worktree off HEAD; copy siddump.exe in first. Done when a validation oracle for envelope level is named and measured BEFORE implementation (vicetrace has no ENV3; say what replaces it), an 'env' Dimension built on SID_RATE_PERIOD, SID_DECAY_UNITS, SID_DELAY_BUG_CYCLES and envelope_zero_frame (no second constant table) is in fidelity.DIMENSIONS, and it reads the mechanism the fork named on its own song. New tests in python/tests/test_fidelity.py: test_tail_already_sees_it (guards against duplicating tail), test_late_envelope_seen. SABOTAGE-VERIFY: 0 failed, and each of two mutations makes a named test fail, mutated region printed from disk: (1) ignore the gate edge, (2) drop the lag. Commando.sng stays byte-identical (tests/test_commando.py) and the corpus byte-hash reports 0 moved. (grep for the quoted names rather than trusting any line number in the source plan)",
+   "why_model": "a model of chip behaviour whose oracle problem is unsolved; the critical class",
+   "why_effort": "validating a simulation against hardware state is where confident wrong answers come from",
+   "why_offload": null,
+   "why_mode": "confined to fidelity.py and its test, run only on the fork's envelope-unseen branch",
+   "why_lane": "a declared path overlaps 27 other task(s) where at least one side writes -- MORE THAN HALF THE PLAN: rw:python/fidelity.py is the shared harness module most measurement tasks read or write, so this is genuine serial work, not an over-broad declaration"
+  },
+  {
+   "id": "fbs-measuring-doc-for-new-columns",
+   "title": "MEASURING.md sections and CLAUDE.md headlines for vol, sync/ring/ctrl, res/route, aud_timeline and aud_voices",
+   "source": "docs/superpowers/plans/2026-10-24-fidelity-blind-spots.fable.md#task-m-documentation-and-refresh-main",
+   "model": "session",
+   "effort": "medium",
+   "offload": null,
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/fidelity.py",
+    "r:python/sound.py",
+    "rw:docs/MEASURING.md",
+    "rw:CLAUDE.md",
+    "rw:docs/LESSONS.md",
+    "rw:docs/RULES.md",
+    "rw:docs/FIDELITY-TOOL-IMPROVEMENTS.md",
+    "rw:.claude/hooks/flag_guard.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "fbs-vol-column",
+    "fbs-ctrl-bits-column",
+    "fbs-res-route-columns",
+    "fbs-aud-timeline",
+    "fbs-aud-voices"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Done when docs/MEASURING.md has one section per new column or row key (what it reads, what it is blind to, its population, its validation case), CLAUDE.md's Measurement discipline section carries a one-line headline per new durable rule with the evidence in docs/LESSONS.md (figures versioned), FIDELITY-TOOL-IMPROVEMENTS.md's §5 and §8 items say which are now built, and flag_guard.py names any flag the routine refresh adopted.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "documentation against code that has landed",
+   "why_offload": null,
+   "why_mode": "edits CLAUDE.md and hand-written docs that must land with the commits they describe",
+   "why_lane": "a declared path overlaps 8 other task(s) where at least one side writes"
   }
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1509,
+ "closed_count": 1514,
  "closed": []
 }

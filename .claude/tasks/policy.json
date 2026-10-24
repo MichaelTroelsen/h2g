@@ -6,5 +6,5 @@
   "hold_re": "ON HOLD|DIGI file|python/hold\\.py",
   "listen_re": "listen|verdict|by ear|audible|sign-off",
   "listen_task_id": "listen-current-builds-2026-10",
-  "keep_ids": []
+  "keep_ids": ["fbs-queue-holds-and-new-keys"]
 }
