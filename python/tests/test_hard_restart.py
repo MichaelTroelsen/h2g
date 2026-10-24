@@ -346,8 +346,12 @@ def test_the_packed_player_compares_the_counter_with_this_gatetimer(tmp_path):
     root = pathlib.Path(__file__).resolve().parents[2]
     doc = json.loads((root / "presets.json").read_text(encoding="utf-8"))
     name = "Action_Biker.sid"
-    sng = convert(str(CORPUS / name), log=lambda m: None,
-                  **F._preset_opts(doc, name))
+    # v0.5.592 adopted gate_off_firstwave_instruments for Action_Biker, and the
+    # packed player then carries no `CMP #2` (gate and wave agree with the
+    # original instead); this pins the shape of the compare itself.
+    opts = F._preset_opts(doc, name)
+    opts["gate_off_firstwave_instruments"] = ()
+    sng = convert(str(CORPUS / name), log=lambda m: None, **opts)
     gts = {ins.gatetimer for ins in songview.parse_sng(sng).instruments}
     assert len(gts) == 1, "the fixed-params path needs one shared gatetimer"
     gt = gts.pop() & 0x3F

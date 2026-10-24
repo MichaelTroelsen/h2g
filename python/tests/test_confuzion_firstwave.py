@@ -34,6 +34,10 @@ NAME = "Confuzion.sid"
 def _convert(**extra) -> bytes:
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = F._preset_opts(doc, NAME)
+    # The measured arm is the testbit firstwave; v0.5.592 adopted
+    # gate_off_firstwave_instruments for Confuzion, which rewrites every
+    # record's byte, so the comparison turns it off.
+    opts["gate_off_firstwave_instruments"] = ()
     opts.update(extra)
     return convert(str(CORPUS / NAME), log=lambda m: None, **opts)
 

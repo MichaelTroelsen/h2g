@@ -117,6 +117,9 @@ def test_confuzion_gate_rise_is_early_by_the_firstwave_gate_bit_alone(
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     assert doc["songs"][name].get("multiplier", 1) == 1
     opts = fidelity._preset_opts(doc, name)
+    # The arm under test is the testbit firstwave; v0.5.592 adopted
+    # gate_off_firstwave_instruments for Confuzion, which clears the gate bit.
+    opts["gate_off_firstwave_instruments"] = ()
     sng, _ = fidelity.legalise_restarts(
         convert(str(CORPUS / name), log=lambda m: None, **opts))
     offs = _firstwave_offsets(sng)
