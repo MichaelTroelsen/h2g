@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.602 — 2026-10-25
+
+- fidelity.py --all-subtunes measures every subtune of ours against its counterpart
+
 ## 0.5.601 — 2026-10-25
 
 - onset_timing reads gate rises against the gate-rise lag (pitch_anchor_shift)

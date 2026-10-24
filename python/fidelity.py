@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import copy
 import dataclasses
 import difflib
 import functools
@@ -7917,7 +7918,7 @@ def _drift_gate_skip_declined(sid: Path, subtune: int) -> bool:
 
 
 def measure(sid: Path, workdir: Path, opts: dict, args,
-            multiplier: int = 1) -> dict:
+            multiplier: int = 1, pair: tuple[int, int] | None = None) -> dict:
     """One file, end to end, plus the record of which dimensions it compared.
 
     The dimension list is stamped here rather than inside `_measure` because
@@ -7926,13 +7927,13 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
     whose voices never select a waveform -- and a row that claims a dimension
     it did not compute is exactly the misreading this is here to stop.
     """
-    row = _measure(sid, workdir, opts, args, multiplier)
+    row = _measure(sid, workdir, opts, args, multiplier, pair)
     row["dimensions"] = dimensions_present(row)
     return row
 
 
 def _measure(sid: Path, workdir: Path, opts: dict, args,
-             multiplier: int = 1) -> dict:
+             multiplier: int = 1, pair: tuple[int, int] | None = None) -> dict:
     """One file, end to end: convert -> pack -> trace both -> compare.
 
     `multiplier` is the song's gt2reloc -S value, a property of its player
@@ -7944,6 +7945,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # where SUBTUNE_COUNTERPART pins the pair. Every trace of `packed` below
     # goes through `our_sub`; every trace of the original through `sub`.
     sub, our_sub, pinned = resolve_pair(sid, args.subtune)
+    if pair is not None:
+        # `--all-subtunes` names the pair itself (original's, ours), already
+        # established from the matrix; a pair given is never searched around.
+        sub, our_sub = pair
+        pinned = True
     # Every row carries the settings it was taken at, so a saved run is
     # self-describing: --baseline refuses to compare two runs traced at
     # different seconds or subtunes, and it can only do that if the file says.
@@ -11453,6 +11459,210 @@ def _print_progress(sid: Path, row: dict) -> None:
     print(f"  {sid.name:44} {note}", file=sys.stderr)
 
 
+# **--all-subtunes.** The default report scores ONE subtune per file (the
+# header's startSong, or SUBTUNE_COUNTERPART's pin); 158 further subtunes of
+# ours were never measured. This walks every subtune of OURS and pairs it to an
+# original subtune through the same machinery `--diagnose` prints:
+# `subtune_matrix` (melody for every original x ours cell) and
+# `SUBTUNE_COUNTERPART`. The two things it must never do are score a stub and
+# score a pairing the matrix does not support -- a number for two different
+# pieces of music reads as a converter defect (FIDELITY-TOOL-IMPROVEMENTS,
+# "what not to do" 3) -- so those rows are recorded `unpaired`, with the
+# reason, and carry no score. A subtune the converter or gt2reloc dropped is
+# recorded `dropped`, with the reason convert logged (the "Header claims ..."
+# lines) where it logged one. Written to its own JSON and report; the default
+# report and `build/fidelity.json` are never touched.
+ALL_SUBTUNES_JSON = "build/fidelity_subtunes.json"
+ALL_SUBTUNES_MD = "docs/SUBTUNE-FIDELITY.md"
+# A non-pinned pairing needs the matrix's melody at 50% or better, the same
+# bar `--diagnose` uses for "matches".
+PAIR_MIN = 0.5
+# The main report's own files, which the sweep refuses to overwrite.
+_MAIN_REPORT_PATHS = ("build/fidelity.json", "docs/FIDELITY.md")
+
+
+def all_subtunes_rows(sid: Path, workdir: Path, opts: dict, args,
+                      multiplier: int = 1) -> list[dict]:
+    """One row per subtune of OURS, plus one per original subtune we dropped.
+
+    `status` is `measured` (scored at the pair in `orig_subtune`/`our_subtune`,
+    all the usual columns present), `unpaired` (no score, `reason` says why),
+    `dropped` (the subtune does not reach the packed .sid, `reason` says why),
+    or `not converted` / `not packed` for the whole file.
+    """
+    base = {"file": sid.name}
+    logs: list[str] = []
+    try:
+        sng = convert(str(sid), log=logs.append, **opts)
+    except Exception as exc:                       # noqa: BLE001
+        return [{**base, "status": "not converted",
+                 "detail": f"{type(exc).__name__}: {exc}"}]
+    lengths = song_lengths(sng)
+    nours = len(lengths)
+    hdr = load_sid(str(sid))
+    exp = greloc_export(lengths)
+    sng, _patched = legalise_restarts(sng)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier, original=sid)
+    if packed is None:
+        return [{**base, "status": "not packed",
+                 "detail": "gt2reloc wrote no .sid"}]
+
+    rows: list[dict] = []
+
+    local = workdir / "o.sid"
+    shutil.copyfile(sid, local)
+    cal, _ft = table_calibration(sid, opts)
+    grid, ni, nj = subtune_matrix(local, packed, args, cal,
+                                  hdr.subtunes, nours, multiplier)
+    pin = SUBTUNE_COUNTERPART.get(sid.name)
+    default = resolve_pair(sid, args.subtune)[:2]
+    sargs = copy.copy(args)
+    sargs.search_subtunes = 1          # the pair is named; do not search it
+    for j in range(nours):
+        row = {**base, "our_subtune": j, "orig_subtune": None}
+        if j in exp["lost"]:
+            rows.append({**row, "status": "dropped", "reason": (
+                f"gt2reloc exports {exp['exported']} of {exp['subtunes']} "
+                "subtunes (greloc.c:200-255) and never writes this one")})
+            continue
+        if j in exp["stub"]:
+            rows.append({**row, "status": "unpaired", "reason": (
+                "stub: a voice has zero orderlist length, gt2reloc writes an "
+                "empty entry that plays nothing")})
+            continue
+        if j >= nj or not ni:
+            rows.append({**row, "status": "unpaired", "reason": (
+                f"beyond the matrix cap ({MATRIX_CAP} a side), no pairing "
+                "evidence")})
+            continue
+        pinned = bool(pin and pin[1] == j and pin[0] < ni)
+        cand = pin[0] if pinned else max(range(ni), key=lambda i: grid[i][j])
+        m = grid[cand][j]
+        diag = grid[j][j] if j < ni else None
+        row.update({"orig_subtune": cand, "matrix_melody": round(m, 4),
+                    "pinned": pinned, "is_default": (cand, j) == default})
+        if (not pinned and m < PAIR_MIN) or (diag is not None and m < diag):
+            why = (f"best original s{cand} matches at {100 * m:.0f}%, under "
+                   f"the {100 * PAIR_MIN:.0f}% a pairing needs"
+                   if not pinned and m < PAIR_MIN else
+                   f"s{cand} matches at {100 * m:.0f}%, below the diagonal "
+                   f"s{j}'s {100 * diag:.0f}%")
+            rows.append({**row, "status": "unpaired",
+                         "reason": f"matrix does not support a pairing: {why}"})
+            continue
+        try:
+            r = measure(sid, workdir, opts, sargs, multiplier, pair=(cand, j))
+        except Exception as exc:                   # noqa: BLE001
+            rows.append({**row, "status": "error",
+                         "reason": f"{type(exc).__name__}: {exc}"})
+            continue
+        rows.append({**r, **row, "status": r.get("status", "measured")})
+    # Original subtunes the .sng does not carry. `convert` says why in its
+    # own words when it trims; a trim it did not announce is recorded as that.
+    # Decided last: an original index that some subtune of ours was paired to
+    # (Commodore_64_Music_Examples' s1 is its o0) is carried, not dropped.
+    paired = {r["orig_subtune"] for r in rows
+              if r["status"] in ("measured", "error")}
+    claimed = [m.strip() for m in logs if m.startswith("Header claims")]
+    for i in range(nours, hdr.subtunes):
+        if i in paired:
+            continue
+        rows.append({**base, "status": "dropped", "orig_subtune": i,
+                     "our_subtune": None,
+                     "reason": ("; ".join(claimed) if claimed else
+                                f"convert logged no reason (header claims "
+                                f"{hdr.subtunes}, the .sng carries {nours})")})
+    rows.sort(key=lambda r: (r.get("our_subtune") is None,
+                             r.get("our_subtune") or 0,
+                             r.get("orig_subtune") or 0))
+    return rows
+
+
+def all_subtunes_report(rows: list[dict], args) -> str:
+    """The Markdown for `docs/SUBTUNE-FIDELITY.md`: every row, no verdicts."""
+    def pct(v):
+        return "-" if v is None else f"{100 * v:.0f}"
+    counts = Counter(r["status"] for r in rows)
+    out = ["# Subtune fidelity (`--all-subtunes`)", "",
+           f"Traced at `-t {args.seconds}`, version {__version__}"
+           + (f", {args.label}" if getattr(args, "label", None) else "")
+           + ". Separate from `docs/FIDELITY.md`, which scores one subtune "
+           "per file; nothing here changes that report or "
+           "`build/fidelity.json`.", "",
+           "Every subtune of OURS is paired to an original subtune through "
+           "`SUBTUNE_COUNTERPART` or the `--diagnose` melody matrix. A pair the "
+           "matrix does not support, and a stub, is `unpaired` and carries no "
+           "score; a subtune that does not reach the packed .sid is "
+           "`dropped`, with convert's reason.", "",
+           "Rows: " + ", ".join(f"{n} {k}" for k, n in sorted(counts.items())),
+           ""]
+    defaults = {r["file"]: r for r in rows
+                if r.get("is_default") and r["status"] == "measured"}
+    out += ["| file | orig | ours | status | melody | aud | vs default | note |",
+            "|---|---:|---:|---|---:|---:|---:|---|"]
+    low = []
+    for r in rows:
+        d = defaults.get(r["file"])
+        delta = ""
+        if r["status"] == "measured" and d is not None and r is not d:
+            parts = []
+            for col in ("melody", "aud"):
+                if r.get(col) is not None and d.get(col) is not None:
+                    gap = r[col] - d[col]
+                    parts.append(f"{col} {100 * gap:+.0f}")
+                    if gap <= -0.10:
+                        low.append((r["file"], r["our_subtune"], col, gap))
+            delta = ", ".join(parts)
+        note = r.get("reason") or r.get("detail") or (
+            "default pair" if r.get("is_default") else
+            "pinned" if r.get("pinned") else "")
+        o = "-" if r.get("orig_subtune") is None else f"s{r['orig_subtune']}"
+        u = "-" if r.get("our_subtune") is None else f"o{r['our_subtune']}"
+        out.append(f"| {r['file']} | {o} | {u} | {r['status']} | "
+                   f"{pct(r.get('melody'))} | {pct(r.get('aud'))} | {delta} | "
+                   f"{str(note).replace('|', '/')} |")
+    out += ["", "## Measured subtunes 10 or more points below their file's default",
+            ""]
+    out += ([f"- {f} o{j}: {c} {100 * g:+.0f}" for f, j, c, g in low]
+            or ["- none"])
+    return "\n".join(out) + "\n"
+
+
+def _run_all_subtunes(sids: list[Path], doc: dict, args, workdir: Path) -> int:
+    root = Path(__file__).resolve().parent.parent
+    json_path = Path(args.json) if args.json else root / ALL_SUBTUNES_JSON
+    md_path = Path(args.output) if args.output else root / ALL_SUBTUNES_MD
+    for given, main_rel in ((json_path, _MAIN_REPORT_PATHS[0]),
+                            (md_path, _MAIN_REPORT_PATHS[1])):
+        if given.resolve() == (root / main_rel).resolve():
+            print(f"error: --all-subtunes never writes {main_rel}",
+                  file=sys.stderr)
+            return 2
+    rows: list[dict] = []
+    for sid in sids:
+        opts = _preset_opts(doc, sid.name)
+        for flag in ("slides", "effects", "fold_transpose", "regrid"):
+            if getattr(args, flag, False):
+                opts[flag] = True
+        mult = _preset_multiplier(doc, sid.name)
+        part = all_subtunes_rows(sid, workdir, opts, args, mult)
+        for r in part:
+            r.setdefault("seconds", args.seconds)
+            r.setdefault("version", __version__)
+            r.setdefault("label", getattr(args, "label", None))
+        rows.extend(part)
+        print(f"{sid.name}: " + ", ".join(
+            f"{k} {n}" for k, n in sorted(Counter(r["status"] for r in part).items())),
+            file=sys.stderr)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+    md_path.write_text(all_subtunes_report(rows, args), encoding="utf-8")
+    print(f"wrote {json_path} and {md_path}", file=sys.stderr)
+    print(preset_opts_miss_report(), file=sys.stderr)
+    return 0
+
+
 def _timed_measure(sid: Path, workdir: Path, opts: dict, args,
                    mult: int) -> dict:
     # Wall clock for this one song: convert, pack, trace, render. Not a
@@ -11670,6 +11880,17 @@ def main(argv=None) -> int:
                         "cannot ask, because it varies our index and not the "
                         "original's), then a per-voice cause for the low "
                         "score. Prints text; writes no report")
+    p.add_argument("--all-subtunes", action="store_true",
+                   help="measure EVERY subtune of ours against its original "
+                        "counterpart (paired through SUBTUNE_COUNTERPART or "
+                        "the --diagnose melody matrix). A stub or a pair the "
+                        "matrix does not support is recorded `unpaired`, a "
+                        "subtune that does not reach the packed .sid "
+                        "`dropped` with convert's reason; neither is scored. "
+                        "Writes build/fidelity_subtunes.json and "
+                        "docs/SUBTUNE-FIDELITY.md (or --json / -o), and "
+                        "refuses to write build/fidelity.json or "
+                        "docs/FIDELITY.md")
     p.add_argument("--search-subtunes", type=int, default=3, metavar="N",
                    help="try a window of N of our subtunes centred on the "
                         "traced one and keep the best match; our numbering "
@@ -11942,6 +12163,8 @@ def _run(p, args, workdir: Path) -> int:
             print(preset_opts_miss_report(), file=sys.stderr)
             return 0
 
+        if args.all_subtunes:
+            return _run_all_subtunes(sids, doc, args, workdir)
         if args.naming_census:
             # Two arms per file, so this cannot ride on the ordinary row
             # sweep the other censuses read: arm A is the shipped preset and

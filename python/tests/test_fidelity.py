@@ -5435,3 +5435,141 @@ def test_res_vice_path_reads_the_whole_d417_byte():
     assert swap["route"] == 0.0 and swap["res"] == 1.0
     none = fidelity.vice_register_compare(trace(0xF1, 0x0F), trace(0x01, 0x0F))
     assert none["res"] is None
+
+
+# --- --all-subtunes -------------------------------------------------------
+# Every subtune of OURS, paired through the matrix / SUBTUNE_COUNTERPART. The
+# seams are faked (no siddump, no gt2reloc): what is under test is which rows
+# are scored, which are `unpaired` and which are `dropped`, and why.
+
+def _all_subtunes_world(monkeypatch, tmp_path, *, lengths, grid, header,
+                        logs=(), name="Fake.sid"):
+    """Patch every collaborator of `all_subtunes_rows`; return (sid, args, scored)."""
+    from types import SimpleNamespace
+    scored = []
+
+    def fake_convert(path, log=None, **opts):
+        for m in logs:
+            log(m)
+        return b"sng"
+
+    def fake_measure(sid, workdir, opts, args, multiplier=1, pair=None):
+        scored.append(pair)
+        return {"status": "measured", "melody": 0.9, "aud": 0.8,
+                "subtune": pair[0]}
+
+    monkeypatch.setattr(fidelity, "convert", fake_convert)
+    monkeypatch.setattr(fidelity, "song_lengths", lambda blob: list(lengths))
+    monkeypatch.setattr(fidelity, "legalise_restarts", lambda sng: (sng, 0))
+    monkeypatch.setattr(fidelity, "pack_sid", lambda *a, **k: tmp_path / "p.sid")
+    monkeypatch.setattr(fidelity, "load_sid", lambda p: SimpleNamespace(
+        subtunes=header, start_song=1))
+    monkeypatch.setattr(fidelity, "table_calibration", lambda s, o: (0, None))
+    monkeypatch.setattr(fidelity, "subtune_matrix", lambda *a, **k: (
+        grid, len(grid), len(grid[0])))
+    monkeypatch.setattr(fidelity, "measure", fake_measure)
+    monkeypatch.setattr(fidelity, "SUBTUNE_COUNTERPART", {})
+    sid = tmp_path / name
+    sid.write_bytes(b"")
+    args = SimpleNamespace(seconds=10, gt2reloc="x", subtune="auto",
+                           search_subtunes=3, label=None, siddump="x")
+    return sid, args, scored
+
+
+def test_all_subtunes_enumerates(monkeypatch, tmp_path):
+    ok = [(1, 1, 1)] * 3
+    diag = [[0.9, 0.1, 0.1], [0.1, 0.9, 0.1], [0.1, 0.1, 0.9]]
+    sid, args, scored = _all_subtunes_world(
+        monkeypatch, tmp_path, lengths=ok, grid=diag, header=3)
+    rows = fidelity.all_subtunes_rows(sid, tmp_path, {}, args)
+    assert [(r["orig_subtune"], r["our_subtune"], r["status"]) for r in rows] \
+        == [(0, 0, "measured"), (1, 1, "measured"), (2, 2, "measured")]
+    assert scored == [(0, 0), (1, 1), (2, 2)]
+    assert [r["is_default"] for r in rows] == [True, False, False]
+    text = fidelity.all_subtunes_report(rows, args)
+    assert "3 measured" in text and "| Fake.sid | s2 | o2 | measured |" in text
+
+
+def test_all_subtunes_never_scores_a_stub(monkeypatch, tmp_path):
+    # o1 is a stub (voice 0 empty, and o2 is valid so index < songs=3); o3 is
+    # past gt2reloc's count. o2's best original is s0 at 30%: under the bar.
+    lengths = [(1, 1, 1), (0, 1, 1), (1, 1, 1), (1, 1, 1)]
+    grid = [[0.9, 0.5, 0.3, 0.1], [0.1, 0.1, 0.2, 0.1],
+            [0.2, 0.1, 0.1, 0.1], [0.1, 0.1, 0.1, 0.1]]
+    sid, args, scored = _all_subtunes_world(
+        monkeypatch, tmp_path, lengths=lengths, grid=grid, header=4)
+    rows = {r["our_subtune"]: r for r in
+            fidelity.all_subtunes_rows(sid, tmp_path, {}, args)}
+    assert rows[0]["status"] == "measured"
+    assert rows[1]["status"] == "unpaired" and "stub" in rows[1]["reason"]
+    assert rows[2]["status"] == "unpaired"
+    assert "does not support" in rows[2]["reason"]
+    assert rows[3]["status"] == "dropped"
+    for j in (1, 2, 3):
+        assert rows[j].get("melody") is None      # no score, not even a low one
+    assert scored == [(0, 0)]
+
+
+def test_all_subtunes_never_scores_a_pair_the_matrix_does_not_support(
+        monkeypatch, tmp_path):
+    ok = [(1, 1, 1)] * 3
+    # o2: best original s0 at 30% -> under the bar. A pin to s0 that is below
+    # the diagonal's own 90% is refused too.
+    grid = [[0.9, 0.1, 0.3], [0.1, 0.9, 0.1], [0.1, 0.1, 0.9]]
+    grid[2][2] = 0.2          # the diagonal itself is weak, s0 wins at 30%
+    sid, args, scored = _all_subtunes_world(
+        monkeypatch, tmp_path, lengths=ok, grid=grid, header=3)
+    rows = {r["our_subtune"]: r for r in
+            fidelity.all_subtunes_rows(sid, tmp_path, {}, args)}
+    assert rows[2]["status"] == "unpaired"
+    assert "does not support" in rows[2]["reason"]
+    assert (0, 2) not in scored and (2, 2) not in scored
+    # Pinned pair that scores below the diagonal's cell: unpaired as well.
+    grid2 = [[0.9, 0.1, 0.3], [0.1, 0.9, 0.1], [0.1, 0.1, 0.9]]
+    scored.clear()
+    monkeypatch.setattr(fidelity, "subtune_matrix",
+                        lambda *a, **k: (grid2, 3, 3))
+    monkeypatch.setattr(fidelity, "SUBTUNE_COUNTERPART", {sid.name: (0, 2)})
+    rows = {r["our_subtune"]: r for r in
+            fidelity.all_subtunes_rows(sid, tmp_path, {}, args)}
+    assert rows[2]["status"] == "unpaired" and rows[2]["pinned"] is True
+    assert (0, 2) not in scored
+
+
+def test_dropped_subtune_is_recorded(monkeypatch, tmp_path):
+    claim = "Header claims $5 subtune(s); the track table holds $3"
+    # gt2reloc: o2 has sounding rows but o1 is a stub -> songs=2, o2 is lost.
+    lengths = [(1, 1, 1), (0, 1, 1), (1, 1, 1)]
+    grid = [[0.9, 0.1, 0.1], [0.1, 0.9, 0.1], [0.1, 0.1, 0.9]]
+    sid, args, scored = _all_subtunes_world(
+        monkeypatch, tmp_path, lengths=lengths, grid=grid, header=5,
+        logs=["SID Subtunes: $5", claim])
+    rows = fidelity.all_subtunes_rows(sid, tmp_path, {}, args)
+    dropped = [r for r in rows if r["status"] == "dropped"]
+    # Original s3, s4 never reach the .sng: convert's own sentence is the reason.
+    orig_side = [r for r in dropped if r["our_subtune"] is None]
+    assert [r["orig_subtune"] for r in orig_side] == [3, 4]
+    assert all(claim in r["reason"] for r in orig_side)
+    # Ours o2 is exported by nothing: gt2reloc's reason.
+    ours_side = [r for r in dropped if r["our_subtune"] == 2]
+    assert len(ours_side) == 1 and "gt2reloc" in ours_side[0]["reason"]
+    assert not any(r["status"] == "measured" and r["our_subtune"] == 2
+                   for r in rows)
+    # With no "Header claims" line, the row says convert gave none.
+    sid, args, _ = _all_subtunes_world(
+        monkeypatch, tmp_path, lengths=lengths, grid=grid, header=5)
+    quiet = [r for r in fidelity.all_subtunes_rows(sid, tmp_path, {}, args)
+             if r["status"] == "dropped" and r["our_subtune"] is None]
+    assert quiet and all("convert logged no reason" in r["reason"] for r in quiet)
+
+
+def test_all_subtunes_refuses_to_write_the_main_report(tmp_path):
+    from types import SimpleNamespace
+    root = pathlib.Path(fidelity.__file__).resolve().parent.parent
+    args = SimpleNamespace(json=str(root / "build" / "fidelity.json"),
+                           output=str(tmp_path / "x.md"), seconds=1,
+                           label=None)
+    assert fidelity._run_all_subtunes([], {}, args, tmp_path) == 2
+    assert not (tmp_path / "x.md").exists()
+    assert fidelity.ALL_SUBTUNES_JSON == "build/fidelity_subtunes.json"
+    assert fidelity.ALL_SUBTUNES_MD == "docs/SUBTUNE-FIDELITY.md"
