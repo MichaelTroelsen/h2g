@@ -40,13 +40,17 @@ _CMD_SETWAVEPTR = 0x8
 _TOP = 0xBC           # GT_LASTNOTE: the note column's last note, entry 92
 
 
+# Star_Paws adopted regrid at v0.5.595; these tests pin the pre-adoption arm.
+PRE_ADOPTION = dict(regrid=False, regrid_full_debt=False, regrid_per_play=False)
+
+
 def _star_paws():
     import json
     import fidelity as F
     from h2g.convert import convert
     doc = json.load(open(PYTHON_ROOT.parent / "presets.json"))
     blob = convert(str(CORPUS / "Star_Paws.sid"), log=lambda *a, **k: None,
-                   **F._preset_opts(doc, "Star_Paws.sid"))
+                   **{**F._preset_opts(doc, "Star_Paws.sid"), **PRE_ADOPTION})
     return _parse_song(blob)
 
 
@@ -64,7 +68,7 @@ def test_the_climb_does_not_wrap_in_the_packed_trace(tmp_path):
     from h2g.convert import convert
     mult = F._preset_multiplier(doc, "Star_Paws.sid")
     sng = convert(str(CORPUS / "Star_Paws.sid"), log=lambda *a, **k: None,
-                  **F._preset_opts(doc, "Star_Paws.sid"))
+                  **{**F._preset_opts(doc, "Star_Paws.sid"), **PRE_ADOPTION})
     sid = F.pack_sid(sng, tmp_path, F.GT2RELOC, mult)
     assert sid, "gt2reloc refused the conversion"
     frames = 3000                                 # 60 s; the climb is at 2811

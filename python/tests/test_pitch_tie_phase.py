@@ -58,6 +58,7 @@ needs_gt2reloc = pytest.mark.skipif(
 def _opts(name="Star_Paws.sid", **extra):
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
+    opts.update(regrid=False, regrid_full_debt=False, regrid_per_play=False)
     opts.update(extra)
     return opts
 

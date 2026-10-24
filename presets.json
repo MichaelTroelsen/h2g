@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.594 presets.py",
+  "generator": "h2g 0.5.595 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2484,7 +2484,10 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true,
+      "regrid_full_debt": true,
+      "regrid_per_play": true
     },
     "Sun_Never_Shines.sid": {
       "max_rows": 94,

@@ -154,7 +154,13 @@ def test_star_paws_voice_1_travel_is_the_drum_fall(tmp_path):
     sid = CORPUS / "Star_Paws.sid"
     assert sid.is_file(), "Star_Paws is not in the corpus"
     out = tmp_path / "f.json"
-    rc = fidelity.main([str(sid), "-t", "30", "--jobs", "1",
+    pre = json.loads((PYTHON_ROOT.parent / "presets.json")
+                     .read_text(encoding="utf-8"))
+    for k in ("regrid", "regrid_full_debt", "regrid_per_play"):
+        pre["songs"]["Star_Paws.sid"].pop(k, None)      # pre-v0.5.595 arm
+    pp = tmp_path / "pre.json"
+    pp.write_text(json.dumps(pre), encoding="utf-8")
+    rc = fidelity.main([str(sid), "-t", "30", "--jobs", "1", "--presets", str(pp),
                         "--workdir", str(tmp_path / "w"),
                         "--json", str(out), "-o", str(tmp_path / "f.md")])
     assert rc in (0, None)

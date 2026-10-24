@@ -1549,7 +1549,9 @@ test dependency).
     carried `no_test_restart` (melody 1.00 both ways, drift -9.17 -> -0.13 per
     1000 at f28b063); the 15 above is now HISTORY.** **RE-GRADED AT v0.5.555: **17 adoptions** --
     Delta adopted (subtune 8 drift -25.0 -> 0.0 per 1000 at 2a13c5f); the 16
-    above is now HISTORY.** The drift split is not
+    above is now HISTORY.** **RE-GRADED AT v0.5.595: **18 adoptions** -- Star_Paws adopted (regrid +
+    regrid_full_debt + regrid_per_play; drift -7.8 -> -0.3 per 1000, gate +12.4
+    pp); the 17 above is now HISTORY.** The drift split is not
     re-graded here and must not be: it is a per-file measurement and the
     artefact is now `-t 180` where that figure was taken at `-t 60`, so the
     test SKIPS it rather than comparing two different quantities.

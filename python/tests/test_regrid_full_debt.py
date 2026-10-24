@@ -162,7 +162,8 @@ def _star_paws_regrid(monkeypatch, full_debt):
     import h2g.convert as C
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, "Star_Paws.sid")
-    opts.update(regrid=True, regrid_full_debt=full_debt)
+    opts.update(regrid=True, regrid_full_debt=full_debt,
+                regrid_per_play=False)
     seen = {}
     real = C.regrid_tempos
 
