@@ -1374,7 +1374,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "regrid": true
+      "regrid": true,
+      "regrid_full_debt": true
     },
     "IK_plus.sid": {
       "max_rows": 94,

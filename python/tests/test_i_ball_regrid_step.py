@@ -95,3 +95,15 @@ def test_full_debt_pays_i_ball_in_full_and_no_run_dominates(monkeypatch):
     got = sum(delivered.values())
     assert debt - 1 < got <= debt + 1e-9, (got, debt)
     assert max(delivered.values()) <= 25, delivered
+
+
+@needs_corpus
+def test_the_shipped_preset_pays_i_ball_in_full(monkeypatch):
+    # v0.5.603 adopts regrid_full_debt for I_Ball: the over-delivery the test
+    # above pins under the default budget is what the shipped entry no longer
+    # does (drift +3.06 -> 0.00 per 1000 at -t 180).
+    import fidelity
+    doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
+    assert fidelity._preset_opts(doc, "I_Ball.sid")["regrid_full_debt"] is True
+    debt, delivered, _ = _i_ball(monkeypatch, True)
+    assert debt - 1 < sum(delivered.values()) <= debt + 1e-9

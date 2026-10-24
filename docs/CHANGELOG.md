@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.603 — 2026-10-25
+
+- regrid_full_debt adopted for I_Ball
+
 ## 0.5.602 — 2026-10-25
 
 - fidelity.py --all-subtunes measures every subtune of ours against its counterpart
