@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.600 — 2026-10-25
+
+- res/route columns: fidelity compares $D417 resonance and per-voice routing over filtered frames
+
 ## 0.5.599 — 2026-10-25
 
 - sync/ring/ctrl columns: fidelity compares $D404 bits 1-3; the firstwave test frame is not charged

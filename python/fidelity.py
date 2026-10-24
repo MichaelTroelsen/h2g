@@ -5363,6 +5363,59 @@ def volume_compare(orig: FilterState, ours: FilterState, nframes: int,
     return _volume_stats(ta, tb)
 
 
+FILTER_RES_SHIFT = 4        # $D417's high nibble is the resonance
+
+
+def _filter_ctrl_stats(ro: list[int], rb: list[int],
+                       po: list[int], pb: list[int]) -> dict:
+    """`filter_ctrl_compare`'s arithmetic on four already-aligned timelines:
+    each side's whole $D417 byte and its $D418 passband (bits 4-6 as 0..7).
+
+    Shared by the siddump path (sparse events, lag-aligned) and the --vice
+    path (one representative value a frame), as `_volume_stats` is.
+    """
+    res_agree = route_agree = route_union = frames = 0
+    for r, b, p, q in zip(ro, rb, po, pb):
+        # The predicate `_filter_side` counts `filtered_frames` with: a voice
+        # routed AND a passband selected, either side.
+        if not (((r & FILTER_ROUTE) and p) or ((b & FILTER_ROUTE) and q)):
+            continue
+        frames += 1
+        res_agree += (r >> FILTER_RES_SHIFT) == (b >> FILTER_RES_SHIFT)
+        route_agree += bin(r & b & FILTER_ROUTE).count("1")
+        route_union += bin((r | b) & FILTER_ROUTE).count("1")
+    return {"res": (res_agree / frames) if frames else None,
+            "route": (route_agree / route_union) if route_union else None,
+            "filter_ctrl_frames": frames}
+
+
+def filter_ctrl_compare(orig: FilterState, ours: FilterState, nframes: int,
+                        lag: int = 0) -> dict:
+    """Resonance ($D417 high nibble) and per-voice routing (bits 0-2), the two
+    things `band` (`passband_agree`) ignores.
+
+    Both are read over the lag-aligned frames on which EITHER side filters --
+    the `filtered_frames` predicate (`_filter_side`): a voice routed into the
+    filter AND a passband selected. A frame on which neither side filters
+    holds a resonance nobody hears and is not counted, so a file that parks
+    $D417 on a constant outside its filter reads on its filter only.
+
+    `res` is the share of those frames on which the two resonance nibbles are
+    equal. `route` is voice-routes both sides make over voice-routes either
+    makes (summed over the frames, bits 0-2): a voice neither routes is not a
+    point of agreement, so routing voice 1 where the original routes voice 2
+    scores 0.0 on it while `passband_agree` reads 1.0. Bit 3 (external input) is not read; no SID
+    file has it. Both are `None` when neither side ever filters.
+    """
+    if not nframes:
+        return _filter_ctrl_stats([], [], [], [])
+    ro, rb = _aligned(register_timeline(orig.ctrl_events, nframes),
+                      register_timeline(ours.ctrl_events, nframes), lag)
+    po, pb = _aligned(register_timeline(orig.passband_events, nframes),
+                      register_timeline(ours.passband_events, nframes), lag)
+    return _filter_ctrl_stats(ro, rb, po, pb)
+
+
 def _shared_silence(a, b, silent=0) -> float:
     """The share of a frame on which BOTH sides hold the silent value.
 
@@ -5565,10 +5618,13 @@ def vice_register_compare(orig_samples: list, our_samples: list,
                 "pulse_voices": pulse_voices})
 
     # --- filter: the one global cell ----------------------------------------
+    def side_col(samples, pick, post=lambda v: v):
+        cells = vicetrace.frame_cells_global(samples, pick)
+        return [post(c.representative()) for c in cells][:nframes]
+
     def side(samples):
         def col(pick, post=lambda v: v):
-            cells = vicetrace.frame_cells_global(samples, pick)
-            return [post(c.representative()) for c in cells][:nframes]
+            return side_col(samples, pick, post)
         cut = col(lambda s: s.cutoff)
         ctrl = col(lambda s: s.res)
         band = col(lambda s: s.modevol, lambda v: (v >> 4) & 0x07)
@@ -5585,6 +5641,12 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     out.update({f"our_{k}": v for k, v in u.items()})
     out["cutoff_sweep"] = (u["cutoff_travel"] / o["cutoff_travel"]
                            if o["cutoff_travel"] else None)
+    # --- res/route: $D417 whole byte, passband from $D418, no lag -------------
+    out.update(_filter_ctrl_stats(
+        side_col(orig_samples, lambda s: s.res),
+        side_col(our_samples, lambda s: s.res),
+        side_col(orig_samples, lambda s: s.modevol, lambda v: (v >> 4) & 0x07),
+        side_col(our_samples, lambda s: s.modevol, lambda v: (v >> 4) & 0x07)))
     # --- volume: $D418's low nibble, no lag (as the rest of this path) -------
     def vol_col(samples):
         cells = vicetrace.frame_cells_global(samples, lambda s: s.modevol)
@@ -7178,6 +7240,20 @@ DIMENSIONS = (
               "test bit; a test bit the original sets always is. Under "
               "`no_test_restart` our firstwave is a full `$FF`-shaped byte and "
               "is charged"),
+    # $D417 split. `band` reads only that SOME voice is routed and which
+    # passband is selected, so a resonance nobody reproduces and a filter
+    # routed through the wrong voice both read 100% there.
+    Dimension("res", "res", ("$D417",), "fraction",
+              "share of the frames either side filters (a voice routed AND a "
+              "passband selected) on which the $D417 high nibble -- the "
+              "resonance -- is equal, lag-aligned. Frames on which neither "
+              "side filters are not counted; `-` where neither side ever "
+              "filters. Resonance is what `band` ignores"),
+    Dimension("route", "route", ("$D417",), "fraction",
+              "per-voice agreement of $D417 bits 0-2 (which voices are routed "
+              "into the filter) over the same frames as `res`: voices both "
+              "route over voices either routes, so routing the wrong voice "
+              "scores 0.0 here while `band` reads 100%. `-` where neither side ever filters"),
     Dimension("call_rate", "rate", ("PSID speed field, CIA timer A",), "ratio",
               "how fast our subtune ticks against the original's on PAL, "
               "from the two headers and gt2reloc's CIA stub "
@@ -8305,6 +8381,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(volume_compare(a.filter, best_dump.filter, nframes,
                                       lag))
             row.update(ctrl_bits_compare(a, best_dump, nframes, lag))
+            row.update(filter_ctrl_compare(a.filter, best_dump.filter,
+                                           nframes, lag))
             row.update(passband_note_relative(a, best_dump, nframes))
         if row.get("depth_refusal") == "gated":
             # Which of the player's two exclusions emptied the population,
@@ -8887,8 +8965,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -8936,6 +9014,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('vol'))} | "
             f"{_fmt_ratio(r.get('sync'))} | {_fmt_ratio(r.get('ring'))} | "
             f"{_fmt_pct(r.get('ctrl'))} | "
+            f"{_fmt_pct(r.get('res'))} | {_fmt_pct(r.get('route'))} | "
             f"{_fmt_rate(r)} | {status} |")
 
     if measured:
@@ -11767,6 +11846,7 @@ def _run(p, args, workdir: Path) -> int:
         row.update(filter_compare(da.filter, db.filter, nframes))
         row.update(volume_compare(da.filter, db.filter, nframes))
         row.update(ctrl_bits_compare(da, db, nframes))
+        row.update(filter_ctrl_compare(da.filter, db.filter, nframes))
         row.update(passband_note_relative(da, db, nframes))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)

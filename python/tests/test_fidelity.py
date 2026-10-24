@@ -1772,7 +1772,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # WITHOUT --sound legitimately omits them, which is what
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
-                 call_rate=1.0, vol=melody, sync=1.0, ring=1.0, ctrl=melody,
+                 call_rate=1.0, vol=melody, sync=1.0, ring=1.0, ctrl=melody, res=melody, route=melody,
                  sound_frames=100, sound_lag_ms=0.0,
                  orig_octave_split_frames=0, our_octave_split_frames=0)
     return r
@@ -5352,3 +5352,86 @@ def test_ctrl_dimensions_registered():
     keys = {d.key: d for d in fidelity.DIMENSIONS}
     assert keys["sync"].kind == keys["ring"].kind == "ratio"
     assert keys["ctrl"].kind == "fraction"
+
+
+# --------------------------------------------------------------------------
+# `res` / `route`: $D417 resonance and routing, which `band` ignores
+# (fbs-res-route-columns)
+# --------------------------------------------------------------------------
+
+_LP = (0, 0x10)         # low-pass selected from frame 0
+
+
+def test_res_known_bad():
+    orig = _filt(ctrl=[(0, 0xF1)], passband=[_LP])
+    ours = _filt(ctrl=[(0, 0x01)], passband=[_LP])
+    got = fidelity.filter_ctrl_compare(orig, ours, 20, 0)
+    assert got["res"] == 0.0 and got["route"] == 1.0
+    assert got["filter_ctrl_frames"] == 20
+
+
+def test_route_voice_swap():
+    orig = _filt(ctrl=[(0, 0x81)], passband=[_LP])
+    ours = _filt(ctrl=[(0, 0x82)], passband=[_LP])
+    got = fidelity.filter_ctrl_compare(orig, ours, 20, 0)
+    assert got["route"] == 0.0
+    assert got["res"] == 1.0            # the whole byte differs; the nibble does not
+    assert fidelity.passband_agreement(orig, ours, 20, 0)["passband_agree"] == 1.0
+
+
+def test_res_ignores_unfiltered_frames():
+    # frames 0-9: both filter at resonance 8; frames 10-19: passband off, and
+    # the held resonances differ -- nobody hears them.
+    orig = _filt(ctrl=[(0, 0x81), (10, 0xF1)], passband=[_LP, (10, 0)])
+    ours = _filt(ctrl=[(0, 0x81), (10, 0x11)], passband=[_LP, (10, 0)])
+    got = fidelity.filter_ctrl_compare(orig, ours, 20, 0)
+    assert got["filter_ctrl_frames"] == 10
+    assert got["res"] == 1.0 and got["route"] == 1.0
+
+
+def test_res_counts_a_filter_one_side_invents():
+    orig = _filt(ctrl=[(0, 0x81)], passband=[(0, 0)])
+    ours = _filt(ctrl=[(0, 0x81)], passband=[_LP])
+    got = fidelity.filter_ctrl_compare(orig, ours, 20, 0)
+    assert got["filter_ctrl_frames"] == 20 and got["res"] == 1.0
+
+
+def test_res_lag_aligned():
+    lag = 7
+    orig = _filt(ctrl=[(0, 0x01), (5, 0xA1)], passband=[_LP])
+    ours = _filt(ctrl=[(0, 0x01), (5 + lag, 0xA1)], passband=[(lag, 0x10)])
+    assert fidelity.filter_ctrl_compare(orig, ours, 40, lag)["res"] == 1.0
+    assert fidelity.filter_ctrl_compare(orig, ours, 40, 0)["res"] < 1.0
+
+
+def test_res_declines_when_neither_filters():
+    # a voice routed with no passband, and a passband with no voice routed
+    orig = _filt(ctrl=[(0, 0xF1)], passband=[(0, 0)])
+    ours = _filt(ctrl=[(0, 0xF0)], passband=[_LP])
+    got = fidelity.filter_ctrl_compare(orig, ours, 20, 0)
+    assert got["res"] is None and got["route"] is None
+    assert fidelity.filter_ctrl_compare(orig, ours, 0, 0)["res"] is None
+
+
+def test_res_route_dimensions_registered():
+    keys = {d.key: d for d in fidelity.DIMENSIONS}
+    assert keys["res"].kind == keys["route"].kind == "fraction"
+    row = fidelity.filter_ctrl_compare(_filt(ctrl=[(0, 1)], passband=[_LP]),
+                                       _filt(ctrl=[(0, 1)], passband=[_LP]),
+                                       5, 0)
+    assert keys["res"].value(row) == 1.0 and keys["route"].value(row) == 1.0
+
+
+def test_res_vice_path_reads_the_whole_d417_byte():
+    import vicetrace as VT
+
+    def trace(res, modevol=0x1F, frames=4):
+        return [VT.Sample(voices=[VT.VoiceLine() for _ in range(3)],
+                          res=res, modevol=modevol)
+                for _ in range(frames * VT.PAL_LINES_PER_FRAME)]
+    bad = fidelity.vice_register_compare(trace(0xF1), trace(0x01))
+    assert bad["res"] == 0.0 and bad["route"] == 1.0
+    swap = fidelity.vice_register_compare(trace(0x81), trace(0x82))
+    assert swap["route"] == 0.0 and swap["res"] == 1.0
+    none = fidelity.vice_register_compare(trace(0xF1, 0x0F), trace(0x01, 0x0F))
+    assert none["res"] is None
