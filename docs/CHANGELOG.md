@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.593 — 2026-10-24
+
+- aligned_firstwave adopted for Chicken_Song and Ninja; Tarzan takes the gate-off firstwave arm (no_test_restart off): melody, wave and onset up, no scored column down
+
 ## 0.5.592 — 2026-10-24
 
 - gate_off_firstwave_instruments adopted for 13 more songs (Action_Biker, After_8, Bump_Set_Spike, Commodore_64_Music_Examples, Confuzion, Devils_Galop, Formula_1_Simulator, Gremlins, Human_Race, One_Man_and_his_Droid, Phantoms_of_the_Asteroid, Rikky, Thing_on_a_Spring): gate and wave up, no column down

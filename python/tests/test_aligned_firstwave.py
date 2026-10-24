@@ -154,7 +154,9 @@ def test_chicken_song_gate_envelope_sits_on_the_pitch(tmp_path):
     name = "Chicken_Song.sid"
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     assert doc["songs"][name].get("multiplier", 1) == 1
-    base = fidelity._preset_opts(doc, name)
+    # v0.5.593 adopted aligned_firstwave for Chicken_Song; the control arm is
+    # the song as it was, with no_test_restart's gate one frame ahead.
+    base = dict(fidelity._preset_opts(doc, name), aligned_firstwave=False)
     assert base["no_test_restart"], "the control arm needs the flag it fixes"
     orig = fidelity.run_siddump(CORPUS / name, SECONDS, 0)
     arms = {}

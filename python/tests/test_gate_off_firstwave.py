@@ -192,8 +192,10 @@ def test_the_real_firstwave_byte_wins_where_both_name_an_instrument():
 def test_no_test_restart_subsumes_it():
     """Tarzan's preset carries no_test_restart: every record already writes
     its gated waveform, so the gate-off list has nothing left to change."""
-    opts = _opts("Tarzan.sid")
-    assert opts["no_test_restart"] is True
+    # v0.5.593 moved Tarzan to the gate-off arm (no_test_restart off), so the
+    # comparison forces the flag on and the list off.
+    opts = dict(_opts("Tarzan.sid"), no_test_restart=True,
+                gate_off_firstwave_instruments=())
     sid = str(CORPUS / "Tarzan.sid")
     assert convert(sid, log=_quiet, **opts) == convert(
         sid, log=_quiet, **dict(opts, gate_off_firstwave_instruments=EVERY))

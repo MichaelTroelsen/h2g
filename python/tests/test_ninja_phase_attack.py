@@ -78,6 +78,10 @@ def _packed_run(no_test_restart: bool):
         pytest.skip("siddump or gt2reloc not available here")
     kwargs = F._preset_opts(doc, _NAME)
     kwargs["pulse_phase"] = True
+    # v0.5.593 adopted aligned_firstwave for Ninja; it overrides no_test_restart
+    # and spends the init call on a gate-clear waveform, so the readings below
+    # (real waveform on the first call) are taken with it off.
+    kwargs["aligned_firstwave"] = False
     kwargs["no_test_restart"] = no_test_restart
     # The reading pairs an operand with the captured table's entry number; the
     # drop of unnamed records renumbers the pulse table (it removes the rows
