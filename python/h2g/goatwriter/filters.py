@@ -53,9 +53,11 @@ def _filter_step_per_call(step: int, multiplier: int) -> int:
 
 
 def _ilv_programs(sid: SidFile, det: Detection, instr_used: int,
-                  multiplier: int = 1) -> dict:
-    """record -> (passband, resonance, cutoff, per-call step) for every
-    interleaved record that gets a filter program, in record order.
+                  multiplier: int = 1, level: int = 0) -> dict:
+    """record -> (passband, resonance, cutoff, sweep) for every interleaved
+    record that gets a filter program, in record order. `sweep` is
+    `_ilv_sweep`'s rows, which `level` 1 spends fewer of -- or, for a file
+    whose filtered notes take pattern `$87`, `_ilv_first_leg`'s two.
 
     The one reading both `_ilv_filter_entries` and `ilv_filter_routing_plan`
     emit from, so the two spellings of the table cannot drift apart.
@@ -65,6 +67,7 @@ def _ilv_programs(sid: SidFile, det: Detection, instr_used: int,
         return {}
     data = sid.data
     out: dict = {}
+    inherits = ilv_start_cutoff_records(sid, det)
     for i in range(max(instr_used - 1, 0)):
         rec = det.instr_start + i * det.instr_stride
         if rec + filt.program_off >= len(data):
@@ -82,12 +85,179 @@ def _ilv_programs(sid: SidFile, det: Detection, instr_used: int,
             continue  # switched off at the mode register: nothing to say
         # `+6` bit 7 SET is up: the player stores 0 for up and $FF for down and
         # branches `BNE` to its subtract path, so the sense inverts twice.
-        step = (prog[2] << 8 | prog[3]) + 128 >> 8
-        if not prog[6] & 0x80:
-            step = -step
-        out[i] = (passband, prog[7] & 0xF0, prog[0],
-                  _filter_step_per_call(step, multiplier))
-    return out
+        out[i] = (passband, prog[7] & 0xF0, prog[0], prog)
+    # **A FILE WHOSE FILTERED NOTES TAKE `$87` KEEPS THE ONE-ROW SWEEP, ALL
+    # OF ITS PROGRAMS.** Measured per record first: gating only record 8 of
+    # Sun_Never_Shines (the one the 119 `$87` name) left `cut` at 0.600, since
+    # the jumps the original makes land on every program's notes. See
+    # `ilv_start_cutoff_records`.
+    first_leg_only = bool(inherits & out.keys())
+    return {i: (pb, res, cut, _ilv_first_leg(prog, multiplier)
+                if first_leg_only else _ilv_sweep(prog, multiplier, level))
+            for i, (pb, res, cut, prog) in out.items()}
+
+
+def ilv_start_cutoff_records(sid: SidFile, det: Detection) -> frozenset:
+    """Raw record indices that some note starts on with pattern command `$87`.
+
+    **`$87 nn mm` WRITES THE NOTE'S START CUTOFF, AND THE RECORD'S START IS
+    NOT USED THEN.** It stores `nn`/`mm` in the voice's cutoff cell and sets the
+    flag at `$1A63`, which makes the note-start loader skip its six loads from
+    the record (Sun_Never_Shines `$1335 LDA $1A63 / BNE $1346`): start, step,
+    limits and direction are all inherited from the previous note. The bounded
+    ping-pong `_ilv_sweep` emits starts from the RECORD'S values every note, so
+    on such a record it turns round at the wrong places; Sun_Never_Shines, whose
+    record 8 takes 119 of these, fell from `cut` 1.024 to 0.585 under it
+    (92% of the original's travel there is the jumps between the start values:
+    1,892 steps over 1024 summing 16.1M, against 2,124 summing 8.7M in ours,
+    whose jumps all land on the record's one start). The old one-row sweep
+    wrapped its 8-bit cutoff and so made jumps of about the original's total by
+    luck (16.1M), which is why `_ilv_programs` leaves a file with a filtered
+    `$87` record on `_ilv_first_leg` until the starts are read.
+
+    Walks the raw patterns the way `patterns._build_raw_pattern_ilv` does; the
+    record is the last `$80 nn` of the pattern.
+    """
+    filt = det.ilv_filter
+    if filt is None:
+        return frozenset()
+    from ..patterns import ILV_COMMAND_OPERANDS, ILV_END
+    data = sid.data
+    found: set = set()
+    for p in range(det.pattern_used + 1):
+        st = p * det.table_stride
+        at = sid.to_offset(data[det.pattern_hi + st] * 256
+                           + data[det.pattern_lo + st])
+        j, rec = 0, None
+        while 1 < at + j < len(data):
+            b = data[at + j]
+            if b == ILV_END:
+                break
+            if b >= 0xC0:
+                j += 1
+                continue
+            if b >= 0x80:
+                n = ILV_COMMAND_OPERANDS.get(b)
+                if n is None:
+                    break
+                if b == 0x80 and at + j + 1 < len(data):
+                    rec = data[at + j + 1]
+                elif b == 0x87 and rec is not None:
+                    found.add(rec)
+                j += 1 + n
+                continue
+            j += 1
+    return frozenset(found)
+
+
+def _ilv_first_leg(prog: bytes, multiplier: int) -> tuple:
+    """One `FILT_MODULATE` row in the start direction, then stop: the sweep
+    before the ping-pong was emitted, kept for `ilv_start_cutoff_records`."""
+    step = (prog[2] << 8 | prog[3]) + 128 >> 8
+    if not prog[6] & 0x80:
+        step = -step
+    per_call = _filter_step_per_call(step, multiplier)
+    return (((FILT_MODULATE, per_call),) if per_call else ()) \
+        + ((FILT_STOP, 0x00),)
+
+
+ILV_SWEEP_MAX_STEP = 126        # a signed per-call step, with one to spare
+# Rows the programs may spend before `level` 1 takes over: the table is
+# GT_MAX_FILT and the clear block, the init block and the restore copies
+# all live in what is left.
+ILV_SWEEP_BUDGET = 36
+
+
+def _leg_rows(distance: int, calls: int, down: bool,
+              exact: bool = True) -> list:
+    """Modulation rows moving the cutoff `distance` units in `calls` calls.
+
+    A table step is an integer per call and the player's is a fraction of a
+    unit per frame, so the leg is split into two runs of adjacent integers
+    (`distance % calls` calls at `s + 1`, the rest at `s`): the travel and
+    the clock both land, which one rounded step cannot do. `exact=False`
+    keeps the ENDPOINT and bends the clock instead -- one step, one run --
+    for a table that has no rows to spare.
+    """
+    if distance <= 0:
+        return []
+    calls = max(calls, -(-distance // ILV_SWEEP_MAX_STEP), 1)
+    if exact:
+        s, extra = divmod(distance, calls)
+        runs = [(extra, s + 1), (calls - extra, s)]
+    else:
+        s = max(1, min(ILV_SWEEP_MAX_STEP, round(distance / calls)))
+        runs = [(max(1, round(distance / s)), s)]
+    rows = []
+    for n, step in runs:
+        while n > 0:
+            take = min(n, FILT_MODULATE)
+            rows.append((take, (-step if down else step) & 0xFF))
+            n -= take
+    return rows
+
+
+def _ilv_sweep(prog: bytes, multiplier: int, level: int = 0) -> tuple:
+    """The sweep a program's notes run, as table rows ending in the jump or
+    stop that closes them. A jump row is `("jump", k)`: row k of the sweep,
+    0-based, which `_ilv_sweep_resolve` turns into a table index.
+
+    **THE PLAYER'S SWEEP IS A PING-PONG BETWEEN TWO LIMITS, AND A NOTE RUNS
+    IT AS LONG AS IT LASTS.** Read out of Lion_Heart's `$15F9-$1661`: each
+    frame the 16-bit accumulator `(hi, lo)` moves by the record's `+2/+3`;
+    going up, `hi >= upper (+4)` (or a carry) sets `hi = upper`, `lo = 0` and
+    turns it round, going down, `hi <= lower (+5)` (or a borrow) does the same
+    at the lower limit. The note-start loader (`$1320-$137C`) restores start,
+    step, limits and direction every filtered note, so a note is one run from
+    the start value, to its first limit, and then back and forth.
+
+    Emitted as that: the first leg from the start value to the limit in the
+    start direction, then the two full legs in a loop closed by a jump. A
+    single `$7F`-call row, as this emitted before, is not a first leg at all:
+    it ran past the limit and wrapped the 8-bit cutoff (Lion_Heart's `$4E`
+    stepping down 127 calls lands on `$CF`), which is most of the 1.74x
+    `cut` the file measured.
+
+    Frames per leg are the player's own count -- the first frame whose
+    accumulator crosses the limit -- times `multiplier` calls a frame
+    (CLAUDE.md: one frame is `multiplier` play calls).
+    """
+    step = prog[2] << 8 | prog[3]
+    up = bool(prog[6] & 0x80)
+    upper, lower = prog[4], prog[5]
+    acc = prog[0] << 8 | prog[1]
+    if not step or upper <= lower:
+        return ((FILT_STOP, 0x00),)
+    ceil = lambda a, b: -(-a // b)          # noqa: E731
+    exact = level == 0
+
+    def leg(distance: int, frames: int, down: bool) -> list:
+        return _leg_rows(distance, frames * multiplier, down, exact)
+
+    f_up = ceil((upper - lower) * 256, step)
+    f_down = ceil((upper - lower - 1) * 256 + 1, step)
+    if up:
+        first = leg(upper - prog[0], ceil(upper * 256 - acc, step), False) \
+            if prog[0] < upper else []
+        pin = [] if first else [(FILT_SET_CUTOFF, upper)]
+        loop = leg(upper - lower, f_down, True) + leg(upper - lower, f_up, False)
+    else:
+        first = leg(prog[0] - lower, ceil(acc - (lower + 1) * 256 + 1, step),
+                    True) if prog[0] > lower else []
+        pin = [] if first else [(FILT_SET_CUTOFF, lower)]
+        loop = leg(upper - lower, f_up, False) + leg(upper - lower, f_down, True)
+    # The legs of the loop are each other's turn-round: down-then-up after an
+    # upward first leg, up-then-down after a downward one.
+    if not first:
+        first = pin
+    return tuple(first + loop + [("jump", len(first))])
+
+
+def _ilv_sweep_resolve(sweep: tuple, at: int) -> list:
+    """`sweep`'s rows with their jumps made absolute, `at` being the 1-based
+    table index of the sweep's first row."""
+    return [(FILT_STOP, at + row[1]) if row[0] == "jump" else row
+            for row in sweep]
 
 
 def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
@@ -110,11 +280,11 @@ def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
     taking `hi` is what keeps a slow sweep from becoming static: that file's
     program 8 steps `$00AE`, whose high byte is zero.
 
-    **The sweep is a bidirectional ping-pong and a Goattracker filter program
-    is not.** `FILT_MODULATE` runs one direction until `FILT_STOP`, so what is
-    emitted is the FIRST leg, in the direction the record starts in. The
-    reversal at the limits is not expressible and is deliberately not
-    approximated.
+    **The sweep is a bidirectional ping-pong, and a Goattracker filter table
+    can say that**: a modulation row per leg and a jump row (`FF nn`) back to
+    the first full leg. This used to emit one `$7F`-call row and call the
+    reversal inexpressible; the row ran past the limit and wrapped the 8-bit
+    cutoff. See `_ilv_sweep`.
 
     **The routing nibble is the player's LIVE per-voice accumulator**, not the
     per-instrument constant the classic engine keeps: it ORs a voice's bit in
@@ -127,17 +297,16 @@ def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
         return [], {}
     entries: List[tuple] = []
     pointers: dict = {}
-    for i, (passband, res, cutoff, per_call) in _ilv_programs(
-            sid, det, instr_used, multiplier).items():
+    programs = _ilv_programs(sid, det, instr_used, multiplier)
+    if sum(2 + len(s) for *_x, s in programs.values()) > ILV_SWEEP_BUDGET:
+        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1)
+    for i, (passband, res, cutoff, sweep) in programs.items():
         block = [(FILT_SET_PARAMS | passband, res | ILV_FILTER_ROUTING),
                  (FILT_SET_CUTOFF, cutoff)]
-        if per_call:
-            block.append((FILT_MODULATE, per_call))
-        block.append((FILT_STOP, 0x00))
-        if len(entries) + len(block) > GT_MAX_FILT:
+        if len(entries) + len(block) + len(sweep) > GT_MAX_FILT:
             break
         pointers[i] = len(entries) + 1  # table steps are 1-based
-        entries += block
+        entries += block + _ilv_sweep_resolve(sweep, len(entries) + 3)
 
     # **THE PLAYER TAKES A VOICE OUT OF THE FILTER WHEN IT PLAYS AN UNFILTERED
     # RECORD, AND GOATTRACKER CANNOT SAY THAT PER VOICE** -- there is one
@@ -554,6 +723,8 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
     if det.ilv_filter is None or len(tracks) < 3:
         return None
     programs = _ilv_programs(sid, det, instr_used, multiplier)
+    if sum(2 + len(s) for *_x, s in programs.values()) > ILV_SWEEP_BUDGET:
+        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1)
     if not programs:
         return None
     routed = _ilv_routed_records(sid, det, instr_used)
@@ -600,7 +771,7 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
     # note. A subtune with no such row makes the spelling unavailable.
     passbands = {pb for pb, _r, _c, _s in programs.values()}
     # Programs open at CUTOFF here: cutoff, [modulate,] stop.
-    init_index = sum(2 + bool(s) for *_x, s in programs.values()) + 1
+    init_index = sum(1 + len(s) for *_x, s in programs.values()) + 1
     if len(passbands) == 1 and init_index + 1 <= GT_MAX_FILT:
         init_row: dict = {}
         feasible = True
@@ -655,11 +826,11 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
         pb = max(sorted(notes_by_pb), key=lambda b: notes_by_pb[b])
         majority = frozenset(i for i, prog in programs.items()
                              if prog[0] == pb)
-        base_len = sum(2 + bool(s) + (i not in majority)
+        base_len = sum(1 + len(s) + (i not in majority)
                        for i, (_pb, _r, _c, s) in programs.items())
         if base_len <= GT_MAX_FILT:
             restore = {"pb": pb, "majority": majority, "next": base_len + 1,
-                       "len": {i: 3 + bool(programs[i][3]) for i in majority},
+                       "len": {i: 2 + len(programs[i][3]) for i in majority},
                        "blocks": {}}
             candidates.append(("restore", _ilv_routing_walk(
                 groups, patterns, instr_base, routed, programs, "restore",
@@ -672,18 +843,16 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
 
     entries: List[tuple] = []
     pointers: dict = {}
-    for i, (passband, res, cutoff, per_call) in programs.items():
+    for i, (passband, res, cutoff, sweep) in programs.items():
         block = ([] if mode == "shared"
                  or (mode == "restore" and i in restore["majority"])
                  else [(FILT_SET_PARAMS | passband, params[i])])
         block.append((FILT_SET_CUTOFF, cutoff))
-        if per_call:
-            block.append((FILT_MODULATE, per_call))
-        block.append((FILT_STOP, 0x00))
-        if len(entries) + len(block) > GT_MAX_FILT:
+        if len(entries) + len(block) + len(sweep) > GT_MAX_FILT:
             break
         pointers[i] = len(entries) + 1  # table steps are 1-based
-        entries += block
+        entries += block + _ilv_sweep_resolve(
+            sweep, len(entries) + len(block) + 1)
     if mode == "shared":
         assert len(entries) + 1 == init_index, (len(entries), init_index)
         entries += [(FILT_SET_PARAMS | passbands.pop(), 0x00),
@@ -693,13 +862,11 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                                        default=len(entries) + 1), entries
         for (i, value), idx in sorted(restore["blocks"].items(),
                                       key=lambda kv: kv[1]):
-            _pb, _res, cutoff, per_call = programs[i]
+            _pb, _res, cutoff, sweep = programs[i]
             assert idx == len(entries) + 1, (idx, len(entries))
             entries.append((FILT_SET_PARAMS | restore["pb"], value))
             entries.append((FILT_SET_CUTOFF, cutoff))
-            if per_call:
-                entries.append((FILT_MODULATE, per_call))
-            entries.append((FILT_STOP, 0x00))
+            entries += _ilv_sweep_resolve(sweep, len(entries) + 1)
 
     # Each pattern's occurrences, keyed as the walk keyed them; one copy per
     # distinct command set, and the unedited pattern kept for occurrences

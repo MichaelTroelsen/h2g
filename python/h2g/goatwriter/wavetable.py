@@ -1,7 +1,9 @@
 """Wavetable entries, drum entries and the wavetable layout (split out of goatwriter.py, text moved unchanged)."""
 from __future__ import annotations
 
+import math
 from collections import (Counter)
+from fractions import Fraction
 from typing import (List, Optional)
 
 from ..detect import (Detection)
@@ -1715,7 +1717,32 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
         if not frames:
             return NOISE_TICK_FRAMES
         gate = Counter(frames).most_common(1)[0][0]
+    if det.drum_gate_off:
+        gate = _real_unit_frames(speeds, idx, gate)
     return max(1, gate - 1)
+
+
+def _real_unit_frames(speeds, idx: int, gate: int) -> int:
+    """Real frames the drum block's first duration unit lasts, modal.
+
+    **`drum_gate_off` only.** The speed gate's reload counts working calls, and
+    an outer counter that skips the play routine's entry inserts extra frames
+    into some units (`SongSpeeds.true_frames`: a gate of 2 skipping one call in
+    four makes units of 3, 3 and 2 frames). The drum block's gate mask closes
+    when the first unit ends, so under the option -- the only place the gate's
+    length is scored -- it is the unit in *frames* that counts: Deep_Strike's
+    voice-2 `$0F07` hits read `11 11 81 10 80` (three frames) on 84 of 126,
+    where the gate alone gave 2 and `11 11 80` took the noise's gated frame
+    away, leaving `noise_run_agreement` nothing to pair (.75 -> .50).
+
+    The modal length is the nearest whole frame; an exact half rounds down so a
+    tie keeps the gate's own reading. Never below `gate`.
+    """
+    skip = speeds.skip_for(idx) if speeds is not None else None
+    if not skip:
+        return gate
+    true = Fraction(gate * (skip + 1), skip)
+    return max(gate, math.ceil(true - Fraction(1, 2)))
 
 
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,

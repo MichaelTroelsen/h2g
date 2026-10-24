@@ -105,11 +105,16 @@ def test_deep_strike_alternation_takes_the_gate_mask(monkeypatch):
                             **dict(opts, drum_gate_off=True))[7]
     assert 0x10 not in held[0] and 0x80 not in held[0]
     # The loop the alternation keeps after the tick is the gate-off pair.
-    loop = left.index(0x80)
+    # The gate lasts the first unit's three REAL frames (its speed gate is 2
+    # and the outer counter adds one on 2/3 of units, `_real_unit_frames`),
+    # so the pair enters the loop at `10`, one phase later than the old
+    # two-frame gate's `80`.
+    loop = left.index(0x10)
     assert left[-1] == 0xFF
-    assert [w for w in left[loop:-1] if w >= 0x10] == [0x80, 0x10]
-    # ... and before it, the frame-0 lead and one gated frame of the pair.
-    assert [w for w in left[:loop] if w >= 0x10] == [0x11, 0x11]
+    assert [w for w in left[loop:-1] if w >= 0x10] == [0x10, 0x80]
+    # ... and before it, the frame-0 lead and two gated frames of the pair
+    # (`11 11 81`: the original's reading on 84 of 126 voice-2 hits).
+    assert [w for w in left[:loop] if w >= 0x10] == [0x11, 0x11, 0x81]
 
 
 def _runs(text: str, voice: int, adsr: int) -> list:

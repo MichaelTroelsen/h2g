@@ -290,6 +290,135 @@ def _lattice_legs(width: int, speed: int, first_top: int, bottom: int,
     return entries, loop
 
 
+# A triangle step whose per-CALL rate rounds to an integer speed more than
+# this far from the truth is laid as a MIX of the two neighbouring speeds
+# (`_mixed_legs`), where the table has the rows (`_pulse_layout`). 5% is
+# `SPELLED_SPEED_MIN`'s own bound for a rate the table cannot carry.
+MIXED_SPEED_MIN_ERR = Fraction(1, 20)
+
+# Calls in one cell of a mixed leg are chosen so that a run at the lower speed
+# and a run at the upper one are each ONE table row (at most
+# GT_MAX_PULSE_TICKS): the cell is `MIXED_CELL_ROW` over the larger share, at
+# most 2 * GT_MAX_PULSE_TICKS calls. The width strays from the straight line
+# between the leg's ends by at most a quarter of the cell, i.e. under 64 of
+# the 4096.
+MIXED_CELL_ROW = GT_MAX_PULSE_TICKS - 1
+
+
+def _tri_exact_rate(step: int, delay: int, multiplier: int,
+                    gate_skip: Optional[int]) -> Fraction:
+    """`_tri_call_speed` before it rounds: how far the player's sweep moves
+    the width in one of OUR play calls, exactly."""
+    if gate_skip:
+        calls = Fraction(max(1, multiplier) * (gate_skip + 1), gate_skip)
+    else:
+        calls = Fraction(max(1, multiplier))
+    return Fraction(step, delay) / calls
+
+
+def _tri_mixed_rate(step: int, delay: int, multiplier: int,
+                    gate_skip: Optional[int]) -> Optional[Fraction]:
+    """The exact per-call rate of a triangle step that an integer speed
+    misses by more than `MIXED_SPEED_MIN_ERR`, or None.
+
+    Only a rate between 1 and 127 a call has two integer neighbours a
+    modulation row can carry; a rate over that is `_ramp_rows`' case and one
+    under 1 is the stair's."""
+    rate = _tri_exact_rate(step, delay, multiplier, gate_skip)
+    lo = rate.numerator // rate.denominator
+    if lo < 1 or lo + 1 > GT_MAX_PULSE_SPEED or rate == lo:
+        return None
+    speed = _tri_table_speed(step, delay, multiplier, gate_skip)
+    if abs(speed - rate) <= MIXED_SPEED_MIN_ERR * rate:
+        return None
+    return rate
+
+
+def _mixed_rows(direction: int, calls: int, travel: int,
+                lo: int) -> List[tuple]:
+    """The rows that move the width exactly `travel` in `calls` calls, in
+    `direction`, at speeds `lo` and `lo + 1` only: `travel - lo * calls` of
+    the calls at the upper speed. The calls are spread over cells sized so
+    that each run is one table row (`MIXED_CELL_ROW`), each cell a run at
+    `lo` then a run at `lo + 1`, so the width never strays far from the
+    straight line between the leg's ends."""
+    high = travel - lo * calls
+    assert 0 <= high <= calls, (calls, travel, lo)
+    share = Fraction(max(high, calls - high), calls)
+    cell = max(2, int(MIXED_CELL_ROW / share))
+    cells = max(1, -(-calls // cell))
+    runs: List[List[int]] = []
+    done_c = done_h = 0
+    for k in range(1, cells + 1):
+        end_c = (2 * calls * k + cells) // (2 * cells)
+        end_h = (2 * high * k + cells) // (2 * cells)
+        n, q = end_c - done_c, end_h - done_h
+        q = min(q, n)
+        for speed, count in ((lo, n - q), (lo + 1, q)):
+            if count <= 0:
+                continue
+            if runs and runs[-1][0] == speed:
+                runs[-1][1] += count
+            else:
+                runs.append([speed, count])
+        done_c, done_h = end_c, done_h + q
+    assert done_h == high, (done_h, high)
+    rows: List[tuple] = []
+    for speed, count in runs:
+        spd = speed if direction > 0 else (0x100 - speed) & 0xFF
+        rows += [(t, spd) for t in _split_ticks(count)]
+    return rows
+
+
+def _mixed_leg(direction: int, distance: int,
+               rate: Fraction) -> Optional[List[tuple]]:
+    """One leg of `distance` width units at `rate` a call, ending exactly
+    `distance` on: the call count nearest `distance / rate` that two integer
+    speeds can spell exactly, or None where no call count can (a distance
+    too short for the two speeds to reach it)."""
+    lo = rate.numerator // rate.denominator
+    fewest = -(-distance // (lo + 1))
+    most = distance // lo
+    if distance < 1 or fewest > most:
+        return None
+    calls = (2 * distance * rate.denominator + rate.numerator) \
+        // (2 * rate.numerator)
+    calls = max(fewest, min(most, calls))
+    return _mixed_rows(direction, calls, distance, lo)
+
+
+def _mixed_legs(width: int, rate: Fraction, first_top: int, bottom: int,
+                top: int) -> Optional[tuple[List[tuple], int]]:
+    """`_lattice_legs` at an exact fractional rate: the same lattice turns,
+    but every leg lands on its turn width EXACTLY (`_mixed_rows`) and sweeps
+    at `rate` on average rather than at the integer nearest it. None where a
+    leg cannot be spelled (`_mixed_leg`), and the caller keeps the integer
+    legs.
+
+    Kentilla's rate-$10 records step 16 a tick at -S10 behind an outer gate
+    of 10 -- 16 / 11 = 1.4545 a call, which `_lattice_legs` rounds to 1,
+    31% slow."""
+    first = (first_top - width) & 0xFFF
+    down = (first_top - bottom) & 0xFFF
+    span = (top - bottom) & 0xFFF
+    ascent = _mixed_leg(+1, first, rate) if first else []
+    if first_top == top:
+        legs = [_mixed_leg(-1, down, rate), _mixed_leg(+1, down, rate)]
+        pre = []
+    else:
+        legs = [_mixed_leg(+1, span, rate), _mixed_leg(-1, span, rate)]
+        pre = [_mixed_leg(-1, down, rate)]
+    if ascent is None or None in legs or None in pre:
+        return None
+    entries = [_setrow(width)] + ascent
+    for leg in pre:
+        entries += leg
+    loop = len(entries)
+    for leg in legs:
+        entries += leg
+    return entries, loop
+
+
 def _pulse_triangle_wrapped(width: int, low: int, high: int,
                             speed: int,
                             step: Optional[int] = None,
@@ -356,6 +485,7 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                    multiplier: int,
                    tick_ratios: Optional[Mapping[int, Fraction]] = None,
                    stair: bool = False, spell: bool = False,
+                   frac: bool = False,
                    ) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
 
@@ -411,7 +541,8 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
         if det.pulse_tri_hi >= 0:
             program = _pulse_tri_program(
                 sid, det, i, multiplier,
-                tick_ratio=(tick_ratios or {}).get(i), stair=stair)
+                tick_ratio=(tick_ratios or {}).get(i), stair=stair,
+                frac=frac)
             if program is not None:
                 return program
         if det.pulse_prog_table >= 0:
@@ -712,9 +843,13 @@ LO_FOLD_MAX_ROWS = 16
 def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
                        multiplier: int,
                        tick_ratio: Optional[Fraction] = None,
-                       stair: bool = False,
+                       stair: bool = False, frac: bool = False,
                        ) -> tuple[List[tuple], int] | None:
     """The triangle engine's entries, or None if this record does not sweep.
+
+    `frac` lays a step that an integer speed misses by over 5% as a mix of
+    the two speeds either side of it (`_mixed_legs`); `_pulse_layout` asks
+    for it record by record where the table has the rows.
 
     The third pulse engine (`_find_pulse_tri`), and the one Commando's lead
     uses: a triangle across the 12-bit width between two nibbles fixed in the
@@ -822,6 +957,13 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
             turns = _tri_turns(width, step, det.pulse_tri_lo, det.pulse_tri_hi)
             if turns is not None:
                 return _stair_legs(width, step, calls, *turns)
+    if frac and tick_ratio is None:
+        rate = _tri_mixed_rate(step, delay, multiplier, gate)
+        turns = (_tri_turns(width, step, det.pulse_tri_lo, det.pulse_tri_hi)
+                 if rate is not None else None)
+        mixed = _mixed_legs(width, rate, *turns) if turns else None
+        if mixed is not None:
+            return mixed
     return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
                            step)
 
@@ -1337,6 +1479,52 @@ def track_set_tick_ratios(sid: SidFile, det: Detection,
     return out
 
 
+def _mixed_trials(sid: SidFile, det: Detection, pulse: bool, multiplier: int,
+                  tick_ratios: Optional[Mapping[int, Fraction]],
+                  programs: List[tuple], statics: List[List[tuple]],
+                  lead: int, share: bool, entries: List[tuple],
+                  starts: List[int], usage: Optional[List[int]] = None
+                  ) -> tuple[List[tuple], List[tuple], List[int]]:
+    """Each triangle record that an integer speed sweeps more than 5% wrong
+    (`_tri_mixed_rate`) laid as a mix of two speeds (`_mixed_legs`), tried
+    record by record against the table that already fits (`share` says
+    whether it fits unshared or only with identical blocks shared); a record
+    whose rows would push anything out keeps its integer slew. A record the
+    stair took is left alone. With `usage`, the records the song sounds most
+    go first and one that sounds nothing is not tried: its rows are table
+    room a played record could use."""
+    order = range(len(programs))
+    if usage is not None:
+        use = [usage[i] if i < len(usage) else 0 for i in order]
+        order = sorted((i for i in order if use[i]), key=lambda i: -use[i])
+    wanted = []
+    for i in order:
+        plain = _pulse_program(sid, det, i, pulse, multiplier, tick_ratios)
+        if programs[i] != plain:
+            continue
+        alt = _pulse_program(sid, det, i, pulse, multiplier, tick_ratios,
+                             frac=True)
+        if alt != plain:
+            wanted.append((i, alt))
+    # All at once first: records that share a loop only save rows when every
+    # one of them takes the new loop, which no record tried alone can show.
+    if len(wanted) > 1:
+        trial = list(programs)
+        for i, alt in wanted:
+            trial[i] = alt
+        t_entries, t_starts, t_dropped, _, _ = _lay_out_pulse(
+            trial, statics, lead, share=share)
+        if not t_dropped:
+            return trial, t_entries, t_starts
+    for i, alt in wanted:
+        trial = programs[:i] + [alt] + programs[i + 1:]
+        t_entries, t_starts, t_dropped, _, _ = _lay_out_pulse(
+            trial, statics, lead, share=share)
+        if not t_dropped:
+            programs, entries, starts = trial, t_entries, t_starts
+    return programs, entries, starts
+
+
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                   pulse: bool, multiplier: int,
                   log=None, lead: int = 1,
@@ -1397,6 +1585,10 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
             if not t_dropped:
                 programs = trial
                 entries, starts = t_entries, t_starts
+    if not dropped and pulse and STAIR_ENABLED:
+        programs, entries, starts = _mixed_trials(
+            sid, det, pulse, multiplier, tick_ratios, programs, statics,
+            lead, False, entries, starts, usage)
     if not dropped and pulse and det.pulse_bounds >= 0:
         # A per-record-bounds step over `SPELLED_SPEED_MIN` a call laid as
         # set rows costs a row a call, so it is tried record by record
@@ -1416,6 +1608,10 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     if dropped:
         entries, starts, dropped, silent, shared = _lay_out_pulse(
             programs, statics, lead, share=True)
+        if not dropped and pulse and STAIR_ENABLED:
+            programs, entries, starts = _mixed_trials(
+                sid, det, pulse, multiplier, tick_ratios, programs, statics,
+                lead, True, entries, starts, usage)
     unheard = 0
     if dropped and usage is not None:
         use = [usage[i] if i < len(usage) else 0 for i in range(nrec)]

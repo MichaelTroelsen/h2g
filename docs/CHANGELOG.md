@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.591 — 2026-10-24
+
+- runqueue cycle 1 at 841cf3d: ILV ping-pong bounded legs for the files without pattern command 87 (Lion_Heart, Go_Go_Dash, Pacific_Coast), Kentilla-style mixed-speed pulse triangles (7 movers), drum_gate_off noise tick from the real unit length (Deep_Strike, Food_Feud, Zoolook); phantom guard, Pygmies and Hollywood answered without a change
+
 ## 0.5.590 — 2026-10-18
 
 - Mega_Apocalypse: swell vibrato phase and zero-page bit-40 drum pitch

@@ -154,7 +154,13 @@ def test_the_rate_spreads_the_gate_rather_than_ignoring_it():
               if f not in fa and ta[f] != ta[f - 1]]
         sb = [abs(tb[f] - tb[f - 1]) for f in range(2, len(tb))
               if f not in fb and tb[f] != tb[f - 1]]
-        ratio = statistics.median(sb) / statistics.median(sa)
-        # O/(O+1) = 0.8, less GT's integer speed rounding (16 -> 12, 32 -> 24)
-        assert 0.7 <= ratio <= 0.86, (vi, statistics.median(sa),
-                                      statistics.median(sb))
+        # The MEAN, since the mixed-speed legs (`pulse._mixed_legs`): a rate
+        # between two integers is now laid as runs of both, so a frame's
+        # step is 12 or 16 and the median lands on either (voice 1 read
+        # 16/16 = 1.0 at the version this was changed); the old integer
+        # speed made every frame 12 and the median said so. Mean of the
+        # three voices at that version: 0.763, 0.772, 0.774.
+        ratio = statistics.mean(sb) / statistics.mean(sa)
+        # O/(O+1) = 0.8, a little less for the turns and the set rows
+        assert 0.7 <= ratio <= 0.86, (vi, statistics.mean(sa),
+                                      statistics.mean(sb))
