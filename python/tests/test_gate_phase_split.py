@@ -209,19 +209,22 @@ def test_the_lvvp_clones_enter_their_records_blocks():
 
 @needs_corpus
 @pytest.mark.parametrize("name", ["Bump_Set_Spike", "Thrust"])
-def test_a_split_the_table_cannot_hold_moves_no_byte(name):
-    """These two plan gate clones (the plan is not empty) whose blocks the
-    full wavetable cannot hold; the dry layout finds them first, so the
-    conversion is byte for byte the one without the split.
+def test_a_split_the_table_has_room_for_is_taken(name):
+    """These two plan gate clones whose blocks the full wavetable used to have
+    no room for: the dry layout found them first, so the conversion was byte
+    for byte the one without the split (this test pinned exactly that, as
+    `test_a_split_the_table_cannot_hold_moves_no_byte`).
 
-    Warhawk was a third until its `$0F09` drum stopped sweeping
-    (test_drum_arp_overwrite.py): the shorter wavetable has room for its
-    clones now, and the split is taken (19273 bytes against 18871 flat)."""
+    `wavetable._wavetable_layout` now holds back the smallest `clone_reserve`
+    that places them (test_clone_room_reserve.py), so the split is taken. The
+    same happened to Warhawk, whose `$0F09` drum stopped sweeping
+    (test_drum_arp_overwrite.py) and left room for its clones (19273 bytes
+    against 18871 flat)."""
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     sng, got = _converted(name)
     assert got["plans"] and got["plans"][0] is not None
-    assert sng == _converted(name, split=False)[0]
+    assert sng != _converted(name, split=False)[0]
 
 
 def _first_runs(tr, n):

@@ -320,7 +320,9 @@ def test_chimeras_rise_keeps_every_value_where_the_split_needs_no_room():
     # The notes' own events ask for 34 values and all 34 are exact. The six
     # long notes now also run on through the rest after them
     # (tests/test_note_rise_rest_carry.py), which asks for 29 values above
-    # them and has room for 17: the stores above the 51st are left to the
-    # vibrato.
-    assert "51 of 63 store value(s)" in rise[0], rise
+    # them and has room for 14: the stores above the 48th are left to the
+    # vibrato. (It had room for 17 and kept 51 until a last event measured
+    # through a hold-only pattern gave Chimera's GT 7 drum a sweep of 8 steps
+    # in place of 2, v0.5.541: the median note went from 3 rows to 6.)
+    assert "48 of 63 store value(s)" in rise[0], rise
     assert "6 note(s) carried on through the rest after them" in rise[0], rise

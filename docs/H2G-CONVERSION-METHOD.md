@@ -13828,8 +13828,9 @@ points, and a one-step residue-1 block is the residue-3 block from its fifth
 entry -- and otherwise the shortest prefix plus a jump into the record's
 block (`_entered_record_block`, checked call for call by `_same_wave_stream`);
 LVVP's ten clones cost 3 entries between them (the octave's). A clone the
-table still has no room for (LVVP's GT $15 at residue 3; every clone of
-Bump_Set_Spike, Thrust and Warhawk, whose tables are full) is found by a dry
+table still has no room for (LVVP's GT $15 at residue 3; at v0.5.513 every
+clone of Bump_Set_Spike, Thrust and Warhawk, whose tables were full -- Bump_Set_Spike
+and Thrust take theirs since the clone reserve of 7.oooooo) is found by a dry
 layout and left on its record before anything is renamed, so a split that
 would only rename notes onto their record's block moves no byte.
 
@@ -13902,6 +13903,57 @@ shortest gives `$0400`, so Rasputin keeps the shortest and its bytes do not
 move. Sizing it by the gate's 4 reads `$0300` exactly but moved its tie columns
 the wrong way (`tie_ratio` 0.96 -> 0.85), left open.
 `tests/test_drum_start_subtune_rows.py`.
+
+**A last event is measured through hold-only patterns, and a clone with no room
+asks for it (figures at v0.5.541, 180 s, presets, Bump_Set_Spike).** The
+file's table was 255 of 255 and two records took 52 of it for nothing or for
+too little. GT 13 (`$0A0A`, drum-only) is selected on the LAST row of pattern
+3, whose successor is a one-row pattern with no event; `median_played_durations`
+read "successor holds no event" as unresolvable, dropped the note, and the
+record kept the pitch bound alone: 24 `CMD_PORTADOWN` steps, 31 entries. The
+note lasts two rows (the last row, the hold row, then pattern 3's own first
+event) and the original holds `0DD0` through all of them -- six notes traced at
+240 s on subtune 0 (frames 847, 1274, 2554, 10234, 10660, 11940), no sweep --
+where the conversion fell `0DD1 0D39 0C55 0BBD` in the last three frames. The
+walk now goes on over an event-less successor's own successors, each by its
+share of the ways the orderlist leaves it (`patterns.median_played_durations`,
+`_rows_to_event`); a walk that revisits a pattern or runs out of orderlist adds
+nothing, and so does a hold-only pattern under a REPEAT (the successor table
+reads its repeats as an edge to itself, which is not how a repeat runs), so what
+it cannot place stays unknown. GT 13 reads 2 rows, 0 steps,
+6 entries: 25 given back. (The task that opened this named GT 2 as holding the
+24 steps; GT 2 is the 21-entry gated-nibble record whose phase clones are
+below. GT 13 is the record with the steps.)
+
+Where the 25 went is a layout question. The table is greedy -- each record
+takes what the earlier ones left, less five for every later one, and the clones
+come last -- so the entries went to GT 16 and 18, which completed a gate-off
+nibble shape (8 -> 19 entries each), and GT 2's two clones (`02 r30`, `02 r18`)
+still found no room. `wavetable._wavetable_layout` now lays the table out
+again with the smallest `clone_reserve` at which every phase clone that lacked
+room has it (bisected; a table where they all fit, or where no reserve helps,
+is laid out once as before): GT 2's clone enters the record's block at a cost
+of 9 entries, GT 16 still completes its shape (19 entries) and GT 18 and 21 keep
+their short ones (8). Bump_Set_Spike, same run, head
+-> this change: `aud` 0.9058 -> 0.9065, `loud` 0.9593 -> 0.9596, `loud_ratio`
+0.868 -> 0.869, `tie_agreement` 0.591 -> 0.609, `tie_ratio` 1.091 -> 1.053,
+`tie_ratio_audible` 1.270 -> 1.225, ties 7276 -> 7022. **One column is worse
+and the cause is proven: `travel_ratio` 0.8017 -> 0.8009** (`our_travel`
+834839 -> 834003). It is the removed sweep; the original's travel on those
+notes is 0, and the file's ratio is 0.80 for reasons that are not these six
+notes. The greedy order without the reserve reads `aud` 0.9053 (also worse)
+and `tie_agreement` 0.591, which is why the reserve is in. Two other files
+move: Chimera (record 7's median note 3 -> 6 rows, so 2 -> 8 steps; the
+original's depth is `$0800` on 18 of 34 notes and `$0200` on 16;
+`travel_ratio` 0.718 -> 0.782, `bend_ratio` 0.888 -> 0.897, `tie_agreement`
+0.740 -> 0.752; `aud` 0.93182 -> 0.93167, `reversal_ratio` 0.894 -> 0.888; and
+the note rise (bit $02) keeps 48 of its 63 store values where it kept 51, so
+`test_note_rise_rows.py` and `test_note_rise_rest_carry.py` now read 48 and
+rows 22-32) and Thrust (the reserve alone, two clones of `0B` placed; `aud` 0.8878 -> 0.8886,
+`wave` 0.974 -> 0.976, `onset_agreement` 0.889 -> 0.944; `gate` 0.869 ->
+0.867, `tie_ratio` 0.781 -> 0.777).
+`tests/test_last_event_through_empty_pattern.py`,
+`tests/test_clone_room_reserve.py`.
 
 **The waveform's frame, at ae5b063.** The task opened on 6 of 40 and 41 notes
 whose waveform "lands a frame late" (`09 41 81`, first-toggle 0). Re-measured

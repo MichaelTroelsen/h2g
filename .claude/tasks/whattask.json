@@ -1,15 +1,15 @@
 {
  "generated_from": {
-  "head": "ad45412",
+  "head": "5346077",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at 841cf3d, 34 tasks)",
-   ".claude/tasks/runs.jsonl (whole file, 1504 lines; 9 tasks done since: cycles 1-4 of the 841cf3d drain)",
-   ".claude/tasks/decisions.jsonl (not re-read; no new /runhuman since the previous pass)",
-   "hooks/prune.js (mit-setup 1.16.1) with .claude/tasks/policy.json",
+   ".claude/tasks/whattask.json (previous plan at ad45412, 26 tasks)",
+   ".claude/tasks/runs.jsonl (whole file, 1505 lines; 1 task done since: star-paws-regrid-leftover-debt)",
+   ".claude/tasks/decisions.jsonl (whole file; no decision touches a surviving task differently)",
+   "hooks/prune.js with .claude/tasks/policy.json",
    "todo.md, whats-next.md, docs/BACKLOG.md (not re-read; unchanged)",
-   "graphify-out/graph.json (graphify update at ad45412)",
-   "gh: no reachable tracker"
+   "graphify-out/graph.json (graphify update at 5346077: no topology change)",
+   "gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work."
  },
@@ -387,40 +387,6 @@
    "why_offload": null,
    "why_mode": "one emitter and its test",
    "why_lane": "no declared path overlaps another task where either side writes"
-  },
-  {
-   "id": "star-paws-regrid-leftover-debt",
-   "title": "Adopt regrid + regrid_full_debt for Star_Paws, and re-decide regrid_full_debt per song for the -S1 regrid adopters",
-   "source": "runs.jsonl#star-paws-drum-attack-three-frames-late",
-   "model": "session",
-   "effort": "high",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/star-paws-regrid-leftover-debt",
-    "rw:presets.json",
-    "rw:build/fidelity.json",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:docs/SURVEY.md"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "writes presets.json and regenerates the fidelity artefacts in the invoking session",
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "PARTIAL at 6e467ff, landed in 86ac533: regrid_full_debt counts every play behind a packed $D0+n repeat and charges only placed rows (Star_Paws drift_total -14.08 -> -1.87 under forced regrid, historical). Done when Star_Paws.sid carries regrid and regrid_full_debt as hand-recorded settings with its -t 180 A/B re-taken on the committed tree and every column that FELL named; each regrid adopter (the songs presets.json ships regrid for, read from the file) is A/B'd with regrid_full_debt and adopted or refused per song with its reason; held DIGI files are measured but never adopted; and the fidelity artefacts are refreshed so test_output_sha passes. (grep for the quoted text rather than trusting any line number here) UPDATE at 39b5de2 (regrid-debit-per-delivered-play): regrid_full_debt alone beats the default on drift for I_Ball (3.06 -> 0), Nineteen and IK_plus, which are listed as unmeasured under the old budget -- include them in the per-song re-decision. || NEW OPTION at eebf571: regrid_park (--regrid-park) pays the deficit through voice 1's one-pattern loop. Measured at 5c5e0c0, -t 180, park + per_play against per_play alone: wave 71.6 -> 78.9, adsr 88.8 -> 95.1, gate 37.9 -> 60.4, tie 57.9 -> 68.0, otime 19.1 -> 42.4, drift 0.00, attack offset -12/+1 -> -1/+1, hold 10 -> 7 of 11; park alone hold 8/11, offset -1/0. Decide among regrid + park (with or without per_play) here; listening: listen-star-paws-regrid-park.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "several per-song adoptions, each with a column that can fall",
-   "why_offload": null,
-   "why_mode": "writes presets.json, a generated artefact no subtask may touch",
-   "why_lane": "a declared path overlaps 17 other task(s) where at least one side writes"
   },
   {
    "id": "kentilla-rec20-entry-trade",
@@ -880,7 +846,7 @@
    "why_lane": "a declared path overlaps 9 other task(s) where at least one side writes"
   }
  ],
- "closed": [],
  "closed_archive": "closed.jsonl",
- "closed_count": 1508
+ "closed_count": 1509,
+ "closed": []
 }

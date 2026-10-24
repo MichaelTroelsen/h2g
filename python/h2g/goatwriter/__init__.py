@@ -300,6 +300,7 @@ from .wavetable import (_drum_duration_steps, _drum_entries, _drum_max_steps,
                         _same_wave_stream,
                         _shared_loop_block, _wave_follow,
                         _wavetable_entries, _wavetable_layout,
+                        _wavetable_layout_once,
                         _write_wavetable)  # noqa: F401
 from .skydive import (CARRY_VIBRATO, vibrato_carry, _Assembly, _compress, _high_byte, _lap_restart, _lap_rows,
                       _merge_instrument, _orig_freq, _program_order,

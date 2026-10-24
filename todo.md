@@ -218,6 +218,33 @@ Keep items actionable: what to run, and what makes it done.
   `[subagent]` for the pulse census and the hold refutation; `[main]` for any
   emitter change.
 
+- **Cut the full test suite from ~53 minutes to at most ~20.** `python -m pytest
+  tests/` (from `python/`) ran 7007 tests in 53:28 in one worktree and 53:04 in
+  another (v0.5.595/596, 2026-10-24), both while other corpus work shared the
+  machine, so a quiet run may be faster. It runs serially (`pytest-xdist` is not
+  installed) on a 24-thread machine, and 393 of the 467 test files mention the
+  corpus -- probably conversion + `gt2reloc` pack + `siddump` per test. That
+  last part is an inference from a grep, not a measurement: nothing has timed
+  the suite yet.
+
+  Measure first (`pytest --durations=40`, then the slowest files alone), then
+  fix what the numbers show: `pytest-xdist -n ~12` (size to MEMORY, not cores --
+  a corpus job takes 0.4-2.7 GB on a 32 GB machine, see CLAUDE.md's `--jobs`
+  note), a session-scoped cache for conversions/traces several tests repeat, or
+  trimming a corpus loop that re-does work. Each test already owns its scratch
+  directory or must be made to before running in parallel.
+
+  Done when: a full run takes <= ~20 minutes wall-clock on a quiet machine; the
+  test count is not lower than before (report both counts); the pass/fail set
+  matches a serial run; no assertion is deleted or weakened;
+  `tests/test_commando.py` still compares bytes against `Commando.sng`. The
+  user said this can be done overnight (2026-10-24).
+
+  `[main]` -- it runs the whole suite and edits shared test infrastructure;
+  not a worktree fan-out.
+
+  added: 2026-10-24
+
 ## Auf Wiedersehen Monty to 99%
 
 Requested by the listener after the note-flag fix landed. Where it stands at

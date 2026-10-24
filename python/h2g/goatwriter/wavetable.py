@@ -2000,7 +2000,7 @@ def _shared_loop_block(block: tuple, start: int, entries: List[tuple],
     return block
 
 
-def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
+def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                       effects: bool, fmt: str, speed_table: List[tuple],
                       multiplier: int, min_notes: Optional[dict],
                       lead: int, two_stage: bool = False,
@@ -2039,8 +2039,15 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       note_pitches: Optional[dict] = None,
                       eor_span: Optional[list] = None,
                       note_spans: Optional[dict] = None,
-                      eor_library_out: Optional[list] = None) -> tuple:
+                      eor_library_out: Optional[list] = None,
+                      clone_reserve: int = 0,
+                      unplaced: Optional[list] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
+
+    `clone_reserve` entries are held back from every record's budget for the
+    phase clones laid out after them (`_wavetable_layout` asks for it), and
+    `unplaced` collects the size of each phase clone's block that found no
+    room, which is what it asks with.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
     `index * 5 + 1`, which is why the drum sweep could never be more than two
@@ -2241,7 +2248,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         start = len(entries) + 1
         reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
         budget = max(WAVE_ENTRIES_PER_INSTR,
-                     _gw_constants.GT_MAX_TABLELEN - len(entries) - reserved)
+                     _gw_constants.GT_MAX_TABLELEN - len(entries) - reserved
+                     - clone_reserve)
         got = record_entries(i, start, budget,
                              keep_slide=i in cut_split)
         if isinstance(got, int):
@@ -2400,6 +2408,14 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
             if sink is not None:
                 sink.append(0)
+            if (unplaced is not None and not for_tie and not clocked
+                    and 0 <= i < n):
+                # What it would have taken, if it is a block of its own.
+                room = _gw_constants.GT_MAX_TABLELEN
+                alone = record_entries(i, 1, room, phase=residue)
+                if (alone is not None and not isinstance(alone, int)
+                        and alone != record_entries(i, 1, room)):
+                    unplaced.append(len(alone[0]))
             if log and for_tie:
                 log(f"tie phase block: {record:02X} at residue {residue} "
                     "has no room in the wavetable; its ties keep the old "
@@ -2456,6 +2472,64 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
             cut_starts.append(start)
         entries += list(zip(*block))
     return entries, starts, arp_starts
+
+
+def _wavetable_layout(*args, **kwargs) -> tuple:
+    """`_wavetable_layout_once`, with room kept for a phase clone that has none.
+
+    The table is laid out greedily: every record, then the clones. A record's
+    budget is whatever the earlier records left, less five for each later one,
+    so entries that come free early in the table go to the NEXT record that
+    can use more than five -- and the clones, laid out last, get what is left
+    of that. Bump_Set_Spike showed the order costs: GT 13 gave 25 entries
+    back (`patterns.median_played_durations`) and GT 16 and 18 took 22 of them
+    to complete a gate-off nibble shape, so GT 2's two clones (21 entries a
+    block) still found no room. Handing the same entries to the clone instead
+    reads `aud` 0.9058 -> 0.9065 and `tie_agreement` 0.591 -> 0.609 on the
+    file, where the greedy order read 0.9053 and 0.591 (v0.5.541, 180 s,
+    presets).
+
+    So a clone with no room asks for the least that makes room: records are
+    laid out again with `clone_reserve` entries held back, the smallest value
+    (found by bisection) at which every clone that lacked room has it. A table
+    where they all fit already is laid out once, as before; one where no
+    reserve places them (the records are at their five already) keeps the
+    greedy layout.
+    """
+    if (kwargs.get("phase_clones") is None or not kwargs.get("phase_clones")
+            or kwargs.get("phase_probe") is not None
+            or kwargs.get("phase_block_probe") is not None):
+        return _wavetable_layout_once(*args, **kwargs)
+
+    def trial(reserve: int) -> list:
+        scratch = dict(kwargs)
+        for key in ("clone_starts", "phase_clone_starts", "tie_block_starts",
+                    "attack_hold_starts"):
+            if scratch.get(key) is not None:
+                scratch[key] = []
+        if scratch.get("eor_span") is not None:
+            scratch["eor_span"] = []
+        scratch["log"] = None
+        scratch["eor_library_out"] = None
+        short: list = []
+        _wavetable_layout_once(*args, clone_reserve=reserve, unplaced=short,
+                               **scratch)
+        return short
+
+    short = trial(0)
+    reserve = 0
+    if short:
+        hi = sum(short)
+        if not trial(hi):
+            lo = 0                     # trial(lo) places nothing; trial(hi) all
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                if trial(mid):
+                    lo = mid
+                else:
+                    hi = mid
+            reserve = hi
+    return _wavetable_layout_once(*args, clone_reserve=reserve, **kwargs)
 
 
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,

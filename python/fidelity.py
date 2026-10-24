@@ -1479,15 +1479,95 @@ def startup_lag(orig: list[Voice], ours: list[Voice]) -> tuple[int, int]:
     when applied to both sides (corpus A/B at -t 180 under presets, on
     v0.5.513 plus the uncommitted cycle-1..4 merge).
 
+    **An opening attack ours has no counterpart for is not read.** Pygmies_Revenge's
+    original voice 1 strikes at frame 3 and again at 18, 34, 42 ...; ours
+    strikes at 23, 39, 47 ... -- the opening strike has no counterpart in our
+    trace (why is not established here), so the first-attack difference read 21 where
+    the voice's real notes align at 5 by gate rise (18 -> 23) and voices 0 and
+    2 (orig 1026 and 514, ours 1031 and 519) say 5 as well; it reads 6 here
+    because our side is anchored on the pitched frame. See
+    `unmatched_openings` for the defined signal; the voice's SECOND original
+    attack stands in for its first, on the same one-number estimate. The
+    effect on the scores is in `tests/test_startup_lag_unmatched_opening.py`.
+
     Returns the applied lag clamped to +/-MAX_STARTUP_LAG and the raw one, so a
     row can say the two differ rather than quietly correcting by 438 frames.
     """
-    fo = [min(v.attack_frames) for v in orig if v.attack_frames]
+    skip = unmatched_openings(orig, ours)
+    fo = [sorted(v.attack_frames)[1 if i in skip else 0]
+          for i, v in enumerate(orig) if v.attack_frames]
     fu = [pitched_attack_frame(v) for v in ours if v.attack_frames]
     if not fo or not fu:
         return 0, 0
     raw = min(fu) - min(fo)
     return max(-MAX_STARTUP_LAG, min(MAX_STARTUP_LAG, raw)), raw
+
+
+# How far two voices' first-attack offsets may differ and still be the same
+# startup latency. A packed song's voices start within a frame or two of each
+# other (the player initialises them in turn).
+UNMATCHED_TOL = 2
+# Attacks in the run `unmatched_openings` compares on a voice.
+UNMATCHED_RUN = 4
+
+
+def unmatched_openings(orig: list[Voice], ours: list[Voice]) -> set[int]:
+    """Indices of original voices whose first attack our voice has no
+    counterpart for.
+
+    A defined signal, not a search. Per voice, the offset is our pitched first
+    attack minus the original's first attack. Voice `v` has an unmatched
+    opening when ALL of these hold:
+
+    * it has a second original attack, `s`;
+    * at least one other voice has attacks on both sides, and the other
+      voices' offsets agree with each other within `UNMATCHED_TOL` -- their
+      smallest is the consensus latency `c`;
+    * `v`'s offset exceeds `c` by more than `UNMATCHED_TOL`;
+    * our first `UNMATCHED_RUN` attacks on `v` land on the original's
+      attacks 1..`UNMATCHED_RUN` shifted by `c` (the first original attack
+      skipped), each within `UNMATCHED_TOL` -- a RUN of attacks, because one
+      attack landing near another is chance when notes are a few frames apart;
+    * and they do NOT land on the original's attacks 0..`UNMATCHED_RUN`-1
+      shifted by `v`'s own offset. A voice whose notes repeat at one interval
+      (Sanxion's voice 1, every 6 frames) fits both readings, which is no
+      evidence for either, so it is left as it stands.
+
+    The run is what separates "the original opens with a strike ours has no
+    attack for" from "our voice starts late", which is a defect the lag must
+    keep reporting (Chimera's 438 frames: its voices do not agree on a
+    consensus and ours does not land on any second attack). Measured on the
+    corpus (89 conversions under the shipped presets, 60 s): without the run
+    the test also moved Nineteen 6 -> 0 and Sanxion 5 -> -1, both of whose
+    voice 1 was aligned at its real lag all along. Nothing is moved otherwise.
+    """
+    n = min(len(orig), len(ours))
+    off, first = {}, {}
+    for i in range(n):
+        if orig[i].attack_frames and ours[i].attack_frames:
+            first[i] = pitched_attack_frame(ours[i])
+            off[i] = first[i] - min(orig[i].attack_frames)
+    out: set[int] = set()
+    k = UNMATCHED_RUN
+    for i in off:
+        atk = sorted(orig[i].attack_frames)
+        mine = sorted(ours[i].attack_frames)
+        if len(atk) < k + 1 or len(mine) < k:
+            continue
+        others = [off[w] for w in off if w != i]
+        if not others or max(others) - min(others) > UNMATCHED_TOL:
+            continue
+        c = min(others)
+        if off[i] - c <= UNMATCHED_TOL:
+            continue
+        own = mine[0] - atk[0]
+        skipped = all(abs(mine[j] - (atk[j + 1] + c)) <= UNMATCHED_TOL
+                      for j in range(k))
+        unskipped = all(abs(mine[j] - (atk[j] + own)) <= UNMATCHED_TOL
+                        for j in range(k))
+        if skipped and not unskipped:
+            out.add(i)
+    return out
 
 
 def pitched_attack_frame(v: Voice) -> int:

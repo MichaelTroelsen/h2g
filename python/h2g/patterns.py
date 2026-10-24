@@ -14,6 +14,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 from __future__ import annotations
 
 from bisect import bisect_right
+from fractions import Fraction
 from functools import lru_cache
 from math import gcd, log2
 from typing import Dict, List, Optional, Set, Tuple
@@ -5460,6 +5461,45 @@ def median_played_durations(tracks: List[List[int]],
 
     first_event = {i: _first_event_row(p) for i, p in enumerate(patterns)}
 
+    def _played_rows(pattern: List[int]) -> int:
+        for row in range(len(pattern) // 4):
+            if pattern[4 * row] == GT_END_PATTERN:
+                return row
+        return len(pattern) // 4
+
+    def _rows_to_event(start: int, seen: tuple = ()) -> list:
+        """`[(rows before the first event, share)]` from pattern `start`.
+
+        A pattern with no event of its own is rows the note runs through
+        and no more: the walk goes on over ITS successors, each by its
+        share of the ways the orderlist leaves it. Bump_Set_Spike's GT 13
+        is the last row of pattern 3, whose successor is a one-row hold
+        pattern; the note lasts two rows (not "unknown") and the original
+        reads `0DD0` for them with no sweep. A walk that comes back to a
+        pattern it has passed, or runs out of orderlist, contributes
+        nothing, so a note it cannot place stays unknown as before. So does
+        an event-less pattern under a REPEAT: the successor table counts its
+        repeats as an edge to itself, and a share per play is not how a
+        repeat runs (every play holds the note, one after the other), so the
+        rows cannot be read off it.
+        """
+        lead = first_event.get(start)
+        if lead is not None:
+            return [(lead, 1)]
+        if start in seen or len(seen) >= 8 or start >= len(patterns):
+            return []
+        onward = successors.get(start, {})
+        if start in onward:
+            return []
+        held = _played_rows(patterns[start])
+        whole = sum(onward.values())
+        out: list = []
+        for nxt, times in onward.items():
+            share = Fraction(times, whole)
+            for rows, part in _rows_to_event(nxt, seen + (start,)):
+                out.append((held + rows, share * part))
+        return out
+
     hist: dict = {}
     for index, pattern in enumerate(patterns):
         if index not in entry:
@@ -5496,13 +5536,11 @@ def median_played_durations(tracks: List[List[int]],
                 # where it is not (the orderlist ends, or the successor
                 # opens on a hold row).
                 for nxt, times in successors.get(index, {}).items():
-                    lead = first_event.get(nxt)
-                    if lead is None:
-                        continue
-                    gap = end - row + lead
-                    for instr in owners.get(row, ()):
-                        counts = hist.setdefault(instr, {})
-                        counts[gap] = counts.get(gap, 0) + times
+                    for lead, share in _rows_to_event(nxt):
+                        gap = end - row + lead
+                        for instr in owners.get(row, ()):
+                            counts = hist.setdefault(instr, {})
+                            counts[gap] = counts.get(gap, 0) + times * share
                 break
             gap = events[k + 1] - row
             for instr in owners.get(row, ()):

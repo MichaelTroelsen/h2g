@@ -266,13 +266,13 @@ def test_chimeras_carried_on_stores_take_the_keyoff_row_and_the_rows_after_it():
         assert by_row[22] == {0: 32, 2: 33}, by_row[22]
         assert by_row[23] == {1: 34}, by_row[23]
         beyond = [(j, p) for j, p in hits if j >= 22]
-        assert [j for j, _p in beyond] == list(range(22, 35)), beyond
+        assert [j for j, _p in beyond] == list(range(22, 33)), beyond
         last = beyond[-1][1]
         assert 2 not in last, last           # a row-final store has no tail
         vals = [v for _j, p in beyond for _c, v in sorted(p.items())]
-        # 51 of the 63 values fit; the 51st sat on the last tick of a row whose
-        # tail would have put the voice back, and went with it
-        assert vals == list(range(32, 51)), vals
+        # 48 of the 63 values fit (51 until Chimera's GT 7 drum took six more
+        # wavetable entries, v0.5.541); the ones above are left to the vibrato
+        assert vals == list(range(32, 48)), vals
 
 
 def _keep_rise(lo, hi):

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.596 — 2026-10-24
+
+- Bump_Set_Spike wavetable economy (GT13 last-event-through-empty-pattern, clone reserve); startup_lag ignores an unmatched opening attack
+
 ## 0.5.595 — 2026-10-24
 
 - regrid + regrid_full_debt + regrid_per_play adopted for Star_Paws: drift -7.8 -> -0.3, gate +12.4, aud +2.3; sound_run -9.1 named
