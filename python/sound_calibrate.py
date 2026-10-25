@@ -450,12 +450,25 @@ def rerender_movements(feats: sound.Features, renders: list[Path],
     `feats` is the cached render's features (the 180 s one every score is
     taken against); each path is a `sound.render_repeat` WAV of the same
     .sid. The alignment is searched, as `score_pair` searches it, because a
-    random power-on delay is exactly an unknown offset."""
+    random power-on delay is exactly an unknown offset.
+
+    **The search runs over the extent the repeat render covers**, not over
+    the whole cached render. `sound.align` without a prior correlates the
+    envelope of `a` with `b` zero-padded past its end, so a 180 s cached
+    render against a 60 s repeat has 120 s of `a` that `b` cannot match, and
+    where that tail is louder than the head the correlation prefers sliding
+    `b` onto it: Last_V8's two identical `--delay=0` renders (`aud` 0.99995
+    at lag 0) were aligned 165 hops apart and read 0.1187, which became the
+    calibration's noise floor for every tune (v0.5.597). Cutting `a` to
+    `b`'s length first compares like with like; the scoring below still uses
+    the whole of `feats`."""
     out = []
     for p in renders:
         x, rate = sound.read_wav_mono(p)
         b = sound.features(x, rate)
-        lag = sound.align(feats, b)
+        n = len(b.rms_db)
+        head = sound.Features(feats.logmel[:n], feats.rms_db[:n], feats.hop_s)
+        lag = sound.align(head, b)
         out.append(_movement(sound.compare_features(feats, b, lag, window_s=window_s)))
     return out
 

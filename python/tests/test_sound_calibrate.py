@@ -256,6 +256,21 @@ def test_rerender_movement_is_zero_for_a_copy_and_not_for_a_delayed_one(tmp_path
     assert C.rerender_movements(f, [], 1.0) == []
 
 
+def test_rerender_aligns_on_the_extent_the_repeat_render_covers(tmp_path):
+    """SABOTAGE TARGET: align the whole cached render against the short repeat
+    (`sound.align(feats, b)`) and a louder TAIL the repeat never covered pulls
+    the envelope search onto a whole-period shift, so two identical renders
+    read as far apart -- the 0.1187 Last_V8 gave the calibration's noise floor
+    while every other tune re-rendered at 0.0000-0.0002 (v0.5.597)."""
+    quiet = 0.1 * _bursts(2.0, rate=_LOW_RATE)
+    loud = _bursts(4.0, rate=_LOW_RATE)
+    cached = np.concatenate([quiet, loud])
+    repeat = tmp_path / "repeat.wav"
+    _write(repeat, quiet)
+    f = sound.features(cached, _LOW_RATE)
+    assert C.rerender_movements(f, [repeat], 2.0)[0] == pytest.approx(0.0, abs=1e-3)
+
+
 def test_floors_adopt_the_largest_of_shift_and_rerender():
     """SABOTAGE TARGET: adopt `shift_floor` alone and the render floor is
     recorded but decides nothing -- the second assertion is the one that
