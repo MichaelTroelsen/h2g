@@ -698,6 +698,17 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # gated frames and nothing else.
         noise = WAVE_NOISE_GATEOFF | (wave & 0x01)
         if det.drum_gate_off and drum:
+            # **A held gate on a record whose sustain is 0 changes little the
+            # ear can use, so the gate census's `short` kind overstates it**
+            # (measured 2026-10-25, ab5fe67): with sustain 0 the voice decays
+            # to silence gated or not. Forcing drum_gate_off on Lightforce
+            # (AD $08 SR $08, drum + alternate-note record $03) moved `gate`
+            # 56% -> 76% and left aud 94% and loud 98% where they were;
+            # Tarzan's 1711 "ringing" voice-3 frames are a sustain-0 record
+            # held through the original's 15-frame rest. Of the corpus' 39194
+            # ringing `short` frames, 27312 sit on sustain > 0 (the audible
+            # ones: Pacific_Coast, Proteus, Sanxion ...) and 11882 on sustain 0.
+            # Do not adopt the option for the census alone.
             # **`drum_gate_off` takes the refused repair above per song**, for
             # a record that runs the drum (`drum`, the exempted sustaining
             # arpeggio included): the drum block writes its noise with the

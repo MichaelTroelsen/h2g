@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.616 — 2026-10-25
+
+- gate census: sustain-0 short runs are inaudible; comment beside drum_gate_off
+
 ## 0.5.615 — 2026-10-25
 
 - drum_sustain_gate_off + keep_hard_restart: sustaining drums get the drum shape; Crazy_Comets' beats restored
