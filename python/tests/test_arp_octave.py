@@ -967,8 +967,10 @@ def test_the_unticked_records_carry_the_residue_in_the_sng():
     assert _wavetable_of(sng, 8) == [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00),
                                      (0xFF, 0x29)]
     sng, _, _ = _converted("Crazy_Comets")
+    # $3A -> $3D at v0.5.615: drum_sustain_gate_off gives record 1's drum
+    # three more rows ahead of this one; the shape is unchanged.
     assert _wavetable_of(sng, 10) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
-                                      (0xFF, 0x3A)]
+                                      (0xFF, 0x3D)]
     sng, _, _ = _converted("Hunter_Patrol")
     assert _wavetable_of(sng, 9) == [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00),
                                      (0xFF, 0x2E)]

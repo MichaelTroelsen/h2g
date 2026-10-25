@@ -142,10 +142,34 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # median, as for the sweep's depth (`median_played_durations`).
             drum = False
         elif drum and (data[base + 4] >> 4) and not (
-                det.drum_gate_off and arp and det.effect_arp
-                and arp_note != 0):
-            # **`drum_gate_off` exempts a record that also carries a live
-            # arpeggio**, and only that one: its sweep is overwritten by the
+                det.drum_sustain_gate_off
+                or (det.drum_gate_off and arp and det.effect_arp
+                    and arp_note != 0)):
+            # **`drum_sustain_gate_off` exempts every sustaining drum
+            # record** (v0.5.615, per song). The player's drum
+            # block closes the gate and falls the pitch whatever the sustain:
+            # Crazy_Comets record 1 (`00 08 81 1A 69 00 00 01`, S=6) reads
+            # `81` then `80` with freq-hi $13 -> $0E from each onset, where
+            # the exemption held `81` gated and flat. Measured over the 28
+            # drum_gate_off songs at f016698 (C:/t/gate-rest-encoding,
+            # proto2.json): gate Crazy_Comets .869 -> 1.000, Spellbound .714
+            # -> .924, Warhawk .860 -> .908; travel Crazy_Comets .81 -> .99;
+            # melody/wave/adsr unchanged; aud within the noise floor. Heard
+            # (user, 2026-10-25): Spellbound "right on", Warhawk "very good",
+            # Crazy_Comets right only with `keep_hard_restart` -- its drum
+            # releases on R=9 into the next note's attack and the SID's ADSR
+            # delay swallowed the following beats (see _drum_tick_noise).
+            # Not folded into drum_gate_off: across its 28 songs it would
+            # also move Commando, Geoff_Capes, International_Karate,
+            # Phantoms_of_the_Asteroid and Last_V8_C128_version (approved by
+            # ear), none of them heard with it. On the shipped path
+            # Last_V8_C128_version still emits its skydive (98 steps,
+            # compact); only test_skydive_compact's fixture, which disables
+            # goatwriter.dead_blocks, overflows 255 rows with it. The v0.5.164
+            # verdict below stands where the option is off.
+            #
+            # **`drum_gate_off` exempted a record that also carries a live
+            # arpeggio**, before that: its sweep is overwritten by the
             # arpeggio every frame (`arp_overwrites_sweep`'s reading), so the
             # gate-off is the whole of what the drum block leaves audible --
             # and the player closes the gate whatever the sustain. Commando
@@ -801,7 +825,11 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # derived length takes the corpus from 19 of 74 drum instruments
         # matching the original's run to 43.
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
-                             sustain=data[base + 4] >> 4, budget=budget,
+                             # drum_sustain_gate_off: the player sweeps a
+                             # sustaining drum too ($13 -> $0E, above)
+                             sustain=(0 if det.drum_sustain_gate_off
+                                      else data[base + 4] >> 4),
+                             budget=budget,
                              tick_frames=_noise_tick_frames(sid, det),
                              note_rows=typical, row_calls=row_calls,
                              written=no_test_restart, gate_skip=gate_skip,

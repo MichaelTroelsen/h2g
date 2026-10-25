@@ -145,6 +145,18 @@ def main(argv=None) -> int:
              "voice >= 1 entry pattern. A song whose player sets $F or has "
              "no such shape is unchanged. Per song. Off by default")
     parser.add_argument(
+        "--keep-hard-restart", action="store_true",
+        help="keep Goattracker's hard restart on every instrument even "
+             "under --no-hard-restart, so the envelope's rate period is "
+             "lowered before each note as the original's $0000 write does. "
+             "Per song. Off by default")
+    parser.add_argument(
+        "--drum-sustain-gate-off", action="store_true",
+        help="give a drum-flagged record whose envelope sustains the drum "
+             "shape anyway (gate-off after the tick, pitch fall), as the "
+             "player's drum block does whatever the sustain. Per song. Off "
+             "by default")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -760,6 +772,8 @@ def main(argv=None) -> int:
                           ("--regrid-per-play", "regrid_per_play"),
                           ("--regrid-park", "regrid_park"),
                           ("--master-volume", "master_volume"),
+                          ("--keep-hard-restart", "keep_hard_restart"),
+                          ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -870,6 +884,8 @@ def main(argv=None) -> int:
                       regrid_prepay=args.regrid_prepay,
                       regrid_park=args.regrid_park,
                       master_volume=args.master_volume,
+                      keep_hard_restart=args.keep_hard_restart,
+                      drum_sustain_gate_off=args.drum_sustain_gate_off,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

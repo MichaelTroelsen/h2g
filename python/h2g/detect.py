@@ -260,6 +260,9 @@ class Detection:
     # read it without threading a parameter through every layout call.
     # False by default, which keeps every conversion byte-identical.
     drum_gate_off: bool = False
+    # `convert(drum_sustain_gate_off=...)`, the same carriage: a sustaining
+    # drum record keeps the drum shape (gate-off and fall). False by default.
+    drum_sustain_gate_off: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform

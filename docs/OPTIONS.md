@@ -2689,10 +2689,14 @@ ahead of each note unless the instrument sets `gatetimer` bit `$80`
 parameter, default `$0F00` (`goattrk2.c:49`), baked into the packed player as
 `ADPARAM`/`SRPARAM` (`greloc.c:1138`).
 
-Hubbard's players never do this. `$0F00` appears in **none** of the corpus
+Hubbard's players never write `$0F00`: it appears in **none** of the corpus
 originals and is the **most common ADSR value in every conversion** without
-this flag -- an envelope reset on every note that the music being converted
-does not contain. The flag sets bit `$80` on every instrument read from the
+this flag. **They do reset the envelope, though, with `$0000`**: 36 of the 89
+converting originals write it before essentially every note (census at
+f016698, C:/t/gate-rest-encoding/hrcensus.json), which is what keeps the SID's
+ADSR delay off their attacks. "Hubbard's players never do this", as this
+section said until v0.5.615, was true of the value and not of the reset; see
+`--keep-hard-restart` for the song where removing it cost audible beats. The flag sets bit `$80` on every instrument read from the
 file. It does not set bit `$40`, which would suppress the gate-off as well
 and stop notes releasing at all.
 
@@ -2895,7 +2899,8 @@ cutting off":
   record 1, ADSR `$064B`: original `41 80 80 40 40`, ours `41 81 81 41 41`);
   the option keeps the drum for it -- the arpeggio overwrites the sweep every
   frame, so the gate-off is all the drum leaves audible. A drum-only
-  sustaining record keeps the v0.5.164 rule (a listening verdict);
+  sustaining record keeps the v0.5.164 rule (a listening verdict) unless the
+  song also takes `--drum-sustain-gate-off` (below);
 * effect bit `$02`'s alternation on a drum record alternated two gated halves;
   under the option the pair loses the gate after the tick (Deep_Strike record
   7, `$0F07`: original `11 11 81 10 80 10 80`).
@@ -2905,7 +2910,46 @@ under presets and none under defaults (Commando stays byte-exact). The tick
 half is the repair the ticked shape refused corpus-wide for melody on seven
 files (see the comment at `noise` in `_wavetable_entries`), which is why it is
 per song. Census, A/B and the files it is proposed for: run record
-`commando-arp-one-frame-gate`. `tests/test_drum_gate_off.py`.
+`commando-arp-one-frame-gate`. `tests/test_drum_gate_off.py`,
+`tests/test_drum_sustain_gate_off.py`.
+
+## `--drum-sustain-gate-off` (the drum shape for a sustaining drum record)
+
+The player's drum block closes the gate after the tick and falls the pitch
+whatever the record's sustain. Crazy_Comets record 1 (`$1A69`, S=6) reads
+`81 80 80 ...` with freq-hi `$13 -> $0E` from each onset in the original,
+where v0.5.164's sustaining-record rule held it `81`, gated and flat, even
+under `--drum-gate-off`. This option gives such a record the drum shape
+(`_drum_entries`, sweep included).
+
+Forced over the 28 songs shipping `--drum-gate-off` (f016698, -t 180
+--presets --sound; C:/t/gate-rest-encoding/proto2.json): bytes move on 8;
+gate Crazy_Comets .869 -> 1.000, Spellbound .714 -> .924, Warhawk .860 ->
+.908; travel Crazy_Comets .81 -> .99; melody, wave and adsr unchanged; `aud`
+inside the 0.0095 noise floor everywhere. Heard 2026-10-25: Spellbound
+"right on", Warhawk "very good", Crazy_Comets right only with
+`--keep-hard-restart` as well. Per song, adopted on exactly those three; the
+other five movers (Commando, Geoff_Capes, International_Karate,
+Phantoms_of_the_Asteroid, and Last_V8_C128_version, approved by ear) were
+not heard with it. `tests/test_drum_sustain_gate_off.py`.
+
+## `--keep-hard-restart` (Goattracker's hard restart, for one song)
+
+Overrides `--no-hard-restart` for one song: every instrument keeps the hard
+restart, so Goattracker writes `adparam` (`$0F00`) ahead of each note and the
+envelope's rate period is lowered before the gate rises. The originals do the
+same with `$0000`: 36 of the 89 converting originals write it before
+essentially every note (census at f016698, C:/t/gate-rest-encoding/
+hrcensus.json). Without it, a drum that releases on a slow R into a short
+note's attack meets the SID's ADSR delay (`_drum_tick_noise`'s docstring),
+and the note can fail to sound: Crazy_Comets under `--drum-sustain-gate-off` lost
+beats on voice 2 (solo-voice `loud_ratio` .220 against the original; .738
+with this option, the same as `-A0000`). Heard 2026-10-25: "full match".
+
+Per song (`presets.EXCLUDED_FROM_ALWAYS`): it costs `adsr` agreement where
+`$0F00` is read against the original's `$0000`, and turning it on for all 36
+is a listening question. Adopted for Crazy_Comets.
+`tests/test_drum_sustain_gate_off.py`.
 
 ## `--drum-fall` (Tarzan's bit-$01 drum: the pitch falls, the gate opens)
 

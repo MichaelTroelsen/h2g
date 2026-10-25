@@ -646,6 +646,8 @@
       "rows": 17388,
       "multiplier": 1,
       "drum_gate_off": true,
+      "drum_sustain_gate_off": true,
+      "keep_hard_restart": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2411,7 +2413,8 @@
       "rows": 27206,
       "multiplier": 5,
       "max_hard_restart": true,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "drum_sustain_gate_off": true
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -2818,7 +2821,8 @@
       "rows": 21473,
       "multiplier": 7,
       "max_hard_restart": true,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "drum_sustain_gate_off": true
     },
     "Wiz.sid": {
       "max_rows": 94,

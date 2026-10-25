@@ -286,7 +286,9 @@ def convert(sid_path: str, log: Logger = print,
             lfo_wave: bool = False,
             voice_arp: bool = False,
             unison_vibrato_phase: bool = False,
-            master_volume: bool = False) -> bytes:
+            master_volume: bool = False,
+            keep_hard_restart: bool = False,
+            drum_sustain_gate_off: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -619,6 +621,27 @@ def convert(sid_path: str, log: Logger = print,
     (`patterns.apply_master_volume`). Off by default: it moves the bytes of
     the files whose original holds a lower level, and nothing adopts it yet.
 
+    drum_sustain_gate_off gives a drum-flagged record whose envelope
+    sustains the drum shape after all -- the gate-off after the tick and the
+    pitch fall -- where v0.5.164's sustaining-record rule held the gate and
+    the pitch (goatwriter.wavetable._wavetable_entries). The player's drum
+    block does both whatever the sustain (Crazy_Comets record 1, `$1A69`:
+    `81 80 80 ...`, freq-hi $13 -> $0E). Per song and off by default: heard
+    right on Spellbound and Warhawk, and on Crazy_Comets with
+    keep_hard_restart. Not adopted where it was not heard (Last_V8_C128_version
+    is approved by ear and would move).
+
+    keep_hard_restart overrides `no_hard_restart` for one song: every
+    instrument keeps Goattracker's hard restart (gatetimer bit $80 clear),
+    which writes `adparam` ahead of each note and lowers the envelope's rate
+    period before the gate rises. The original's player does the same with
+    $0000 (36 of 89 originals, ~every note): without it a drum releasing
+    on a slow R into a short note's attack meets the SID's ADSR delay and
+    the note can fail to sound. Crazy_Comets under drum_gate_off lost
+    beats on voice 2 (solo loud_ratio .220 against .738 with this on;
+    heard, 2026-10-25). Per song: it costs `adsr` agreement where
+    Goattracker's $0F00 is read against the original's $0000.
+
     sfx_drum_bandpass writes the one frame of bandpass the sfx drum's fire
     block sets (`detect.find_sfx_drum_bandpass`) into the filter program of
     each drum record that also carries a filter: the program becomes a loop
@@ -702,6 +725,7 @@ def convert(sid_path: str, log: Logger = print,
     log("-----------------------------------------------------SEARCHING---")
     sid, det = _detect_tables(sid, log, engine)
     det.drum_gate_off = drum_gate_off
+    det.drum_sustain_gate_off = drum_sustain_gate_off
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1
@@ -1398,7 +1422,8 @@ def convert(sid_path: str, log: Logger = print,
                          speed_table=speed_table, effects=effects,
                          pulse=pulse, multiplier=multiplier,
                          sustain_exact=sustain_exact,
-                         no_hard_restart=no_hard_restart,
+                         no_hard_restart=(no_hard_restart
+                                          and not keep_hard_restart),
                          wide_hard_restart=wide_hard_restart,
                          max_hard_restart=max_hard_restart,
                          hard_restart_frames=hard_restart_frames,

@@ -401,6 +401,18 @@ EXCLUDED_FROM_ALWAYS = {
     # (Mega_Apocalypse, Pygmies_Revenge); the read also reaches held DIGI
     # files, which the hold forbids working, so it cannot be an `always` flag.
     "master_volume",
+    # Per song and never a default: overrides the `always` block's
+    # no_hard_restart for a song whose drum otherwise loses beats to the
+    # SID's ADSR delay (Crazy_Comets, heard 2026-10-25). Turning it on for
+    # every one of the 36 originals that write $0000 before their notes is a
+    # listening question, not a search result.
+    "keep_hard_restart",
+    # Per song and never a default: the drum shape for a SUSTAINING drum
+    # record (gate-off and fall), heard right on Crazy_Comets, Spellbound and
+    # Warhawk (2026-10-25). Not an extension of drum_gate_off because that
+    # would also move five songs nobody heard with it, one approved by ear
+    # (Last_V8_C128_version).
+    "drum_sustain_gate_off",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own
