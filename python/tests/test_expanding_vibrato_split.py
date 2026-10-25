@@ -169,7 +169,8 @@ def _mega(log, **extra):
     import fidelity
     from h2g.convert import convert
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
-    opts = {**fidelity._preset_opts(doc, "Mega_Apocalypse.sid"), **extra}
+    opts = {**fidelity._preset_opts(doc, "Mega_Apocalypse.sid"),
+            "master_volume": False, **extra}
     return fidelity, convert(str(CORPUS / "Mega_Apocalypse.sid"), log, **opts)
 
 

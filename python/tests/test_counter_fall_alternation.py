@@ -44,6 +44,7 @@ def _converted(name="Mega_Apocalypse", **extra):
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     lines = []
     opts = fidelity._preset_opts(doc, f"{name}.sid")
+    opts["master_volume"] = False  # adopted since; these shas predate it
     opts.update(extra)
     sng = Cv.convert(str(CORPUS / f"{name}.sid"), log=lines.append, **opts)
     return sng, lines

@@ -47,7 +47,8 @@ def _both(stem):
     import fidelity as F
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
-    opts = F._preset_opts(doc, f"{stem}.sid")
+    # the shipped presets now adopt master_volume for both; "off" must be off
+    opts = dict(F._preset_opts(doc, f"{stem}.sid"), master_volume=False)
     off = parse_sng(convert(str(CORPUS / f"{stem}.sid"), log=lambda m: None,
                             **opts))
     lines = []

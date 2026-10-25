@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.609 presets.py",
+  "generator": "h2g 0.5.611 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1739,7 +1739,8 @@
       "two_stage": true,
       "sfx_drum": true,
       "wave_program": true,
-      "pitch_seq": true
+      "pitch_seq": true,
+      "master_volume": true
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 128,
@@ -2130,7 +2131,8 @@
       "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "master_volume": true
     },
     "Radio_ACE.sid": {
       "max_rows": 94,
