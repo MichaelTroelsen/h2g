@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.606 — 2026-10-25
+
+- aud_timeline: per-second sound agreement and a stretch locator validated on W_A_R and Action_Biker
+
 ## 0.5.605 — 2026-10-25
 
 - sound_calibrate: re-render alignment runs over the extent the repeat covers; calibration reads PASS

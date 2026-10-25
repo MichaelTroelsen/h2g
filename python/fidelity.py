@@ -8437,14 +8437,37 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # `import sound` pulls in fidelity plus nine h2g modules.
         import sound  # noqa: PLC0415 -- numpy, harness only; see above
         prior = 0.02 * row.get("startup_lag", 0)
-        row.update(sound.compare_sids(
+        got = sound.compare_sids(
             local_orig, packed, seconds, sub,
-            row.get("matched_subtune", our_sub), prior_s=prior))
+            row.get("matched_subtune", our_sub), prior_s=prior)
+        row.update(timeline_columns(got))
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
         row["audio"] = sidm2_audio(local_orig, packed, seconds)
     return row
+
+
+def timeline_columns(got: dict) -> dict:
+    """`got` (a `sound.compare_sids` result) without the bulky per-second
+    series, plus `aud_timeline` (2 dp, `None` for a second nothing sounds in)
+    `aud_first_dip_s` (first second of `sound.locate_stretch`'s weakest
+    `STRETCH_SECONDS`-second run, `None` unless that run sits below the
+    median by more than `STRETCH_K` x the series' own scatter) and
+    `aud_stretch` (its kind: located / flat / short). `per_second_frames`
+    is a weight for recombining, not a column. A failed render has no series
+    and gains no column."""
+    got = dict(got)
+    per_second = got.pop("per_second", None)
+    got.pop("per_second_frames", None)
+    if per_second is not None:
+        import sound  # noqa: PLC0415 -- see the cycle note in _measure
+        got["aud_timeline"] = [None if v is None else round(v, 2)
+                               for v in per_second]
+        st = sound.locate_stretch(per_second)
+        got["aud_first_dip_s"] = st["start"]
+        got["aud_stretch"] = st["kind"]
+    return got
 
 
 def _fmt_pct(x) -> str:

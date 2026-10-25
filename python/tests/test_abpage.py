@@ -1409,3 +1409,12 @@ def test_h2g_sid_dir_overrides_the_corpus(tmp_path, monkeypatch):
     monkeypatch.setenv("H2G_SID_DIR", str(env))
     monkeypatch.setattr(A, "CORPUS_DIR", corpus)
     assert A.find_sid("T.sid") == env / "T.sid"
+
+
+def test_timeline_card_prints_the_dip_second_and_says_so_when_there_is_none():
+    got = A.timeline_card({"aud_timeline": [0.9, 0.9, 0.5, 0.5, 0.5], "aud_first_dip_s": 2})
+    assert "Weakest stretch starts at <b>2 s</b>" in got
+    assert "2s 0.50" in got
+    none = A.timeline_card({"aud_timeline": [0.9, 0.9], "aud_first_dip_s": None})
+    assert "No located stretch" in none and "uniform" in none
+    assert A.timeline_card({}) == ""

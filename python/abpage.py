@@ -2496,6 +2496,35 @@ def notes_strip_card(name: str, fj: dict | None) -> str:
         % ("".join(cols), STRIP_MAX_TICKS, total_o, total_u))
 
 
+def timeline_card(fj: dict | None) -> str:
+    """The second the song's weakest sustained stretch starts, from `aud_first_dip_s`.
+
+    Empty when the row carries no `aud_timeline` (a run without `--sound`), so
+    an old fidelity.json draws nothing. `aud_first_dip_s` None with a timeline
+    present is a finding and says so: no 8-second run sits below the song's own
+    median by more than the per-second scatter allows, so a deficit here is
+    uniform and cannot be placed in time -- read `aud`.
+    """
+    fj = fj or {}
+    tl = fj.get("aud_timeline")
+    if not tl:
+        return ""
+    dip = fj.get("aud_first_dip_s")
+    if dip is None:
+        head = ("No located stretch: no 8-second run stands out from this "
+                "song&rsquo;s own per-second scatter, so any deficit is "
+                "uniform; read <code>aud</code>.")
+    else:
+        around = ", ".join("%ds %s" % (i, "-" if tl[i] is None else "%.2f" % tl[i])
+                           for i in range(max(0, dip - 1), min(len(tl), dip + 9)))
+        head = "Weakest stretch starts at <b>%d s</b> (%s)." % (dip, around)
+    return ('<div class="card">\n  <h2>Where the sound parts</h2>\n'
+            '  <p class="opts">%s Per-second <code>aud</code> over the aligned '
+            'overlap, <code>aud_timeline</code> in <code>build/fidelity.json</code>; '
+            'the seconds are the overlap&rsquo;s, not the song&rsquo;s.</p>\n</div>\n'
+            % head)
+
+
 def voicewave_card(voice_map: dict) -> str:
     """Three stacked amplitude overlays, one per voice, drawn at once.
 
@@ -2829,7 +2858,7 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            facts=facts_card(name, survey or {}, preset or {}, fidjson or {}),
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
-           notes_strip=notes_strip_card(name, fidjson),
+           notes_strip=notes_strip_card(name, fidjson) + timeline_card(fidjson),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
            approval=approval_badge(name, approval or {}, version, now_shas,

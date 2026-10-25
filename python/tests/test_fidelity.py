@@ -5573,3 +5573,23 @@ def test_all_subtunes_refuses_to_write_the_main_report(tmp_path):
     assert not (tmp_path / "x.md").exists()
     assert fidelity.ALL_SUBTUNES_JSON == "build/fidelity_subtunes.json"
     assert fidelity.ALL_SUBTUNES_MD == "docs/SUBTUNE-FIDELITY.md"
+
+
+def test_timeline_columns_round_to_2dp_and_locate_the_stretch_and_drop_the_series():
+    ps = [0.9, 0.91] * 10 + [0.5, 0.51] * 6 + [0.9, 0.91] * 10 + [None]
+    got = fidelity.timeline_columns(
+        {"aud": 0.8, "sound_frames": 9, "per_second_frames": [1] * 6,
+         "per_second": ps})
+    assert got["aud_timeline"][20:22] == [0.5, 0.51]
+    assert got["aud_first_dip_s"] == 20 and got["aud_stretch"] == "located"
+    assert "per_second" not in got and "per_second_frames" not in got
+    assert got["aud"] == 0.8
+
+
+def test_timeline_columns_flat_series_has_no_time():
+    got = fidelity.timeline_columns({"aud": 0.85, "per_second": [0.85, 0.86] * 20})
+    assert got["aud_first_dip_s"] is None and got["aud_stretch"] == "flat"
+
+
+def test_timeline_columns_leave_a_failed_render_alone():
+    assert fidelity.timeline_columns({"sound_failed": "orig"}) == {"sound_failed": "orig"}

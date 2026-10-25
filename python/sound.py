@@ -437,7 +437,8 @@ def compare_features(a: Features, b: Features, lag_hops: int,
     either = on_a | on_b
     n = int(either.sum())
     if n == 0:
-        return {"aud": None, "loud": None, "loud_ratio": None, "sound_frames": 0}
+        return {"aud": None, "loud": None, "loud_ratio": None, "sound_frames": 0,
+                "per_second": [], "per_second_frames": []}
     both = on_a & on_b
     # Timbre: per-frame L1 in dB over the read range, 0 where one side is silent.
     la_c = np.maximum(la, -SPEC_RANGE_DB)
@@ -455,7 +456,106 @@ def compare_features(a: Features, b: Features, lag_hops: int,
     loud = float(np.where(both, 1.0 - ld, 0.0)[either].mean())
     ratio = (float(10.0 ** ((rb_c[both].mean() - ra_c[both].mean()) / 20.0))
              if both.any() else 0.0)
-    return {"aud": aud, "loud": loud, "loud_ratio": ratio, "sound_frames": n}
+    per_second, per_second_frames = _per_second(agree, either, a.hop_s)
+    return {"aud": aud, "loud": loud, "loud_ratio": ratio, "sound_frames": n,
+            "per_second": per_second, "per_second_frames": per_second_frames}
+
+
+def _per_second(agree: np.ndarray, either: np.ndarray,
+                hop_s: float) -> tuple[list, list]:
+    """`aud` read one second of the aligned overlap at a time.
+
+    Second `s` holds the frames whose offset from the overlap's start falls in
+    `[s, s+1)`; its value is the mean of `agree` over the frames that SOUND on
+    either side in it -- the same frames `aud` averages -- so the per-second
+    values weighted by `per_second_frames` (their counts) recombine to `aud`
+    exactly. A second with no sounding frame is `None`, not 0: shared silence
+    is not disagreement. The scored window is the caller's (`compare_features`
+    cuts it first), so second 0 is the start of the scored overlap.
+    """
+    sec = (np.arange(len(agree)) * hop_s).astype(int)
+    size = int(sec.max()) + 1 if len(sec) else 0
+    cnt = np.bincount(sec[either], minlength=size)
+    tot = np.bincount(sec[either], weights=agree[either], minlength=size)
+    vals = [float(t / c) if c else None for t, c in zip(tot, cnt)]
+    return vals, [int(c) for c in cnt]
+
+
+# Where is the song worst relative to ITSELF over a sustained stretch, and does
+# that stretch stand out from per-second scatter at all?  The stretch is the
+# lowest mean over `STRETCH_SECONDS` consecutive sounding seconds.  It is
+# reported only when it sits below the series' median by more than
+# `STRETCH_K` times `second_scatter` (a second's MAD about its own 9-second
+# rolling median, x1.4826): that scatter is not inflated by a deficit that
+# fills half the window (the MAD about the global median is: W_A_R 0.5.399 at
+# the 60 s prefix reads 0.076 that way, 0.014 this way), and not deflated by
+# slow drift (second-to-second differences are).  A series with no such
+# stretch is FLAT: a uniform deficit (Action_Biker 0.5.371, .81-.88 all the
+# way) cannot be placed in time from its own series, so it reads None and its
+# deficit stays in `aud`.
+# Chosen on the four real pairs of sound_calibrate.KNOWN_BAD (60 s and whole
+# render): gap/scatter is 9.5-45.6 where a stretch is real and 0.7-4.9 where it
+# is not, so K=7 sits between them; the margin is thin on the high side
+# (9.5 vs 7), see tests/test_sound.py.
+STRETCH_SECONDS = 8
+STRETCH_K = 7.0
+SCATTER_SPAN = 9      # seconds in the rolling median `second_scatter` uses
+
+
+def second_scatter(per_second: list) -> float:
+    """1.4826 x the median |second - rolling median over `SCATTER_SPAN` s|."""
+    a = np.array([np.nan if v is None else v for v in per_second], dtype=float)
+    h = SCATTER_SPAN // 2
+    res = []
+    for i, v in enumerate(a):
+        if np.isnan(v):
+            continue
+        w = a[max(0, i - h):i + h + 1]
+        res.append(abs(v - np.nanmedian(w)))
+    return 1.4826 * float(np.median(res)) if res else 0.0
+
+
+def locate_stretch(per_second: list, seconds: int = STRETCH_SECONDS,
+                   k: float = STRETCH_K) -> dict:
+    """Locate the song's weakest sustained stretch, or say there is none.
+
+    Returns `{"kind", "start", "mean", "median", "gap", "scatter"}`. `kind` is
+    "located" (`start` is the first second of the lowest `seconds`-second run),
+    "flat" (the lowest run is not below the median by more than `k` x scatter:
+    nothing to place in time), or "short" (fewer than `seconds` consecutive
+    sounding seconds). `start` is None unless "located". Runs containing a
+    silent second (`None`) are not candidates.
+    """
+    vals = [v for v in per_second if v is not None]
+    out = {"kind": "short", "start": None, "mean": None, "median": None,
+           "gap": None, "scatter": None}
+    if not vals:
+        return out
+    med = float(np.median(vals))
+    out["median"] = med
+    best = None
+    for i in range(len(per_second) - seconds + 1):
+        run = per_second[i:i + seconds]
+        if any(v is None for v in run):
+            continue
+        m = float(np.mean(run))
+        if best is None or m < best[1]:
+            best = (i, m)
+    if best is None:
+        return out
+    scat = second_scatter(per_second)
+    gap = med - best[1]
+    out.update(mean=best[1], gap=gap, scatter=scat)
+    if gap > k * scat:
+        out.update(kind="located", start=best[0])
+    else:
+        out["kind"] = "flat"
+    return out
+
+
+def first_dip(per_second: list) -> int | None:
+    """First second of the located weakest stretch (`locate_stretch`), or None."""
+    return locate_stretch(per_second)["start"]
 
 
 def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
