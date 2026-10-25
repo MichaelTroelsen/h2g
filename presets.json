@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.603 presets.py",
+  "generator": "h2g 0.5.609 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2015,7 +2015,8 @@
       "pitch_seq": true,
       "max_hard_restart": false,
       "regrid": true,
-      "regrid_full_debt": true
+      "regrid_full_debt": true,
+      "rest_program_stop": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -2774,7 +2775,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "regrid": true
+      "regrid": true,
+      "rest_program_stop": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

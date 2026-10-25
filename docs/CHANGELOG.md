@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.610 — 2026-10-25
+
+- rest_program_stop adopted for Pandora and Trans-Atlantic_Balloon_Challenge
+
 ## 0.5.609 — 2026-10-25
 
 - docs: the new columns in MEASURING.md, three Measurement-discipline rules with evidence
