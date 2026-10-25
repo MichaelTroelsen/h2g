@@ -72,8 +72,12 @@ def test_the_zero_page_dialect_is_found_on_exactly_its_two_files():
             assert det.pulse_tri_gated, path.name
         else:
             absolute.add(path.name)
+            # Mozart carries the absolute routine with the zero-page
+            # dialect's masks (PULSE_TRI_MASKS_SHAPE, test_pulse_spellings.py):
+            # read off its two AND operands, not the signature's.
+            want = (0xF0, 0x0F) if path.name == "Mozart.sid" else (0xE0, 0x1F)
             assert (det.pulse_tri_step_mask,
-                    det.pulse_tri_delay_mask) == (0xE0, 0x1F), path.name
+                    det.pulse_tri_delay_mask) == want, path.name
     assert zp == {SAMANTHA, SPELLBOUND}
     assert absolute, "the absolute dialect's files should still be detected"
 

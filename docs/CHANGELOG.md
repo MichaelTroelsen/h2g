@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.613 — 2026-10-25
+
+- detect: the four undetected pulse spellings (Mega_Apocalypse zero-page prog, Mozart masks, Commodore extra STA, Chicken_Song per-voice bounds)
+
 ## 0.5.612 — 2026-10-25
 
 - master_volume adopted for Mega_Apocalypse and Pygmies_Revenge; SURVEY/presets/FIDELITY/QUEUE regenerated

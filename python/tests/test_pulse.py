@@ -776,7 +776,7 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
             continue
         found += 1
         gated += det.pulse_tri_gated
-    assert (found, gated) == (24, 19), "the triangle's reach changed"
+    assert (found, gated) == (26, 20), "the triangle's reach changed"
     # ...and so is its absolute,X spelling (PULSE_TRI_ABSX_SHAPE), the
     # nibble family's eight files, which tests/test_pulse_tri_absx.py and
     # tests/test_kentilla_gaps.py own.

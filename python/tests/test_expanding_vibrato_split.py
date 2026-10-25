@@ -359,4 +359,5 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     # note_pitches=None in convert() the old sha comes back.
     # Re-pinned (c909ffb6b436) by the drop of the pulse and filter rows only a
     # dropped record reaches (instrument_drop._drop_dead_blocks).
-    assert hashlib.sha1(sng).hexdigest()[:12] == "c909ffb6b436"
+    # Re-pinned (744d1772f0c7): the zero-page pulse program (PULSE_PROG_ZP_SHAPE).
+    assert hashlib.sha1(sng).hexdigest()[:12] == "744d1772f0c7"

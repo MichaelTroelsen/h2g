@@ -334,7 +334,9 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     # Re-pinned (edd694616855) by the drop of the pulse and filter rows only a
     # dropped record reaches (instrument_drop._drop_dead_blocks): same music,
     # fewer table rows.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "edd694616855"
+    # Re-pinned (5ef3ca90ef49): Mega_Apocalypse reads its zero-page pulse
+    # program (PULSE_PROG_ZP_SHAPE), so the pulse table is no longer static.
+    assert hashlib.sha1(sng).hexdigest()[:12] == "5ef3ca90ef49"
 
 
 @needs_corpus

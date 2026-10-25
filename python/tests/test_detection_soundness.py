@@ -496,6 +496,10 @@ _TRIANGLE_START = {
     "Rasputin.sid": (((1, 0), (1, 0), (1, 0)), (1, 7, 3), 0),
     "Thing_on_a_Spring.sid": (((1, 1), (1, 1), (-1, 0)), (15, 6, 7), 1),
     "Zoids.sid": (((1, 0), (1, 0), (1, 0)), (13, 4, 3), 1),
+    # PULSE_TRI_STA_SHAPE: the operands sit three bytes later (pulse_tri_shift)
+    "Commodore_64_Music_Examples.sid": (((1, 0), (1, 0), (-1, 0)), (1, 8, 6), 0),
+    # PULSE_TRI_MASKS_SHAPE: the speed counter cannot be read, so no start
+    "Mozart.sid": None,
 }
 
 

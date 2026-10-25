@@ -101,13 +101,14 @@ def test_the_command_table_spelling_halves_the_step_and_reads_voice_bounds():
 @needs_corpus
 def test_the_command_table_spelling_declines_disagreeing_voice_bounds():
     """Chicken_Song carries the same routine, but its voice 3 cells hold
-    $01/$04 against $08/$0F on the other two: one program per record cannot
-    turn at both, so the reading declines rather than pick one."""
+    $01/$04 against $08/$0F on the other two: the UNIFORM reading declines
+    (the per-voice one, `_find_pulse_tri_cmd_voices`, is
+    test_pulse_spellings.py's)."""
     sid = load_sid(str(CORPUS / "Chicken_Song.sid"))
     det = detect(sid, _quiet)
     assert search_file(sid.data, PULSE_TRI_CMD_SHAPE) >= 0
     assert _find_pulse_tri_cmd(sid, det) is None
-    assert det.pulse_tri_hi < 0
+    assert det.pulse_tri_voice_bounds == ((8, 15), (8, 15), (1, 4))
 
 
 def _convert_logged(name, **over):

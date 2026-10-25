@@ -370,6 +370,15 @@ class Detection:
     # `(rate & step_mask) >> step_shift` is the step: 1 in the command-table
     # engine's spelling (PULSE_TRI_CMD_SHAPE's `AND #$F0 / LSR`), else 0.
     pulse_tri_step_shift: int = 0
+    # The command-table engine's turnaround cells are PER VOICE
+    # (PULSE_TRI_CMD_SHAPE): `((lo, hi), ...)` for voices 0..2 where they
+    # disagree (Chicken_Song), else `()`. `pulse_tri_lo/hi` then hold the
+    # bounds most voices share, and `pulse_tri_record_bounds` -- filled by
+    # `goatwriter.build_sng` from the finished patterns, which know which
+    # voice sounds which record -- overrides them per record.
+    pulse_tri_voice_bounds: Tuple[Tuple[int, int], ...] = ()
+    pulse_tri_record_bounds: Dict[int, Tuple[int, int]] = field(
+        default_factory=dict)
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -519,6 +528,72 @@ class Detection:
     def can_convert(self) -> bool:
         return (self.track_lo > 0 and self.track_hi > 0
                 and self.pattern_lo > 0 and self.pattern_hi > 0)
+
+    def tri_bounds(self, i: int) -> Tuple[int, int]:
+        """(low nibble, high nibble) the triangle of record `i` turns at: the
+        record's own pair where `set_tri_record_bounds` set one, else the
+        engine's (`pulse_tri_lo`, `pulse_tri_hi`)."""
+        return self.pulse_tri_record_bounds.get(
+            i, (self.pulse_tri_lo, self.pulse_tri_hi))
+
+    def set_tri_record_bounds(self, tracks: List[List[int]],
+                              patterns: List[List[int]], lead: int,
+                              first_note: int, last_note: int) -> None:
+        """Fill `pulse_tri_record_bounds` from the finished patterns, or
+        clear it. Called by `goatwriter.pulse.track_set_tick_ratios`, the one
+        place `build_sng` hands the patterns over before any record's pulse
+        program is laid out; `first_note` / `last_note` are the Goattracker
+        note range (`goatwriter.constants`, which this module cannot import).
+
+        The command-table engine's turnaround cells are per VOICE
+        (`pulse_tri_voice_bounds`; Chicken_Song: voices 1 and 2 turn between
+        nibbles 8 and F, voice 3 between 1 and 4) and a Goattracker pulse
+        program is per RECORD, so each record turns where the voice that
+        mostly sounds it does. A record sounded on one voice takes that
+        voice's pair; one sounded on several takes the pair of the voice with
+        most of its note rows (the lowest voice on a tie) -- wrong on the
+        others, right where it is mostly heard. Only a record whose pair
+        differs from the engine's global one is entered, so a uniform file
+        sets nothing. Voices are `track index % 3` over every subtune, and a
+        record is `current instrument - lead - 1` (`pulse_usage`'s walk)."""
+        self.pulse_tri_record_bounds = {}
+        if not self.pulse_tri_voice_bounds or self.pulse_tri_hi < 0:
+            return
+        rows: Dict[int, List[int]] = {}
+        for t, track in enumerate(tracks):
+            v = t % 3
+            current, repeat, operand = 1, 1, False
+            for b in track:
+                if operand:              # $FF's restart position
+                    operand = False
+                    continue
+                if b == 0xFF:            # patterns.GT_ORDER_RESTART
+                    operand = True
+                    continue
+                if 0xE0 <= b < 0xFF:     # a transpose, no row of its own
+                    continue
+                if 0xD0 <= b < 0xE0:     # patterns.GT_REPEAT: the NEXT entry
+                    repeat = b - 0xD0 + 1
+                    continue
+                if b >= len(patterns):
+                    continue
+                pat = patterns[b]
+                for _ in range(repeat):
+                    for r in range(0, len(pat), 4):
+                        if pat[r] == 0xFF:   # patterns.GT_END_PATTERN
+                            break
+                        if pat[r + 1]:
+                            current = pat[r + 1]
+                        if first_note <= pat[r] <= last_note:
+                            rows.setdefault(current - lead - 1,
+                                            [0, 0, 0])[v] += 1
+                repeat = 1
+        own = (self.pulse_tri_lo, self.pulse_tri_hi)
+        for rec, per_voice in rows.items():
+            best = max(range(3), key=lambda v: (per_voice[v], -v))
+            pair = self.pulse_tri_voice_bounds[best]
+            if rec >= 0 and pair != own:
+                self.pulse_tri_record_bounds[rec] = pair
 
 
 def _addr16(data: bytes, lo_pos: int, hi_pos: int) -> int:
@@ -2264,10 +2339,26 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                 if cmd is not None:
                     zp = cmd
                     det.pulse_tri_step_shift = 1
+            if zp is None:
+                # ... whose per-voice turnaround cells disagree
+                # (Chicken_Song): global bounds are the pair most voices
+                # hold, `goatwriter.pulse` overrides them per record.
+                voices = _find_pulse_tri_cmd_voices(sid, det)
+                if voices is not None:
+                    zp, det.pulse_tri_voice_bounds = voices
+                    det.pulse_tri_step_shift = 1
             if zp is not None:
                 (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
                  det.pulse_tri_step_mask, det.pulse_tri_delay_mask) = zp
                 det.pulse_tri_per_voice = True
+            else:
+                # The free-running triangle in two spellings
+                # PULSE_TRI_SHAPE does not match (Mozart, Commodore_64_Music_
+                # Examples): the last fallback, after every per-voice one.
+                var = _find_pulse_tri_variant(sid, det)
+                if var is not None:
+                    (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
+                     det.pulse_tri_step_mask, det.pulse_tri_delay_mask) = var
         if det.pulse_tri_hi >= 0:
             log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
                 f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
@@ -6423,6 +6514,15 @@ PULSE_PROG_SHAPE = (
     "AD ?? ?? F0 ?? A8 88 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? DE ?? ?? 10 ?? "
     "BC ?? ?? B1 ?? 10 ?? C9 FE D0 ?? 9D ?? ?? 4C ?? ?? C9 FF D0 ?? A0 00 "
     "F0 ?? 29 7F 48")
+# The same engine with its per-voice cells in ZERO PAGE, consulted only where
+# PULSE_PROG_SHAPE matched nothing: Mega_Apocalypse $4CD1 spells `DEC count,X`
+# `LDY pos,X` and `STA count,X` as D6 / B4 / 95 (the pointer tables, the cell
+# fill and the $D403/$D402 store stay absolute, at the same offsets). Every
+# operand `_find_pulse_prog` reads sits at the same place in both.
+PULSE_PROG_ZP_SHAPE = (
+    "AD ?? ?? F0 ?? A8 88 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? D6 ?? 10 ?? "
+    "B4 ?? B1 ?? 10 ?? C9 FE D0 ?? 95 ?? 4C ?? ?? C9 FF D0 ?? A0 00 "
+    "F0 ?? 29 7F 48")
 PULSE_PROG_STORE = "99 03 D4 68 99 02 D4"
 
 
@@ -6438,6 +6538,8 @@ def _find_pulse_prog(sid: SidFile, det: Detection) -> tuple[int, int]:
     block must end in the $D403/$D402 store within 128 bytes."""
     d = sid.data
     off = search_file(d, PULSE_PROG_SHAPE)
+    if off < 0:
+        off = search_file(d, PULSE_PROG_ZP_SHAPE)
     if off < 0 or det.instr_start < 0:
         return -1, 0
     word = lambda k: d[off + k] | (d[off + k + 1] << 8)
@@ -6523,15 +6625,67 @@ _TRI_ENTRY = 8
 _TRI_IDX = -2
 
 
+# TWO SPELLINGS of the same routine, consulted only where PULSE_TRI_SHAPE
+# matched nothing (`_tri_variant_match`). Both keep every operand's offset from
+# the match except that the second shifts all of those at and after
+# `DEC counter,X` by `_TRI_STA_SHIFT`; `pulse_tri_shift` reads which.
+#
+# * MASKS WILDCARDED. Mozart $0A79 is Commando's routine with the delay mask
+#   `AND #$0F` and the step mask `AND #$F0` (a rate of $34 is a step of $30
+#   every 5 calls here and of $20 every 21 under Commando's masks). The masks
+#   are read off the two operands (`_find_pulse_tri_variant`), never assumed.
+# * EXTRA STORE. Commodore_64_Music_Examples $12CC keeps the delay in a
+#   scratch cell between the mask and the countdown:
+#
+#       12C4  AD 27 14  LDA rate / BEQ / LDY $1435
+#       12CC  29 1F     AND #$1F
+#       12CE  8D 25 14  STA $1425    <- the extra instruction; nothing reads it
+#       12D1  DE 2D 14  DEC counter,X
+#
+#   ($1425 is written once and read by no one -- addr.py over the image.) The
+#   rest is Commando's byte for byte. Its width lives in the record and
+#   free-runs across notes exactly as Commando's does.
+PULSE_TRI_MASKS_SHAPE = (
+    "29 ?? DE ?? ?? 10 ?? 9D ?? ?? AD ?? ?? 29 ?? 8D ?? ?? "
+    "BD ?? ?? D0 ?? AD ?? ?? 18 79 ?? ?? 48 B9 ?? ?? 69 00 29 0F 48 C9 ?? "
+    "D0 ?? FE ?? ?? 4C ?? ?? 38 B9 ?? ?? ED ?? ?? 48 B9 ?? ?? E9 00 29 0F "
+    "48 C9 ??")
+PULSE_TRI_STA_SHAPE = (
+    "29 1F 8D ?? ?? DE ?? ?? 10 ?? 9D ?? ?? AD ?? ?? 29 E0 8D ?? ?? "
+    "BD ?? ?? D0 ?? AD ?? ?? 18 79 ?? ?? 48 B9 ?? ?? 69 00 29 0F 48 C9 ?? "
+    "D0 ?? FE ?? ?? 4C ?? ?? 38 B9 ?? ?? ED ?? ?? 48 B9 ?? ?? E9 00 29 0F "
+    "48 C9 ??")
+_TRI_STA_SHIFT = 3
+_TRI_STEP_MASK = 14     # operand of the second AND, before the shift
+
+
+def _tri_variant_match(d: bytes) -> int:
+    """File offset of the first fallback spelling of the triangle, or -1."""
+    off = search_file(d, PULSE_TRI_MASKS_SHAPE)
+    return off if off >= 0 else search_file(d, PULSE_TRI_STA_SHAPE)
+
+
+def pulse_tri_shift(sid: SidFile, off: int) -> int:
+    """How far `_TRI_COUNTER`, `_TRI_DIR`, `_TRI_BASE`, `_TRI_HI` and
+    `_TRI_LO` move for the match at `off`: `_TRI_STA_SHIFT` where the byte
+    after the delay mask is the extra `STA` ($8D) and not `DEC` ($DE)."""
+    return _TRI_STA_SHIFT if sid.data[off + 2] == 0x8D else 0
+
+
 def pulse_tri_offset(sid: SidFile, det: Detection) -> int:
-    """File offset of the PULSE_TRI_SHAPE match that indexes `det`'s own
-    instrument table, or -1 -- `_find_pulse_tri`'s anchor, for the readers
-    that need the routine's other operands."""
+    """File offset of the triangle match that indexes `det`'s own instrument
+    table, or -1 -- `_find_pulse_tri`'s anchor, for the readers that need the
+    routine's other operands. PULSE_TRI_SHAPE first; its two fallback
+    spellings (`_tri_variant_match`) only where it matched nothing. Add
+    `pulse_tri_shift` to every operand offset but `_TRI_IDX`."""
     off = search_file(sid.data, PULSE_TRI_SHAPE)
+    if off < 0:
+        off = _tri_variant_match(sid.data)
     if off < 0:
         return -1
     d = sid.data
-    base = d[off + _TRI_BASE] | (d[off + _TRI_BASE + 1] << 8)
+    base_at = off + _TRI_BASE + pulse_tri_shift(sid, off)
+    base = d[base_at] | (d[base_at + 1] << 8)
     return off if sid.to_offset(base) == det.instr_start else -1
 
 
@@ -6569,6 +6723,43 @@ def _tri_gated(d: bytes, entry: int, below: int) -> bool:
     return any(d[k] == 0x29 and d[k + 1] == 0x08 and d[k + 2] == 0xF0
                and k + 4 + d[k + 3] == entry
                for k in range(max(0, below - 64), entry))
+
+
+def _find_pulse_tri_variant(sid: SidFile, det: Detection):
+    """(lo, hi, gated, step_mask, delay_mask) for the two fallback spellings
+    of the free-running triangle (PULSE_TRI_MASKS_SHAPE, PULSE_TRI_STA_SHAPE),
+    or None. Only where PULSE_TRI_SHAPE matched nothing.
+
+    The same anchor `_find_pulse_tri` has (the `ADC record,Y` operand names
+    this detection's instrument table), plus the two it lacks because the
+    masks are no longer fixed by the signature: the rate cell the routine
+    loads must be filled from record +6 (`LDA instr+6,Y / STA rate`), and
+    the masks must be disjoint with a non-zero step."""
+    d = sid.data
+    if search_file(d, PULSE_TRI_SHAPE) >= 0:
+        return None
+    off = _tri_variant_match(d)
+    if off < 0 or det.instr_start < 0:
+        return None
+    sh = pulse_tri_shift(sid, off)
+    base = d[off + _TRI_BASE + sh] | (d[off + _TRI_BASE + sh + 1] << 8)
+    if sid.to_offset(base) != det.instr_start:
+        return None
+    delay_mask, step_mask = d[off + 1], d[off + _TRI_STEP_MASK + sh]
+    if not step_mask or step_mask & delay_mask:
+        return None
+    entry = off - _TRI_ENTRY
+    if entry < 0 or d[entry] != 0xAD:
+        return None
+    rate_cell = bytes(d[entry + 1:entry + 3])
+    six = sid.to_address(det.instr_start) + 6
+    if d.find(bytes([0xB9, six & 0xFF, six >> 8, 0x8D]) + rate_cell) < 0:
+        return None
+    lo = d[off + _TRI_LO + sh] & 0x0F
+    hi = d[off + _TRI_HI + sh] & 0x0F
+    if hi <= lo:
+        return None
+    return lo, hi, _tri_gated(d, entry, off), step_mask, delay_mask
 
 
 # The same triangle in a SECOND DIALECT, consulted only where PULSE_TRI_SHAPE
@@ -6834,9 +7025,10 @@ PULSE_TRI_CMD_SHAPE = (
     "48 BD ?? ?? E9 00 29 0F 48 DD ?? ??")
 
 
-def _find_pulse_tri_cmd(sid: SidFile, det: Detection):
-    """(lo, hi, gated, step_mask, delay_mask) for PULSE_TRI_CMD_SHAPE, or
-    None. Cross-checked as `_find_pulse_tri_absx` is."""
+def _read_pulse_tri_cmd(sid: SidFile, det: Detection):
+    """(gated, step_mask, delay_mask, lo_cell, hi_cell) for
+    PULSE_TRI_CMD_SHAPE, or None: every cross-check
+    `_find_pulse_tri_absx` makes, and not yet the bounds."""
     d = sid.data
     off = search_file(d, PULSE_TRI_CMD_SHAPE)
     if off < 0:
@@ -6875,16 +7067,65 @@ def _find_pulse_tri_cmd(sid: SidFile, det: Detection):
         return None
     if not _seeded_from_record(sid, det, acc_lo, acc_hi):
         return None
-    bounds = []
+    return (_tri_gated(d, entry, head), step_mask, delay_mask,
+            lo_cell, hi_cell)
+
+
+def _pulse_tri_cmd_cells(sid: SidFile, lo_cell: int, hi_cell: int):
+    """[(lo, hi)] for voices 0..2 read off the two bound cells' image bytes,
+    or None where a cell is out of the file or a voice's high does not exceed
+    its low."""
+    d = sid.data
+    out = []
+    cells = []
     for cell in (lo_cell, hi_cell):
         at = sid.to_offset(cell)
-        if at < 0 or at + 3 > len(d) or len(set(d[at:at + 3])) != 1:
+        if at < 0 or at + 3 > len(d):
             return None
-        bounds.append(d[at] & 0x0F)
-    lo, hi = bounds
-    if hi <= lo:
+        cells.append([b & 0x0F for b in d[at:at + 3]])
+    for lo, hi in zip(*cells):
+        if hi <= lo:
+            return None
+        out.append((lo, hi))
+    return out
+
+
+def _find_pulse_tri_cmd(sid: SidFile, det: Detection):
+    """(lo, hi, gated, step_mask, delay_mask) for PULSE_TRI_CMD_SHAPE, or
+    None. Cross-checked as `_find_pulse_tri_absx` is, and declined where the
+    three voices' bound cells disagree (`_find_pulse_tri_cmd_voices`)."""
+    read = _read_pulse_tri_cmd(sid, det)
+    if read is None:
         return None
-    return lo, hi, _tri_gated(d, entry, head), step_mask, delay_mask
+    gated, step_mask, delay_mask, lo_cell, hi_cell = read
+    bounds = _pulse_tri_cmd_cells(sid, lo_cell, hi_cell)
+    if bounds is None or len(set(bounds)) != 1:
+        return None
+    lo, hi = bounds[0]
+    return lo, hi, gated, step_mask, delay_mask
+
+
+def _find_pulse_tri_cmd_voices(sid: SidFile, det: Detection):
+    """((lo, hi, gated, step_mask, delay_mask), per-voice bounds) for
+    PULSE_TRI_CMD_SHAPE where the voices' bound cells DISAGREE, or None.
+
+    Chicken_Song: hi cells $15CB = 0F 0F 04, lo cells $15CE = 08 08 01, so
+    voices 1 and 2 turn between nibbles 8 and F and voice 3 between 1 and 4.
+    Nothing writes the cells (the command handler $1460 that does ran 0
+    times in 9000 frames), so the image bytes hold for the whole tune. The
+    pair most voices share is the global one -- the lowest voice winning a
+    tie -- and `goatwriter.pulse.tri_record_bounds` overrides it for the
+    records a different voice sounds, because a Goattracker pulse program is
+    one per RECORD and the player's turn is one per VOICE."""
+    read = _read_pulse_tri_cmd(sid, det)
+    if read is None:
+        return None
+    gated, step_mask, delay_mask, lo_cell, hi_cell = read
+    bounds = _pulse_tri_cmd_cells(sid, lo_cell, hi_cell)
+    if bounds is None or len(set(bounds)) == 1:
+        return None
+    lo, hi = max(bounds, key=lambda b: (bounds.count(b), -bounds.index(b)))
+    return (lo, hi, gated, step_mask, delay_mask), tuple(bounds)
 
 
 # A per-instrument BYTE-CODE WAVE PROGRAM, and the most widespread instrument

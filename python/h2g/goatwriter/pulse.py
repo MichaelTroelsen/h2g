@@ -9,8 +9,8 @@ from fractions import (Fraction)
 from functools import lru_cache
 from typing import (Dict, List, Mapping, Optional, Set, Tuple)
 
-from ..detect import (Detection, pulse_tri_offset, _TRI_COUNTER, _TRI_DIR,
-                      _TRI_IDX)
+from ..detect import (Detection, pulse_tri_offset, pulse_tri_shift,
+                      _TRI_COUNTER, _TRI_DIR, _TRI_IDX)
 from ..search import (search_file)
 from ..sidfile import (SidFile)
 from .constants import (CMD_SETTEMPO, GT_FIRST_NOTE, GT_LAST_NOTE, GT_MAX_PULSE_SPEED,
@@ -946,6 +946,7 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     step, delay = _tri_step_delay(det, data[rec + 6])
     if step == 0:                    # rate 0, or a rate that is delay-only
         return None
+    bound_lo, bound_hi = det.tri_bounds(i)
     gate = outer_gate_skip(sid)
     speed = _tri_table_speed(step, delay, multiplier, gate, tick_ratio)
     width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
@@ -954,18 +955,17 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
         calls = round(delay / _tri_call_speed_ratio(multiplier, gate))
         frames = delay if not gate else Fraction(delay * (gate + 1), gate)
         if frames >= STAIR_MIN_FRAMES:
-            turns = _tri_turns(width, step, det.pulse_tri_lo, det.pulse_tri_hi)
+            turns = _tri_turns(width, step, bound_lo, bound_hi)
             if turns is not None:
                 return _stair_legs(width, step, calls, *turns)
     if frac and tick_ratio is None:
         rate = _tri_mixed_rate(step, delay, multiplier, gate)
-        turns = (_tri_turns(width, step, det.pulse_tri_lo, det.pulse_tri_hi)
+        turns = (_tri_turns(width, step, bound_lo, bound_hi)
                  if rate is not None else None)
         mixed = _mixed_legs(width, rate, *turns) if turns else None
         if mixed is not None:
             return mixed
-    return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed,
-                           step)
+    return _pulse_triangle(width, bound_lo, bound_hi, speed, step)
 
 
 def _tri_speed(step: int, delay: int, multiplier: int,
@@ -1443,6 +1443,11 @@ def track_set_tick_ratios(sid: SidFile, det: Detection,
     a gate). The phase table (`_phase_sweep_params`, `--pulse-phase`) is not
     given it: Rasputin does not ship that option.
     """
+    # Per-voice turnaround cells (Chicken_Song): the patterns are in hand here
+    # and nowhere earlier in `build_sng`, so the per-record bounds are set now,
+    # before any record's program is laid out.
+    det.set_tri_record_bounds(tracks, patterns, lead, GT_FIRST_NOTE,
+                              GT_LAST_NOTE)
     if (not getattr(det, "track_fe_command", False)
             or outer_gate_skip(sid) is not None or multiplier < 1):
         return {}
@@ -2188,7 +2193,8 @@ def triangle_start(sid: SidFile, det: Detection,
         at = sid.to_offset(addr)
         return bytes(d[at:at + 3]) if 0 <= at and at + 3 <= len(d) else None
 
-    ctr_op, dir_op = word(off + _TRI_COUNTER), word(off + _TRI_DIR)
+    sh = pulse_tri_shift(sid, off)
+    ctr_op, dir_op = word(off + _TRI_COUNTER + sh), word(off + _TRI_DIR + sh)
     # The premise: no store to either cell but the sweep's own.
     if d.count(b"\x9d" + ctr_op) != 1 or d.count(b"\x9d" + dir_op) != 0:
         return None
@@ -2246,8 +2252,8 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
         step, delay = _tri_step_delay(det, d[rec + 6])
         width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
         speed = _tri_table_speed(step, delay, multiplier, outer_gate_skip(sid))
-        return (width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8,
-                False, step)
+        lo_n, hi_n = det.tri_bounds(i)
+        return (width, speed, lo_n << 8, hi_n << 8, False, step)
     rec = _bounds_record(sid, det, i)
     if rec is None:
         return None

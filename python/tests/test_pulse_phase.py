@@ -596,8 +596,13 @@ def test_the_engine_population_and_its_multispeed_share():
         engine += 1
         if entry.get("multiplier", 1) > 1:
             multispeed += 1
-    assert engine == 24, f"the triangle pulse engine reaches {engine} files"
-    assert multispeed == 11, (
+    # 24 until Mozart (PULSE_TRI_MASKS_SHAPE, $F0/$0F masks, multiplier 2) and
+    # Commodore_64_Music_Examples (PULSE_TRI_STA_SHAPE) were read (after v0.5.612):
+    # the same free-running routine in two spellings PULSE_TRI_SHAPE missed.
+    # Mozart is the one added multispeed file, and `triangle_start` cannot
+    # read its speed counter, so the walk still declines it.
+    assert engine == 26, f"the triangle pulse engine reaches {engine} files"
+    assert multispeed == 12, (
         f"{multispeed} of them are multispeed; the gate declined exactly "
         "these, and only 3 of them emit anything now it is lifted")
 

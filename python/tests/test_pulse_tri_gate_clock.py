@@ -127,7 +127,9 @@ def test_the_gate_reaches_exactly_its_measured_carriers():
             "International_Karate.sid", "Kentilla.sid",
             "Las_Vegas_Video_Poker.sid", "Proteus.sid", "Thrust.sid",
             "Warhawk.sid"}
-    assert moved == {"Game_Killer.sid", "Ninja.sid",
+    # Mozart: the free-running triangle in the $F0/$0F-mask spelling
+    # (PULSE_TRI_MASKS_SHAPE), behind an outer gate.
+    assert moved == {"Game_Killer.sid", "Ninja.sid", "Mozart.sid",
                      "Samantha_Fox_Strip_Poker.sid", "Spellbound.sid"} | absx
 
 

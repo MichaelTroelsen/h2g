@@ -126,7 +126,9 @@ def test_the_program_engine_is_read_on_exactly_these_files():
             assert det.pulse_bounds < 0 and det.pulse_lo_base < 0
             assert det.pulse_tri_hi < 0
     assert found == {**{s: 2 for s in PROG_FILES},
-                     "Ricochet": 22, "Arcade_Classics": 37}
+                     "Ricochet": 22, "Arcade_Classics": 37,
+                     # zero-page spelling (PULSE_PROG_ZP_SHAPE)
+                     "Mega_Apocalypse": 14}
 
 
 def _mutated(sid, old: bytes, new: bytes):
