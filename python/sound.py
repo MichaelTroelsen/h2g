@@ -25,7 +25,10 @@ Two numbers, deliberately separated:
   master-volume nibble.
 
 Shared silence carries no weight (`_graded_agreement`'s rule): a rest both
-sides keep is not agreement. A frame silent on one side only scores 0.
+sides keep is not agreement. A frame silent on one side only scores 0 --
+unless the other side is no louder than ONE_SIDED_SILENCE_DB there, which is
+the packed player's idle floor against the original's digital zero, and is
+silence on both sides.
 
 **Alignment is estimated from the loudness envelope, never fitted to the
 score.** `align` cross-correlates the two RMS envelopes inside a bounded
@@ -125,6 +128,35 @@ HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
 SILENCE_DB = -60.0      # a frame below this RMS is silent
+# A frame that sounds on ONE side only, and there no louder than this, is
+# silent on that side too: the packed player's idle floor, not music.
+#
+# The case it exists for (measured at 17f201f on the cached renders of
+# build/fidelity.json and build/fidelity_subtunes.json, 314 pairs): when the
+# original stops it goes to digital zero (-180 dB), while our packed player
+# rests at a DC-dominated idle floor near -52 to -57 dB (see the module doc's
+# Las_Vegas note) -- above SILENCE_DB, so every such frame scored 0 and `aud`
+# read the TUNE'S LENGTH, not its timbre: Delta s1 .089 (music 0-5.6 s, idle
+# floor to 60 s), Las_Vegas_Video_Poker s1 .047, Confuzion .801 (the original
+# ends at 261 s of 307). One-sided frames by level over all 314 pairs: 652k
+# ours-only frames between -60 and -50 dB, then 2.6k in -50..-48, 1.5k in
+# -48..-45 -- the idle floor ends at -50. The census of movers saturates
+# there too: a floor of -55 moves 13 pairs past the 0.0095 noise floor,
+# -52 moves 43, and -50, -48 and -45 all move the same 45.
+#
+# Chosen over the other candidate, "stop scoring at the original's last
+# sounding frame", because that one forgives by POSITION and this by LEVEL:
+# it would stop charging a conversion that keeps playing real music after
+# the original ends (the `len` rule's defect, which `aud` should still see),
+# and it misses Confuzion's 2161 idle-floor frames that sit in the
+# original's own rests before its end. This rule touches only frames that
+# already scored 0, so it can only RAISE aud/loud -- it flatters, like
+# fidelity.original_ended, and the expected movers are recorded rather than
+# discovered at the next refresh (runs.jsonl, aud-silent-tail-scoring-rule).
+# Frames that sound on BOTH sides are untouched, so the idle floor under a
+# sounding original (test_an_idle_floor_above_silence_db_scores_aud_as_music)
+# is still scored as music: that blind spot is `loud_ratio`'s, not this.
+ONE_SIDED_SILENCE_DB = -50.0
 SPEC_RANGE_DB = 60.0    # the dynamic range a log-mel frame is read over
 LOUD_RANGE_DB = 40.0    # the range an envelope difference is scored over
 
@@ -224,6 +256,17 @@ def features_reference(samples: np.ndarray, rate: int) -> Features:
 
 def _sounding(f: Features) -> np.ndarray:
     return f.rms_db > SILENCE_DB
+
+
+def _scored_sounding(ra: np.ndarray, rb: np.ndarray
+                     ) -> tuple[np.ndarray, np.ndarray]:
+    """Which frames each side SOUNDS in for scoring: above SILENCE_DB, except
+    that a frame sounding on one side only and no louder than
+    ONE_SIDED_SILENCE_DB there is silent on both (see the constant)."""
+    on_a, on_b = ra > SILENCE_DB, rb > SILENCE_DB
+    faint_a = on_a & ~on_b & (ra <= ONE_SIDED_SILENCE_DB)
+    faint_b = on_b & ~on_a & (rb <= ONE_SIDED_SILENCE_DB)
+    return on_a & ~faint_a, on_b & ~faint_b
 
 
 # How far the alignment may move, in seconds either side of its starting
@@ -426,14 +469,16 @@ def compare_features(a: Features, b: Features, lag_hops: int,
 
     A frame silent on ONE side still scores 0 outright (the `both` mask), and a
     frame silent on both still leaves numerator and denominator alike (`either`)
-    -- the frame-level rules are the plan's and are unchanged.
+    -- the frame-level rules are the plan's, except that a one-sided frame no
+    louder than ONE_SIDED_SILENCE_DB counts as silent on both sides
+    (`_scored_sounding`).
     """
     sa, sb = _overlap(a, b, lag_hops)
     if window_s is not None:
         sa, sb = _prefix(sa, sb, int(window_s / a.hop_s))
     la, lb = a.logmel[sa], b.logmel[sb]
     ra, rb = a.rms_db[sa], b.rms_db[sb]
-    on_a, on_b = ra > SILENCE_DB, rb > SILENCE_DB
+    on_a, on_b = _scored_sounding(ra, rb)
     either = on_a | on_b
     n = int(either.sum())
     if n == 0:

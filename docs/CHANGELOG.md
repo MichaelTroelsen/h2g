@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.614 — 2026-10-25
+
+- aud: a one-sided frame at the idle floor (<= -50 dB) is silence on both sides
+
 ## 0.5.613 — 2026-10-25
 
 - detect: the four undetected pulse spellings (Mega_Apocalypse zero-page prog, Mozart masks, Commodore extra STA, Chicken_Song per-voice bounds)

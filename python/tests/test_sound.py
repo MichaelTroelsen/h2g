@@ -440,6 +440,67 @@ def test_an_idle_floor_above_silence_db_scores_aud_as_music():
     assert silent["aud"] < 0.01, silent         # digital silence scores 0
 
 
+# ---- ONE_SIDED_SILENCE_DB: the idle floor against digital zero ------------
+
+def _idle(seconds):
+    """The packed player's resting output as the Las_Vegas render showed it
+    (sound.py's module doc): DC plus a faint residual, about -52 dB."""
+    return (0.0019 + _sine(seconds=seconds, hz=469.0, amp=0.0022)).astype(np.float32)
+
+
+def _music_then(tail, seconds=2.0):
+    return np.concatenate([_sine(seconds=seconds, hz=440.0, amp=0.15), tail])
+
+
+def test_an_idle_floor_against_digital_zero_is_silent_on_both_sides():
+    """Delta s1 / Las_Vegas_Video_Poker s1 / Confuzion: the original ends in
+    digital zero, ours rests at the idle floor. Those frames carry no weight,
+    so the score is the music's, not the tune's length."""
+    orig = _music_then(np.zeros(4 * RATE, dtype=np.float32))
+    ours = _music_then(_idle(4.0))
+    fo, fu = sound.features(orig, RATE), sound.features(ours, RATE)
+    tail = fu.rms_db[len(fu.rms_db) // 2:]
+    assert (tail > sound.SILENCE_DB).all() and (tail <= sound.ONE_SIDED_SILENCE_DB).all()
+    got = sound.compare_features(fo, fu, 0)
+    music = sound.compare_features(fo, fu, 0, window_s=1.9)
+    assert got["sound_frames"] < len(fo.rms_db) * 0.4, got
+    assert got["aud"] > 0.95 and got["aud"] == pytest.approx(music["aud"], abs=0.02)
+    # and with the sides swapped (the original's floor against our zero)
+    swapped = sound.compare_features(fu, fo, 0)
+    assert swapped["aud"] == pytest.approx(got["aud"], abs=1e-9)
+
+
+def test_the_rule_does_not_fire_when_the_original_sounds_through_to_the_end():
+    """An original that keeps sounding is not a tail: a quiet but real -40 dB
+    tone against our digital zero still counts fully against, and against
+    our idle floor it is a frame BOTH sides sound, scored as before."""
+    quiet = _sine(seconds=4.0, hz=440.0, amp=0.014)       # about -40 dB
+    orig = _music_then(quiet)
+    fo = sound.features(orig, RATE)
+    assert (fo.rms_db[-100:] > sound.ONE_SIDED_SILENCE_DB).all()
+    zero = sound.features(_music_then(np.zeros(4 * RATE, dtype=np.float32)), RATE)
+    got = sound.compare_features(fo, zero, 0)
+    assert got["sound_frames"] >= len(fo.rms_db) - 2, got
+    assert got["aud"] < 0.45, got
+    idle = sound.features(_music_then(_idle(4.0)), RATE)
+    both = sound.compare_features(fo, idle, 0)
+    assert both["sound_frames"] >= len(fo.rms_db) - 2, both
+    # the idle floor's frames are SCORED (not zeroed) under a sounding original
+    assert both["aud"] > got["aud"] + 0.1, (both, got)
+
+
+def test_our_music_after_the_original_ends_still_counts_against():
+    """Forgiven by LEVEL, not by position: ours playing on at a music level
+    after the original stops is charged, which a 'stop at the original's last
+    frame' rule would not do."""
+    orig = _music_then(np.zeros(4 * RATE, dtype=np.float32))
+    ours = _music_then(_sine(seconds=4.0, hz=440.0, amp=0.15))
+    fo, fu = sound.features(orig, RATE), sound.features(ours, RATE)
+    got = sound.compare_features(fo, fu, 0)
+    assert got["sound_frames"] >= len(fo.rms_db) - 2, got
+    assert got["aud"] < 0.4, got
+
+
 # ---- superseded `ours` renders --------------------------------------------
 
 def _cache(tmp_path, names):
