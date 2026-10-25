@@ -1,83 +1,57 @@
 {
  "generated_from": {
-  "head": "ad45412",
-  "plan_head": "ad45412"
+  "head": "ab5fe67",
+  "plan_head": "ab5fe67"
  },
  "blockers": [
   {
-   "id": "bump-set-spike-wavetable-economy",
+   "id": "tempo-alignment-rounding-decision",
    "kind": "decision",
-   "title_at_research": null,
-   "blocked_on_at_research": null,
-   "current_behaviour": "Partial, unmerged: GT13 fix + clone reserve (final.patch) frees Bump_Set_Spike entries; travel .8017->.8009, Thrust gate .8694->.8666, Chimera note-rise 51->48/63; every other Bump column better.",
+   "title_at_research": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
+   "blocked_on_at_research": "STILL BLOCKED (57c086e), sharpened: the evidence this fork's verify names -- --pace MEDIAN and drift on Food_Feud, Rasputin and Knucklebusters from a scratch prototype of the rounding -- has never been produced. That prototype is agent work (no commit) and must exist before adopt/refuse is asked; then one listen.",
+   "current_behaviour": "decisions.jsonl already holds a resolved:false line for this id ('not asked this sitting'). The blocker is missing agent work, not a human judgement: no prototype of the rounding exists to measure or listen to. A fork with branch labels adopt/refuse; no dependents carry a branch.",
    "sources": [
-    "runs.jsonl"
+    "runs.jsonl multiplier-does-not-explain-slot (done, eae8d8d)",
+    "decisions.jsonl tempo-alignment-rounding-decision (resolved:false)"
    ],
    "options": [
     {
-     "label": "Accept both",
-     "consequence": "Bump_Set_Spike gains, Chimera and Thrust mixed"
+     "label": "Build the prototype first",
+     "consequence": "a main/subtask task produces --pace MEDIAN and drift for Food_Feud, Rasputin, Knucklebusters, and stages a listen pair; then ask adopt/refuse"
     },
     {
-     "label": "GT13 fix only",
-     "consequence": "patch_gt13_only.patch; Bump aud 0.9058->0.9053 worse"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "nothing changes"
+     "label": "Refuse now",
+     "consequence": "closes the fork without evidence; loses the slot-artefact fix"
     }
    ],
-   "recommendation": "Accept both",
-   "why": "every column but a 0.0008 travel dip improves on the target; the two movers are mixed, mostly positive",
-   "question": "Accept the Bump_Set_Spike patch with Chimera/Thrust movers?",
+   "recommendation": "Build the prototype first",
+   "why": "asking adopt/refuse before the evidence exists would be a guess; this command cannot build it (it executes nothing) so it needs an /addtask or /whattask entry.",
+   "question": null,
    "unblocked_by_research": false
   },
   {
-   "id": "last-v8-pulse-lo-ora40-spelling",
-   "kind": "decision",
-   "title_at_research": null,
-   "blocked_on_at_research": null,
-   "current_behaviour": "Partial, unmerged: ORA #$40 pulse-lo engine real in 7 files; Last_V8 pulse changes 13000->18400 vs original 9798 (worse), Game_Killer v1 travel 378->35529 vs 7316. Last_V8 is human-approved by ear.",
+   "id": "listen-current-builds-2026-10",
+   "kind": "artifact",
+   "title_at_research": "Listen to the current conversion of every song (one pass), with the folded-in per-song questions",
+   "blocked_on_at_research": "The user listens to the staged build/listen set (every song staged from the current build/fidelity.json) and records a verdict per song.",
+   "current_behaviour": "One task holding ~90 folded questions, many against builds that have since moved. Four subtasks depend on it (classic-duration-gate-per-note-command, mega-apocalypse-age-gated-second-effect, pygmies-slide-under-vibrato, rasputin-r3-duty). No record gives a reason for that edge: it was created by prune.js's REPAIR step when their original listening dependencies were folded (decision queue-prune-2026-10-17). Mega and Pygmies are explicitly read-only disassembly findings; the other two are emitter changes whose own verify ends in a corpus byte-hash and a test, with no listening step before the work.",
    "sources": [
-    "runs.jsonl"
+    "whattask.json tasks classic-duration-gate-per-note-command, mega-apocalypse-age-gated-second-effect, pygmies-slide-under-vibrato, rasputin-r3-duty (verify strings)",
+    "decisions.jsonl queue-prune-2026-10-17"
    ],
    "options": [
     {
-     "label": "Refuse",
-     "consequence": "nothing changes"
+     "label": "Drop the dependency",
+     "consequence": "all four become ready; each task's own verify still decides whether anything ships, and any byte change gets its own relisten"
     },
     {
-     "label": "Adopt",
-     "consequence": "7 files move, Last_V8 target worse"
+     "label": "Keep it",
+     "consequence": "they stay blocked until a verdict is recorded on all ~90 questions"
     }
    ],
-   "recommendation": "Refuse",
-   "why": "target and approved tune move away from the original",
-   "question": "Adopt the ORA #$40 spelling?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "kentilla-rec20-entry-trade",
-   "kind": "decision",
-   "title_at_research": null,
-   "blocked_on_at_research": null,
-   "current_behaviour": "Record 20 gate-off pair (17,16) vs player's 22; exact (22,22) needs 7 entries; record 4 already clipped 95->81.",
-   "sources": [
-    "runs.jsonl"
-   ],
-   "options": [
-    {
-     "label": "Keep as is",
-     "consequence": "no change"
-    },
-    {
-     "label": "Take 2 entries from record 4",
-     "consequence": "rec 20 closer, rec 4 clipped further"
-    }
-   ],
-   "recommendation": "Keep as is",
-   "why": "both records are starved; the exact fit needs 7, not 2",
-   "question": "Take 2 wavetable entries from record 4 for record 20?",
+   "recommendation": "Drop the dependency",
+   "why": "none of the four needs a verdict to start: two are read-only, two end in a byte-hash plus a test, and a listen belongs after a byte change, not before the work.",
+   "question": "Should the four subtasks still wait for the big listening pass?",
    "unblocked_by_research": false
   }
  ]
