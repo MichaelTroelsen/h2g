@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.614 presets.py",
+  "generator": "h2g 0.5.615 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -647,7 +647,6 @@
       "multiplier": 1,
       "drum_gate_off": true,
       "drum_sustain_gate_off": true,
-      "keep_hard_restart": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -711,7 +710,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "keep_hard_restart": true
     },
     "Deep_Strike.sid": {
       "max_rows": 94,
