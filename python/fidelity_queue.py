@@ -48,6 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import fidelity as F                       # noqa: E402
+import hold as H                           # noqa: E402
 from h2g import __version__                # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -75,6 +76,9 @@ def _cause_keyword(cause: str) -> str:
     matching the way they always did.
     """
     low = cause.lower()
+    first = low.split()[0] if low.split() else ""
+    if first in _DIM_COLUMNS:       # a cause opens on its column; later words are prose
+        return first
     for col in _DIM_COLUMNS:
         if col in low:
             return col
@@ -89,6 +93,26 @@ def slug(*parts) -> str:
 
 def _stem(name: str) -> str:
     return name[:-4] if name.endswith(".sid") else name
+
+
+def _outlier_cause(column: str, r: dict) -> str:
+    """`column far below the corpus`, plus what that column's miss MEANS for
+    the four register columns that read what `wave`/`band` mask."""
+    base = f"{column} far below the corpus"
+    loud, vol = r.get("loud_ratio"), r.get("vol_ratio")
+    if column == "vol":
+        if loud is not None:
+            return (f"{base}: master volume ($D418 low nibble) differs; rendered level is "
+                    f"loud_ratio {loud:.2f} (ours/original)"
+                    + (f", vol_ratio {vol:.2f}" if vol is not None else ""))
+        return f"{base}: master volume ($D418 low nibble) differs; no loud_ratio in this row"
+    if column == "res":
+        return f"{base}: filter resonance ($D417 high nibble) differs while `band` can read 100%"
+    if column == "route":
+        return f"{base}: the filter routes the wrong voices ($D417 bits 0-2) while `band` can read 100%"
+    if column == "ctrl":
+        return f"{base}: sync/ring/test bits ($D404 bits 1-3) differ, which `wave` (& $F0) cannot see"
+    return base
 
 
 # ---- tiers --------------------------------------------------------------
@@ -170,6 +194,34 @@ def voice_deficits(rows: list[dict]) -> list[dict]:
     return out
 
 
+def dip_entries(rows: list[dict]) -> list[dict]:
+    """One entry per located `aud` dip: the weakest sustained 8-second stretch.
+
+    `aud_first_dip_s` is the stretch's FIRST second, so the visible dip can sit
+    up to ~7 s after it. Only `aud_stretch == "located"` names a second:
+    `flat` (uniform deficit) and `short` (too few sounding seconds) have none.
+    """
+    out = []
+    for r in rows:
+        sec = r.get("aud_first_dip_s")
+        if r.get("aud_stretch") != "located" or sec is None:  # DIPGUARD
+            continue
+        stem = _stem(r["file"])
+        tl = r.get("aud_timeline") or []
+        out.append({"id": slug("dip", stem, sec), "tier": 4, "source": "fidelity.json aud_first_dip_s",
+                    "cause": (f"aud dips in the stretch starting at second {sec}: the weakest sustained "
+                              f"8-second stretch begins at {sec} s and may sit up to ~7 s before the "
+                              "visible dip"),
+                    "files": [stem], "tag": TAG[4],
+                    "evidence": {"aud_first_dip_s": sec, "aud_stretch": "located",
+                                 "aud_timeline_window": tl[int(sec):int(sec) + 8]},
+                    "verify": (f"{stem}'s `aud` over seconds {sec}-{sec + 7} rises to the file's other "
+                               f"seconds, or the event at ~{sec}-{sec + 7} s in the original is named "
+                               "from the render pair (the dip may be up to ~7 s after second "
+                               f"{sec}).")})
+    return out
+
+
 def census_buckets(rows: list[dict]) -> list[dict]:
     """Onset and hold census records grouped by (column, kind, effect byte)."""
     buckets: dict[tuple, dict] = defaultdict(lambda: {"files": set(), "n": 0})
@@ -227,7 +279,7 @@ def column_outliers(rows: list[dict]) -> list[dict]:
                 stem = _stem(r["file"])
                 out.append({"id": slug("outlier", d.column, stem), "tier": 6,
                             "source": f"fidelity.json {d.key}",
-                            "cause": f"{d.column} far below the corpus", "files": [stem],
+                            "cause": _outlier_cause(d.column, r), "files": [stem],
                             "tag": TAG[6],
                             "evidence": {d.column: v, "median": med, "mad": mad},
                             "verify": (f"{stem}'s `{d.column}` within {MAD_MULTIPLE:.0f} MAD of the "
@@ -274,9 +326,40 @@ def closed_since(prior: dict, entries: list[dict]) -> list[dict]:
     return [p for p in (prior or {}).get("entries", []) if p["id"] not in now]
 
 
+def apply_hold(entries: list[dict]) -> list[dict]:
+    """Stamp every entry with `held` (hold.held's reason, else None).
+
+    A held entry is untagged (`tag` None): no task is started on a held file.
+    An entry whose files mix held and unheld is split in two so that no held
+    file is listed outside the hold section; the held half's id ends `-held`.
+    """
+    out = []
+    for e in entries:
+        reasons = {f: H.held(f) for f in e.get("files", [])}
+        hf = [f for f, rs in reasons.items() if rs]
+        if not hf:  # HOLDGUARD
+            out.append(dict(e, held=None))
+            continue
+        keep = [f for f in e["files"] if f not in hf]
+        why = reasons[hf[0]]
+        if keep:
+            ev = dict(e["evidence"])
+            if "files" in ev:
+                ev["files"] = len(keep)
+            out.append(dict(e, files=keep, held=None, evidence=ev))
+            ev_h = dict(e["evidence"])
+            if "files" in ev_h:
+                ev_h["files"] = len(hf)
+            out.append(dict(e, id=e["id"] + "-held", files=hf, held=why, tag=None, evidence=ev_h))
+        else:
+            out.append(dict(e, held=why, tag=None))
+    return out
+
+
 def entries_from(rows, approvals, refusals, prior, plan, runs, version) -> list[dict]:
     entries = (stale_approvals(approvals) + length_failures(rows) + refusal_entries(refusals)
-               + voice_deficits(rows) + census_buckets(rows) + column_outliers(rows))
+               + voice_deficits(rows) + dip_entries(rows) + census_buckets(rows) + column_outliers(rows))
+    entries = apply_hold(entries)
     entries = ordered(entries)
     annotate(entries, plan, runs)
     carry_seen(entries, prior, version)
@@ -295,8 +378,10 @@ def render(entries: list[dict], closed: list[dict], meta: dict) -> str:
            f"Generated by `python/fidelity_queue.py` (h2g {meta['version']}, {meta['head']}), "
            f"from a {meta['seconds']} s run. {len(entries)} entries. `/whattask` reads this as a "
            "source; nothing here writes the plan.", ""]
+    live = [e for e in entries if not e.get("held")]
+    held = [e for e in entries if e.get("held")]
     for tier in sorted(TIER_NAMES):
-        es = [e for e in entries if e["tier"] == tier]
+        es = [e for e in live if e["tier"] == tier]
         out += [f"## Tier {tier}: {TIER_NAMES[tier]}", ""]
         if not es:
             out += ["(none)", ""]
@@ -309,6 +394,22 @@ def render(entries: list[dict], closed: list[dict], meta: dict) -> str:
                 json.dumps(e["evidence"], default=str), e["verify"].replace("|", "\\|"),
                 e["first_seen"], e["last_seen"],
                 " / ".join(x or "-" for x in (e.get("already_tracked"), e.get("already_refuted")))))
+        out.append("")
+    out += ["## On hold: DIGI", "",
+            "Files on `python/hold.py`'s `ON_HOLD` (user, 2026-09-30). No task is started on these, "
+            "so no entry here carries a tag; they are listed so the hold stays visible.", ""]
+    if not held:
+        out += ["(none)", ""]
+    else:
+        out += ["| id | tier | files | cause | evidence | verify | seen | tracked / refuted | hold |",
+                "|---|---|---|---|---|---|---|---|---|"]
+        for e in held:
+            out.append("| `%s` | %s | %s | %s | %s | %s | %s -> %s | %s | %s |" % (
+                e["id"], e["tier"], ", ".join(e["files"]), e["cause"],
+                json.dumps(e["evidence"], default=str), e["verify"].replace("|", "\\|"),
+                e.get("first_seen", "-"), e.get("last_seen", "-"),
+                " / ".join(x or "-" for x in (e.get("already_tracked"), e.get("already_refuted"))),
+                e["held"]))
         out.append("")
     if closed:
         out += ["## Closed since last run", ""] + [f"- `{c['id']}` (last seen {c.get('last_seen')})"

@@ -116,3 +116,60 @@ def test_voice_deficits_fires():
     (e,) = Q.voice_deficits(rows)
     assert e["tier"] == 4 and e["tag"] == "[main]" and e["files"] == ["A"]
     assert "voice 1" in e["cause"] and e["evidence"]["aud_voices"] == [0.95, 0.60, 0.94]
+
+
+def _entries(rows):
+    return Q.entries_from(rows, {}, [], {}, {}, {}, "0.5.0")
+
+
+def test_held_entries_are_separated_and_untagged():
+    rows = ([_row(f"F{i}.sid", gate=0.7) for i in range(30)]
+            + [_row("Arcade_Classics.sid", gate=0.1), _row("Bad.sid", gate=0.1)])
+    es = {e["id"]: e for e in _entries(rows)}
+    held, live = es["outlier-gate-arcade-classics"], es["outlier-gate-bad"]
+    assert held["held"] and "DIGI" in held["held"] and held["tag"] is None
+    assert live["held"] is None and live["tag"] == "[main]"
+    meta = {"version": "0.5.0", "head": "abc", "seconds": 60}
+    text = Q.render(list(es.values()), [], meta)
+    head, _, hold_sec = text.partition("## On hold: DIGI")
+    assert "Arcade_Classics" in hold_sec and "Arcade_Classics" not in head
+    assert "outlier-gate-bad" in head and "outlier-gate-bad" not in hold_sec
+    assert "[main]" not in hold_sec          # no tag under the hold
+
+
+def test_mixed_census_bucket_splits_so_no_held_file_leaks():
+    rows = [_row("A.sid", onset_census=[{"kind": "phase", "effect": 1}]),
+            _row("BMX_Kidz.sid", onset_census=[{"kind": "phase", "effect": 1}])]
+    es = _entries(rows)
+    for e in es:
+        assert ("BMX_Kidz" in e["files"]) == bool(e["held"])
+    assert any(e["held"] and e["id"].endswith("-held") for e in es)
+
+
+def test_dip_entry_names_the_second():
+    rows = [_row("A.sid", aud_stretch="located", aud_first_dip_s=42,
+                 aud_timeline=[0.9] * 42 + [0.3] * 8),
+            _row("B.sid", aud_stretch="flat", aud_first_dip_s=None),
+            _row("C.sid", aud_stretch="short", aud_first_dip_s=None)]
+    got = Q.dip_entries(rows)
+    assert [e["files"] for e in got] == [["A"]]
+    e = got[0]
+    assert e["tier"] == 4 and "second 42" in e["cause"] and "~7 s" in e["cause"]
+    assert e["id"] == "dip-a-42" and e["evidence"]["aud_first_dip_s"] == 42
+    assert [x["id"] for x in _entries(rows) if x["id"].startswith("dip-")] == ["dip-a-42"]
+
+
+def test_vol_outlier_cause_names_loud_ratio():
+    rows = [_row(f"F{i}.sid", vol=1.0) for i in range(10)]
+    rows.append(_row("Quiet.sid", vol=0.1, loud_ratio=1.94, vol_ratio=1.88))
+    (e,) = [x for x in Q.column_outliers(rows) if "vol" in x["id"]]
+    assert "loud_ratio 1.94" in e["cause"] and "master volume" in e["cause"]
+    assert Q._cause_keyword(e["cause"]) == "vol"
+
+
+def test_res_route_ctrl_outliers_carry_cause_text():
+    for col, word in (("res", "resonance"), ("route", "routes the wrong voices"),
+                      ("ctrl", "sync/ring/test")):
+        rows = [_row(f"F{i}.sid", **{col: 1.0}) for i in range(10)] + [_row("X.sid", **{col: 0.0})]
+        (e,) = [x for x in Q.column_outliers(rows) if x["id"] == f"outlier-{col}-x"]
+        assert word in e["cause"], (col, e["cause"])

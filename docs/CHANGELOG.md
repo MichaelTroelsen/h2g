@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.608 — 2026-10-25
+
+- fidelity_queue: the DIGI hold, dip entries and cause text for the new column outliers
+
 ## 0.5.607 — 2026-10-25
 
 - --sound-voices: per-voice rendered-sound agreement with wave-paired voices
