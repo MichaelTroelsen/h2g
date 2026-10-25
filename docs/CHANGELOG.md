@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.609 — 2026-10-25
+
+- docs: the new columns in MEASURING.md, three Measurement-discipline rules with evidence
+
 ## 0.5.608 — 2026-10-25
 
 - fidelity_queue: the DIGI hold, dip entries and cause text for the new column outliers

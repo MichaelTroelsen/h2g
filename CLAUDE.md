@@ -303,6 +303,14 @@ since v0.5.489; numbers across either change are not comparable.
 
 - A score is not a clock: use `fidelity.py --pace`, read its spread, then its
   **median** (never the least-squares fit), and `drift` for sub-frame error.
+- Align like with like: cut the longer render to the shorter's extent before
+  an alignment search, and check a surprising floor against one hand-scored
+  pair before adopting it.
+- A locator that compares a series to its own median cannot find a uniform
+  deficit; validate it on a known-bad pair with a uniform deficit and on a
+  known-good build.
+- Before calling a drop in a lag-sensitive column real, score it at
+  neighbouring lags and read the per-note delta: one lag is not a clock.
 - A low score is a claim about the harness until `--diagnose` says otherwise.
 - `startup_lag` is estimated, never fitted; read register agreement beside both
   sides' note counts.

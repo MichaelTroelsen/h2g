@@ -587,7 +587,7 @@ dimensions, so a full run now lists none. A run that loses a dimension still
 lists its registers, which is the point of generating the section rather than
 writing it. Register coverage is not total coverage: note length, tempo,
 master volume and anything outside the traced window are listed beside it as
-unseen, and none of them is a register nobody reads.
+unseen, and none of them is a register nobody reads. (Master volume stopped being unseen at v0.5.598: the `vol` column reads it, with its end-of-frame blindness stated.)
 
 That list is the report stating its own reach. A change confined to it cannot
 move a single number here whatever it does to the sound, so a flat table is not
@@ -796,6 +796,134 @@ differ from it only because the probe read tune 1.
 What this does **not** do: it is not a `build/fidelity.json` column, so
 `fidelity_better` and the preset search still cannot see it. Wiring `delta`
 into the search is a separate decision (it costs six VICE traces a candidate).
+
+### Columns added at v0.5.597-v0.5.607
+
+Each reads one thing the earlier columns could not see. Figures are versioned:
+they were measured at v0.5.603 (`-t 180 --presets --sound`, the refresh at
+`b60aae2`) unless a version says otherwise, and a figure here is a lead for the
+song it names, not a property of the column.
+
+#### `vol` — the `$D418` master-volume nibble (v0.5.598)
+
+Share of lag-aligned frames on which `$D418 & $F` is equal; rows also carry
+`vol_ratio` (our modal level over the original's), `orig_volume_values`,
+`our_volume_values` (sorted lists) and `vol_informative` (either side is ever
+off `$F`, or the two sets differ). **Blind to:** the register as siddump holds it
+at the *end* of the play call, so a digi engine that writes `$D418` inside the
+frame reads as its last write (After_8 and Rikky: `$0` throughout) — the
+`Dimension`'s `of` text says so. **Population:** 20 of 89 measured originals are
+`vol_informative`. **Validation:** Mega_Apocalypse and Pygmies_Revenge read vol
+0.0 with `vol_ratio` 1.875 = 15/8 against `loud_ratio` 1.92 and 1.78 (originals
+hold `$8`, ours `$F`); Confuzion's original sweeps every level 0..15 while ours
+holds `$F` (vol .912). A constant level is fixable
+(`docs/superpowers/plans/2026-10-24-master-volume-design.md`); a fader is not
+yet.
+
+#### `sync`, `ring`, `ctrl` — `$D404` bits 1-3 (v0.5.599)
+
+`wave` masks `$D404 & $F0`, so a lost ring-mod or sync was invisible. `sync` and
+`ring` are one-sided frame-count ratios (ours over the original's, summed over
+voices; `None` when the original has none); `ctrl` is the bitwise agreement of
+bits 1-3 over frames either side sets one. **Our `$09` first-wave frame is not
+charged as a test bit** (55,302 such frames were excluded corpus-wide); the
+original's test frames always are. **Blind to:** under `no_test_restart` our
+first-wave byte is a full `$FF`-shaped byte and *is* charged, so the nine files
+where only ours sets test may include that effect (unexamined). **Population:**
+sync on 41 originals, ring on 45, test on 14, `ctrl` populated on 63 of 89.
+**Leads:** Mozart sync 44 -> 0 frames and Wiz 144 -> 0 (the converter has no code
+for Mozart's hard-coded `$23` tail write, and Wiz's `$FF` frame sits in a wave
+program its preset leaves off — see `mozart-wiz-sync-bit-lost` in
+`.claude/tasks/runs.jsonl`); W_A_R ring 240 -> 40.
+
+#### `res`, `route` — `$D417` resonance and routing (v0.5.600)
+
+`band` read the passband and ignored both. Both are scored over frames either
+side filters (a voice routed **and** a passband selected — the predicate
+`_filter_side` uses) and are `None` when neither does. `res` is the equal-high-
+nibble share; `route` is voices both sides route over voices either routes, so a
+voice swap reads 0.0 while `passband_agree` reads 1.0. `--vice`'s `RES` field is
+the whole `$D417` byte (vsid on IK_plus: `0x00` and `0xF4`, as siddump).
+**Population:** 29 files each. **Validation:** IK_plus res and route .9999 over
+8,992 frames, so its 0.83 `band` gap is the passband, not resonance. **Lead:**
+Tarzan route .875 at res .9999 — two 288-frame windows where two filtered
+instruments overlap: the original's voice loop lets the lowest-numbered routed
+voice's `$F1` win, while Goattracker's single filter pointer leaves the last-
+struck instrument's `$F2` standing.
+
+#### `aud_timeline`, `aud_first_dip_s`, `aud_stretch` — where in the song (v0.5.606)
+
+`sound.compare_features` returns `per_second` (the mean of `agree` over the
+frames that sound on either side, so it equals `aud` when averaged); the row
+keeps `aud_timeline` (2 dp). The locator takes the lowest 8-second run of
+sounding seconds and reports `aud_first_dip_s` (its first second) only when it
+sits more than 7 x a rolling-median scatter below the song's median
+(`aud_stretch` `located`); `flat` means nothing stands out and `short` means too
+few sounding seconds. **Blind to:** a deficit that fills the whole song reads
+`flat`, with no time to name — its cost stays in `aud`; and the reported second
+can sit up to ~7 s before the visible dip. **Validation** on real build pairs
+(`sound_calibrate.convert_at`): W_A_R 0.5.399 is located at 46 s on both the
+60 s prefix and the whole render; Action_Biker 0.5.371's uniform deficit reads
+`flat`; W_A_R 0.5.400 reads 15 s (a real weak opening). The first attempt, a
+median-relative 3-second run, read second 0 on both good builds: see
+`docs/LESSONS.md`.
+
+#### `--sound-voices` — which voice (v0.5.607)
+
+Renders each voice alone (`sidplayfp -u<n>` mutes the others in the emulator)
+and writes `aud_voices` (the original's voice order), `aud_voice_pairing` (the
+permutation of the 3x3 single-voice `wave` agreements; ties keep the identity;
+`aud_voice_pairing_basis` is `index` when no siddump trace exists, e.g. under
+`--vice`) and `aud_voices_seconds`. Muting is free (a 180 s render takes 12.6 s
+full and 12.2 s with `-u2 -u3`), so a row costs 6 renders against 2: **3.3x**
+the render work; the original's solos are content-keyed and cached for good. Not
+in the routine refresh. **Validation:** on the five biggest residual leads no
+pairing moved and no voice trips the queue's 0.2 deficit; Confuzion voice 2 is
+.698 against .776 and .809, and Kings_of_the_Beach_ingame's 3x3 wave matrix is
+identical in all nine cells, so its pairing is uninformative.
+
+#### `--all-subtunes` — every subtune of ours (v0.5.602)
+
+`python fidelity.py <dir> --all-subtunes` pairs each subtune of ours to an
+original subtune through `SUBTUNE_COUNTERPART` or the `--diagnose` matrix's best
+cell and scores it. A gt2reloc stub, a pairing the matrix does not support
+(under `PAIR_MIN` or below the diagonal) and a subtune past `MATRIX_CAP` are
+recorded `unpaired` and **never scored**; a subtune gt2reloc never writes, or an
+original subtune the `.sng` does not carry, is `dropped` with convert's reason.
+Output goes to `build/fidelity_subtunes.json` and `docs/SUBTUNE-FIDELITY.md`; it
+refuses to write `build/fidelity.json` or `docs/FIDELITY.md`. It has no `--jobs`
+path: the first corpus sweep (v0.5.603, `-t 60`, 8 hand-made shards) found 552
+rows — 239 measured, 299 dropped, 8 unpaired, 6 not converted — and 66 subtunes
+10+ points below their file's default. **Read the `aud` entries with care:**
+about 30 read .02-.10 at melody 1.0 and `loud_ratio` ~1 (Las_Vegas_Video_Poker,
+Samantha_Fox, Delta o1); whether that is noise-dominated SFX or the sweep
+rendering a different subtune than it traces is unresolved.
+
+#### `residual.py` — which songs sound worse than their registers say (v0.5.597)
+
+`python residual.py --from-json ../build/fidelity.json -o ../build/residual.md`
+ranks non-held songs by `mean(wave, adsr, gate) - aud` (melody is left out: it
+reads ~100% almost everywhere). Held files get their own table and are never
+ranked; rows under 60 s carry `short-window` (Kings_of_the_Beach_ingame is 8 s)
+and a run without `--sound` raises instead of ranking nothing. Read the top
+against the printed corpus median (-0.053), not zero. The two leads it found
+localised to a master-volume fade (Confuzion) and a missing per-note pulse sweep
+(Chicken_Song): the latter shape also reaches Mega_Apocalypse, Mozart and
+Commodore_64_Music_Examples.
+
+#### Two corrections to older columns
+
+- **`onset_timing` reads our gate rises against the gate-rise lag (v0.5.601).**
+  `startup_lag` anchors on our *pitched* frame; GoatTracker's first wave raises
+  the gate one frame earlier, so every such note read one frame early.
+  `pitch_anchor_shift(ours)` removes the difference: Pygmies_Revenge,
+  Pacific_Coast, Radio_ACE and Hollywood_or_Bust went 0.0 -> 1.0. A single lag
+  still cannot express an offset that wanders (I_Ball's 2-frame step after the
+  opening, Sigma_Seven's +/-1.5-frame regrid wander): score a lag-sensitive
+  column at neighbouring lags before calling a drop real.
+- **The noise floor in `docs/SOUND-CALIBRATION.md` is 0.0095, not 0.1187
+  (v0.5.605).** The re-render check aligned the whole 180 s cached render against
+  a 60 s repeat, and a louder tail pulled the search 165 hops off on Last_V8.
 
 ### A/B against a previous run
 

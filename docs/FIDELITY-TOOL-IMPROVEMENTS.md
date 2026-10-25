@@ -250,6 +250,8 @@ limitation stands: `Samantha_Fox_Strip_Poker` has 14 subtunes and
 `--all-subtunes` sweep would cost linear time and would say something the
 current report simply cannot.
 
+**Built, `--all-subtunes` only (v0.5.602); the per-file window is not.** The first corpus sweep (v0.5.603, `-t 60`, 8 hand-made shards, `docs/SUBTUNE-FIDELITY.md`) found 552 rows: 239 measured, 299 dropped, 8 unpaired, 6 not converted, and 66 subtunes 10+ points below their file's default. The mode has no `--jobs` path. A per-file window or an auto-extend on an empty window is still open.
+
 ---
 
 ## 6. Rate — **built, v0.5.99 and v0.5.101** (and one proposal here was wrong)
@@ -365,7 +367,7 @@ the pairing it was run on was not.
 
 - **`wave` ignores the gate bit deliberately and correctly**, but that means a
   note held twice as long with the right waveform scores 100%. Gate-length
-  agreement is a separate cheap column from data already parsed.
+  agreement is a separate cheap column from data already parsed. **Built: the `gate` column (`gate_compare`); the version was not traced here.**
 - **`--pair` skips conversion**, which makes it the right entry point for
   regression-testing the *packer* rather than the converter. It is
   undocumented in README and unused by any script.

@@ -3361,3 +3361,70 @@ Historical figures from the run records, `-t 180`, under presets unless stated; 
 * **A probe that traces a fixed `-t` window without `fidelity.original_ended` charges our surplus to a subtune whose original has stopped, and one quoted bend figure is retracted** (`fidelity-diag-harnesses-window`, measured at 3fabf47, v0.5.569; supersedes the figure in `file-wide-short-row-costs`, 2b64d25). The audit covered every scratch probe that quotes `bend` or `slides` in `runs.jsonl` and traces a fixed window: the `bendsplit.py` family (`nf = 180 * 50`; Mega_Apocalypse, whose original does not end inside 180 s), `diag.py` of `file-wide-short-row-costs` and of `real-firstwave-stale-init-mid-slide` (both fixed 180 s), and `perinst.py` (Las_Vegas_Video_Poker, which already uses its own 107 s window). Against `build/fidelity.json` only 14 of 95 matched rows have an original that ends inside the window, and none of the other probes' subjects is among them except Las_Vegas, so the only figure over music the original had already stopped playing is one: **retracted, `file-wide-short-row-costs`'s Monty "s1 bend 2330 -> 1557" (the rejected per-record-rows experiment).** Subtune 1's original stops at frame 431 (window 8 s by `original_ended`); the fixed 180 s window scored 8999 frames of our last note still vibrating against 431 of the original (`monty-classic-vibrato-bend-15x`: orig_bend 41196, our_bend 960209). Its window-correct values are the real harness's: base s1 bend 0.927, and 0.652 with the experiment (`vibrato-layout-record-row-calls`, f28b063), i.e. the experiment moved s1 bend further from 1, not from 2330 to 1557, and the "1557" was never a depth. Re-taken with the same `fidelity.compare` at 3fabf47, once at a fixed 180 s and once at `original_ended`'s window, per Monty subtune: s0 0.743 (full window, nothing to cut), s1 1.075 -> 0.927 (8 s), s2 0.997 -> 0.844 (10 s), s3 0.886 -> 0.871 (7 s), s4 0.895 -> 0.892 (9 s), s5 0.854 = (9 s), s7 0.625 -> 0.684 (8 s), s8 0.803 = (6 s), s9 0.718 -> 0.700 (9 s), s10 1.142 = (9 s), s11 0.639 = (8 s), s12 0.519 = (12 s), s6 no bends in the original. The 2330 itself no longer reproduces on the tree (the ringing past the tune end was closed by `converted-tune-end-keeps-last-note-ringing`, 7ee69be), so it is historical twice over. **Stands, because the subtune runs the full window:** Monty s0 "bend 95.0 -> 83.9" and "tie 82.0 -> 96.0", Gerry_the_Germ s0-s6 and Human_Race s0-s4 and 5_Title_Tunes s0-s4 (none ends inside 180 s, so fixed 180 s and the harness window are the same window); the figures quoted from the real harness (`--baseline`, `tick0-retake-on-append-ladder`, `global-triangle-vibrato-tick0`) were windowed by construction. **Not re-taken:** the s10 and s12 melody figures quoted from the same `diag.py` (s10 ends at 9 s, s12 at 12 s) -- `vibrato-layout-record-row-calls` reproduces s10's through the real harness (-0.021), s12's "unchanged" has no windowed counterpart. **Opened, not settled here:** Gerry_the_Germ s0 reads bend 3.385 over a full 180 s window on the current tree; `original_ended` finds no ending, so it is not this artefact, and no task records it. The rule stays the one in the length-rule entry above (`original_ended` shortens the window; a probe that skips it measures our restart): a probe that wraps `run_siddump` must call `original_ended` on its own original trace before it quotes a ratio, and say the window beside the figure.
 
 * **A CIA-timed original packed on the VBI played 1.1969x slow, and every siddump column agreed with it** (`cia-timed-tunes-play-too-slow`, at 03eb34f, v0.5.583; heard by ear 2026-10-17 on Confuzion and Human_Race). A PSID speed bit means CIA 1 timer A at the KERNAL's `$4025` latch, 985248/16422 = 59.996 Hz on PAL. gt2reloc writes speed `$00000000` at -S1 and a stub at `$4CC7/S` above it (greloc.c:140, 1606-1659); `player.s` never touches `$DC04/$DC05`. Measured under sidplayfp with a probe PSID toggling `$D418` each call (`C:/t/cia-tempo/probe.py`): VBI 50.114 Hz, CIA with no timer write 59.983 Hz, CIA after an explicit `$4025` 59.983 Hz, after `$2663` 100.229 Hz (all 0.02% low by the same factor). Tempo-matched renders, ours against the original, 40 s (`C:/t/cia-tempo/tempo.py`): 1.1975 on Confuzion, Battle_of_Britain (-S2), Human_Race s0-s3, 5_Title_Tunes s2 and Commodore_64_Music_Examples s1; 1.000 on Human_Race s4 and every VBI file; 1.000 everywhere after `pack_sid(original=sid)` (`call_rate.retime_packed`: speed bits at -S1, the stub re-latched at -S2). Packed bytes moved on those 5 files only, the `.sng` on none (89 compared). `-t 180 --sound`, default subtune, aud/loud before -> after: Confuzion .709/.741 -> .787/.785, Human_Race .878/.926 -> .923/.961, Battle_of_Britain .868/.895 -> .929/.937, Commodore_64_Music_Examples .803/.902 -> .921/.933; melody and drift unchanged to the digit, because siddump calls both sides once a row (siddump.c:309/325). So **`aud` is not blind to a 20% clock error**, whatever its Dimension text says about the 3b091c0 one. The rule: **a trace in ticks cannot see the clock issuing them; the rate is a header fact and is read off both headers** (the `rate` column).
+
+## The 0.5.597-0.5.607 drain (2026-10-24..25, at 70e9bf0..03a494f): the blind-spot columns
+
+Evidence for the three durable rules CLAUDE.md's "Measurement discipline" now
+carries as headlines. Every figure carries its version; none is live.
+
+- **An alignment search over a long render and a short one aligns on the long
+  one's tail.** `sound_calibrate.rerender_movements` called
+  `sound.align(feats, b)` with the 180 s cached render and a 60 s repeat render;
+  the envelope correlation zero-pads `b`, so 120 s of `a` that `b` cannot match
+  decided the lag. At v0.5.597 Last_V8's two identical `--delay=0` renders
+  (`aud` .99995 at lag 0, verified by hand) aligned -165 hops apart (`aud`
+  .8813) and read a re-render movement of 0.1187, which became the calibration's
+  noise floor for every tune while the other 13 approved tunes re-rendered at
+  0.0000-0.0002; `5_Title_Tunes`'s known-bad build (+0.0148) then fell "inside
+  the render floor". Cutting the cached features to the repeat's frame count
+  first returns lag 0: v0.5.605, noise floor 0.0095, PASS, all three known-bad
+  builds seen. `tests/test_sound_calibrate.py::test_rerender_aligns_on_the_extent_the_repeat_render_covers`
+  failed at 0.1415 before the fix. **The rule: align like with like; cut the
+  longer side to the shorter's extent before a search, and check a surprising
+  floor against one hand-scored pair before adopting it.**
+
+- **A statistic that finds a deficit by comparing a series to its own median
+  cannot find a uniform one, and a floor under single-sample scatter finds
+  noise.** The first `aud_first_dip_s` attempt (never merged: its patch was
+  built on the v0.5.598 tree and held) took the first of three consecutive seconds below the song's median
+  by more than the 0.0095 shift floor. On real build pairs it read second 0 on
+  W_A_R's whole render and on both *good* builds (their opening seconds simply
+  score below their median), and a spurious second 27-28 on Action_Biker
+  0.5.371, whose deficit is uniform (it plays a different piece on the traced
+  subtune) while single-second scatter is ~0.02. The replacement takes the
+  lowest 8-second run and reports it only above 7 x a rolling-median scatter
+  (the MAD about the global median swallowed the signal on W_A_R, .076 with the
+  deficit filling half the window): W_A_R 0.5.399 located at 46 s on both
+  windows, Action_Biker `flat`. The ratios are 9.9-45.6 where a stretch is real
+  and 0.9-4.8 where it is not, so the margin is thin on the high side.
+  **The rule: validate a locator on a known-bad pair whose deficit is uniform and
+  on a known-good build, not only on the case it was designed for.**
+
+- **A lag estimated on a song's opening anchors every lag-sensitive column on
+  the body, and one anchor is not a clock.** `onset_timing` compared our gate
+  rises against `startup_lag`, which anchors on the *pitched* frame; GoatTracker
+  raises the gate one frame earlier, so Pygmies_Revenge, Pacific_Coast,
+  Radio_ACE and Hollywood_or_Bust read 0.0 (v0.5.601 subtracts
+  `pitch_anchor_shift`: 0.0 -> 1.0 on all four; 10 of 95 files moved, none by a
+  per-attack rule, which was tried first and moved 65 of 95 with false late
+  notes). The residue is not a lag: I_Ball under `regrid_full_debt` (v0.5.603)
+  went `onset_timing` .291 -> .126 while drift fell +3.06 -> 0.00 per 1000,
+  because the opening sits 2 frames later than the body (scored at lag 4 it reads
+  .309); Sigma_Seven's per-note delta random-walks between 1 and 4 frames because
+  `regrid_tempos` places the extra call by pattern geometry (v0.5.601 record:
+  `regrid_per_play` would lift it .223 -> .535, unadopted, approved by ear).
+  **The rule: before calling a drop in a lag-sensitive column real, score it at
+  neighbouring lags and look at the per-note delta.**
+
+- **The scratch-path rule held, with one exception to remember.** Every
+  worktree agent in this drain was told to copy `siddump.exe`, to keep probes in
+  a task-named directory, and not to discard tree changes; none did. A
+  `--workdir` typo made one stray sibling directory (`C:/t/...-melodyw`), and a
+  `--vice` probe overwrote the shared default dump `C:/t/vice_dump.txt`:
+  `vicetrace.run` should always be given `out=`.
+
+- **The suite is parallel-safe except for the render cache.** `sound.render_cached`
+  writes its WAV in place, so under `pytest -n 12` two workers could read a
+  half-written render; `tests/conftest.py` takes a lock file in `build/audio`
+  around it. 3079.86 s serial -> 834.89 s (v0.5.604), the same 7148 passed and
+  25 skipped, the same skip locations; the floor is one 417 s test.
