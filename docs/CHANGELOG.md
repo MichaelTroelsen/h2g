@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.604 — 2026-10-25
+
+- full suite under pytest-xdist: 51 -> 14 min; render cache locked across workers
+
 ## 0.5.603 — 2026-10-25
 
 - regrid_full_debt adopted for I_Ball

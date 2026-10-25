@@ -57,7 +57,9 @@ Plain-stdlib Python 3, no third-party runtime deps (`pytest` is dev-only).
 
 - Run from `python/`: `python -m h2g <input.sid> [-o out.sng] [-q]`.
   From the repo root, `.\convert.ps1` wraps it; `.\play.ps1` also opens the result.
-- Test: `python -m pytest tests/ -q` (from `python/`). Treat any output-changing
+- Test: `python -m pytest tests/ -q` (from `python/`); the full suite takes
+  ~14 min as `-n 12 --dist worksteal` (pytest-xdist) against ~51 serial
+  (v0.5.604, same pass/skip set). Treat any output-changing
   edit as a regression unless it is an intentional feature — then update the
   fixtures, never delete the assertion.
 - `python -m h2g --help` is the authoritative option list. Do not restate it here.

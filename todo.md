@@ -218,30 +218,18 @@ Keep items actionable: what to run, and what makes it done.
   `[subagent]` for the pulse census and the hold refutation; `[main]` for any
   emitter change.
 
-- **Cut the full test suite from ~53 minutes to at most ~20.** `python -m pytest
-  tests/` (from `python/`) ran 7007 tests in 53:28 in one worktree and 53:04 in
-  another (v0.5.595/596, 2026-10-24), both while other corpus work shared the
-  machine, so a quiet run may be faster. It runs serially (`pytest-xdist` is not
-  installed) on a 24-thread machine, and 393 of the 467 test files mention the
-  corpus -- probably conversion + `gt2reloc` pack + `siddump` per test. That
-  last part is an inference from a grep, not a measurement: nothing has timed
-  the suite yet.
-
-  Measure first (`pytest --durations=40`, then the slowest files alone), then
-  fix what the numbers show: `pytest-xdist -n ~12` (size to MEMORY, not cores --
-  a corpus job takes 0.4-2.7 GB on a 32 GB machine, see CLAUDE.md's `--jobs`
-  note), a session-scoped cache for conversions/traces several tests repeat, or
-  trimming a corpus loop that re-does work. Each test already owns its scratch
-  directory or must be made to before running in parallel.
-
-  Done when: a full run takes <= ~20 minutes wall-clock on a quiet machine; the
-  test count is not lower than before (report both counts); the pass/fail set
-  matches a serial run; no assertion is deleted or weakened;
-  `tests/test_commando.py` still compares bytes against `Commando.sng`. The
-  user said this can be done overnight (2026-10-24).
-
-  `[main]` -- it runs the whole suite and edits shared test infrastructure;
-  not a worktree fan-out.
+- **DONE (v0.5.604, 2026-10-25): the full suite runs in ~14 minutes.**
+  `python -m pytest tests/ -n 12 --dist worksteal` (from `python/`, needs
+  `pytest-xdist`, installed 3.6.1) took 834.89 s on a quiet machine against
+  3079.86 s serial at the same tree: 7148 passed, 25 skipped in both, with the
+  same skip locations; 0 failed. The floor is one test --
+  `test_instrument_bound.py::test_every_search_combination_of_the_fullest_files_converts`
+  takes 417 s alone -- so more workers buy little. `tests/conftest.py` makes
+  `sound.render_cached` take a lock file in the cache directory under xdist,
+  because the cache writes its WAV in place and two workers could otherwise read
+  each other's half-written render; a serial run is untouched. No assertion was
+  changed and no cache was added. A plain `python -m pytest tests/ -q` still
+  works and still takes ~51 minutes.
 
   added: 2026-10-24
 
