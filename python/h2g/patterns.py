@@ -103,6 +103,13 @@ ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # neither can land on row 0: the plan refuses pattern row 0 outright (the
 # subtune's clock, above), so a CMD_SETTEMPO never meets one to overwrite.
 # `tests/test_filter.py` asserts no emitted A/B sits on a row 0.
+#
+# ALSO IN NEITHER SET: `CMD_SETMASTERVOL` (D, `master_volume`), by the same
+# route. `apply_master_volume` runs in `build_sng`, after `apply_tempos`, and
+# EXCEPTION TO "row 0 belongs to the clock": it does write row 0, but only of
+# a voice >= 1 entry pattern that is no subtune's voice-0 entry pattern and
+# whose command column is free, so a CMD_SETTEMPO is never displaced or
+# skipped for it. `tests/test_master_volume.py` pins this.
 TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
@@ -5172,6 +5179,60 @@ def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
             f"subtune's tempo cannot reach another's"
             + (f"; {dropped} write(s) dropped at the {MAX_PATTERNS}-pattern "
                f"ceiling" if dropped else ""))
+    return written
+
+
+CMD_SETMASTERVOL = 0x0D  # gcommon.h:17; D0v sets masterfader when v < $10
+
+
+def apply_master_volume(patterns: List[List[int]], tracks: List[List[int]],
+                        level: int, log=None) -> int:
+    """One `CMD_SETMASTERVOL level` per subtune, on a free row it may take.
+
+    Row 0 of the entry pattern of the lowest voice >= 1 whose command column
+    is free and which is no subtune's voice-0 entry pattern (those rows are
+    the clock's, `apply_tempos`); else row 1 of voice 1's entry pattern if
+    free (one frame at $F); else nothing and a log line. Never moves or
+    overwrites a command. Writes into `patterns` in place; returns the number
+    of subtunes written.
+    """
+    groups = len(tracks) // 3
+
+    def entry(k: int, v: int) -> int | None:
+        track = tracks[3 * k + v]
+        at = _entry_reference(track)
+        if at is None or track[at] >= len(patterns):
+            return None
+        return track[at]
+
+    clock_rows = {entry(k, 0) for k in range(groups)} - {None}
+    written = 0
+    for k in range(groups):
+        spot = None
+        for v in (1, 2):
+            p = entry(k, v)
+            if (p is not None and p not in clock_rows
+                    and len(patterns[p]) >= 4
+                    and patterns[p][2] == 0 and patterns[p][3] == 0):
+                spot = (p, 0)
+                break
+        if spot is None:
+            p = entry(k, 1)
+            if (p is not None and len(patterns[p]) >= 8
+                    and patterns[p][6] == 0 and patterns[p][7] == 0):
+                spot = (p, 1)
+                if log:
+                    log(f"Master volume...........: subtune {k} on row 1 "
+                        f"(one frame at $F)")
+        if spot is None:
+            if log:
+                log(f"Master volume...........: subtune {k} has no free "
+                    f"row; D0{level:X} not written")
+            continue
+        p, row = spot
+        patterns[p][4 * row + 2] = CMD_SETMASTERVOL
+        patterns[p][4 * row + 3] = level & 0x0F
+        written += 1
     return written
 
 

@@ -285,7 +285,8 @@ def convert(sid_path: str, log: Logger = print,
             tie_pulse_restart: bool = False,
             lfo_wave: bool = False,
             voice_arp: bool = False,
-            unison_vibrato_phase: bool = False) -> bytes:
+            unison_vibrato_phase: bool = False,
+            master_volume: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -609,6 +610,14 @@ def convert(sid_path: str, log: Logger = print,
     counter's phase. Needs `tie`. Off by default: Commando is one of
     these players, and the fixture encodes the old spelling (its own ties
     all restart silently, so presets move none of its bytes either).
+
+    master_volume writes one CMD_SETMASTERVOL (`D0v`) per subtune carrying
+    the $D418 volume nibble the original holds (`Detection.master_volume`,
+    read from `detect.FILTER_MODE_ENTRY_SHAPE`), where that is below $F;
+    GoatTracker plays $F otherwise. Placed in `build_sng` after every tempo
+    is written, on a free row 0 that is no subtune's voice-0 entry
+    (`patterns.apply_master_volume`). Off by default: it moves the bytes of
+    the files whose original holds a lower level, and nothing adopts it yet.
 
     sfx_drum_bandpass writes the one frame of bandpass the sfx drum's fire
     block sets (`detect.find_sfx_drum_bandpass`) into the filter program of
@@ -1439,6 +1448,7 @@ def convert(sid_path: str, log: Logger = print,
                          wave_reserve=reserve,
                          drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,
+                         master_volume=master_volume,
                          drum_fall=drum_fall,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence))

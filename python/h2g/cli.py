@@ -139,6 +139,12 @@ def main(argv=None) -> int:
              "Paws' voice 1 does; a song with no such voice is unchanged. "
              "Per song. Off by default")
     parser.add_argument(
+        "--master-volume", action="store_true",
+        help="write one CMD_SETMASTERVOL (D0v) per subtune for an original "
+             "whose player holds $D418's volume below $F, on row 0 of a "
+             "voice >= 1 entry pattern. A song whose player sets $F or has "
+             "no such shape is unchanged. Per song. Off by default")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -753,6 +759,7 @@ def main(argv=None) -> int:
                           ("--regrid-full-debt", "regrid_full_debt"),
                           ("--regrid-per-play", "regrid_per_play"),
                           ("--regrid-park", "regrid_park"),
+                          ("--master-volume", "master_volume"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -862,6 +869,7 @@ def main(argv=None) -> int:
                       regrid_per_play=args.regrid_per_play,
                       regrid_prepay=args.regrid_prepay,
                       regrid_park=args.regrid_park,
+                      master_volume=args.master_volume,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

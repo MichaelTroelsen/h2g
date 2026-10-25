@@ -547,6 +547,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               drop_dead_blocks: bool = False,
               vibrato_onset: bool = False,
               lfo_wave: bool = False,
+              master_volume: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -2056,6 +2057,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append(_table_length_byte(len(table), "speed"))
         out += bytes(left for left, _ in table)
         out += bytes(right for _, right in table)
+
+    # One D0v per subtune, LAST: after `apply_tempos` (convert.py) and every
+    # pass above, so no tempo can have been skipped for it
+    # (`patterns.apply_master_volume`).
+    if master_volume and det.master_volume is not None:
+        from ..patterns import apply_master_volume
+        patterns = [list(p) for p in patterns]
+        apply_master_volume(patterns, tracks, det.master_volume, log)
 
     out.append(len(patterns) & 0xFF)
     for pattern in patterns:

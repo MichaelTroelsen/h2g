@@ -221,6 +221,12 @@ for a human listening check into gitignored `build/listen/`.
   that subtune its `CMD_SETTEMPO`. A new row-0 command must declare itself in
   `patterns.TEMPO_OVERWRITABLE` **as well as** `ONE_SHOT_COMMANDS` — they are
   different questions and the second one looks like a catastrophe.
+  Exception: `CMD_SETMASTERVOL` (`master_volume`) writes row 0 only of a
+  voice >= 1 entry pattern that is no subtune's voice-0 entry and whose
+  command column is free, in `build_sng` after `apply_tempos`, so it is in
+  neither `TEMPO_OVERWRITABLE` nor `ONE_SHOT_COMMANDS` and costs no
+  `CMD_SETTEMPO` (`patterns.apply_master_volume`, pinned by
+  `tests/test_master_volume.py`).
 - **A rate read out of a player is per frame; every Goattracker table steps per
   play call.** They agree only at `-S1`, and most preset songs pack above it.
   Anything new carrying a rate must be divided by `multiplier` where it is

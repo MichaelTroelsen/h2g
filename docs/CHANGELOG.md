@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.611 — 2026-10-25
+
+- master_volume option: one D0v per subtune for originals holding $D418 below $F; four undetected pulse spellings diagnosed
+
 ## 0.5.610 — 2026-10-25
 
 - rest_program_stop adopted for Pandora and Trans-Atlantic_Balloon_Challenge

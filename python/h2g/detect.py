@@ -481,6 +481,11 @@ class Detection:
     # Read only where `filter` came back None, and the two are disjoint over
     # the corpus: 6 files here, 0 of them with a classic filter.
     ilv_filter: "IlvFilterInfo | None" = None
+    # The $D418 low nibble the play routine's entry writes from an
+    # immediate (`FILTER_MODE_ENTRY_SHAPE`), when it is below $F; None when the
+    # shape is absent or the level is $F (GoatTracker's own default).
+    # `find_master_volume`. Consulted by `master_volume` only.
+    master_volume: Optional[int] = None
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -2491,6 +2496,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             + (", sweep stops at bit 7" if f.clamp else "")
             + (", never reset (free-running)" if f.free_running else ""))
 
+    det.master_volume = find_master_volume(sid)
     return det
 
 
@@ -2779,6 +2785,21 @@ def find_ilv_filter(sid: SidFile, det: Detection) -> "IlvFilterInfo | None":
                                                   hi=enable >> 8)) <= -1:
         return None
     return IlvFilterInfo(table=table)
+
+
+def find_master_volume(sid: SidFile) -> Optional[int]:
+    """The $D418 volume nibble the play entry's immediate write holds, or None.
+
+    The low nibble of `FILTER_MODE_ENTRY_SHAPE`'s `LDA #imm` (the high nibble
+    is the passband `find_filter` reads). None where the shape is absent or the
+    level is $F, which is what GoatTracker plays anyway (`gplay.c:44`).
+    Primary-path read, no rescue, no trace.
+    """
+    e = search_file(sid.data, FILTER_MODE_ENTRY_SHAPE)
+    if e <= -1:
+        return None
+    level = sid.data[e + 7] & 0x0F
+    return None if level == 0x0F else level
 
 
 def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":

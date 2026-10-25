@@ -395,6 +395,12 @@ EXCLUDED_FROM_ALWAYS = {
     # (it reaches Star_Paws and Ricochet), and where it acts it moves the whole
     # song's clock. Inert without `regrid`.
     "regrid_park",
+    # Per song and never a default: writes one D0v per subtune carrying the
+    # $D418 volume nibble the original holds below $F (`detect.find_master_
+    # volume`). Off everywhere until a task adopts it for a measured song
+    # (Mega_Apocalypse, Pygmies_Revenge); the read also reaches held DIGI
+    # files, which the hold forbids working, so it cannot be an `always` flag.
+    "master_volume",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own
