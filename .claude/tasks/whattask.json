@@ -1,11 +1,11 @@
 {
  "generated_from": {
-  "head": "ebeb680",
+  "head": "29ac357",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at ebeb680, 21 tasks)",
-   ".claude/tasks/runs.jsonl (whole file; 2 tasks done since, both uncommitted)",
-   ".claude/tasks/decisions.jsonl (no new decisions)",
+   ".claude/tasks/whattask.json (previous plan at 31f1122, 18 tasks)",
+   ".claude/tasks/runs.jsonl (whole file; four main tasks done since, all refused, no tree change)",
+   "decisions.jsonl (no new decisions)",
    "hooks/prune.js with policy.json",
    "graphify-out/graph.json (graphify update this pass)",
    "gh: no open issues or PRs"
@@ -65,7 +65,7 @@
    "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
    "why_offload": null,
    "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -98,7 +98,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -131,7 +131,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -164,7 +164,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -198,7 +198,7 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
@@ -234,7 +234,7 @@
    "why_effort": "the code has to be understood before it can be safely changed",
    "why_offload": null,
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "tempo-alignment-rounding-decision",
@@ -267,7 +267,7 @@
    "why_effort": "a judgement between two measured costs",
    "why_offload": null,
    "why_mode": "blocked on a decision about which error a listener prefers",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
+   "why_lane": "overlaps 1 other task(s) where at least one side writes"
   },
   {
    "id": "classic-duration-gate-per-note-command",
@@ -297,7 +297,7 @@
    "why_effort": "the player's call ordering decides it",
    "why_offload": null,
    "why_mode": "one emitter and its test",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no path overlaps another task that writes"
   },
   {
    "id": "mega-apocalypse-age-gated-second-effect",
@@ -322,12 +322,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. Disassemble Mega_Apocalypse $4DC7 (LDA $BC,X / CMP $54A7,Y / BCC) and name the age-gated pitch effect; hand an emission task off by id (gating _expanding_vibrato_pass on the counter was tried and reverted: vib 0.792 -> 0.662). Read-only.",
+   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it before measuring. Its measurements read the worktree's own python/ tree, so no lock is needed on python/h2g reads. OPTIMISTIC MERGE (user, 2026-10-04): this task holds NO lock on the source or test files it edits -- sibling subtasks may edit the same files in their own worktrees at the same time. The ORCHESTRATOR merges finished branches into master ONE AT A TIME; on a textual conflict it rebases this branch onto the new master and resolves it, and after EVERY merge, clean or not, it re-runs this verify plus the Commando byte check and the affected tests on the MERGED tree and re-takes every number before committing (the user delegated merging: memory claude-owns-merge-and-commit). A merge whose re-run fails is not committed. NEW tests go in a test file of this task's own (python/tests/test_<topic>.py), never appended to a shared one such as test_fidelity.py -- where this verify names a shared test file for new tests, use an own file instead; edits to an EXISTING test that this task's byte change forces are allowed and must be listed in evidence for the merge. Outside its worktree the task writes only the scratch paths in touches. Disassemble Mega_Apocalypse $4DC7 (LDA $BC,X / CMP $54A7,Y / BCC) and name the age-gated pitch effect; hand an emission task off by id (gating _expanding_vibrato_pass on the counter was tried and reverted: vib 0.792 -> 0.662). Read-only. NOTE (v0.5.613): detect.py now carries the pulse program for Chicken_Song, Commodore_64_Music_Examples, Mega_Apocalypse and Mozart, so those four builds differ from any staged before 31f1122 -- re-take figures on the current tree. Mozart is among the songs approved by ear; its bytes moved, so its verdict applies to an older build.",
    "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
    "why_effort": "unfamiliar routine",
    "why_offload": null,
    "why_mode": "read-only finding",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no path overlaps another task that writes"
   },
   {
    "id": "pygmies-slide-under-vibrato",
@@ -357,7 +357,7 @@
    "why_effort": "unfamiliar routine",
    "why_offload": null,
    "why_mode": "read-only finding",
-   "why_lane": "no declared path overlaps another task where either side writes"
+   "why_lane": "no path overlaps another task that writes"
   },
   {
    "id": "rasputin-r3-duty",
@@ -387,133 +387,7 @@
    "why_effort": "a plausible improvement can be noise",
    "why_offload": null,
    "why_mode": "one emitter and its test",
-   "why_lane": "no declared path overlaps another task where either side writes"
-  },
-  {
-   "id": "hand-adopt-named-firstwave-on-the-s2",
-   "title": "Hand-adopt `named_firstwave` on the -S2+ files that gain (Star_Paws, Last_V8 and Last_V8_C128, Master_of_Magic, Ricochet, Mozart, Monty_on_t",
-   "source": "runs.jsonl#firstwave-frame-carries-arp-step",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "rw:host:C:/t/hand-adopt-named-firstwave-on-the-s2",
-    "rw:presets.json",
-    "rw:docs/SURVEY.md",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:build/audio",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:docs/LESSONS.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RE-SCOPED at ebeb680: most of the named songs are signed off by ear or on hold. EXCLUDE every song the user approved by ear (git log 'Record the user's approvals' / 'listening verdicts' at v0.5.588: Las_Vegas_Video_Poker, Last_V8, Last_V8_C128_version, Lightforce, Master_of_Magic, Mozart, Proteus, Rasputin, Shockway_Rider, Sigma_Seven, Thanatos, Spellbound; and build/approvals.json: 5_Title_Tunes, ACE_II, Action_Biker, Devils_Galop) and every file in hold.ON_HOLD (Ricochet among them): a preset change must not touch a song already signed off. That leaves Star_Paws, Monty_on_the_Run and Delta of the original list (Last_V8, Last_V8_C128_version, Master_of_Magic, Mozart, Shockway_Rider and Devils_Galop are approved; Ricochet is held). Re-take every figure on the current tree first, then force named_firstwave on those songs, check the gate regressions the original note names, and adopt where no scored agreement column falls; refuse with the column named otherwise. If presets.json changed, regenerate SURVEY.md, presets.json, FIDELITY.md and QUEUE.md once and run the full suite (pytest -n 12 --dist worksteal) before committing. Done when the outcome is recorded in runs.jsonl.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "bounded work with ordinary judgement",
-   "why_offload": null,
-   "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
-  },
-  {
-   "id": "pandora-0c99-rest-wave-silence-alone-cuts",
-   "title": "Pandora $0C99: --rest-wave-silence alone cuts the per-frame mean error from 264.7 to 80.2 cents (reversals 131 vs 131 unchanged to 125, whol",
-   "source": "runs.jsonl#pandora-0c99-net-rise-slide",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "rw:host:C:/t/pandora-0c99-rest-wave-silence-alone-cuts",
-    "rw:presets.json",
-    "rw:docs/SURVEY.md",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:build/audio",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:docs/LESSONS.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RE-SCOPED at ebeb680: Pandora now ships rest_program_stop (v0.5.610, wave .850 -> .874), and the fbs-kotb run measured rest_wave_silence on it at 5391ff5 (wave .850 -> .873, gate unchanged, aud +.0001), so the 264.7 -> 80.2 cents figure below is historical and the question is the PAIR. Re-take on the current tree: Pandora with rest_program_stop alone (shipped), + rest_wave_silence, and the two others that interact if any, -t 180 --presets --sound; adopt rest_wave_silence only if it adds wave beyond rest_program_stop with no scored agreement column down, else refuse with the column named. Original note: Pandora $0C99 --rest-wave-silence alone cuts the per-frame mean error from 264.7 to 80.2 cents (reversals 131 vs 131 unchanged to 125, whole-file reversal_ratio 1.0621 -> 1.0597). If presets.json changed, regenerate SURVEY.md, presets.json, FIDELITY.md and QUEUE.md and run the full suite before committing. Done when the outcome is recorded in runs.jsonl.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "bounded work with ordinary judgement",
-   "why_offload": null,
-   "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
-  },
-  {
-   "id": "add-max-hard-restart-to-the-presets",
-   "title": "Add max_hard_restart to the presets for Devils_Galop, Master_of_Magic, Monty_on_the_Run, One_Man_and_his_Droid and Thing_on_a_Spring (late c",
-   "source": "runs.jsonl#re-measure-the-10-s2-orig-prompt",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "rw:host:C:/t/add-max-hard-restart-to-the-presets",
-    "rw:presets.json",
-    "rw:docs/SURVEY.md",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:build/audio",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:docs/LESSONS.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RE-SCOPED at ebeb680: two of the five named songs are signed off by ear, so only the rest remain. EXCLUDE every song the user approved by ear (git log 'Record the user's approvals' / 'listening verdicts' at v0.5.588: Las_Vegas_Video_Poker, Last_V8, Last_V8_C128_version, Lightforce, Master_of_Magic, Mozart, Proteus, Rasputin, Shockway_Rider, Sigma_Seven, Thanatos, Spellbound; and build/approvals.json: 5_Title_Tunes, ACE_II, Action_Biker, Devils_Galop) and every file in hold.ON_HOLD (Ricochet among them): a preset change must not touch a song already signed off. Re-take every figure on the current tree first. Add max_hard_restart to the presets for Monty_on_the_Run, One_Man_and_his_Droid and Thing_on_a_Spring only if a forced-arm A/B (-t 180 --presets --sound) shows the late class removed with rise counts unchanged and no scored agreement column down; record each as adopted or refused with the column that refused it (Devils_Galop and Master_of_Magic are approved and are not touched). Then, if presets.json changed, regenerate SURVEY.md, presets.json, FIDELITY.md and QUEUE.md in the usual order and run the full suite (pytest -n 12 --dist worksteal) before committing. Done when the outcome is recorded in runs.jsonl.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "bounded work with ordinary judgement",
-   "why_offload": null,
-   "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
+   "why_lane": "no path overlaps another task that writes"
   },
   {
    "id": "search-wave-program-and-no-test-restart",
@@ -555,7 +429,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
+   "why_lane": "overlaps 9 other task(s) where at least one side writes"
   },
   {
    "id": "listen-current-builds-2026-10",
@@ -581,99 +455,12 @@
    "branch": null,
    "blocked_on": "The user listens to the staged build/listen set (every song staged from the current build/fidelity.json) and records a verdict per song.",
    "decision": null,
-   "verify": "DONE when every staged song has a recorded verdict in decisions.jsonl. Stage with listen.py from the latest build/fidelity.json and play with .\\play.ps1 -Presets presets.json, never a bare goattrk2.exe; the sha1 of each staged build/listen/<song>.h2g.sng truncated to 12 hex characters must equal its output_sha in build/fidelity.json, or restage first. Questions folded in from the pruned listening tasks (each was asked against an older build; re-ask it only if the current build still has the effect): [sign-off-food-feud] A listening verdict on Food Feud, which no measurement substitutes for. It cannot be asked until measure-food-feud has reported, because until then there is nothing to say what to listen FOR. || [sign-off-saboteur-ii] A listening verdict on Saboteur II, which no measurement substitutes for. It cannot be asked until measure-saboteur-ii has reported, because until then there is nothing to say what to listen FOR. || [sign-off-zoolook] A listening verdict on Zoolook, which no measurement substitutes for. It cannot be asked until measure-zoolook has reported, because until then there is nothing to say what to listen FOR. || [sign-off-confuzion] A listening verdict on Confuzion, which no measurement substitutes for. It cannot be asked until measure-confuzion has reported, because until then there is nothing to say what to listen FOR. || [sign-off-las-vegas-video-poker] A listening verdict on Las Vegas Video Poker, which no measurement substitutes for. It cannot be asked until measure-las-vegas-video-poker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-geoff-capes-strongman-challenge] A listening verdict on Geoff Capes Strongman Challenge, which no measurement substitutes for. It cannot be asked until measure-geoff-capes-strongman-challenge has reported, because until then there is nothing to say what to listen FOR. || [sign-off-action-biker] A listening verdict on Action Biker, which no measurement substitutes for. It cannot be asked until measure-action-biker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-kings-of-the-beach-ingame] A listening verdict on Kings of the Beach ingame, which no measurement substitutes for. It cannot be asked until measure-kings-of-the-beach-ingame has reported, because until then there is nothing to say what to listen FOR. || [sign-off-sigma-seven] A listening verdict on Sigma Seven, which no measurement substitutes for. It cannot be asked until measure-sigma-seven has reported, because until then there is nothing to say what to listen FOR. || [sign-off-samantha-fox-strip-poker] A listening verdict on Samantha Fox Strip Poker, which no measurement substitutes for. It cannot be asked until measure-samantha-fox-strip-poker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-knucklebusters] A listening verdict on Knucklebusters, which no measurement substitutes for. It cannot be asked until measure-knucklebusters has reported, because until then there is nothing to say what to listen FOR. || [sign-off-sanxion] A listening verdict on Sanxion, which no measurement substitutes for. It cannot be asked until measure-sanxion has reported, because until then there is nothing to say what to listen FOR. || [action-biker-subtune-pairing-needs-an-ear] A listening verdict on which of Action Biker's subtunes pairs with ours. || [action-biker-noise-runs-want-a-listen-because-the-columns-disagree] A listening verdict on Action Biker's noise runs; nrun and gate disagree. || [ace-ii-has-two-withheld-gains-awaiting-one-listen] A listening verdict on ACE II deciding two gains no column can adjudicate. || [monty-firstwave-trade-needs-a-listen] A listening verdict on Auf Wiedersehen Monty's firstwave trade. || [stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision] A listening verdict on the Commando note-104 pair, which must precede any decision about recutting the fixture. || [the-six-interleaved-classic-files-have-never-been-listened-to] STILL BLOCKED on a listening verdict, but MIS-SCOPED as it stands. Confirmed by listing build/listen: 0 of the six files (Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast, Go_Go_Dash, Sun_Never_Shines) appear there. Staging them is `listen.py`, which is [main] AGENT work, not the human's -- s || [listen-to-whether-confuzion-loses-an-audible-release-tail-on-0909] user: a listening verdict, or a decision about what the tune should sound like -- the original leaves noise latched with the gate off for ~3 frames per note on voice 2, and its $0909 record carries release nibble $9, so that latched tail decays audibly; ours writes $09 (test bit se || [delta-mix-and-chicken-song-play-differently-on-their-second-pass] STILL BLOCKED (57c086e), sharpened: stage the ORIGINALS of Delta_Mix and Chicken_Song rendered past their first restart (listen.py, [main] agent work) before asking whether either second pass is wanted. || [ace-ii-needs-a-fresh-listening-approval] A listening verdict on ACE_II's CURRENT conversion (sha 276720ac at 59fbe1b -- check it against build/fidelity.json first) staged by listen.py; every tree 0.5.369-0.5.375 converts to 2297af87, never the approved 7bc6dfad, so no rebuild can stand in for the ear. || [rasputin-opening-listen] A listening verdict: does Rasputin's opening (first ~23 s, R=2) octave trill now match the original with the uncommitted tempo-duty split? An agent can stage the pair (listen.py); only the ear decides keep or revert, and commit-or-revert-the-drain-work waits on that call. || [listen-shared-ramp-movers] forced pulse_phase now sweeps Last_V8 7/9, Master_of_Magic 14, Phantoms 17 and others. Whether to turn pulse_phase on in presets for these files is a listening verdict. || [note-104-listen] Commando is still held at G#7. The walk would give B-5 on voice 1 and D#4 on 4 voice-0 events; listen before recutting Commando.sng || [confuzion-voice2-listen-presets-vs-rfw234] listen to presets against real_firstwave_instruments=(2,3,4) on Confuzion. The columns split: nrun prefers presets, while wave and the noise-frame count prefer (2,3,4), at a cost of voice 3 melody .9837. || [5tt-listen] listen to subtunes 1-4 of 5_Title_Tunes (new) and to subtune 0's SIMPLEPULSE-off pulse || [sanxion-drum-variant-listen] A listening verdict: Sanxion's six $60 drum rows now sound their absolute-B-5 noise burst (0 -> 42 hits in 100 s, original 41); the harness reads melody 98 -> 97% only because siddump names our test-bit attack frame differently. Keep or revert. || [gateoff-nibble-listen] a listening verdict on Kentilla instr 19 and Thrust instr 19/26 ((17,16) against 22; (7,6) and (4,3)) against the old per-call buzz || [food-feud-retuned-note-table] whether a retune of 5 notes is audible enough to spend the wavetable on || [tiefr-silent-ties-scoring-decision] a scoring policy choice that moves every row's tiefr and adds a FIDELITY.md/QUEUE.md column || [listen-firstwave-preattack-ik-bangkok-iball-sanxion] a listening verdict on the FIRSTWAVE_TESTBIT trade; no_test_restart is the only lever and costs melody || [listen-s1-gate-off-drum-tick] a listening verdict on a change the columns scored as a gain || [listen-funktempo-attribution-subtunes] a listening verdict on subtunes the columns moved by large margins || [gremlins-pulse-phase-record-9-or-15] a listening verdict on which sweep matters more || [mega-swelling-record-compromise] a listening verdict between three spellings || [sun-never-shines-listen] a listening verdict || [star-paws-shockway-legato-clones-listen] a listening verdict || [adsr-attack-lag-audible] a listening verdict on a sub-frame attack lag || [listen-v0514-drain-batch] listening verdicts || [drum-sweep-clones-by-note-length] user: the 73-of-109 audible tie deficit is the documented median-depth design; cloning per note-length class would lift the voice-1 audible ratio 0.67 -> 0.93 but raise tie_ours_only 5 -> 15. Build the clones or accept the design? || [rasputin-eor-toggle-listen] listening verdict || [game-killer-0a9a-rise-vibrato-swing] Listen: Game_Killer GT 2 ($0A9A rising warble), C:/t/game-killer-0a9a-rise-vibrato-swing/ab/Game_Killer.current.sng vs .stepback.sng -- the step-back spelling restores the vibrato rate and most of its swing but store high-byte agreement falls 63 -> 29 of 123. Adopt it or keep the current layout. || [listen-sfx-drum-bandpass] user listening verdict: does bandpass on the drum frame sound closer to the original? (the band column cannot adjudicate it) || [attack-lag-gate-off-wrap-listen] user listening verdict on Monty_on_the_Run, Thing_on_a_Spring, Last_V8 (and Gerry, Rasputin): recommendation is no --adsr-prime, max_hard_restart only after a listen || [listen-kentilla-gate-off-drum-tick] Register gate +2.7pp, loud -0.75pp, loud_ratio 1.092 -> 1.019; the ear decides whether a per-file (multiplier 10 only) exception to _drum_tick_noise's -S1-only rule is worth it. || [rasputin-drum-sweep-depth-vs-ties] Sizing by the gate unit (4 calls) gives the original's $0300 exactly on $0909/$0A09/$0F0F, but tie_ratio 0.961 -> 0.851 and tie_agreement 0.590 -> 0.568 (travel_ratio 1.091 -> 0.947). If depth wins, a subtask carries unit_tempos per group into start_rows (mechanism in convert._drum_start_group). || [pulse-change-cadence-decision] A hold row per step costs about 150 rows for Last_V8 records 6-8; the alternative keeps pspan and per-frame travel as the measure of record (recommended, as _tri_speed's docstring says for the outer gate). || [lvvp-fall-into-table-garbage] The original's note index goes below zero after ~30 steps and reads what follows the note table (subtune 8: -66, junk, then +26 falling again to -28); ours stops at the lowest note. Model the lookup (idx*2 &$FF into $53F9...) only if a listening verdict wants it. || [listen-gerry-human-race-gate-off-tick] Also Gerry s4, whose gate falls 1.8. || [listen-mega-apocalypse-cycles-10-13] Voice 0 GT 10 notes (the long $09F9 note near frame 3745 of subtune 0, and GT 13 with 3+ dips) now warble hi-byte-falling instead of the swell vibrato; 8 legato clones and 30 respelled tie rows landed (melody 93%, retrig .96 unchanged; adsr, wave, tie_agreement, aud rose slightly). || [listen-devils-galop-two-voice-hold] Voices 0 and 1 with --presets and pulse_phase forced: the hold versus the old ramps, and the attack-frame offset on v1. || [star-paws-bit10-ties-plain-decision] All-plain gives reversal 1.0005 and cut 1.0131 but travel 1.4442 and aud -0.16pp (0.8973 -> 0.8957). Listen to Star_Paws subtune 0 near frames 5263-5682 and 5779-6258. || [listen-bangkok-regrid-per-play] Melody dips 0.1pp, gate .502 -> .584 and wave .516 -> .549 rise at -t 180. || [listen-star-paws-regrid-park] The offset trough is gone (-12 to -1 frames); only an audible check says whether hold 10/11 -> 7/11 matters. || [zoids-tie-window-trade] Tie windows (stores 1/35 -> 35/35 on two windows; tie_agreement, reversal, travel, depth improve on subtune 0) cost the note-row program its carried vibrato (exact frequency on 63/63 frames of the subtune-2 window lost; bend .971 -> .899); the table (254/255) cannot hold both. If the carried behavio || [listen-hollywood-or-bust-vibrato-and-firstwave] Two trades on one song: the table-vibrato tick-0 correction (merged e16bddb) takes subtune 0 melody 0.608 -> 0.547 and subtune 1 0.517 -> 0.573; aligned_firstwave would take gate .329 -> .975 and melody .657 -> .552. || [listen-wave-program-slide-frames] The $0797/$09F9 drums now close on the semitone they reached (merged e16bddb); held Arcade_Classics and BMX_Kidz are excluded by the DIGI hold. Also accept or reject Auf_Wiedersehen_Monty melody 0.9876 -> 0.9830 for its reversal and tie gains. || [ik-plus-classic-vibrato-depth] Bytes $23 (bound 4, shift 3, row_calls 3) emit ($81, 3), swinging 498 against 632 (travel 0.71x on 00C9 >= 6): the known cost of the tick-0 compensation's integer rounding. Accept, or ask for a non-integer spelling. || [spellbound-test-bit-frame-decision] A test-bit $09 frame lands on the last call of an -m5 frame one time in five; no_test_restart removes it but costs melody 0.93 -> 0.50 (fef37ef). Decide whether to pursue a phase change, accept it, or listen first. || [listen-nineteen-note-101-stand-in] The pinned C#0 stand-in wraps its fall 3 frames before the original, which reads two per-voice counters ($322E) there; a fixed F#5 stand-in would be 1 frame late. Is a measured runtime-cell stand-in worth shipping for this one note? || [knucklebusters-classic-vibrato-depth-table] rshift read off the emitted cmp takes Knucklebusters travel 0.61 -> 1.14 and bend 0.74 -> 1.01 with melody flat; ACE_II, Deep_Strike, Food_Feud, Saboteur_II, Zoolook, Lion_Heart, Sanxion and Wiz also move toward 1. Powerplay, Sigma_Seven and Auf_Wiedersehen_Monty lose melody and would be excluded. N || [listen-rasputin-record10-toggle] Voice 0 should now sound like the original's alternating triangle/pulse on the 5.33/4.8-call stretches (rows 384-1792; 23 clones); the last tick of each note still has one extra toggle (rasputin-eor-extra-toggle-on-note-end). || [decide-whether-depth-call-ratio-should-be] Decide whether depth_call_ratio should be printed as its own FIDELITY.md column (the current change keeps it JSON-only to avoid touching the report layout). || [decide-whether-sfx-drum-bandpass-should-be] Decide whether --sfx-drum-bandpass should be adopted now that the note-relative column shows its blips at the right place in the note; the listening check is still open || [optional-listening-check-of-pandora-with-regrid] Optional listening check of Pandora with regrid_full_debt against the shipped build, via listen.py with the modified presets (C:/t/drum-voice-onset-lag-pandora/w/presets_fd.json). Columns favour it strongly, but the user's rule is that FIDELITY.md is not the last word. || [lightforce-record-6-vibrato-starts-in-antiphase] Lightforce record 6: vibrato starts in antiphase on alternate notes (counter 4 falling, then 1 rising). A per-note phase would need the free-running counter simulated down the pattern timeline plus a clone instrument per phase, for 16 notes in the first 35 s of one file. Matching one phase exactly w || [decide-whether-rest-wave-silence-now-cheap] Decide whether rest_wave_silence (now cheap at 2 WTBL rows and 4 bytes per file, and effective under running tables) should be re-searched per song behind --fidelity. It is still unselectable by fidelity_better (see BACKLOG rest-wave-silence-is-adopted-on-zero-songs). Nineteen also lacks rest_envelo || [decide-whether-vibrato-depth-or-oscillation-rate] Decide whether vibrato depth or oscillation rate (reversal count) matters more on swells that exceed (cmp+2)*255; the tradeoff is documented in the scratch outputs pn_wide.txt vs pn_cur.txt, and a fix needs a ruling on which side to favor. || [decide-whether-the-pulse-phase-layout-should] Decide whether the pulse-phase layout should pick which records keep phase entries by notes sounded instead of index order: forced Human_Race {1,2,4,18,23} loses 437 notes against the shipped {1,2,4,18,21} at 477, a listening-affecting change (compare the held Last_V8 granularity trade in pulse-phas || [decide-whether-the-three-small-gate-drops] Decide whether the three small gate drops (Gerry s5 -0.2, Human_Race s0 -0.3, Monty s6 -0.1) against a +0.8 net are acceptable, or whether the clone's gatetimer for the longer side should be tuned per use instead of ticks_for(min row). || [decide-whether-to-ship-a-tie-overwrite] Decide whether to ship a tie-overwrite fallback in _regrid_spots for Trans-Atlantic only (drift_per_1000 -0.893 -> -0.167 at -t 600, for about -4 pp gate and -0.6 pp tie_agreement), leaving Auf_Wiedersehen_Monty's lone tie-blocked pair unplaced (drift already about 0; tie_agreement -4 pp) || [last-v8-s-7c-note-is-the] Last_V8's $7C note is the original's sweep (high bytes 60 88 B0 D8 on even frames, falling 5F 5E on odd frames). The conversion now plays a steady F#6 with a skydive, and travel_ratio is 13% under. Decide whether that is acceptable or whether the sweep is worth a dedicated wave program. || [decide-by-ear-whether-the-test-bit] Decide by ear whether the test bit on the firstwave byte ($x8) should be kept or dropped in favour of plain gate_off_firstwave; no measured column separates them. || [decide-whether-mega-apocalypse-s-gain-in] Decide whether Mega_Apocalypse's gain in expanding-vibrato loops (33 -> 4 nearest-fit, 1 swing merged) and counter-fall start (118 -> 98) should be accepted as the new baseline; two sibling tasks edit that file and will conflict on re-pinned shas. || [decide-whether-a-harness-fix-is-wanted] Decide whether a harness fix is wanted so a stepped `set` pair is not scored as a siddump `(+ xxxx)` bend where the original names two notes (Mega bend 1.32 -> 3.20, BMX_Kidz 0.66 -> 2.24 under an exact portamento step); that is a metric-naming question, not a converter defect. || [no-listening-verdict-is-needed-the-phantoms] No listening verdict is needed: the Phantoms change is far below audible. || [decide-whether-star-paws-and-nineteen-should] Decide whether Star_Paws (and Nineteen) should adopt pitch_tie_phase per song: forced, GT15 reversals 952 -> 408 and the first long arpeggio note's rows match the original (X..X.. on 54/54), but the file's travel column reads 0.969 -> 1.447 (voice-1 cutoff artefact no longer cancelled) and tie_agree || [decide-whether-star-paws-should-adopt-regrid] Decide whether Star_Paws should adopt regrid_park + per_play, given hold 10/11 -> 7/11 is the known fetch deficit flipping on a phase coin-flip (0x0AAA, 0x00A9, 0x08E7) while attack offset improves -12/+1 -> -1/+1 and drift_total 0. || [listen-to-auf-wiedersehen-monty-subtune-1] Listen to Auf_Wiedersehen_Monty subtune 1 before the vibrato-layout-record-row-calls patch ships: its melody column drops 0.952 -> 0.820 while depth, bend and reversal move toward 1. || [decide-whether-a-conversion-should-be-tuned] Decide whether a conversion should be tuned to the 180 s fidelity window or to the whole tune when an instrument's pitch changes after the window (Nemesis $08F8: 6% high pitch inside the window, 94% low pitch after it). || [listen-to-ik-plus-with-the-rest] Listen to IK_plus with the rest-program-stop preset (python/play.ps1 -Presets with the per-song entry) and say whether the voice-1 program notes now sound like the original's short chirp. || [decide-bangkok-knights-regrid-full-debt-raises] Decide Bangkok_Knights: regrid_full_debt raises onset_timing 0.119 -> 0.430 but worsens drift from +0.62 to +2.58 per 1000 frames (total 5.5 -> 23.1); the agent recommends decline, so a listening verdict would settle it. || [listening-verdict-on-game-killer-voice-0] Listening verdict on Game_Killer voice 0: is the 17-20 cent flat bias of the $0A9A note audible enough to want a gated note_rise offset (prototype at C:/t/ours-is-goattracker-s-two-sided-triangle/prototype_offset.patch), given the harness columns do not improve? || [decide-whether-to-adopt-the-ora-40] Decide whether to adopt the ORA #$40 pulse-lo spelling, now that Game_Killer v1 has a fix (travel 4450 vs orig 7316, changes 2356 vs 2331) and the only worse-than-base file left is Last_V8 voice 0 changes (13000 -> 18400 vs 9798). || [decide-whether-ninja-thrust-class-files-should] Decide whether Ninja/Thrust-class files should accept the documented `adsr` cost of hard restart on (Rasputin 68.3 -> 63.8; Warhawk 82.2 -> 96.8 and Thrust 76.5 -> 95.4 gain) in exchange for fewer late attacks, given that the .sng cannot store `adparam` $0000. || [decide-whether-trans-atlantic-voice-1-s] Decide whether Trans-Atlantic voice 1's AD $07F8 (ours) versus $0AF8 (original) decay-nibble difference matters; it is inaudible at sustain F and no column scores it. || [listening-verdict-on-game-killer-s-8th] Listening verdict on Game_Killer's 8th event of the $0A9A note (frames 921-961 of the tied note) now that the stores hold a full tick instead of one call. || [keep-or-revert-the-tied-instrument-envelope-change-after-a-listen] user: listen to Warhawk, Kentilla and Samantha Fox before and after 922c782 and say whether the tied-instrument envelope change stays || [classic-vibrato-gate-needs-a-listen] A listening verdict: Food_Feud, ACE_II, Star_Paws and Saboteur_II now start their vibrato on the original's frame (uncommitted change). Stage the current build against HEAD's with listen.py (an agent can stage; only the ear decides) and say keep or revert. || [listen-to-human-race-subtune-2-voice] Listen to Human_Race subtune 2 voice 1 (window reach 63 -> 39 of 120) against subtune 4 voice 0 (210 -> 383 of 386) under forced pulse_phase before presets ever turn pulse_phase on for it. || [adopt-pulse-phase-per-song-for-flash] Adopt pulse_phase per song for Flash_Gordon and Food_Feud in presets.json (pphase 0.81->1.00 and 1.06->1.00, nothing else scored moves, Food_Feud aud -1pt), with a corpus byte-hash naming every mover and Commando.sng byte-identical; decide whether the 1pt aud drop on Food_Feud is acceptable or needs || [accept-kings-of-the-beach-ingame-s] Accept Kings_of_the_Beach_ingame's tempo re-point (patch C:/t/re-point-tempo-find-song-speeds-find/final.patch)? Five non-start subtunes gain (melody 93.2 -> 100% on s0/s3/s5, gate 3.1 -> 60.2% on s0, 2.0 -> 37.6% on s2, 30.5 -> 52.4% on s6), but the start subtune s4 -- the one FIDELITY.md scores an || [radio-ace-wave-77-89-and-pitch] Radio_ACE wave .77->.89 and pitch .79->.97, Pacific_Coast wave .53->.67 under aligned_firstwave at 66b53fe, no column worse beyond Radio_ACE seq .95->.93: adopt it on both in presets.json (user listening verdict on the seq dip first), then run the full suite. || [if-the-user-wants-mega-s-adsr] Decide: take Mega_Apocalypse's ADSR gain (adsr .855 -> .949, wave .857 -> .889 under rest_envelope_silence) at the cost of tie_ratio_audible .859 -> .826 (mostly phantom ties)? ADDED at ebeb680 (folded from the sigma-seven-onset-timing-residual record): Sigma_Seven is approved by ear (99%); with regrid_per_play its register-only onset_timing reads .223 -> .535 (offset -1 -> 0), gate .300 -> .513, wave .886 -> .897 with melody, adsr and drift unchanged -- does the user want it adopted? It needs a --sound A/B first. ALSO ADDED: Auf_Wiedersehen_Monty o6 (--pitch-lead-tie lifts its melody 74 -> 81 and o3 94 -> 100 in the --all-subtunes sweep; docs/OPTIONS.md says adoption waits on the user's A/B).",
+   "verify": "DONE when every staged song has a recorded verdict in decisions.jsonl. Stage with listen.py from the latest build/fidelity.json and play with .\\play.ps1 -Presets presets.json, never a bare goattrk2.exe; the sha1 of each staged build/listen/<song>.h2g.sng truncated to 12 hex characters must equal its output_sha in build/fidelity.json, or restage first. Questions folded in from the pruned listening tasks (each was asked against an older build; re-ask it only if the current build still has the effect): [sign-off-food-feud] A listening verdict on Food Feud, which no measurement substitutes for. It cannot be asked until measure-food-feud has reported, because until then there is nothing to say what to listen FOR. || [sign-off-saboteur-ii] A listening verdict on Saboteur II, which no measurement substitutes for. It cannot be asked until measure-saboteur-ii has reported, because until then there is nothing to say what to listen FOR. || [sign-off-zoolook] A listening verdict on Zoolook, which no measurement substitutes for. It cannot be asked until measure-zoolook has reported, because until then there is nothing to say what to listen FOR. || [sign-off-confuzion] A listening verdict on Confuzion, which no measurement substitutes for. It cannot be asked until measure-confuzion has reported, because until then there is nothing to say what to listen FOR. || [sign-off-las-vegas-video-poker] A listening verdict on Las Vegas Video Poker, which no measurement substitutes for. It cannot be asked until measure-las-vegas-video-poker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-geoff-capes-strongman-challenge] A listening verdict on Geoff Capes Strongman Challenge, which no measurement substitutes for. It cannot be asked until measure-geoff-capes-strongman-challenge has reported, because until then there is nothing to say what to listen FOR. || [sign-off-action-biker] A listening verdict on Action Biker, which no measurement substitutes for. It cannot be asked until measure-action-biker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-kings-of-the-beach-ingame] A listening verdict on Kings of the Beach ingame, which no measurement substitutes for. It cannot be asked until measure-kings-of-the-beach-ingame has reported, because until then there is nothing to say what to listen FOR. || [sign-off-sigma-seven] A listening verdict on Sigma Seven, which no measurement substitutes for. It cannot be asked until measure-sigma-seven has reported, because until then there is nothing to say what to listen FOR. || [sign-off-samantha-fox-strip-poker] A listening verdict on Samantha Fox Strip Poker, which no measurement substitutes for. It cannot be asked until measure-samantha-fox-strip-poker has reported, because until then there is nothing to say what to listen FOR. || [sign-off-knucklebusters] A listening verdict on Knucklebusters, which no measurement substitutes for. It cannot be asked until measure-knucklebusters has reported, because until then there is nothing to say what to listen FOR. || [sign-off-sanxion] A listening verdict on Sanxion, which no measurement substitutes for. It cannot be asked until measure-sanxion has reported, because until then there is nothing to say what to listen FOR. || [action-biker-subtune-pairing-needs-an-ear] A listening verdict on which of Action Biker's subtunes pairs with ours. || [action-biker-noise-runs-want-a-listen-because-the-columns-disagree] A listening verdict on Action Biker's noise runs; nrun and gate disagree. || [ace-ii-has-two-withheld-gains-awaiting-one-listen] A listening verdict on ACE II deciding two gains no column can adjudicate. || [monty-firstwave-trade-needs-a-listen] A listening verdict on Auf Wiedersehen Monty's firstwave trade. || [stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision] A listening verdict on the Commando note-104 pair, which must precede any decision about recutting the fixture. || [the-six-interleaved-classic-files-have-never-been-listened-to] STILL BLOCKED on a listening verdict, but MIS-SCOPED as it stands. Confirmed by listing build/listen: 0 of the six files (Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast, Go_Go_Dash, Sun_Never_Shines) appear there. Staging them is `listen.py`, which is [main] AGENT work, not the human's -- s || [listen-to-whether-confuzion-loses-an-audible-release-tail-on-0909] user: a listening verdict, or a decision about what the tune should sound like -- the original leaves noise latched with the gate off for ~3 frames per note on voice 2, and its $0909 record carries release nibble $9, so that latched tail decays audibly; ours writes $09 (test bit se || [delta-mix-and-chicken-song-play-differently-on-their-second-pass] STILL BLOCKED (57c086e), sharpened: stage the ORIGINALS of Delta_Mix and Chicken_Song rendered past their first restart (listen.py, [main] agent work) before asking whether either second pass is wanted. || [ace-ii-needs-a-fresh-listening-approval] A listening verdict on ACE_II's CURRENT conversion (sha 276720ac at 59fbe1b -- check it against build/fidelity.json first) staged by listen.py; every tree 0.5.369-0.5.375 converts to 2297af87, never the approved 7bc6dfad, so no rebuild can stand in for the ear. || [rasputin-opening-listen] A listening verdict: does Rasputin's opening (first ~23 s, R=2) octave trill now match the original with the uncommitted tempo-duty split? An agent can stage the pair (listen.py); only the ear decides keep or revert, and commit-or-revert-the-drain-work waits on that call. || [listen-shared-ramp-movers] forced pulse_phase now sweeps Last_V8 7/9, Master_of_Magic 14, Phantoms 17 and others. Whether to turn pulse_phase on in presets for these files is a listening verdict. || [note-104-listen] Commando is still held at G#7. The walk would give B-5 on voice 1 and D#4 on 4 voice-0 events; listen before recutting Commando.sng || [confuzion-voice2-listen-presets-vs-rfw234] listen to presets against real_firstwave_instruments=(2,3,4) on Confuzion. The columns split: nrun prefers presets, while wave and the noise-frame count prefer (2,3,4), at a cost of voice 3 melody .9837. || [5tt-listen] listen to subtunes 1-4 of 5_Title_Tunes (new) and to subtune 0's SIMPLEPULSE-off pulse || [sanxion-drum-variant-listen] A listening verdict: Sanxion's six $60 drum rows now sound their absolute-B-5 noise burst (0 -> 42 hits in 100 s, original 41); the harness reads melody 98 -> 97% only because siddump names our test-bit attack frame differently. Keep or revert. || [gateoff-nibble-listen] a listening verdict on Kentilla instr 19 and Thrust instr 19/26 ((17,16) against 22; (7,6) and (4,3)) against the old per-call buzz || [food-feud-retuned-note-table] whether a retune of 5 notes is audible enough to spend the wavetable on || [tiefr-silent-ties-scoring-decision] a scoring policy choice that moves every row's tiefr and adds a FIDELITY.md/QUEUE.md column || [listen-firstwave-preattack-ik-bangkok-iball-sanxion] a listening verdict on the FIRSTWAVE_TESTBIT trade; no_test_restart is the only lever and costs melody || [listen-s1-gate-off-drum-tick] a listening verdict on a change the columns scored as a gain || [listen-funktempo-attribution-subtunes] a listening verdict on subtunes the columns moved by large margins || [gremlins-pulse-phase-record-9-or-15] a listening verdict on which sweep matters more || [mega-swelling-record-compromise] a listening verdict between three spellings || [sun-never-shines-listen] a listening verdict || [star-paws-shockway-legato-clones-listen] a listening verdict || [adsr-attack-lag-audible] a listening verdict on a sub-frame attack lag || [listen-v0514-drain-batch] listening verdicts || [drum-sweep-clones-by-note-length] user: the 73-of-109 audible tie deficit is the documented median-depth design; cloning per note-length class would lift the voice-1 audible ratio 0.67 -> 0.93 but raise tie_ours_only 5 -> 15. Build the clones or accept the design? || [rasputin-eor-toggle-listen] listening verdict || [game-killer-0a9a-rise-vibrato-swing] Listen: Game_Killer GT 2 ($0A9A rising warble), C:/t/game-killer-0a9a-rise-vibrato-swing/ab/Game_Killer.current.sng vs .stepback.sng -- the step-back spelling restores the vibrato rate and most of its swing but store high-byte agreement falls 63 -> 29 of 123. Adopt it or keep the current layout. || [listen-sfx-drum-bandpass] user listening verdict: does bandpass on the drum frame sound closer to the original? (the band column cannot adjudicate it) || [attack-lag-gate-off-wrap-listen] user listening verdict on Monty_on_the_Run, Thing_on_a_Spring, Last_V8 (and Gerry, Rasputin): recommendation is no --adsr-prime, max_hard_restart only after a listen || [listen-kentilla-gate-off-drum-tick] Register gate +2.7pp, loud -0.75pp, loud_ratio 1.092 -> 1.019; the ear decides whether a per-file (multiplier 10 only) exception to _drum_tick_noise's -S1-only rule is worth it. || [rasputin-drum-sweep-depth-vs-ties] Sizing by the gate unit (4 calls) gives the original's $0300 exactly on $0909/$0A09/$0F0F, but tie_ratio 0.961 -> 0.851 and tie_agreement 0.590 -> 0.568 (travel_ratio 1.091 -> 0.947). If depth wins, a subtask carries unit_tempos per group into start_rows (mechanism in convert._drum_start_group). || [pulse-change-cadence-decision] A hold row per step costs about 150 rows for Last_V8 records 6-8; the alternative keeps pspan and per-frame travel as the measure of record (recommended, as _tri_speed's docstring says for the outer gate). || [lvvp-fall-into-table-garbage] The original's note index goes below zero after ~30 steps and reads what follows the note table (subtune 8: -66, junk, then +26 falling again to -28); ours stops at the lowest note. Model the lookup (idx*2 &$FF into $53F9...) only if a listening verdict wants it. || [listen-gerry-human-race-gate-off-tick] Also Gerry s4, whose gate falls 1.8. || [listen-mega-apocalypse-cycles-10-13] Voice 0 GT 10 notes (the long $09F9 note near frame 3745 of subtune 0, and GT 13 with 3+ dips) now warble hi-byte-falling instead of the swell vibrato; 8 legato clones and 30 respelled tie rows landed (melody 93%, retrig .96 unchanged; adsr, wave, tie_agreement, aud rose slightly). || [listen-devils-galop-two-voice-hold] Voices 0 and 1 with --presets and pulse_phase forced: the hold versus the old ramps, and the attack-frame offset on v1. || [star-paws-bit10-ties-plain-decision] All-plain gives reversal 1.0005 and cut 1.0131 but travel 1.4442 and aud -0.16pp (0.8973 -> 0.8957). Listen to Star_Paws subtune 0 near frames 5263-5682 and 5779-6258. || [listen-bangkok-regrid-per-play] Melody dips 0.1pp, gate .502 -> .584 and wave .516 -> .549 rise at -t 180. || [listen-star-paws-regrid-park] The offset trough is gone (-12 to -1 frames); only an audible check says whether hold 10/11 -> 7/11 matters. || [zoids-tie-window-trade] Tie windows (stores 1/35 -> 35/35 on two windows; tie_agreement, reversal, travel, depth improve on subtune 0) cost the note-row program its carried vibrato (exact frequency on 63/63 frames of the subtune-2 window lost; bend .971 -> .899); the table (254/255) cannot hold both. If the carried behavio || [listen-hollywood-or-bust-vibrato-and-firstwave] Two trades on one song: the table-vibrato tick-0 correction (merged e16bddb) takes subtune 0 melody 0.608 -> 0.547 and subtune 1 0.517 -> 0.573; aligned_firstwave would take gate .329 -> .975 and melody .657 -> .552. || [listen-wave-program-slide-frames] The $0797/$09F9 drums now close on the semitone they reached (merged e16bddb); held Arcade_Classics and BMX_Kidz are excluded by the DIGI hold. Also accept or reject Auf_Wiedersehen_Monty melody 0.9876 -> 0.9830 for its reversal and tie gains. || [ik-plus-classic-vibrato-depth] Bytes $23 (bound 4, shift 3, row_calls 3) emit ($81, 3), swinging 498 against 632 (travel 0.71x on 00C9 >= 6): the known cost of the tick-0 compensation's integer rounding. Accept, or ask for a non-integer spelling. || [spellbound-test-bit-frame-decision] A test-bit $09 frame lands on the last call of an -m5 frame one time in five; no_test_restart removes it but costs melody 0.93 -> 0.50 (fef37ef). Decide whether to pursue a phase change, accept it, or listen first. || [listen-nineteen-note-101-stand-in] The pinned C#0 stand-in wraps its fall 3 frames before the original, which reads two per-voice counters ($322E) there; a fixed F#5 stand-in would be 1 frame late. Is a measured runtime-cell stand-in worth shipping for this one note? || [knucklebusters-classic-vibrato-depth-table] rshift read off the emitted cmp takes Knucklebusters travel 0.61 -> 1.14 and bend 0.74 -> 1.01 with melody flat; ACE_II, Deep_Strike, Food_Feud, Saboteur_II, Zoolook, Lion_Heart, Sanxion and Wiz also move toward 1. Powerplay, Sigma_Seven and Auf_Wiedersehen_Monty lose melody and would be excluded. N || [listen-rasputin-record10-toggle] Voice 0 should now sound like the original's alternating triangle/pulse on the 5.33/4.8-call stretches (rows 384-1792; 23 clones); the last tick of each note still has one extra toggle (rasputin-eor-extra-toggle-on-note-end). || [decide-whether-depth-call-ratio-should-be] Decide whether depth_call_ratio should be printed as its own FIDELITY.md column (the current change keeps it JSON-only to avoid touching the report layout). || [decide-whether-sfx-drum-bandpass-should-be] Decide whether --sfx-drum-bandpass should be adopted now that the note-relative column shows its blips at the right place in the note; the listening check is still open || [optional-listening-check-of-pandora-with-regrid] Optional listening check of Pandora with regrid_full_debt against the shipped build, via listen.py with the modified presets (C:/t/drum-voice-onset-lag-pandora/w/presets_fd.json). Columns favour it strongly, but the user's rule is that FIDELITY.md is not the last word. || [lightforce-record-6-vibrato-starts-in-antiphase] Lightforce record 6: vibrato starts in antiphase on alternate notes (counter 4 falling, then 1 rising). A per-note phase would need the free-running counter simulated down the pattern timeline plus a clone instrument per phase, for 16 notes in the first 35 s of one file. Matching one phase exactly w || [decide-whether-rest-wave-silence-now-cheap] Decide whether rest_wave_silence (now cheap at 2 WTBL rows and 4 bytes per file, and effective under running tables) should be re-searched per song behind --fidelity. It is still unselectable by fidelity_better (see BACKLOG rest-wave-silence-is-adopted-on-zero-songs). Nineteen also lacks rest_envelo || [decide-whether-vibrato-depth-or-oscillation-rate] Decide whether vibrato depth or oscillation rate (reversal count) matters more on swells that exceed (cmp+2)*255; the tradeoff is documented in the scratch outputs pn_wide.txt vs pn_cur.txt, and a fix needs a ruling on which side to favor. || [decide-whether-the-pulse-phase-layout-should] Decide whether the pulse-phase layout should pick which records keep phase entries by notes sounded instead of index order: forced Human_Race {1,2,4,18,23} loses 437 notes against the shipped {1,2,4,18,21} at 477, a listening-affecting change (compare the held Last_V8 granularity trade in pulse-phas || [decide-whether-the-three-small-gate-drops] Decide whether the three small gate drops (Gerry s5 -0.2, Human_Race s0 -0.3, Monty s6 -0.1) against a +0.8 net are acceptable, or whether the clone's gatetimer for the longer side should be tuned per use instead of ticks_for(min row). || [decide-whether-to-ship-a-tie-overwrite] Decide whether to ship a tie-overwrite fallback in _regrid_spots for Trans-Atlantic only (drift_per_1000 -0.893 -> -0.167 at -t 600, for about -4 pp gate and -0.6 pp tie_agreement), leaving Auf_Wiedersehen_Monty's lone tie-blocked pair unplaced (drift already about 0; tie_agreement -4 pp) || [last-v8-s-7c-note-is-the] Last_V8's $7C note is the original's sweep (high bytes 60 88 B0 D8 on even frames, falling 5F 5E on odd frames). The conversion now plays a steady F#6 with a skydive, and travel_ratio is 13% under. Decide whether that is acceptable or whether the sweep is worth a dedicated wave program. || [decide-by-ear-whether-the-test-bit] Decide by ear whether the test bit on the firstwave byte ($x8) should be kept or dropped in favour of plain gate_off_firstwave; no measured column separates them. || [decide-whether-mega-apocalypse-s-gain-in] Decide whether Mega_Apocalypse's gain in expanding-vibrato loops (33 -> 4 nearest-fit, 1 swing merged) and counter-fall start (118 -> 98) should be accepted as the new baseline; two sibling tasks edit that file and will conflict on re-pinned shas. || [decide-whether-a-harness-fix-is-wanted] Decide whether a harness fix is wanted so a stepped `set` pair is not scored as a siddump `(+ xxxx)` bend where the original names two notes (Mega bend 1.32 -> 3.20, BMX_Kidz 0.66 -> 2.24 under an exact portamento step); that is a metric-naming question, not a converter defect. || [no-listening-verdict-is-needed-the-phantoms] No listening verdict is needed: the Phantoms change is far below audible. || [decide-whether-star-paws-and-nineteen-should] Decide whether Star_Paws (and Nineteen) should adopt pitch_tie_phase per song: forced, GT15 reversals 952 -> 408 and the first long arpeggio note's rows match the original (X..X.. on 54/54), but the file's travel column reads 0.969 -> 1.447 (voice-1 cutoff artefact no longer cancelled) and tie_agree || [decide-whether-star-paws-should-adopt-regrid] Decide whether Star_Paws should adopt regrid_park + per_play, given hold 10/11 -> 7/11 is the known fetch deficit flipping on a phase coin-flip (0x0AAA, 0x00A9, 0x08E7) while attack offset improves -12/+1 -> -1/+1 and drift_total 0. || [listen-to-auf-wiedersehen-monty-subtune-1] Listen to Auf_Wiedersehen_Monty subtune 1 before the vibrato-layout-record-row-calls patch ships: its melody column drops 0.952 -> 0.820 while depth, bend and reversal move toward 1. || [decide-whether-a-conversion-should-be-tuned] Decide whether a conversion should be tuned to the 180 s fidelity window or to the whole tune when an instrument's pitch changes after the window (Nemesis $08F8: 6% high pitch inside the window, 94% low pitch after it). || [listen-to-ik-plus-with-the-rest] Listen to IK_plus with the rest-program-stop preset (python/play.ps1 -Presets with the per-song entry) and say whether the voice-1 program notes now sound like the original's short chirp. || [decide-bangkok-knights-regrid-full-debt-raises] Decide Bangkok_Knights: regrid_full_debt raises onset_timing 0.119 -> 0.430 but worsens drift from +0.62 to +2.58 per 1000 frames (total 5.5 -> 23.1); the agent recommends decline, so a listening verdict would settle it. || [listening-verdict-on-game-killer-voice-0] Listening verdict on Game_Killer voice 0: is the 17-20 cent flat bias of the $0A9A note audible enough to want a gated note_rise offset (prototype at C:/t/ours-is-goattracker-s-two-sided-triangle/prototype_offset.patch), given the harness columns do not improve? || [decide-whether-to-adopt-the-ora-40] Decide whether to adopt the ORA #$40 pulse-lo spelling, now that Game_Killer v1 has a fix (travel 4450 vs orig 7316, changes 2356 vs 2331) and the only worse-than-base file left is Last_V8 voice 0 changes (13000 -> 18400 vs 9798). || [decide-whether-ninja-thrust-class-files-should] Decide whether Ninja/Thrust-class files should accept the documented `adsr` cost of hard restart on (Rasputin 68.3 -> 63.8; Warhawk 82.2 -> 96.8 and Thrust 76.5 -> 95.4 gain) in exchange for fewer late attacks, given that the .sng cannot store `adparam` $0000. || [decide-whether-trans-atlantic-voice-1-s] Decide whether Trans-Atlantic voice 1's AD $07F8 (ours) versus $0AF8 (original) decay-nibble difference matters; it is inaudible at sustain F and no column scores it. || [listening-verdict-on-game-killer-s-8th] Listening verdict on Game_Killer's 8th event of the $0A9A note (frames 921-961 of the tied note) now that the stores hold a full tick instead of one call. || [keep-or-revert-the-tied-instrument-envelope-change-after-a-listen] user: listen to Warhawk, Kentilla and Samantha Fox before and after 922c782 and say whether the tied-instrument envelope change stays || [classic-vibrato-gate-needs-a-listen] A listening verdict: Food_Feud, ACE_II, Star_Paws and Saboteur_II now start their vibrato on the original's frame (uncommitted change). Stage the current build against HEAD's with listen.py (an agent can stage; only the ear decides) and say keep or revert. || [listen-to-human-race-subtune-2-voice] Listen to Human_Race subtune 2 voice 1 (window reach 63 -> 39 of 120) against subtune 4 voice 0 (210 -> 383 of 386) under forced pulse_phase before presets ever turn pulse_phase on for it. || [adopt-pulse-phase-per-song-for-flash] Adopt pulse_phase per song for Flash_Gordon and Food_Feud in presets.json (pphase 0.81->1.00 and 1.06->1.00, nothing else scored moves, Food_Feud aud -1pt), with a corpus byte-hash naming every mover and Commando.sng byte-identical; decide whether the 1pt aud drop on Food_Feud is acceptable or needs || [accept-kings-of-the-beach-ingame-s] Accept Kings_of_the_Beach_ingame's tempo re-point (patch C:/t/re-point-tempo-find-song-speeds-find/final.patch)? Five non-start subtunes gain (melody 93.2 -> 100% on s0/s3/s5, gate 3.1 -> 60.2% on s0, 2.0 -> 37.6% on s2, 30.5 -> 52.4% on s6), but the start subtune s4 -- the one FIDELITY.md scores an || [radio-ace-wave-77-89-and-pitch] Radio_ACE wave .77->.89 and pitch .79->.97, Pacific_Coast wave .53->.67 under aligned_firstwave at 66b53fe, no column worse beyond Radio_ACE seq .95->.93: adopt it on both in presets.json (user listening verdict on the seq dip first), then run the full suite. || [if-the-user-wants-mega-s-adsr] Decide: take Mega_Apocalypse's ADSR gain (adsr .855 -> .949, wave .857 -> .889 under rest_envelope_silence) at the cost of tie_ratio_audible .859 -> .826 (mostly phantom ties)? ADDED at ebeb680 (folded from the sigma-seven-onset-timing-residual record): Sigma_Seven is approved by ear (99%); with regrid_per_play its register-only onset_timing reads .223 -> .535 (offset -1 -> 0), gate .300 -> .513, wave .886 -> .897 with melody, adsr and drift unchanged -- does the user want it adopted? It needs a --sound A/B first. ALSO ADDED: Auf_Wiedersehen_Monty o6 (--pitch-lead-tie lifts its melody 74 -> 81 and o3 94 -> 100 in the --all-subtunes sweep; docs/OPTIONS.md says adoption waits on the user's A/B). NOTE (v0.5.613): detect.py now carries the pulse program for Chicken_Song, Commodore_64_Music_Examples, Mega_Apocalypse and Mozart, so those four builds differ from any staged before 31f1122 -- re-take figures on the current tree. Mozart is among the songs approved by ear; its bytes moved, so its verdict applies to an older build.",
    "why_model": "the work either side of the verdict is a staging command and a record",
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
-  },
-  {
-   "id": "master-volume-adopt",
-   "title": "Adopt master_volume for Mega_Apocalypse and Pygmies_Revenge in presets.json",
-   "source": "runs.jsonl opened @ dceda50",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:presets.json",
-    "rw:presets.json",
-    "rw:docs/SURVEY.md",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:build/audio",
-    "rw:docs/LESSONS.md",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:host:C:/t/master-volume-adopt"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "master-volume-d0v-command"
-   ],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Done when the -t 180 --presets --sound A/B of master_volume on Mega_Apocalypse and Pygmies_Revenge is diffed against their shipped entries and the option is recorded in each entry it improves (vol toward 1.0, loud_ratio toward 1.0, no scored column down beyond the noise floor) or refused with the column that refused it; then SURVEY.md, presets.json, FIDELITY.md and QUEUE.md are regenerated once and the full suite (pytest -n 12 --dist worksteal) passes. Held files are not adopted.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a per-song adoption with a written A/B rule",
-   "why_mode": "writes presets.json and regenerates the artefacts",
-   "why_offload": null,
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
-  },
-  {
-   "id": "wiz-wave-program-adoption",
-   "title": "Wiz + wave_program: sync 144 frames from 0, ring 756 -> 1044, wave .786 -> .911 against retrig 1.00 -> 1.09 and ctrl .785 -> .754: adopt?",
-   "source": "runs.jsonl opened @ ebeb680",
-   "model": "session",
-   "effort": "medium",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:python/h2g",
-    "r:python/fidelity.py",
-    "rw:presets.json",
-    "rw:docs/SURVEY.md",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:build/audio",
-    "rw:docs/LESSONS.md",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:host:C:/t/wiz-wave-program-adoption"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 47b5f6c from the mozart-wiz-sync-bit-lost record (register-only, -t 180, figures historical): Wiz's shipped entry leaves wave_program off, and its record 1 carries a wave program whose one $FF frame is all 144 of the original's test and sync frames. Wave_program restores sync 0 -> 144, ring 756 -> 1044, wave .786 -> .911 and costs retrig 1.00 -> 1.09 and ctrl .785 -> .754 (melody .976 either way). Re-take on the current tree with --sound, forcing wave_program on Wiz alone, -t 180 --presets, and decide: adopt if no scored agreement column falls beyond the noise floor (0.0095 for aud), else refuse with the column named. Wiz is not approved by ear and not held. If presets.json changed, regenerate SURVEY.md, presets.json, FIDELITY.md and QUEUE.md once and run the full suite (pytest -n 12 --dist worksteal) before committing. Done when the outcome is recorded in runs.jsonl.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a per-song adoption with a written A/B rule",
-   "why_mode": "writes presets.json and regenerates the artefacts",
-   "why_offload": null,
-   "why_lane": "overlaps 15 other task(s) where at least one side writes"
+   "why_lane": "overlaps 1 other task(s) where at least one side writes"
   },
   {
    "id": "aud-silent-tail-scoring-rule",
@@ -711,47 +498,10 @@
    "why_effort": "a definition change to the headline column needs the surrounding context and a judgement between rules",
    "why_mode": "a measured rule choice in shared code, validated on stored renders",
    "why_offload": null,
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
-  },
-  {
-   "id": "detect-the-four-undetected-pulse-spellings",
-   "title": "Teach detect.py the four undetected pulse spellings (Mega_Apocalypse zero-page PULSE_PROG_SHAPE, Mozart $0F/$F0-mask PULSE_TRI_SHAPE, Commodore_64_Music_Examples extra-STA PULSE_TRI_SHAPE, Chicken_Song per-voice PULSE_TRI_CMD bounds): pulse_span .491 -> 1.000, .554 -> .996, .386 -> .875, .939 -> 1.000 in-process",
-   "source": "runs.jsonl opened @ ebeb680 (pulse-sweep-missing-on-four-files)",
-   "model": "sonnet",
-   "effort": "high",
-   "offload": null,
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:build/fidelity.json",
-    "rw:python/h2g/detect.py",
-    "rw:python/h2g/goatwriter/pulse.py",
-    "rw:python/tests/test_pulse_tri_zp.py",
-    "rw:python/tests/test_pulse_phase.py",
-    "rw:python/tests/test_pulse_spellings.py",
-    "rw:host:C:/t/detect-the-four-undetected-pulse-spellings"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Read the opening run record (pulse-sweep-missing-on-four-files) first: it names the four spellings, their addresses and the in-process A/B. Done when each of the four files reads a non-(-1) pulse field from detect() under its own spelling -- Mega_Apocalypse the zero-page forms of PULSE_PROG_SHAPE (D6/B4/95 for DE/BC/9D), Mozart PULSE_TRI_SHAPE with the AND masks wildcarded ($0F delay, $F0 step), Commodore_64_Music_Examples PULSE_TRI_SHAPE tolerating the extra STA between AND #$1F and DEC, Chicken_Song PULSE_TRI_CMD_SHAPE with bounds chosen per voice instead of declining on non-uniform cells -- and fidelity pulse_span rises toward 1.0 on each (register-only, presets.json, -t 180, Commodore on its start subtune) with every other register column unchanged beyond the noise floor. A new spelling is a FALLBACK consulted only where the existing shapes matched nothing. The pulse_phase offsets (pulse_tri_offset / _TRI_* operands anchored on the literal shape bytes, goatwriter/pulse.py near 2179-2196) must move with the wildcarded shapes, or pulse_phase stays at .348 / .545 on Mozart / Commodore. Corpus byte-hash under fidelity._preset_opts over all 95 files: report converted/refused/compared/moved and name the files; the moved set is exactly these four (plus any file a census of the new shapes names, each listed) and Commando.sng still compares byte-equal. The held DIGI files are not touched. tests/test_output_sha.py will fail for the moved files until the orchestrator regenerates build/fidelity.json: report that failure, do NOT regenerate or edit SURVEY.md, presets.json, FIDELITY.md or QUEUE.md. OPTIMISTIC MERGE: python/h2g/detect.py is also edited by the uncommitted master_volume patch (find_master_volume, Detection.master_volume); keep the change additive and narrow. The new test goes in python/tests/test_pulse_spellings.py, which does not exist at this head. SABOTAGE-VERIFY: after the tests pass, mutate one wildcarded operand in one new shape (print the mutated line from disk) and show the new test fails, then restore by re-editing and show a clean diff of that line; do the same for the Chicken_Song per-voice bound choice.",
-   "why_model": "detect.py shape work across four spellings, bounded by a recorded diagnosis with offsets and addresses",
-   "why_effort": "a wrong shape silently moves other files, so the corpus byte-hash and a mutation have to be read, not assumed",
-   "why_offload": null,
-   "why_mode": "confined to detect.py, pulse.py and tests, verified by a corpus byte-hash and a targeted A/B",
-   "why_lane": "overlaps 13 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   }
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1542,
+ "closed_count": 1548,
  "closed": []
 }
