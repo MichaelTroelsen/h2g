@@ -8303,6 +8303,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             if raw != lag:
                 row["startup_lag_raw"] = raw
             row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
+            if getattr(args, "sound_voices", False):
+                row["_voice_pairing"] = voice_pairing(a, best_dump, nframes,
+                                                      lag=lag)
             row.update(adsr_compare(a, best_dump, nframes, lag=lag,
                                     mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
@@ -8441,11 +8444,94 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             local_orig, packed, seconds, sub,
             row.get("matched_subtune", our_sub), prior_s=prior)
         row.update(timeline_columns(got))
+        if getattr(args, "sound_voices", False) and "sound_failed" not in got:
+            # Voices paired by the register traces' wave agreement; a run
+            # that traced no siddump registers (--vice) pairs by index and
+            # says so rather than claiming a basis it did not have.
+            vp = row.pop("_voice_pairing", None)
+            pairing = vp["pairing"] if vp else [0, 1, 2]
+            t0 = time.time()
+            row.update(aud_voices_columns(
+                local_orig, packed, seconds, sub,
+                row.get("matched_subtune", our_sub), pairing, prior_s=prior))
+            row["aud_voice_pairing_basis"] = vp["basis"] if vp else "index"
+            if vp:
+                row["aud_voice_matrix"] = vp["matrix"]
+            row["aud_voices_seconds"] = round(time.time() - t0, 1)
+    row.pop("_voice_pairing", None)
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
         row["audio"] = sidm2_audio(local_orig, packed, seconds)
     return row
+
+
+def voice_pairing(orig: list[Voice], ours: list[Voice], nframes: int,
+                  lag: int = 0) -> dict:
+    """Which of OUR voices plays each of the original's, by `wave` agreement.
+
+    `wave_voices` compares voice i against voice i, which is right only while
+    the conversion kept the voice assignment. A song whose voices were moved
+    (a drum on voice 2 in the original, on voice 3 in ours) reads as a
+    deficit on both when each voice is compared by index. So the full 3x3
+    matrix of `wave_compare` agreements is taken, original voice i against
+    our voice j, and the permutation with the greatest summed agreement
+    wins; an exact tie keeps the identity (a pairing that moves a voice has
+    to be earned). A cell with nothing to compare (`None`: silent on both
+    sides) counts 0.
+
+    Returns `{"pairing": [j for each original i], "matrix": [[...]],
+    "basis": "wave"}`; `matrix[i][j]` is None where wave has no frame.
+    """
+    import itertools  # noqa: PLC0415
+    n = min(3, len(orig), len(ours))
+    matrix = [[wave_compare([orig[i]], [ours[j]], nframes=nframes,
+                            lag=lag).get("wave") for j in range(n)]
+              for i in range(n)]
+
+    def score(perm):
+        return sum(matrix[i][j] or 0.0 for i, j in enumerate(perm))
+
+    best = tuple(range(n))
+    for perm in itertools.permutations(range(n)):
+        if score(perm) > score(best) + 1e-12:
+            best = perm
+    return {"pairing": list(best),
+            "matrix": [[None if v is None else round(v, 4) for v in row]
+                       for row in matrix],
+            "basis": "wave"}
+
+
+def aud_voices_columns(orig_sid: Path, our_sid: Path, seconds: int,
+                       sub_orig: int, sub_ours: int, pairing: list[int],
+                       prior_s: float | None = None,
+                       compare=None) -> dict:
+    """`aud_voices` (original voice order, 3 values, `None` where a solo
+    render failed or the voice sounds on neither side) and the
+    `aud_voice_pairing` it was scored under.
+
+    Each value is `sound.compare_sids` of the ORIGINAL's solo voice i
+    against OUR solo voice `pairing[i]`, muted in the emulator
+    (`sound.solo_mute`). `compare` is injectable for tests.
+    """
+    import sound  # noqa: PLC0415 -- see the cycle note in _measure
+    compare = compare or sound.compare_sids
+    vals, failed = [], []
+    for i in range(3):
+        j = pairing[i] if i < len(pairing) else i
+        got = compare(orig_sid, our_sid, seconds, sub_orig, sub_ours,
+                      prior_s=prior_s, mute=sound.solo_mute(i + 1),
+                      mute_ours=sound.solo_mute(j + 1))
+        if "sound_failed" in got:
+            failed.append(f"voice {i + 1}: {got['sound_failed']}")
+            vals.append(None)
+        else:
+            v = got.get("aud")
+            vals.append(None if v is None else round(v, 4))
+    out = {"aud_voices": vals, "aud_voice_pairing": list(pairing)}
+    if failed:
+        out["aud_voices_failed"] = failed
+    return out
 
 
 def timeline_columns(got: dict) -> dict:
@@ -11977,6 +12063,15 @@ def main(argv=None) -> int:
                         "docs/SOUND-CALIBRATION.md before trusting either "
                         "column: its calibration currently reports pass: "
                         "false.")
+    p.add_argument("--sound-voices", action="store_true",
+                   help="with --sound, also score each voice SOLO: render "
+                        "the original's voice i and our paired voice (paired "
+                        "by `wave` agreement, not by index) with the other "
+                        "two muted in the emulator, and write `aud_voices` "
+                        "(3 values, original voice order), "
+                        "`aud_voice_pairing` and `aud_voices_seconds`. Up to "
+                        "six extra renders a file; not in the routine "
+                        "refresh")
     p.add_argument("--vice-reduce", default="overlap",
                    choices=list(vicetrace.AGREEMENT_MODES),
                    help="per-frame agreement rule for --vice. The two sides "
@@ -12012,6 +12107,8 @@ def main(argv=None) -> int:
     p.add_argument("--audio", action="store_true",
                    help="also run SIDM2's onset-aligned audio comparison")
     args = p.parse_args(argv)
+    if args.sound_voices and not args.sound:
+        p.error("--sound-voices needs --sound")
     if getattr(args, "ntsc", False):
         globals()["PAL_FLAG"] = None
 

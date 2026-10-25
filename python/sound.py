@@ -577,7 +577,15 @@ def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
     return got
 
 
-def content_key(path: Path, delay: int | None = None) -> str:
+def solo_mute(voice: int) -> tuple:
+    """The `-u<n>` set (1-based) that leaves only 1-based `voice` sounding."""
+    if voice not in (1, 2, 3):
+        raise ValueError(f"voice must be 1, 2 or 3, got {voice!r}")
+    return tuple(v for v in (1, 2, 3) if v != voice)
+
+
+def content_key(path: Path, delay: int | None = None,
+                mute: tuple = ()) -> str:
     """sha1[:12] of a file's bytes AND the renderer's power-on delay -- the
     cache key for a render of it.
 
@@ -592,11 +600,18 @@ def content_key(path: Path, delay: int | None = None) -> str:
     path-keyed -- the rule `approved.json` keys its verdicts by
     (`sng_sha256`, the bytes); an approval names the .sng, not a render, so
     no approval reads this key.
+
+    **The mute set is part of what the WAV is a render OF**, exactly as the
+    delay is: a solo-voice render of a file and its full mix are different
+    audio under the same bytes. An EMPTY set adds nothing to the hash, so
+    every full-mix key already in `build/audio` stays valid.
     """
     if delay is None:
         delay = listen.SIDPLAYFP_POWER_ON_DELAY
     h = hashlib.sha1(Path(path).read_bytes())
     h.update(b"\0sidplayfp-delay=%d" % delay)
+    if mute:
+        h.update(b"\0mute=" + ",".join(str(v) for v in sorted(mute)).encode())
     return h.hexdigest()[:12]
 
 
@@ -610,8 +625,14 @@ AUDIO_DIR = ROOT / "build" / "audio"
 
 def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
                   cache: Path = AUDIO_DIR,
-                  renderer=listen.render_sidplayfp) -> Path | None:
+                  renderer=listen.render_sidplayfp,
+                  mute: tuple = ()) -> Path | None:
     """The WAV of `sid`, rendered once per distinct set of bytes.
+
+    `mute` (1-based voices, `-u<n>`) is part of the key and is handed to the
+    renderer, which must silence the voices in the EMULATOR
+    (`listen.render_sidplayfp`); an empty set calls the renderer exactly as
+    before, so a renderer without a `mute` parameter still works.
 
     Keyed on CONTENT, never on a version or a path: a `.sng` that converts
     identically on two commits is one render, and one that changed is a new
@@ -620,10 +641,13 @@ def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
     """
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
-    out = cache / f"{tag}.{content_key(sid)}.s{subtune}.t{seconds}.wav"
+    out = cache / f"{tag}.{content_key(sid, mute=mute)}.s{subtune}.t{seconds}.wav"
     if out.exists() and out.stat().st_size > listen.EMPTY_WAV:
         return out
-    ok = renderer(Path(sid), out, seconds, subtune)
+    if mute:
+        ok = renderer(Path(sid), out, seconds, subtune, mute=mute)
+    else:
+        ok = renderer(Path(sid), out, seconds, subtune)
     if not ok or not out.exists() or out.stat().st_size <= listen.EMPTY_WAV:
         out.unlink(missing_ok=True)
         return None
@@ -699,8 +723,14 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
                  sub_ours: int, prior_s: float | None = None,
                  cache: Path = AUDIO_DIR,
                  renderer=listen.render_sidplayfp,
-                 window_s: float | None = None) -> dict:
+                 window_s: float | None = None,
+                 mute: tuple = (), mute_ours: tuple | None = None) -> dict:
     """Render both sides with ONE renderer and score them.
+
+    `mute` silences those voices (1-based) on the original's render, and on
+    ours too unless `mute_ours` says otherwise -- a solo comparison of
+    original voice i against OUR voice j is `mute=solo_mute(i+1),
+    mute_ours=solo_mute(j+1)`. Both are in the cache key.
 
     A pair split across two emulators would measure the emulators; the
     `renderer` is a single callable for exactly that reason (listen.py's
@@ -710,10 +740,13 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
     `window_s` scores a prefix of the aligned overlap (`compare_features`);
     the render is still `seconds` long, so the cache key does not move.
     """
-    a = render_cached(orig, seconds, sub_orig, "orig", cache, renderer)
+    if mute_ours is None:
+        mute_ours = mute
+    a = render_cached(orig, seconds, sub_orig, "orig", cache, renderer, mute)
     if a is None:
         return {"sound_failed": "orig"}
-    b = render_cached(ours, seconds, sub_ours, "ours", cache, renderer)
+    b = render_cached(ours, seconds, sub_ours, "ours", cache, renderer,
+                      mute_ours)
     if b is None:
         return {"sound_failed": "ours"}
     got = compare_wavs(a, b, prior_s=prior_s, window_s=window_s)

@@ -737,3 +737,50 @@ def test_silent_seconds_are_never_part_of_a_stretch():
     assert got["kind"] == "located" and not (got["start"] <= 13 < got["start"] + 8)
     assert sound.locate_stretch([None] * 5)["kind"] == "short"
     assert sound.locate_stretch([0.9] * 3)["kind"] == "short"
+
+
+# --------------------------------------------------------------------------
+# Per-voice (solo) renders: the mute set is part of what a WAV is a render OF.
+# --------------------------------------------------------------------------
+
+def test_cache_key_differs_by_mute(tmp_path):
+    """SABOTAGE TARGET: drop `mute` from `content_key`'s hash and a solo render
+    is served as the full mix (and voice 1's as voice 2's) from the cache."""
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    full = sound.content_key(sid)
+    solo1, solo2 = (sound.content_key(sid, mute=sound.solo_mute(v)) for v in (1, 2))
+    assert len({full, solo1, solo2}) == 3
+    assert sound.content_key(sid, mute=()) == full       # existing renders stay valid
+    assert sound.content_key(sid, mute=(3, 2)) == sound.content_key(sid, mute=(2, 3))
+    # and it reaches the cache file name, so the two WAVs are two files
+    r = _fake_renderer({"Tune": _sine(0.5)})
+    a = sound.render_cached(sid, 1, 0, "orig", cache=tmp_path / "c", renderer=r)
+    b = sound.render_cached(sid, 1, 0, "orig", cache=tmp_path / "c", renderer=r,
+                            mute=sound.solo_mute(1))
+    assert a != b and len(r.calls) == 2
+
+
+def test_solo_render_passes_mutes(tmp_path):
+    """SABOTAGE TARGET: `render_cached` handing the renderer `mute=()` would
+    stage a full mix under a solo key."""
+    orig = tmp_path / "Orig.sid"
+    ours = tmp_path / "Ours.sid"
+    orig.write_bytes(b"o")
+    ours.write_bytes(b"u")
+    seen = {}
+
+    def render(sid, out, seconds, subtune, mute=()):
+        seen[sid.stem] = mute
+        _write(Path(out), _sine(1.0))
+        return True
+
+    got = sound.compare_sids(orig, ours, 1, 0, 0, cache=tmp_path / "c",
+                             renderer=render, mute=sound.solo_mute(1),
+                             mute_ours=sound.solo_mute(3))
+    assert seen == {"Orig": (2, 3), "Ours": (1, 2)}
+    assert "sound_failed" not in got
+    seen.clear()
+    sound.compare_sids(orig, ours, 1, 0, 0, cache=tmp_path / "c2",
+                       renderer=render, mute=(2, 3))
+    assert seen == {"Orig": (2, 3), "Ours": (2, 3)}   # ours defaults to the same set

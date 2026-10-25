@@ -5593,3 +5593,37 @@ def test_timeline_columns_flat_series_has_no_time():
 
 def test_timeline_columns_leave_a_failed_render_alone():
     assert fidelity.timeline_columns({"sound_failed": "orig"}) == {"sound_failed": "orig"}
+
+
+def test_pairing_follows_wave_not_index():
+    """SABOTAGE TARGET: pairing by index. The conversion plays the original's
+    voice 0 on its voice 1 and vice versa; wave by index would read both as
+    disagreement."""
+    pulse = [(0, 0x41), (6, 0x81)]
+    saw = [(0, 0x21)]
+    tri = [(0, 0x11), (4, 0x41)]
+    orig = _wf_voices(pulse, saw, tri)
+    ours = _wf_voices(saw, pulse, tri)            # voices 0 and 1 swapped
+    got = fidelity.voice_pairing(orig, ours, nframes=10)
+    assert got["pairing"] == [1, 0, 2]
+    assert got["basis"] == "wave"
+    assert got["matrix"][0][1] == 1.0 and got["matrix"][0][0] < 1.0
+    # unmoved voices keep the identity, and an exact tie does not move a voice
+    assert fidelity.voice_pairing(orig, orig, nframes=10)["pairing"] == [0, 1, 2]
+    silent = _wf_voices([], [], [])
+    assert fidelity.voice_pairing(silent, silent, nframes=10)["pairing"] == [0, 1, 2]
+
+
+def test_aud_voices_columns_scores_the_paired_voice(tmp_path):
+    calls = []
+
+    def fake(o, u, seconds, so, su, prior_s=None, mute=(), mute_ours=None):
+        calls.append((mute, mute_ours))
+        return {"aud": 0.9} if mute != (1, 3) else {"sound_failed": "ours"}
+
+    got = fidelity.aud_voices_columns(tmp_path / "o.sid", tmp_path / "u.sid", 5,
+                                      0, 0, [1, 0, 2], compare=fake)
+    assert calls == [((2, 3), (1, 3)), ((1, 3), (2, 3)), ((1, 2), (1, 2))]
+    assert got["aud_voices"] == [0.9, None, 0.9]
+    assert got["aud_voice_pairing"] == [1, 0, 2]
+    assert got["aud_voices_failed"] == ["voice 2: ours"]
