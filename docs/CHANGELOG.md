@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.617 — 2026-10-26
+
+- wave_program.py docstring: the gate census short kind on Wiz/IK_plus/One_on_One/Bangkok_Knights is wave-program release, not a drum shape; drum options leave Wiz byte-identical; no output change; artefacts not regenerated
+
 ## 0.5.616 — 2026-10-25
 
 - gate census: sustain-0 short runs are inaudible; comment beside drum_gate_off

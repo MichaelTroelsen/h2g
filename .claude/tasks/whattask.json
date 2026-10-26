@@ -1,12 +1,12 @@
 {
  "generated_from": {
-  "head": "963d5c9",
+  "head": "c9d5062",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at ab5fe67)",
-   ".claude/tasks/runs.jsonl (whole file; six new records at ab5fe67: mega-apocalypse, pygmies, tempo-rounding, classic-duration-gate, rasputin-r3, gate-rest)",
+   ".claude/tasks/whattask.json (previous plan at 963d5c9)",
+   ".claude/tasks/runs.jsonl (whole file; two new records at 963d5c9: pygmies-two-stage-stage2-keep-pitch done, gate-rest partial x2)",
    ".claude/tasks/decisions.jsonl (no new lines)",
-   "hooks/prune.js with policy.json (opened items hand-admitted: prune skips records whose head equals the plan head)",
+   "hooks/prune.js with policy.json (dry; opened items hand-handled, prune skips records at the plan head)",
    "graphify-out/graph.json (graphify update this pass)",
    "gh: no open issues or PRs"
   ],
@@ -63,12 +63,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RESUMES a partial (latest run record at ab5fe67). Landed: Zoolook (07c986d), drum_sustain_gate_off and keep_hard_restart per heard song (8aa9a16). Measured at ab5fe67 on Lightforce and Tarzan (-t 180 --presets --sound --gate-census): Lightforce's ringing drums are instrument 2 (drum + alternate-note record, SR $08) and forcing the existing drum_gate_off raises its gate 56% -> 76% with no other column moving -- that adoption waits on the listening pass, not on this task. What remains: (a) Tarzan voice 3 (160 short runs, 1711 ringing frames; instrument 15, effect $23, wavetable 65,65,17 with the gate held) is NOT changed by drum_gate_off -- trace what the original writes on one ringing note and either express it with a corpus byte-hash naming exactly its movers (Commando.sng byte-identical, a test in python/tests/test_gate_rest.py that fails under a named mutation, region printed from disk) or record the reason beside the emitter in python/h2g/goatwriter with measured figures; (b) the short runs on non-drum records (Sanxion, IK_plus, I_Ball, Bangkok_Knights), same done-condition. Re-take every figure on the current tree first.",
+   "verify": "RESUMES a partial (latest run record at 963d5c9). Landed: Zoolook (07c986d); drum_sustain_gate_off and keep_hard_restart per heard song (8aa9a16); the reason that sustain-0 drum records (Lightforce, Tarzan) are not worth a byte change, as a comment beside drum_gate_off in python/h2g/goatwriter/wavetable.py (ae50111; grep for `changes little the`). Re-classified at 963d5c9 (scratch C:/t/gate-rest-encoding/full, aud_short.py): of 39194 ringing `short` frames 27312 sit on sustain > 0 (the audible queue: Pacific_Coast 6521 ILV, Proteus 4023, Sanxion 2228, Radio_ACE 1371 ILV, Wiz 1205, Lakers_vs_Celtics 1116 ILV, IK_plus 1081, One_on_One 1012, Bangkok_Knights 871) and 11882 on sustain 0. Proteus with drum_gate_off + drum_sustain_gate_off lifts gate 68% -> 91% with aud and loud flat; that adoption waits on the listening pass. What remains is the Rob Hubbard part of that queue not yet attributed to a record class: Wiz, IK_plus, One_on_One, Bangkok_Knights (Sanxion already ships drum_gate_off). Attribute each file's sustaining short runs to an instrument record (its traced ADSR against the record table) and either express the release with a corpus byte-hash naming exactly its movers (Commando.sng byte-identical, a test in python/tests/test_gate_rest.py that fails under a named mutation, region printed from disk) or record the reason beside the emitter with measured figures. Re-take every figure on the current tree first; a song approved by ear needs a relisten before its bytes move.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
    "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
    "why_offload": null,
    "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "overlaps 8 other task(s) where at least one side writes"
+   "why_lane": "overlaps 7 other task(s) where at least one side writes"
   },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -336,45 +336,17 @@
    "depends_on": [],
    "fork": null,
    "branch": null,
-   "blocked_on": "The user listens to a SHORT current pass: Last_V8_C128_version, Mozart, the keep_hard_restart candidates, Lightforce with drum_gate_off, and the movers of the held classic duration-gate patch.",
+   "blocked_on": "The user listens to a SHORT current pass: Last_V8_C128_version, Mozart, the keep_hard_restart candidates, Proteus with drum_sustain_gate_off, and the movers of the held classic duration-gate patch.",
    "decision": "Replace the old folded list with the short current pass below; old per-song questions are re-asked only when their song next moves.",
-   "verify": "DONE when every song in the current pass has a recorded verdict in decisions.jsonl. The pass (user ruling at ab5fe67, replacing the earlier folded list): (1) Last_V8_C128_version -- approved by ear; confirm its shipped sha in build/fidelity.json still equals the one approved before asking; (2) Mozart -- approved by ear before its pulse program changed at v0.5.613, so its verdict applies to an older build; (3) keep_hard_restart candidates -- originals that write ADSR $0000 before essentially every note (36 of 89 at f016698; re-derive the census from the 8aa9a16 run record) where Crazy_Comets' beats came back only with the option (solo loud_ratio .220 -> .738): stage a current-vs-keep_hard_restart pair per candidate with listen.py and ask keep on or leave off. Stage from the latest build/fidelity.json and play with .\\play.ps1 -Presets presets.json, never a bare goattrk2.exe; the sha1 of each staged build/listen/<song>.h2g.sng truncated to 12 hex characters must equal its output_sha in build/fidelity.json, or restage first. (4) Lightforce with drum_gate_off (folded from the gate-rest task): gate 56% -> 76%, aud/loud flat; Lightforce is approved by ear so its bytes moving needs a verdict -- pair staged at C:/t/gate-rest-encoding/listen_cur (current) and listen_on (option on), restage with listen.py if that path is gone; on yes adopt by one `drum_gate_off` entry in presets.json plus a test that the option reaches only Lightforce. (5) The classic duration-gate patch (folded from classic-duration-gate-per-note-command; patch C:/t/classic-duration-gate-per-note-command/final.patch, applies cleanly to ab5fe67, 15 tests pass): damps vibrato per event on 25 duration-gate files and moves 19 incl. Warhawk (heard right); only-ours movers 809 -> 209 with zero false damps, but vib toward 1 on 9 files and away on 3, bend/travel away on 14 of 19 -- stage Warhawk, Thrust, Deep_Strike, Flash_Gordon, Delta current-vs-patched and ask adopt or leave; on adopt the patch is applied by a main task and artefacts regenerated. The older per-song questions that were folded here are NOT part of this pass; each is re-asked only when its song next moves.",
+   "verify": "DONE when every song in the current pass has a recorded verdict in decisions.jsonl. The pass (user ruling at ab5fe67, replacing the earlier folded list): (1) Last_V8_C128_version -- approved by ear; confirm its shipped sha in build/fidelity.json still equals the one approved before asking; (2) Mozart -- approved by ear before its pulse program changed at v0.5.613, so its verdict applies to an older build; (3) keep_hard_restart candidates -- originals that write ADSR $0000 before essentially every note (36 of 89 at f016698; re-derive the census from the 8aa9a16 run record) where Crazy_Comets' beats came back only with the option (solo loud_ratio .220 -> .738): stage a current-vs-keep_hard_restart pair per candidate with listen.py and ask keep on or leave off. Stage from the latest build/fidelity.json and play with .\\play.ps1 -Presets presets.json, never a bare goattrk2.exe; the sha1 of each staged build/listen/<song>.h2g.sng truncated to 12 hex characters must equal its output_sha in build/fidelity.json, or restage first. (4) Proteus with drum_gate_off + drum_sustain_gate_off (from the gate-rest task): gate 68% -> 91% at -t 180 --sound, melody/aud/loud flat; the same fix that sounded right on Spellbound and Warhawk; pair staged at C:/t/gate-rest-encoding/listen_prot_cur (current) and listen_prot_on, restage with listen.py if that path is gone; on yes adopt by two Proteus entries in presets.json plus a test that the options reach only the heard songs. Lightforce's drum_gate_off is NOT asked: its record is sustain 0, aud/loud do not move, and a byte change on an ear-approved song for no audible gain is refused (comment in wavetable.py, ae50111). (5) The classic duration-gate patch (folded from classic-duration-gate-per-note-command; patch C:/t/classic-duration-gate-per-note-command/final.patch, applies cleanly to ab5fe67, 15 tests pass): damps vibrato per event on 25 duration-gate files and moves 19 incl. Warhawk (heard right); only-ours movers 809 -> 209 with zero false damps, but vib toward 1 on 9 files and away on 3, bend/travel away on 14 of 19 -- stage Warhawk, Thrust, Deep_Strike, Flash_Gordon, Delta current-vs-patched and ask adopt or leave; on adopt the patch is applied by a main task and artefacts regenerated. The older per-song questions that were folded here are NOT part of this pass; each is re-asked only when its song next moves.",
    "why_model": "the work either side of the verdict is a staging command and a record",
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
    "why_lane": "overlaps 2 other task(s) where at least one side writes"
-  },
-  {
-   "id": "pygmies-two-stage-stage2-keep-pitch",
-   "title": "Pygmies_Revenge: a keep-pitch second stage fixes the A9C9 slide note but moves vib .947 -> .939 -- find why the aggregate moves away",
-   "source": "runs.jsonl#pygmies-slide-under-vibrato",
-   "model": "sonnet",
-   "effort": "high",
-   "offload": null,
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/pygmies-two-stage-keep-pitch"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RUN IN AN ISOLATED GIT WORKTREE (isolation: worktree) from current master; copy python/tools/siddump-rt/siddump.exe into it first; this task changes NO repo file -- its output is measurements and, if justified, a patch path under its scratch directory. Context (run record pygmies-slide-under-vibrato, ab5fe67): the slide is read (CMD_PORTAUP) but the two-stage wavetable step 2 written by attack.py _two_stage_entries (grep for `_two_stage_entries`) carries a note column of $00 and so resets the pitch and cancels the running slide (gplay.c, the wavetable note-column branch; grep for `cptr->freq` rather than trusting a line number); Pygmies_Revenge's own $04 handler writes the waveform only. A scratch edit keeping the pitch ($80) turns the A9C9 note at frame 2786 into a monotone slide, yet at -t 180 Pygmies reversals go 4995 -> 4954 (original about 5277) and vib .947 -> .939. Done when the aggregate movement is attributed to a named mechanism with per-note figures (which notes lose reversals, which gain), AND each of the nine other census files (ACE_II, Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, One_on_One, Pacific_Coast, Radio_ACE, Rikky, Rock_Tells_the_Tale) has its own $04 handler read and classed keep-pitch or reset-pitch from the disassembly. Report the corpus byte-hash movers if a patch is proposed; do not adopt.",
-   "why_model": "real diagnosis against a trace and a disassembly -- Sonnet 5.5, the default tier (user 2026-10-08)",
-   "why_effort": "the scratch edit improves the note and worsens the column; a plausible explanation can be wrong",
-   "why_offload": null,
-   "why_mode": "a measurement and disassembly reading in a worktree; adopting is a later decision",
-   "why_lane": "no path overlaps another task that writes"
   }
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1559,
+ "closed_count": 1560,
  "closed": []
 }

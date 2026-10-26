@@ -1,4 +1,14 @@
-"""Wave program entries and travel (split out of goatwriter.py, text moved unchanged)."""
+"""Wave program entries and travel (split out of goatwriter.py, text moved unchanged).
+
+The gate census's `short` kind (we hold the gate where the original releases)
+on a wave-program player is NOT a drum-shape question: Wiz, IK_plus,
+One_on_One_Jordan_vs_Bird and Bangkok_Knights release inside the byte-code
+program itself (measured 2026-10-25, 963d5c9: their sustaining `short` runs
+sit on the program records, e.g. Wiz AD $06 SR $27 voice 2, 48 runs of 21
+frames, `17 129 17 64 128` against our held `17`), so `drum_gate_off` and
+`drum_sustain_gate_off` leave Wiz byte-identical. The lever is `wave_program`
+(shipped on IK_plus and Bangkok_Knights, refused for Wiz on its sequence and
+ctrl columns), not another drum option."""
 from __future__ import annotations
 
 import math
