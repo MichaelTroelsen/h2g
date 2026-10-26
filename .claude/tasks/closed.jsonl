@@ -1563,3 +1563,6 @@
 {"id":"radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear","title":"Radio_Ace over-routes the ILV filter by 1.7x even after the one-voice gate","closed_by":"d272f39","reason":null}
 {"id":"go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause","title":"Go_Go_Dash still owes 71% of its noise and bit $80 is refuted","closed_by":"d272f39","reason":null}
 {"id":"pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c","title":"Pacific_Coast's ILV filter is armed and never routed; the gate is $1A8C","closed_by":"3830f92","reason":null}
+{"id":"lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus","title":"Lion_Heart misses 97 attacks on voice 0 where every other ILV file has a surplus","closed_by":"d37dee1","reason":null}
+{"id":"radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase","title":"Radio_ACE loses ten points of melody to the arpeggio for an unfound reason","closed_by":"d37dee1","reason":null}
+{"id":"search-wave-program-and-no-test-restart","title":"Search wave_program and no_test_restart as a pair for Pacific_Coast, Radio_ACE and the other four $1003 files (presets.py shard run, then re","closed_by":"d37dee1","reason":null}
