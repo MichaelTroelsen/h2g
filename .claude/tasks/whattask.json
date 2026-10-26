@@ -1,14 +1,15 @@
 {
  "generated_from": {
-  "head": "c9d5062",
+  "head": "37eb862",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at 963d5c9)",
-   ".claude/tasks/runs.jsonl (whole file; two new records at 963d5c9: pygmies-two-stage-stage2-keep-pitch done, gate-rest partial x2)",
-   ".claude/tasks/decisions.jsonl (no new lines)",
-   "hooks/prune.js with policy.json (dry; opened items hand-handled, prune skips records at the plan head)",
-   "graphify-out/graph.json (graphify update this pass)",
-   "gh: no open issues or PRs"
+   ".claude/tasks/whattask.json (previous plan at c9d5062)",
+   ".claude/tasks/runs.jsonl (whole file; no new record since c9d5062)",
+   ".claude/tasks/decisions.jsonl (2 new lines: tempo fork chose refuse -> closed; listen still resolved:false)",
+   "hooks/prune.js with policy.json (keep_ids gained hand-adopt-named-firstwave-on-the-s2, uncommitted)",
+   "graphify-out/graph.json (graphify update this pass: 16969 nodes)",
+   "gh: no open issues or PRs",
+   "todo.md / docs/BACKLOG.md / whats-next.md not re-read as task sources: the plan already carries their surviving items"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work."
  },
@@ -29,47 +30,6 @@
   ".claude/tasks/serial.lock.d"
  ],
  "tasks": [
-  {
-   "id": "the-conversion-emits-no-rest-for-the-players-release",
-   "title": "Every gate-off stretch we emit is the hard restart, a constant, where the player rests 8 to 1069 frames",
-   "source": "runs.jsonl#opened",
-   "model": "session",
-   "effort": "xhigh",
-   "offload": null,
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/gate-rest-encoding",
-    "rw:presets.json",
-    "rw:python/h2g/goatwriter/hard_restart.py",
-    "rw:python/h2g/goatwriter/wavetable.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_drum_sustain_gate_off.py",
-    "rw:python/tests/test_gate_rest.py",
-    "rw:python/tests/test_hard_restart_grid.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RESUMES a partial (latest run record at 963d5c9). Landed: Zoolook (07c986d); drum_sustain_gate_off and keep_hard_restart per heard song (8aa9a16); the reason that sustain-0 drum records (Lightforce, Tarzan) are not worth a byte change, as a comment beside drum_gate_off in python/h2g/goatwriter/wavetable.py (ae50111; grep for `changes little the`). Re-classified at 963d5c9 (scratch C:/t/gate-rest-encoding/full, aud_short.py): of 39194 ringing `short` frames 27312 sit on sustain > 0 (the audible queue: Pacific_Coast 6521 ILV, Proteus 4023, Sanxion 2228, Radio_ACE 1371 ILV, Wiz 1205, Lakers_vs_Celtics 1116 ILV, IK_plus 1081, One_on_One 1012, Bangkok_Knights 871) and 11882 on sustain 0. Proteus with drum_gate_off + drum_sustain_gate_off lifts gate 68% -> 91% with aud and loud flat; that adoption waits on the listening pass. What remains is the Rob Hubbard part of that queue not yet attributed to a record class: Wiz, IK_plus, One_on_One, Bangkok_Knights (Sanxion already ships drum_gate_off). Attribute each file's sustaining short runs to an instrument record (its traced ADSR against the record table) and either express the release with a corpus byte-hash naming exactly its movers (Commando.sng byte-identical, a test in python/tests/test_gate_rest.py that fails under a named mutation, region printed from disk) or record the reason beside the emitter with measured figures. Re-take every figure on the current tree first; a song approved by ear needs a relisten before its bytes move.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
-   "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
-   "why_offload": null,
-   "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "overlaps 7 other task(s) where at least one side writes"
-  },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
    "title": "Go_Go_Dash still owes 71% of its noise and bit $80 is refuted",
@@ -96,12 +56,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
+   "verify": "Done when the claim in the title is either fixed (a corpus byte-hash naming exactly the files it moves, Commando.sng byte-identical) or refuted in writing beside the code it concerns. Start from the run record that opened this id, but re-take its figures on the current tree first: they predate later ILV commits. python/tests/test_interleaved_classic.py exists; the code lives in python/h2g/goatwriter/wavetable.py (the module in touches), patched there in tests. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
+   "why_lane": "overlaps 5 other task(s) where at least one side writes"
   },
   {
    "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -129,12 +89,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
+   "verify": "Done when the claim in the title is either fixed (a corpus byte-hash naming exactly the files it moves, Commando.sng byte-identical) or refuted in writing beside the code it concerns. Start from the run record that opened this id, but re-take its figures on the current tree first: they predate later ILV commits. python/tests/test_patterns.py does not exist at this head; test_interleaved_classic.py is the pin. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
+   "why_lane": "overlaps 5 other task(s) where at least one side writes"
   },
   {
    "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -162,12 +122,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
+   "verify": "Done when the claim in the title is either fixed (a corpus byte-hash naming exactly the files it moves, Commando.sng byte-identical) or refuted in writing beside the code it concerns. Start from the run record that opened this id, but re-take its figures on the current tree first: they predate later ILV commits. python/tests/test_ilv_arpeggio.py exists. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
+   "why_lane": "overlaps 5 other task(s) where at least one side writes"
   },
   {
    "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -186,7 +146,8 @@
     "rw:python/h2g/detect.py",
     "rw:python/h2g/goatwriter/filters.py",
     "rw:python/tests/test_filter.py",
-    "r:python/h2g"
+    "r:python/h2g",
+    "rw:python/tests/test_detection_soundness.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -196,12 +157,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
+   "verify": "Done when the claim in the title is either fixed (a corpus byte-hash naming exactly the files it moves, Commando.sng byte-identical) or refuted in writing beside the code it concerns. Start from the run record that opened this id, but re-take its figures on the current tree first: they predate later ILV commits. python/tests/test_detect.py does not exist at this head; test_detection_soundness.py and test_filter.py pin detection and the filter. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses; xhigh root-cause class, so an Opus session is recommended",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "why_offload": null,
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
+   "why_lane": "overlaps 5 other task(s) where at least one side writes"
   },
   {
    "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
@@ -232,45 +193,12 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "RE-SCOPED at 4af6e62: goatwriter.py is now the package python/h2g/goatwriter/ (ac98219); a function named below lives in the module its touches name -- patch it there in tests (tests/test_goatwriter_package.py refuses a patch on the package). Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
+   "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the code has to be understood before it can be safely changed",
    "why_offload": null,
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "overlaps 6 other task(s) where at least one side writes"
-  },
-  {
-   "id": "tempo-alignment-rounding-decision",
-   "title": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
-   "source": "runs.jsonl#multiplier-does-not-explain-slot",
-   "model": "sonnet",
-   "effort": "medium",
-   "offload": null,
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/tempo-alignment-rounding-dec"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": [
-    "adopt",
-    "refuse"
-   ],
-   "branch": null,
-   "blocked_on": "Answer adopt or refuse. The prototype evidence is in (runs.jsonl tempo-rounding-prototype-evidence at ab5fe67): the slot premise no longer holds (slot 3.6% on the 39 misaligned files vs 4.1% on aligned/-S1), rounding costs Food_Feud +12.5% rate and Knucklebusters 14% (its opening tempos are dropped under the compensation variant); recommendation: refuse. No listen pair was staged because there is nothing to adopt.",
-   "decision": null,
-   "verify": "A FORK: the human answers `adopt` or `refuse` and /runhuman records it as `chose`. Evidence in the run record tempo-rounding-prototype-evidence (head ab5fe67; prototype patch at C:/t/tempo-rounding-prototype-evidence/final.patch): at -t 180 --presets the premise that a misaligned CMD_SETTEMPO predicts the hold census `slot` kind no longer holds, and rounding moves --pace by +12.5% on Food_Feud and by 14% on Knucklebusters. Refuse closes the task with that record as the reason; adopt reopens it as a converter task needing a relisten of every mover.",
-   "why_model": "real diagnosis or code that has to be understood first -- Sonnet 5.5, the default tier (user 2026-10-08)",
-   "why_effort": "a judgement between two measured costs, now with the measurement in hand",
-   "why_offload": null,
-   "why_mode": "blocked on a decision about which error a listener prefers",
-   "why_lane": "overlaps 2 other task(s) where at least one side writes"
+   "why_lane": "overlaps 5 other task(s) where at least one side writes"
   },
   {
    "id": "search-wave-program-and-no-test-restart",
@@ -312,7 +240,7 @@
    "why_effort": "bounded work with ordinary judgement",
    "why_offload": null,
    "why_mode": "rewrites a generated artefact or a hand-written doc only the main lane may write",
-   "why_lane": "overlaps 8 other task(s) where at least one side writes"
+   "why_lane": "overlaps 6 other task(s) where at least one side writes"
   },
   {
    "id": "listen-current-builds-2026-10",
@@ -343,10 +271,10 @@
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "overlaps 2 other task(s) where at least one side writes"
+   "why_lane": "overlaps 1 other task(s) where at least one side writes"
   }
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1560,
+ "closed_count": 1562,
  "closed": []
 }
