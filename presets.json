@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.615 presets.py",
+  "generator": "h2g 0.5.618 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1592,6 +1592,7 @@
       "rows": 8775,
       "multiplier": 1,
       "two_stage": true,
+      "wave_program": true,
       "arpeggio": false,
       "arpeggio_default": true,
       "gate_off_firstwave_instruments": [
@@ -2506,6 +2507,7 @@
       "rows": 4998,
       "multiplier": 1,
       "two_stage": true,
+      "wave_program": true,
       "max_hard_restart": true,
       "arpeggio": false,
       "arpeggio_default": true,

@@ -594,6 +594,16 @@ EXCLUDED_FROM_ALWAYS = {
     # takes over the instrument's pitch entirely, and because each `< $80` opcode
     # costs two wavetable entries where the player spends one, so the slides
     # land a frame late.
+    #
+    # **LION_HEART'S MISSING VOICE-0 ATTACKS ARE A WAVE-PROGRAM DRUM.** With
+    # it off (shipped), voice 0 plays 816 attacks against the original's 904:
+    # 95 of the 98 unmatched are the F#6 noise re-gate five frames into a
+    # drum (tri C-4, noise, pulse, pulse, noise gate-off, noise re-gate) that
+    # the conversion holds as a plain triangle. Forced on at v0.5.617, -t 180
+    # under presets (C:/t/lion-heart-misses-97-attacks): attacks 1905 -> 2034
+    # (orig 1999), onset 85% -> 100%, noise 1555 -> 3133 of 3137, wave 92% ->
+    # 100%, but melody 95% -> 92% -- the trade `fidelity_better` refuses, so
+    # adopting it waits on a listen.
     "wave_program",
     # Effect bit $10's arpeggio -- per song, never in `always`. The player steps the sequence with a *global* phase counter; a
     # wavetable restarts at every note, so which step a note opens on cannot be
@@ -628,6 +638,17 @@ EXCLUDED_FROM_ALWAYS = {
     # and cannot select it. Adopting it per song wants an ear, not another
     # column -- the six interleaved-classic files have never been listened to
     # (`the-six-interleaved-classic-files-have-never-been-listened-to`).
+    #
+    # **RADIO_ACE'S MELODY COST IS NOT THE ARPEGGIO'S OWN; IT IS THE STALE
+    # ATTACK FRAME.** Radio_ACE runs `no_test_restart`, so each attack frame
+    # still carries the previous note's last pitch (goatwriter/build.py, grep
+    # `previous note's last pitch`), and an arpeggio stepping through the note
+    # turns that one frame into a melody miss. `aligned_firstwave` removes
+    # the frame, and with it the arpeggio costs nothing. Four arms on
+    # Radio_ACE at v0.5.617, -t 180 under presets (C:/t/radio-ace-loses-ten-
+    # points-o): shipped (arpeggio off) melody 96%, vib .45x, wave 76%;
+    # arpeggio on 86%, .62x, 76%; aligned_firstwave only 100%, .44x, 88%;
+    # both 100%, .62x, 88%. Adopting the pair waits on a listen.
     #
     # `--arpeggio` changes NO byte on any other file: 0 of 89 move with it off
     # and exactly 5 with it on, corpus byte-hashed at v0.5.457.

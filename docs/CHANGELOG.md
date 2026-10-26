@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.619 — 2026-10-26
+
+- wave_program adopted on Lakers_vs_Celtics and Sun_Never_Shines (no scored column down); Radio_ACE/Pacific_Coast refused on a hold collapse, Lion_Heart on melody; presets.py comments attribute the Radio_ACE arpeggio and Lion_Heart attack findings; SURVEY/presets/FIDELITY/QUEUE regenerated
+
 ## 0.5.618 — 2026-10-26
 
 - filters.py docstring -- Pacific_Coast's $89 names voice 0 as the filter voice while its filtered record plays on voice 1; the original routes it 6 frames with passband 0 (a mute), ours passband 3; not emitted

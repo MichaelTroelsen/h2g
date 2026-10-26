@@ -1535,7 +1535,10 @@ test dependency).
     now HISTORY and is left saying what it said.** wave_program is
     **10 multispeed / 12 single-speed** (Off_the_Cuff's multiplier moved;
     re-graded at v0.5.581 to **11 multispeed / 12 single-speed** when
-    Go_Go_Dash adopted wave_program at multiplier 4, the 10 now HISTORY) and
+    Go_Go_Dash adopted wave_program at multiplier 4, the 10 now HISTORY;
+    re-graded at v0.5.618 to **11 multispeed / 14 single-speed** when
+    Lakers_vs_Celtics and Sun_Never_Shines adopted it at multiplier 1, the
+    12 now HISTORY) and
     `--regrid` has **14 adoptions** (One_on_One_Jordan_vs_Bird adopted; its
     recorded -37.0pp melody collapse does not reproduce -- melody IMPROVES
     0.9903 -> 0.9952 at 180 s). **What caught both was a TEST, not a reading**:
