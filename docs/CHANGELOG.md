@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.618 — 2026-10-26
+
+- filters.py docstring -- Pacific_Coast's $89 names voice 0 as the filter voice while its filtered record plays on voice 1; the original routes it 6 frames with passband 0 (a mute), ours passband 3; not emitted
+
 ## 0.5.617 — 2026-10-26
 
 - wave_program.py docstring: the gate census short kind on Wiz/IK_plus/One_on_One/Bangkok_Knights is wave-program release, not a drum shape; drum options leave Wiz byte-identical; no output change; artefacts not regenerated

@@ -331,6 +331,22 @@ def _ilv_filter_passband(sid: SidFile, det: Detection) -> int:
     standing is whatever the last filtered record set. The first filtered
     program's is the closest a single shared entry can come, and five of the
     six files have only one.
+
+    **THE PLAYER'S PASSBAND IS THE FILTER VOICE'S, NOT THE FILTERED
+    RECORD'S.** The per-frame flush (Pacific_Coast `$17F1 LDY $1A66`) reads
+    cutoff, resonance (`$1A87,Y`) and passband (`$1A6D,Y`, loaded from
+    program +6 at `$1369`/`$137C`) of the ONE voice `$1A66` names, which
+    pattern command `$89 nn` sets; it writes `$D417`/`$D418` only on a frame
+    where `$1A8C` counts an arm or a clear (`$1807 LDA $1A8C / BEQ $1823`).
+    Each file's single `$89` names: Radio_ACE, Lion_Heart, Go_Go_Dash 02,
+    Sun_Never_Shines 00 -- each a voice that plays a filtered record -- but
+    Pacific_Coast 00, while its one filtered record plays on voice 1. Voice 0
+    never loads a program, so the original routes voice 1 with passband 0 and
+    resonance 0 -- the voice is cut, not filtered -- for 6 frames (7629-7634
+    at -t 180), where this entry routes it through passband 3 with resonance
+    $F (frames 7634-7639). Not emitted, measured at v0.5.617: 6 frames of
+    9000 on one ILV file, and a mute row would need `$89` carried through the
+    orderlist walk for that alone.
     """
     filt = det.ilv_filter
     data = sid.data
