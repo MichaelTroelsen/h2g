@@ -105,6 +105,7 @@ from h2g.sidfile import find_freq_table, load_sid
 import attack_lateness
 import call_rate
 import vicetrace
+from extra_pages import EXTRA_PAGES
 
 # Defaults are the tools as they sit on this machine; every one is overridable
 # so the harness is not pinned to one install.
@@ -11565,7 +11566,7 @@ def _print_progress(sid: Path, row: dict) -> None:
             f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
             if row["status"] in ("measured", "silent")
             and row["retrigger_ratio"] else row["status"])
-    print(f"  {sid.name:44} {note}", file=sys.stderr)
+    print(f"  {row.get('file', sid.name):44} {note}", file=sys.stderr)
 
 
 # **--all-subtunes.** The default report scores ONE subtune per file (the
@@ -11773,14 +11774,35 @@ def _run_all_subtunes(sids: list[Path], doc: dict, args, workdir: Path) -> int:
 
 
 def _timed_measure(sid: Path, workdir: Path, opts: dict, args,
-                   mult: int) -> dict:
+                   mult: int, page: str | None = None) -> dict:
     # Wall clock for this one song: convert, pack, trace, render. Not a
     # Dimension, so compare_runs never reads it as a moved column; it is what
     # the listening pages print and what says which songs make a pass slow.
     t0 = time.perf_counter()
-    row = measure(sid, workdir, opts, args, mult)
+    if page is None:
+        row = measure(sid, workdir, opts, args, mult)
+    else:
+        row = measure(sid, workdir, opts, args, mult, pair=_extra_pair(page))
+        row["file"] = f"{page}.sid"
+        row["source"] = sid.name
     row["measure_seconds"] = round(time.perf_counter() - t0, 1)
     return row
+
+
+def _extra_pair(page: str) -> tuple[int, int]:
+    e = EXTRA_PAGES[page]
+    return e["subtune"], e.get("ours", e["subtune"])
+
+
+def _extra_jobs(sids: list[Path]) -> list[tuple[Path, str]]:
+    """(source .sid, page name) for every `extra_pages.EXTRA_PAGES` entry whose
+    source is in this sweep. Each becomes a row of its own, named
+    `<page>.sid` and carrying `source`, traced at the page's subtune with the
+    source's presets -- the same conversion `listen.py` stages for that page,
+    so its listening page reads a FIDELITY.md row like any other tune."""
+    by_name = {s.name: s for s in sids}
+    return [(by_name[e["source"]], page) for page, e in EXTRA_PAGES.items()
+            if e["source"] in by_name]
 
 
 def _worker_init(pal_flag) -> None:
@@ -11789,12 +11811,13 @@ def _worker_init(pal_flag) -> None:
     globals()["PAL_FLAG"] = pal_flag
 
 
-def _measure_one(sid: Path, opts: dict, mult: int, args) -> dict:
+def _measure_one(sid: Path, opts: dict, mult: int, page: str | None,
+                 args) -> dict:
     # One private scratch directory per song: measure()'s intermediates have
     # fixed names, so two songs in one directory would trace each other.
     workdir, _owned = make_workdir(None)
     try:
-        return _timed_measure(sid, workdir, opts, args, mult)
+        return _timed_measure(sid, workdir, opts, args, mult, page)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -11842,7 +11865,8 @@ def _measure_parallel(jobs_in: list, args) -> list[dict]:
     rows: list = [None] * len(jobs_in)
     prior = _prior_seconds(getattr(args, "json", None),
                            getattr(args, "baseline", None))
-    order = _longest_first([sid.name for sid, _o, _m in jobs_in], prior)
+    order = _longest_first([f"{page}.sid" if page else sid.name
+                            for sid, _o, _m, page in jobs_in], prior)
     with ProcessPoolExecutor(max_workers=args.jobs, initializer=_worker_init,
                              initargs=(PAL_FLAG,)) as ex:
         futs = {ex.submit(_measure_one, *jobs_in[i], args): i for i in order}
@@ -12357,7 +12381,11 @@ def _run(p, args, workdir: Path) -> int:
             return 0
         rows = []
         jobs_in = []
-        for sid in sids:
+        # A corpus sweep also measures each extra listening page, after the
+        # files, as its own row; a single-file target measures just that file.
+        work = [(sid, None) for sid in sids] + (
+            _extra_jobs(sids) if target.is_dir() else [])
+        for sid, page in work:
             opts = _preset_opts(doc, sid.name)
             if args.slides:
                 opts["slides"] = True
@@ -12382,9 +12410,9 @@ def _run(p, args, workdir: Path) -> int:
                 # regression in v0.5.119.
                 mult = _skip_gate_multiplier(sid) or mult
             if args.jobs > 1:
-                jobs_in.append((sid, opts, mult))
+                jobs_in.append((sid, opts, mult, page))
                 continue
-            row = _timed_measure(sid, workdir, opts, args, mult)
+            row = _timed_measure(sid, workdir, opts, args, mult, page)
             rows.append(row)
             _print_progress(sid, row)
         if jobs_in:

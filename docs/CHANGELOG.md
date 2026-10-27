@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.620 — 2026-10-27
+
+- extra listening pages (Knucklebusters_1/_3, Commando_2, Delta_13) get measured FIDELITY.md rows; fidelity.py measures EXTRA_PAGES at their own subtune; SURVEY/presets unchanged
+
 ## 0.5.619 — 2026-10-26
 
 - wave_program adopted on Lakers_vs_Celtics and Sun_Never_Shines (no scored column down); Radio_ACE/Pacific_Coast refused on a hold collapse, Lion_Heart on melody; presets.py comments attribute the Radio_ACE arpeggio and Lion_Heart attack findings; SURVEY/presets/FIDELITY/QUEUE regenerated

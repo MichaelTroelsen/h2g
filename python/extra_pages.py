@@ -17,6 +17,15 @@ EXTRA_PAGES: dict[str, dict] = {
     # Delta.sid has 13 subtunes and start song 12 (index 11), which is the page
     # "Delta". Song 13 is index 12.
     "Delta_13": {"source": "Delta.sid", "subtune": 12},
+    # Knucklebusters.sid has 11 header songs; init sends 3 to the music player
+    # (the rest are sound effects) and start song 2 (index 1) is the page
+    # "Knucklebusters". Songs 1 and 3 are indices 0 and 2; under its presets
+    # all three convert and gt2reloc exports all three, so ours keeps the index.
+    "Knucklebusters_1": {"source": "Knucklebusters.sid", "subtune": 0},
+    "Knucklebusters_3": {"source": "Knucklebusters.sid", "subtune": 2},
+    # Commando.sid starts at song 1 (index 0), the page "Commando"; song 2 is
+    # index 1, and all three of our subtunes are exported.
+    "Commando_2": {"source": "Commando.sid", "subtune": 1},
 }
 
 

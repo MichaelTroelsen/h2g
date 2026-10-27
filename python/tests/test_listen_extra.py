@@ -73,7 +73,8 @@ def test_all_stages_the_extra_page_beside_its_source(tmp_path):
     p = tmp_path / "presets.json"
     p.write_text(json.dumps({"always": {}, "songs": {"Delta.sid": {}}}), encoding="utf-8")
     got = L.select_names([], True, str(p))
-    assert got == ["Delta.sid", "Delta_13"]
+    assert got == sorted(["Delta.sid", *E.EXTRA_PAGES], key=str.lower)
+    assert got.index("Delta_13") == got.index("Delta.sid") + 1
 
 
 def test_the_extra_page_uses_its_sources_presets_and_subtune(tmp_path, monkeypatch, capsys):

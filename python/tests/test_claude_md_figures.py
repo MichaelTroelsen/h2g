@@ -74,7 +74,10 @@ def _songs():
 def _rows():
     if not FIDELITY.exists():
         pytest.skip("build/fidelity.json absent -- it is gitignored")
-    return json.loads(FIDELITY.read_text(encoding="utf-8"))
+    # An EXTRA_PAGES row (`source` names its corpus file) is a second subtune
+    # of a file already counted, not another file, so it is not a corpus row.
+    return [r for r in json.loads(FIDELITY.read_text(encoding="utf-8"))
+            if not r.get("source")]
 
 
 # CLAUDE.md's per-file figures are stamped with the version they were measured
