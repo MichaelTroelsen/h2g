@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.621 — 2026-10-29
+
+- listening index: sortable/filterable table, low-score cells, verdict chips
+
 ## 0.5.620 — 2026-10-27
 
 - extra listening pages (Knucklebusters_1/_3, Commando_2, Delta_13) get measured FIDELITY.md rows; fidelity.py measures EXTRA_PAGES at their own subtune; SURVEY/presets unchanged

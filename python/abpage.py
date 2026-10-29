@@ -2916,6 +2916,78 @@ def abbrev_sidid(text: str) -> str:
     return "+".join(parts) if parts else "&mdash;"
 
 
+INDEX_CSS = """
+.wrap.wide { max-width:96rem; }
+.tools { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+  font-family:var(--mono); font-size:12.5px; margin:0 0 12px; }
+.tools input[type="search"] { font:inherit; padding:6px 10px; min-width:16em;
+  color:var(--ink); background:var(--sunk); border:1px solid var(--line);
+  border-radius:3px; }
+.tools label { display:flex; gap:6px; align-items:center; cursor:pointer; }
+.tools .count { color:var(--muted); margin-left:auto; }
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:var(--ink); }
+th[aria-sort="ascending"]::after { content:" \25B2"; }
+th[aria-sort="descending"]::after { content:" \25BC"; }
+td.low { color:var(--a); font-weight:600; }
+tbody tr:hover { background:color-mix(in srgb, var(--ink) 5%, transparent); }
+tr[hidden] { display:none; }
+"""
+
+INDEX_JS = """
+(function () {
+  var q = document.getElementById('q'), todo = document.getElementById('todo');
+  var cnt = document.getElementById('shown');
+  var tables = document.querySelectorAll('table');
+  function rows() { return document.querySelectorAll('.card table tbody tr'); }
+  function apply() {
+    var needle = q.value.trim().toLowerCase(), n = 0, all = 0;
+    rows().forEach(function (tr) {
+      all++;
+      var ok = !needle || tr.textContent.toLowerCase().indexOf(needle) >= 0;
+      if (ok && todo.checked && tr.querySelector('td.appr .y')) ok = false;
+      tr.hidden = !ok;
+      if (ok) n++;
+    });
+    cnt.textContent = n + ' of ' + all + ' shown';
+  }
+  function num(t) { var m = /^-?[0-9]*[.]?[0-9]+/.exec(t.trim()); return m ? parseFloat(m[0]) : NaN; }
+  tables.forEach(function (tb) {
+    tb.querySelectorAll('th').forEach(function (th, i) {
+      th.classList.add('sortable');
+      th.addEventListener('click', function () {
+        var dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+        tb.querySelectorAll('th').forEach(function (o) { o.removeAttribute('aria-sort'); });
+        th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
+        var body = tb.tBodies[0];
+        Array.prototype.slice.call(body.rows).sort(function (a, b) {
+          var x = a.cells[i].textContent.trim(), y = b.cells[i].textContent.trim();
+          var nx = num(x), ny = num(y);
+          if (!isNaN(nx) && !isNaN(ny)) return (nx - ny) * dir;
+          if (!isNaN(nx)) return -1;
+          if (!isNaN(ny)) return 1;
+          return x.localeCompare(y) * dir;
+        }).forEach(function (r) { body.appendChild(r); });
+      });
+    });
+  });
+  q.addEventListener('input', apply);
+  todo.addEventListener('change', apply);
+  apply();
+})();
+"""
+
+
+def _low(cell: str, floor: float = 90.0) -> str:
+    """`td` class for a fidelity cell under `floor` percent (or .xx form)."""
+    m = re.match(r"\s*(\d*\.?\d+)\s*(%?)", cell or "")
+    if not m:
+        return ""
+    v = float(m.group(1))
+    v = v if m.group(2) else v * 100
+    return ' class="low"' if v < floor else ""
+
+
 def index(names: list[str], rows: dict, version: str,
           appr: dict | None = None, shas: dict | None = None,
           survey: dict | None = None,
@@ -3035,7 +3107,7 @@ def index(names: list[str], rows: dict, version: str,
                  "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
                  "<td class=\"test\">%s</td>"
-                 "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+                 "<td%s>%s</td><td%s>%s</td><td%s>%s</td><td%s>%s</td>"
                  "<td class=\"len\" title=\"%s\">%s</td>"
                  "<td class=\"mtime\">%s</td></tr>"
                  % (n, n.replace("_", " "), badge,
@@ -3045,9 +3117,8 @@ def index(names: list[str], rows: dict, version: str,
                     _attr(full) if full else "not surveyed",
                     abbrev_sidid(full),
                     verdict(n), audio(n), test(n),
-                    r.get("melody", "&mdash;"),
-                    r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
-                    r.get("hold", "&mdash;"),
+                    *[x for k in ("melody", "gate", "wave", "hold")
+                      for x in (_low(r.get(k, "")), r.get(k, "&mdash;"))],
                     _attr(length_text(fidjson.get(n, {}))[1]),
                     length_text(fidjson.get(n, {}))[0],
                     measure_text(fidjson.get(n, {}))))
@@ -3069,16 +3140,30 @@ def index(names: list[str], rows: dict, version: str,
   </table></div>
 </div>""" % (len(parked), head, rows_html(parked)))
     body = rows_html(active)
+    kinds = [verdict(n) for n in active]
+    counts = [("approved", sum('class="y"' in k for k in kinds)),
+              ("stale", sum('class="s"' in k for k in kinds)),
+              ("no verdict", sum('class="n"' in k for k in kinds)),
+              ("audio behind", sum('class="old"' in audio(n) for n in active))]
+    chips = "".join('<div class="chip"><b>%d</b><span>%s</span></div>' % (c, t)
+                    for t, c in counts)
     return """<meta charset="utf-8">
 <title>H2G Listening Pass</title>
 <style>%(css)s</style>
-<div class="wrap">
+<style>%(xcss)s</style>
+<div class="wrap wide">
 <header>
   <div class="eyebrow">H2G &middot; %(version)s &middot; %(count)d tune(s)%(held_count)s</div>
   <h1>Listening pass<small>Each page plays the original and the conversion together and swaps which one you hear, so a switch never loses your place.</small></h1>
 </header>
+<div class="rail">%(chips)s</div>
 <div class="card">
   <h2>Staged tunes</h2>
+  <div class="tools">
+    <input type="search" id="q" placeholder="filter tunes, players, flags" aria-label="filter tunes">
+    <label><input type="checkbox" id="todo"> hide approved</label>
+    <span class="count" id="shown"></span>
+  </div>
   <div class="scroll"><table>
     <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
     <tbody>%(body)s</tbody>
@@ -3108,7 +3193,9 @@ def index(names: list[str], rows: dict, version: str,
   <div><code>gate</code> is the newest of them and the least validated: it was built at v0.5.270 because no other column could see the register it reads, and no listener has confirmed it corresponds to anything audible.</div>
 </footer>
 </div>
-""" % dict(css=CSS, version=version, count=len(names), body=body,
+<script>%(js)s</script>
+""" % dict(css=CSS, xcss=INDEX_CSS, js=INDEX_JS, chips=chips,
+           version=version, count=len(names), body=body,
            held_card=held_card,
            held_count=(" (%d on hold)" % len(parked)) if parked else "")
 
