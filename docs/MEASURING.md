@@ -1255,6 +1255,33 @@ instrument number are the arpeggio the ear had guessed at; and GT 1's flat duty
 cycle turned out to be a third pulse engine nothing had read, in 24 corpus
 files (v0.5.174, § `--pulse`).
 
+### The heard-instrument census — `heard.py`
+
+`fidelity.py`'s melody asks whether the right notes sound; `heard.py` asks
+whether each note's *instrument* plays the same over its first 6 frames: gate,
+waveform, pitch relative to the note, AD and sustain, plus the hard-restart
+tail. It reads both sides through `python/tools/magplay-rt`, a front end to
+MagPlaySID's cycle-exact C64 that records every SID write per play call (build
+it first; see its README, including why the exe is never committed).
+
+```sh
+python heard.py <sid_dir>        # every pair listen.py staged in build/listen
+# -> build/heard_census.md (per attribute, per song); --json for the rows
+```
+
+Traces are cached in `build/heard/` keyed by the file's bytes, so a rebuilt
+conversion is re-traced. `instr` is the share of original notes whose paired
+note differs on none of gate/wave/ad/sr_hi/pitch. Four differences are
+known-equivalent and reported apart: `testpre` (GoatTracker's `$09` frame),
+`sr_rel`/`tail_env` (the envelope cut), and `gated_tick` (the drum noise frame
+gated above -S1, `wavetable._drum_tick_noise`). **Check a new shape against the
+emitter's docstrings before calling it a defect**: the gated tick was first
+read as the largest fixable shape and is a measured loudness trade.
+
+At v0.5.621 over the 93 staged pairs: 169,881 notes, `instr` 0.612; `pitch`
+25.4% of notes and `gate` 10.4% are the largest real attributes. Origin and
+analysis: `docs/MAGPLAYSID-ANALYSIS.md` § 0.
+
 ### The song view — `songview.py`
 
 `instrmap.py` reads what the SID registers *held*; this reads what the `.sng`

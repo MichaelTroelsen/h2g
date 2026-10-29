@@ -11,3 +11,8 @@ survey-*.md
 # without it rather than trace one at half speed.
 tools/siddump-rt/*.exe
 tools/siddump-rt/*.o
+
+# tools/magplay-rt links MagPlaySID (GPL); its build products are never
+# committed. See its README.
+tools/magplay-rt/bin/
+tools/magplay-rt/obj/
