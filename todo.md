@@ -317,6 +317,57 @@ Keep items actionable: what to run, and what makes it done.
 
   added: 2026-10-29
 
+- **Sharpen `heard.py` with four of MagPlaySID's rules, before attributing more
+  shapes.** These ideas come from a review of MagPlaySID's source on
+  2026-10-29. They are re-implemented here, not copied (GPL). Line numbers are
+  MagPlaySID's, under `src/`:
+  1. **Pitch in several forms.** Each frame's pitch is held as relative to the
+     note, absolute note, offset from the note's frequency, and raw frequency;
+     two frames agree if any form matches (`MagPlay.Transcribe/Music.cs`
+     545-548, 656-667, 724-742). Report `pitch` split into "relative differs
+     but absolute agrees" and "differs in every form". `pitch` is the largest
+     attribute (25.4% of notes at 65c516a), and part of it may be a naming
+     artefact, such as a fixed-frequency drum noise frame.
+  2. **No pitch reading on silent frames or in the release.** A silent frame
+     (test bit set, or no waveform) takes the next frame's pitch, and pitch is
+     read only while the gate is on (`MagSid.Core/SidImport/SidTranscriber.cs`
+     1143-1157, 1178-1184, 1505-1513).
+  3. **Restrikes are not new notes.** A gate that is on for at most 2 frames,
+     then off for at most 2 frames, with the waveform running and the envelope
+     unchanged, is one note striking twice (`SidTranscriber.cs` 263-325).
+  4. **Gate-off inside the program, compared to the end of its release.**
+     A gate-off inside the note's first row, except its last 2
+     frames, belongs to the instrument. The note is compared only up to
+     gate-off plus the release time, or up to the first silent frame
+     (`SidTranscriber.cs` 1124-1140, 1233-1238). This is the `tail_len`
+     versus `gate` split that `docs/MAGPLAYSID-ANALYSIS.md` lists as not done.
+  5. Optional: **vibrato told from a slide** (`SidTranscriber.cs`
+     1442-1496), so a vibrato wobble stops counting as `pitch`.
+
+  Done when each rule has a synthetic test in `tests/test_heard.py` that fails
+  with the rule removed, and a census over the staged pairs is written to
+  `C:/t/heard-measure/` (traces cached there too, `-o` there, never
+  `build/heard_census.md`). For each attribute, the census gives before and
+  after, and names the songs where `instr` moved by more than 2 points.
+  `[subagent]`.
+
+  added: 2026-10-29
+
+- **Drums on fixed notes versus drums that move with the note: does our
+  converter choose the same as the original?** Group the original's notes by
+  control-byte sequence plus envelope. A family whose pitch steps are the same
+  on different row notes is a drum on fixed notes; one whose strike shifts with
+  the note is relative (MagPlaySID `SidTranscriber.cs` 992-1031, 1098-1116).
+  Compare each Hubbard record's verdict against the fixed-or-relative choice
+  our wavetable makes for it (`goatwriter/drums.py`, `wave_program.py`,
+  `wavetable.py`). A mismatch is a candidate cause of the "noise frame played
+  as tone" and attack-pitch shapes. Done when `C:/t/drum-fixed-relative/finding.md`
+  lists, per song, every record where the two disagree, with the record's
+  bytes, the trace evidence, and the emitting function. Findings only.
+  `[subagent]`.
+
+  added: 2026-10-29
+
 ## Auf Wiedersehen Monty to 99%
 
 Requested by the listener after the note-flag fix landed. Where it stands at
