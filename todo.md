@@ -233,6 +233,90 @@ Keep items actionable: what to run, and what makes it done.
 
   added: 2026-10-24
 
+- **Keep the heard-instrument census current: restage `build/listen` and re-run
+  `heard.py` after each converter or presets commit.** `python/heard.py` scores
+  the pairs staged in `build/listen`. Those were staged from the v0.5.621 builds,
+  so after the v0.5.623 `aligned_firstwave` adoption (six songs) its `instr`
+  figure describes conversions that no longer ship. The last census was taken
+  at 65c516a over those pairs: 169,881 notes, `instr` .612. Nothing in the plan
+  refreshes it, so the measure behind "instrument decoding is the gap" goes
+  stale silently.
+
+  ```sh
+  cd python
+  cp ../build/heard.json C:/t/heard-refresh/prev.json   # keep the previous census
+  # one process per shard, I = 0..5, then join their notes (MEASURING.md § Listening)
+  python listen.py <sid_dir> --all -t 180 --presets ../presets.json --from-json ../build/fidelity.json --shard I/6
+  python listen.py --merge-notes
+  python heard.py <sid_dir> --json ../build/heard.json
+  ```
+
+  Run it after the FIDELITY refresh that follows the commit: `listen.py` stages
+  from `build/fidelity.json`, so staging before that refresh reads the old
+  builds. Use `-t 180`, the window the current staging and the census used.
+  Do not use `--traces-only`: it is faster, but it leaves the old WAVs beside
+  the new `.sid` files, and the listening pages would play stale audio. Needs
+  `python/tools/magplay-rt` built (its README). Traces are cached by file bytes
+  in `build/heard/`, so only the moved conversions are re-traced.
+
+  Done when each staged `build/listen/<song>.h2g.sng` hashes (sha1, first 12 hex
+  characters) to its `output_sha` in `build/fidelity.json`. Then
+  `C:/t/heard-refresh/delta.md` lists every song whose `instr`, or any CORE
+  attribute count (gate/wave/ad/sr_hi/pitch), moved against `prev.json`, with
+  before and after. A song whose `instr` fell is named as a regression to
+  attribute.
+
+  `[main]`: it rewrites `build/listen` (a plan hazard), plus `build/heard/` and
+  `build/heard_census.md`.
+
+  added: 2026-10-29
+
+- **A/B pages, from MagPlaySID's ideas (`docs/MAGPLAYSID-ANALYSIS.md`
+  § 4): five page features.** All of them are `python/abpage.py` work, pinned
+  in `tests/test_abpage.py`. Each one is done only when a rebuilt page renders
+  in a real browser (Playwright) with no console errors, on Commando and on one
+  multispeed song. Ordered by cost:
+
+  1. **The heard score on the pages.** An `instr` column in the index, sortable
+     like the others. On each song's page, a card with that song's attribute
+     counts (gate/wave/ad/sr_hi/pitch; the known-equivalent ones apart) and its
+     worst paired notes: time, voice, and which attributes differ. It reads
+     `build/heard.json` (`python heard.py ... --json`), so it needs the refresh
+     task's census first, and it shows `-` where a song has no row. Needs no
+     design pass. `[subagent]`.
+  2. **A live spectrum and oscilloscopes while a pair plays.** The page already
+     has a static "Both sides, by frequency" spectrogram. This adds a WebAudio
+     `AnalyserNode` on each `<audio>` element, drawn per animation frame, with
+     original and ours overlaid. It must work on pages served by
+     `build/listen/Listen.cmd` (`abpage.serve`, port 8730), and must not break
+     a page opened directly from disk. Needs no design pass.
+     `[subagent]`.
+  3. **A side-by-side piano roll, original against ours.** `notes_strip_card`
+     says outright that it has no per-note timeline to draw. **Needs a design
+     choice first**, between two data sources:
+     - add `freq` to `listen.trace_json`, which that function's docstring
+       drops on purpose because frequency changes every frame and would dominate
+       the file;
+     - or emit `heard.notes` per song (start frame, held pitch, voice) as a
+       sidecar JSON beside the page.
+
+     The sidecar is the smaller change, and it is already paired note to note.
+     `[subagent]` after the choice.
+  4. **An instrument panel that lights each wavetable step as it plays.** It
+     builds on `tracker_card` / `row_schedule` (which rows play when) and
+     `songview.wave_program` (each step's first and last call). **Needs a design
+     pass first**: how a step's call range maps to the audio clock at -S>1, and
+     which voice's step to light when the selector shows all three. `[subagent]`
+     after the design.
+  5. **The original shown as a tracker**, beside our GoatTracker view, from
+     MagPlaySID's own transcription (`MagPlay.Transcribe.Music`: notes,
+     instruments, patterns). **Needs your decision first:** it means
+     `tools/magplay-rt` emitting that score as JSON and the pages showing a GPL
+     tool's output. It is also the largest of the five. Leave it until 1-3 have
+     proved useful. `[user]` then `[subagent]`.
+
+  added: 2026-10-29
+
 ## Auf Wiedersehen Monty to 99%
 
 Requested by the listener after the note-flag fix landed. Where it stands at

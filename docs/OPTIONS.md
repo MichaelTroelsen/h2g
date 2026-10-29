@@ -2254,6 +2254,18 @@ original; Hollywood loses melody (3254 attacks both ways). Adopt per file from a
 trace (`edges.py`-style rise and fall census at the file's lag), not from this
 table.
 
+**Re-measured at 65c516a (v0.5.622) and adopted at v0.5.623** on Pacific_Coast,
+Powerplay_Hockey_USA_vs_USSR, Pygmies_Revenge, Radio_ACE, Sigma_Seven and Wiz,
+beside Chicken_Song and Ninja. The measurement was `-t 180`, presets, `--sound`.
+- melody rose on all seven `no_test_restart` songs, and so did `aud` and `loud`.
+- The heard-instrument census (`heard.py`) rose on all seven.
+- `gate` still fell on Wiz (23 -> 18%) and Powerplay (46 -> 42%).
+- Hollywood's melody loss above no longer reproduces: it reads 77 -> 83%.
+  Hollywood is left out because its pending fix carries this option with
+  `wave_alternate`.
+
+Evidence is in `presets.py` beside the option.
+
 ## `--named-firstwave` (the init call that names its pitch step)
 
 Every instrument's note-init call is spent on the record's waveform with the

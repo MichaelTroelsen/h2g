@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.623 — 2026-10-29
+
+- aligned_firstwave adopted on Pacific_Coast, Powerplay, Pygmies_Revenge, Radio_ACE, Sigma_Seven, Wiz: melody/aud/loud and heard instr up on all; gate down on Wiz, Powerplay
+
 ## 0.5.622 — 2026-10-29
 
 - heard.py: heard-instrument census over the staged pairs via tools/magplay-rt (MagPlaySID tracer, out of tree); instr .612 at v0.5.621; gated drum tick marked known-equivalent

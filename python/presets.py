@@ -715,6 +715,20 @@ EXCLUDED_FROM_ALWAYS = {
     # double it for ten files, and its winners are decided by an edge census
     # at the file's lag, which no `fidelity_better` term reads. A song entry
     # `"aligned_firstwave": true`.
+    # ADOPTED at v0.5.623 on Pacific_Coast, Powerplay_Hockey_USA_vs_USSR,
+    # Pygmies_Revenge, Radio_ACE, Sigma_Seven and Wiz (user decision on the
+    # measurement). Measured at 65c516a, -t 180, presets, --sound, over the
+    # seven no_test_restart songs whose attack frame `heard.py` reads at our
+    # PREVIOUS note's pitch (C:/t/stale-pitch/ab_table.txt).
+    # - Gains: melody up on all 7 (Radio_ACE 96 -> 100%, Pygmies 97 -> 100%);
+    #   `aud` and `loud` up on all 7; heard `instr` up on all 7 (Sigma_Seven
+    #   .41 -> .995, Wiz .11 -> .63).
+    # - Costs: `gate` on Wiz 23 -> 18% and Powerplay 46 -> 42%; `tie` moves
+    #   away from 1 on five files.
+    # Hollywood_or_Bust gains too (melody 77 -> 83%, gate 33 -> 97%). It is
+    # left out because its pending melody fix carries this option together
+    # with the `wave_alternate` decision. The melody cost quoted above
+    # (.657 -> .552) no longer reproduces.
     "aligned_firstwave",
     # `named_firstwave`: the init call's frame names the pitch step it carries
     # (convert()'s docstring). Off by default and per song: it moves the gate

@@ -185,6 +185,12 @@ sha); and launch a run that outlives the shell tool's ceiling detached, with
 
 `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV pairs
 for a human listening check into gitignored `build/listen/`.
+`python heard.py <sid_dir> --json ../build/heard.json` scores those staged pairs
+note by note on their first 6 frames: gate, wave, pitch, AD and sustain
+(`build/heard_census.md`, `docs/MEASURING.md` § heard). It is only as fresh as
+`build/listen`, so restage (`--all -t 180`) after the FIDELITY refresh, then
+re-run it. It needs `python/tools/magplay-rt` built; that exe is GPL and never
+committed.
 
 ## Hard invariants
 

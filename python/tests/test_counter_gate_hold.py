@@ -114,8 +114,11 @@ def test_restore_call_read_from_the_player(name, record, written, want):
     ("Nemesis_the_Warlock", "02:23-90-44",
      [(0x41, 0x00), (0x21, 0xBF), (0x41, 0xBF), (0x41, 0x00), (0xFF, 0x00)],
      4),
+    # Wiz carries `aligned_firstwave` since v0.5.623: its gate-off firstwave
+    # keeps the wavetable's lead entry, so gate and pitch land on call 1.
     ("Wiz", "0A:23-40-44",
-     [(0x81, 0xC5), (0x41, 0xC5), (0x41, 0xC5), (0x41, 0x00), (0xFF, 0x00)],
+     [(0x41, 0x00), (0x81, 0xC5), (0x41, 0xC5), (0x41, 0xC5), (0x41, 0x00),
+      (0xFF, 0x00)],
      4),
 ])
 def test_converted_block_under_presets(name, ins_name, block, restore):

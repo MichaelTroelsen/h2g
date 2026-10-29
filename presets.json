@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.618 presets.py",
+  "generator": "h2g 0.5.623 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2002,7 +2002,8 @@
       "rows": 10530,
       "multiplier": 1,
       "no_test_restart": true,
-      "two_stage": true
+      "two_stage": true,
+      "aligned_firstwave": true
     },
     "Pandora.sid": {
       "max_rows": 128,
@@ -2108,6 +2109,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "aligned_firstwave": true,
       "regrid": true
     },
     "Proteus.sid": {
@@ -2134,6 +2136,7 @@
       "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
+      "aligned_firstwave": true,
       "hard_restart_frames": 3,
       "master_volume": true
     },
@@ -2148,6 +2151,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "aligned_firstwave": true,
       "arpeggio": false
     },
     "Rasputin.sid": {
@@ -2390,6 +2394,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "aligned_firstwave": true,
       "regrid": true
     },
     "Skate_or_Die_intro.sid": {
@@ -2837,6 +2842,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "aligned_firstwave": true,
       "regrid": true
     },
     "Zoids.sid": {
