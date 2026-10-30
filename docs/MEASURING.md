@@ -713,6 +713,21 @@ Commando_2, Last_V8, Mozart and Zoids (every instrument `fetch`); Gremlins,
 all `match`, read 100% on both. Whether that frame is audible is a listening
 question, not a measurement.
 
+### Why a column misses — `attribute.py` (v0.5.627)
+
+```sh
+python attribute.py <song> gate|wave|instr
+```
+
+Groups one song's misses in one column by original instrument record (its
+ADSR at the owning attack — a trace has no instrument number), frame offset
+from that attack, and which side differs. gate and wave re-run `fidelity.py`
+on a scratch copy under `presets.json` and capture the column's own
+comparison; instr reads the cached traces in `build/heard` with `heard.py`'s
+own pairing. It refuses any table whose groups do not sum to the column's
+miss count: Wiz gate 6366, Bangkok_Knights wave 10371, 5_Title_Tunes instr
+2436, all exact at v0.5.626.
+
 ### The gate census — `--gate-census`
 
 ```sh

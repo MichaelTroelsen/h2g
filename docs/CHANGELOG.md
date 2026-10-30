@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.627 — 2026-10-30
+
+- gate-off firstwave on 7 zero-hold songs; attribute.py
+
 ## 0.5.626 — 2026-10-30
 
 - holdnf column (fetch frame forgiven); render_check.py; song A/B pages 93rem wide

@@ -161,8 +161,12 @@ def _row(tmp_path, name: str, secs: int, **forced) -> dict:
 @needs_gt2reloc
 def test_at_s2_the_firstwave_ties_are_named_and_agree(tmp_path):
     """Last_V8 (-S2): the init call's frame already carries the step, only
-    unnamed. -t 60, measured at 4c9dab5 + this change (historical)."""
-    name = "Last_V8.sid"
+    unnamed. -t 60, measured at 4c9dab5 + this change (historical).
+    Last_V8 itself shipped gate_off_firstwave_instruments on 2026-10-30
+    (firstwave sweep), which removes these ties (tie_orig_only_firstwave
+    0), so the case is read on the C128 version: the same music, -S2, and
+    left without it."""
+    name = "Last_V8_C128_version.sid"
     base = _row(tmp_path, name, 60)
     got = _row(tmp_path, name, 60, named_firstwave=True)
     assert base["multiplier"] == 2

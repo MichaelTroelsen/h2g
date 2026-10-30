@@ -440,6 +440,19 @@ EXCLUDED_FROM_ALWAYS = {
     # record gate-off-firstwave-option names them; historical, re-measure).
     # So there is no value for `always`, and the boolean walk cannot search
     # a tuple. Carried per song like the list above it.
+    #
+    # Adopted 2026-10-30 (all 62, no_test_restart false) on Geoff_Capes,
+    # IK_plus, Last_V8, Master_of_Magic, Nemesis_the_Warlock, Shockway_Rider
+    # and Trans-Atlantic: the firstwave sweep over the 17 songs whose hold
+    # read 0% (C:/t/firstwave-sweep/sweep.md; run record
+    # firstwave-arm-sweep-zero-hold-songs). Hold 0% -> 88-100%, gate up on
+    # all seven (Geoff 83 -> 100%, Shockway 86 -> 100%, Master_of_Magic
+    # 79 -> 95%), melody unmoved, aud/loud within the 0.0077 floor. Refused:
+    # Chimera (tail 100 -> 88% under both arms), Gerry_the_Germ, Hunter_Patrol
+    # and Zoids (aud/loud fall past the floor), Commando (the fixture,
+    # commando-melody-973-preset-or-cap), Mega_Apocalypse (deferred to its
+    # pending rest-click patch), and the ear-approved Lightforce,
+    # Last_V8_C128_version and Mozart (no audible gain measured; asked by ear).
     "gate_off_firstwave_instruments",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
