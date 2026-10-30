@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.625 — 2026-10-30
+
+- wave_program adopted on Pacific_Coast and Radio_ACE (with aligned_firstwave: wave 68->98%/88->97%, onset ->100%, hold flat); A/B heard card lists its worst notes
+
 ## 0.5.624 — 2026-10-30
 
 - sfx_rest_click (Thundercats rest click, melody 82 -> 100%); heard.py MagPlaySID rules 1-4 (instr .636 -> .717 on the same traces); A/B pages: instr column and card, live spectrum/scope, piano roll, wavetable-step panel

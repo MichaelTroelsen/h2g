@@ -1,13 +1,13 @@
 {
  "generated_from": {
-  "head": "8526d91",
+  "head": "55eaec2",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan, 65c516a, patched through 5390dcb)",
-   ".claude/tasks/runs.jsonl (whole file; no records since ef431be)",
+   ".claude/tasks/whattask.json (previous plan at 8526d91)",
+   ".claude/tasks/runs.jsonl (whole file; records at 55eaec2)",
    ".claude/tasks/decisions.jsonl (no new lines)",
-   "git log 65c516a..8c35805 (aligned_firstwave adoption and refresh)",
-   "todo.md (the 2026-10-29 entries: heard refresh, A/B pages, heard rules, drum census)",
+   "git log 8526d91..55eaec2 and the working tree (v0.5.625 bump in progress)",
+   "todo.md",
    "whats-next.md (2026-09-02 handoff; spent, contributes no tasks)",
    "hooks/prune.js with policy.json",
    "graphify-out/graph.json (graphify update this pass)",
@@ -37,7 +37,7 @@
   ".claude/tasks/serial.lock.d"
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1586,
+ "closed_count": 1588,
  "tasks": [
   {
    "offload": null,
@@ -46,22 +46,26 @@
    "fork": null,
    "branch": null,
    "blocked_on": null,
-   "decision": null,
+   "decision": "user 2026-10-30: bring the wave_program re-measure back as a task",
    "needs_main": true,
-   "needs_main_reason": "corpus-wide regeneration of the generated artefacts; CLAUDE.md reserves it to the orchestrating session",
+   "needs_main_reason": "adoption edits presets.json, a generated artefact CLAUDE.md reserves to the orchestrating session",
    "depends_on": [],
-   "id": "melody99-regenerate-and-rerank",
-   "title": "Regenerate FIDELITY/QUEUE at v0.5.624 (Thundercats sfx_rest_click landed) and re-rank what is still below .99",
-   "source": "user request 2026-10-28 (melody 99% plan, step 5)",
+   "id": "wave-program-pacific-radio-with-aligned-firstwave",
+   "title": "Land v0.5.625 (wave_program on Pacific_Coast/Radio_ACE, heard worst notes): commit, regenerate SURVEY/presets, refresh FIDELITY/QUEUE",
+   "source": "runs.jsonl wave-program-pacific-radio-with-aligned-firstwave (partial, 55eaec2): adoption in presets.json/presets.py/LESSONS.md, test_output_sha waits on the refresh; user request 2026-10-30 'commit and push, then run the regeneration'",
    "model": "session",
    "effort": "medium",
    "mode": "main",
    "touches": [
     "r:python/h2g",
-    "r:presets.json",
+    "rw:presets.json",
+    "rw:python/presets.py",
+    "rw:docs/SURVEY.md",
     "rw:docs/FIDELITY.md",
     "rw:docs/QUEUE.md",
     "rw:docs/LESSONS.md",
+    "rw:docs/CHANGELOG.md",
+    "rw:python/h2g/__init__.py",
     "rw:build/fidelity.json",
     "rw:build/queue.json",
     "rw:build/audio",
@@ -69,15 +73,14 @@
     "rw:build/hold_census.md",
     "rw:build/depth_census.md",
     "rw:build/fidelity_refresh.log",
-    "rw:python/tests/test_claude_md_figures.py",
     "r:python/tests",
-    "rw:host:C:/t/melody99-regenerate"
+    "rw:host:C:/t/wave-program-pacific-radio"
    ],
-   "verify": "From python/, on a tree where python/h2g has no uncommitted edits: the CLAUDE.md fidelity refresh (-t 180 --presets ../presets.json --sound --jobs 16, the three census flags, --json ../build/fidelity.json -o ../docs/FIDELITY.md) and fidelity_queue.py from that JSON, with the previous build/fidelity.json saved as C:/t/melody99-regenerate/prev.json first (SURVEY/presets were regenerated in 8526d91). DONE when C:/t/melody99-regenerate/rerank.md lists, from the new JSON, every non-held song still below .99 melody with its before/after melody, only Thundercats changed output_sha against prev.json (c89efd6 moved 1 of 89), no song's melody fell against prev.json, and python -m pytest tests/ -q -n 12 --dist worksteal reports 0 failed (test_output_sha included; re-grade a LESSONS.md figure only if test_claude_md_figures names it).",
+   "verify": "Commit the v0.5.625 tree (bump_version done; SURVEY/presets regenerated from python/ with the CLAUDE.md commands, after which presets.json still carries wave_program on Pacific_Coast and Radio_ACE) and push. Then save build/fidelity.json as C:/t/wave-program-pacific-radio/prev.json and run the CLAUDE.md fidelity refresh (-t 180 --presets ../presets.json --sound --jobs 16, the three census flags, --json ../build/fidelity.json -o ../docs/FIDELITY.md) and fidelity_queue.py. DONE when, against prev.json, output_sha moved only on Pacific_Coast and Radio_ACE, their wave and onset rose with melody and hold unchanged (as in C:/t/wave-program-pacific-radio/ab.md), no other song's melody fell, and python -m pytest tests/ -q -n 12 --dist worksteal reports 0 failed (test_output_sha included).",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a documented command sequence plus one comparison",
-   "why_mode": "artefact regeneration is the orchestrating session job",
-   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, abpage-heard-score-card, commando-melody-973-preset-or-cap, abpage-original-as-tracker, wave-program-pacific-radio-with-aligned-firstwave",
+   "why_effort": "a documented commit-and-regenerate sequence plus one comparison",
+   "why_mode": "committing and regenerating the generated artefacts is the orchestrating session job",
+   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, abpage-original-as-tracker",
    "lane": "serial"
   },
   {
@@ -91,64 +94,32 @@
    "needs_main": false,
    "needs_main_reason": null,
    "depends_on": [
-    "melody99-regenerate-and-rerank"
+    "wave-program-pacific-radio-with-aligned-firstwave"
    ],
    "id": "melody99-land-top-mechanism-fixes",
-   "title": "Mega_Apocalypse: the sfx drum hit on a rest for the envelope rest-silence kind (sfx_rest_click handles test-bit only)",
-   "source": "runs.jsonl melody99-land-top-mechanism-fixes (partial, 8c35805): Thundercats landed in c89efd6; Mega_Apocalypse not attempted; C:/t/melody99-land-fixes/ab.md section 3",
+   "title": "Mega_Apocalypse sfx rest click: make wavetable room for the click program and explain the ctrl fall before adopting",
+   "source": "runs.jsonl melody99-land-top-mechanism-fixes (inconclusive, 55eaec2; the agent record was rejected for an id mismatch): C:/t/mega-apocalypse-rest-click/finding.md and fix.patch",
    "model": "sonnet",
    "effort": "high",
    "mode": "subtask",
    "touches": [
-    "rw:python/h2g/goatwriter/sfx_rest_click.py",
+    "rw:python/h2g/goatwriter",
     "rw:python/tests/test_sfx_rest_click.py",
+    "rw:python/tests/test_vibrato.py",
     "r:python/h2g",
     "r:presets.json",
     "r:python/fidelity.py",
     "r:build/fidelity.json",
+    "rw:build/audio",
     "r:Commando.sng",
     "rw:host:C:/t/mega-apocalypse-rest-click"
    ],
-   "verify": "Read Mega_Apocalypse's rest-silence path and sfx hit block from its disassembly (python/dis6502.py) and state whether its hit on a rest raises the gate the way Thundercats' does (sfx_rest_click.py docstring). If it does, extend sfx_rest_click to the envelope kind; DONE when a corpus byte-hash under presets moves only Mega_Apocalypse (and any other song the census names, each listed), a forced A/B (fidelity.py -t 180 --presets --sound --baseline against the build/fidelity.json taken after melody99-regenerate-and-rerank) shows its melody rising with no agreement column falling, and a new test in tests/test_sfx_rest_click.py pinning the envelope-kind case fails when the new branch is disabled (print the disabled line from disk). If it does not, DONE when the reason is written to C:/t/mega-apocalypse-rest-click/finding.md with the disassembly lines. No presets.json, SURVEY, FIDELITY edit.",
-   "why_model": "unfamiliar player path read from disassembly before a converter change; not the critical class",
-   "why_effort": "the failure mode is a plausible click spelling that moves bytes on songs it should not",
-   "why_mode": "confined to goatwriter/sfx_rest_click.py and its test, verified by a corpus byte-hash and a targeted A/B",
-   "why_lane": "shares a path with a writer in: melody99-regenerate-and-rerank, wave-program-pacific-radio-with-aligned-firstwave",
+   "verify": "Start from C:/t/mega-apocalypse-rest-click/finding.md and fix.patch (the hit on a rest is real: 93 gate rises under ADSR $0000 = the 93 A1 misses; the patch is inert because Mega_Apocalypse's wavetable holds 254 of 255 rows, rows 98-254 its vibrato tables). (1) Explain the ctrl 83% -> 82% fall seen in the room-freed counterfactual (ab_novib_final.txt) from a per-frame excerpt of voice 3's control byte, both sides, written to finding.md. (2) Free at least the 6 rows the click program needs without switching vibrato off (e.g. sharing identical vibrato rows or a wavetable dedup in goatwriter), and apply fix.patch's extension. DONE when a corpus byte-hash under presets (C:/t/mega-apocalypse-rest-click/hash.py) lists every moved file and each is explained, a forced A/B (fidelity.py -t 180 --presets --sound --baseline against build/fidelity.json after the v0.5.625 refresh) shows Mega_Apocalypse melody rising with no agreement column falling on any moved file, tests/test_commando.py passes, and a new test in tests/test_sfx_rest_click.py pinning the envelope-kind click fails when the new branch is disabled (print the disabled line from disk). If ctrl still falls, DONE as a refusal naming the frames in finding.md. No presets.json, SURVEY or FIDELITY edit.",
+   "why_model": "a wavetable-allocation change in shared emitter code plus an undiagnosed column fall; Sonnet at high effort, not the critical class",
+   "why_effort": "freeing table rows can move bytes on every song that fills its wavetable, and the ctrl fall is not yet explained",
+   "why_mode": "confined to goatwriter and its tests, verified by a corpus byte-hash and a targeted A/B",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave",
    "lane": "serial"
-  },
-  {
-   "offload": null,
-   "why_offload": null,
-   "mcp": [
-    "playwright"
-   ],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "needs_main": true,
-   "needs_main_reason": "an emitted page must actually render, which needs the Playwright browser (one shared instance)",
-   "depends_on": [],
-   "lane": "serial",
-   "why_lane": "shares a path with a writer in: melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-original-as-tracker, wave-program-pacific-radio-with-aligned-firstwave",
-   "id": "abpage-heard-score-card",
-   "title": "A/B pages: the worst paired notes on the per-song heard card (the column and counts landed in c89efd6)",
-   "source": "runs.jsonl abpage-heard-score-card (partial, 8c35805); todo.md Listening pages item 1",
-   "model": "session",
-   "effort": "medium",
-   "mode": "subtask",
-   "touches": [
-    "rw:python/abpage.py",
-    "rw:python/tests/test_abpage.py",
-    "rw:build/listen",
-    "r:build/heard",
-    "r:build/heard.json",
-    "r:python/heard.py"
-   ],
-   "verify": "The per-song heard card gains a list of its worst paired notes (time, voice, the CORE attributes that differ), computed from the cached traces in build/heard the way roll_data reads them (never tracing), and says so when the traces are missing. Rebuild the pages (python abpage.py from python/) and open the Commando page and one multispeed song's page in Playwright (over --serve): each renders with no console errors and the list shows rows. A new test in tests/test_abpage.py pins the list, and fails when its code is removed (print the removed region from disk).",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses (needs_main: the shared Playwright browser)",
-   "why_effort": "one card and one column, no design choice",
-   "why_mode": "self-contained page change; the orchestrator checks the render"
   },
   {
    "offload": null,
@@ -177,7 +148,7 @@
    "why_model": "the work either side of the answer is a bounded preset search",
    "why_effort": "bounded once the answer is in",
    "why_mode": "whether the fixture song may diverge from its fixture is the user's call",
-   "why_lane": "shares a path with a writer in: melody99-regenerate-and-rerank, wave-program-pacific-radio-with-aligned-firstwave",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave",
    "lane": "serial"
   },
   {
@@ -209,7 +180,7 @@
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "shares a path with a writer in: abpage-heard-score-card, abpage-original-as-tracker, wave-program-pacific-radio-with-aligned-firstwave"
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, abpage-original-as-tracker"
   },
   {
    "id": "abpage-original-as-tracker",
@@ -219,7 +190,7 @@
    "effort": "high",
    "mode": "requires-user",
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: melody99-regenerate-and-rerank, abpage-heard-score-card, listen-current-builds-2026-10, wave-program-pacific-radio-with-aligned-firstwave",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, listen-current-builds-2026-10",
    "touches": [
     "rw:python/abpage.py",
     "rw:python/tests/test_abpage.py",
@@ -235,51 +206,13 @@
    "why_offload": null,
    "fork": null,
    "branch": null,
-   "depends_on": [
-    "abpage-heard-score-card"
-   ],
+   "depends_on": [],
    "blocked_on": "The user decides whether the A/B pages may show MagPlaySID's transcription (notes, instruments, patterns from MagPlay.Transcribe.Music, a GPL tool's output) beside our GoatTracker view, once items 1-3 have proved useful.",
    "decision": null,
    "verify": "DONE when decisions.jsonl records the answer. On yes: magplay-rt gains a flag that writes the score as JSON, abpage renders it beside tracker_card for the same subtune, README.md states what is emitted and its licence, and the page renders in Playwright on Commando with no console errors.",
    "why_model": "page work plus a small C# change once allowed",
    "why_effort": "the transcription's pattern model differs from GoatTracker's and must be laid out to compare",
    "why_mode": "whether to show a GPL tool's output, and when, is the user's call"
-  },
-  {
-   "offload": null,
-   "why_offload": null,
-   "mcp": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": "user 2026-10-30: bring the wave_program re-measure back as a task",
-   "needs_main": true,
-   "needs_main_reason": "adoption edits presets.json, a generated artefact CLAUDE.md reserves to the orchestrating session",
-   "depends_on": [
-    "melody99-regenerate-and-rerank"
-   ],
-   "id": "wave-program-pacific-radio-with-aligned-firstwave",
-   "title": "Re-measure wave_program on Pacific_Coast and Radio_ACE now that aligned_firstwave ships, and adopt if no column falls",
-   "source": "runs.jsonl heard-shapes-noise-frame-and-late-gate-attributed (opened, 8c35805); closed by the hand-applied prune of 2026-10-30, re-listed at the user's request 2026-10-30",
-   "model": "session",
-   "effort": "medium",
-   "mode": "main",
-   "touches": [
-    "r:python/h2g",
-    "rw:presets.json",
-    "rw:python/presets.py",
-    "r:python/fidelity.py",
-    "r:build/fidelity.json",
-    "rw:build/audio",
-    "rw:python/tests",
-    "rw:host:C:/t/wave-program-pacific-radio"
-   ],
-   "verify": "Forced A/B of wave_program on Pacific_Coast and Radio_ACE under the shipped presets (aligned_firstwave on both since 5390dcb): fidelity.py -t 180 --presets <p_on.json> --sound --baseline against the build/fidelity.json from melody99-regenerate-and-rerank, scratch C:/t/wave-program-pacific-radio. The refusal on record (d37dee1) was hold 100%/91% -> 0% with aligned_firstwave off, so read hold first. DONE when either (a) wave_program is adopted in presets.json for each song where no scored agreement column falls (hold, melody and aud included), with the attribution comment in presets.py updated, the full suite at 0 failed after the change, and the result in C:/t/wave-program-pacific-radio/ab.md; or (b) ab.md names the column that falls on each refused song. No SURVEY/FIDELITY regeneration in this task.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a forced A/B on two songs against a documented adoption rule",
-   "why_mode": "a presets.json edit plus test updates; the refusal it revisits (d37dee1) was a judgement on hold",
-   "why_lane": "shares a path with a writer in: melody99-regenerate-and-rerank, melody99-land-top-mechanism-fixes, abpage-heard-score-card, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, abpage-original-as-tracker",
-   "lane": "serial"
   }
  ],
  "closed": []

@@ -604,6 +604,16 @@ EXCLUDED_FROM_ALWAYS = {
     # (orig 1999), onset 85% -> 100%, noise 1555 -> 3133 of 3137, wave 92% ->
     # 100%, but melody 95% -> 92% -- the trade `fidelity_better` refuses, so
     # adopting it waits on a listen.
+    #
+    # ADOPTED on Pacific_Coast and Radio_ACE (user request 2026-10-30), now
+    # that both ship `aligned_firstwave`. The refusal at d37dee1 (hold 100%/91%
+    # -> 0%) was taken with it off; with it on, hold does not move. Forced A/B
+    # at 55eaec2, -t 180 under presets, --sound (C:/t/wave-program-pacific-
+    # radio/ab.txt): melody, seq, pitch, adsr, hold flat on both; Pacific_Coast
+    # wave 68 -> 98%, gate 44 -> 85%, onset 82 -> 100%, vib .12 -> .96x, aud
+    # 90 -> 94%; Radio_ACE wave 88 -> 97%, gate 63 -> 79%, onset 79 -> 100%,
+    # aud 92 -> 94%. No agreement column falls (Radio_ACE travel .79 -> 1.22x
+    # is a ratio, about as far from 1 in log space).
     "wave_program",
     # Effect bit $10's arpeggio -- per song, never in `always`. The player steps the sequence with a *global* phase counter; a
     # wavetable restarts at every note, so which step a note opens on cannot be

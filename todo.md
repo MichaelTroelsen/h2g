@@ -368,6 +368,20 @@ Keep items actionable: what to run, and what makes it done.
 
   added: 2026-10-29
 
+- **Listening pages: make each song's A/B page 50% wider.** The user asked
+  for it after the new cards landed (piano roll, live spectrum and scope,
+  wavetable-step panel, worst-notes list), which are cramped at the current
+  width. The song page's `.wrap` is capped at `max-width:62rem`
+  (`python/abpage.py`); 50% wider is 93rem. The index already uses
+  `.wrap.wide` (96rem) and stays as it is (user, 2026-10-30). Keep the phone
+  layout working. Done when a test in `tests/test_abpage.py` pins 93rem on a
+  song page and 96rem on the index, fails with the change reverted, the pages
+  are rebuilt (`python abpage.py`), and Commando's page, served, renders at
+  the new width with no console errors. `[main]` (rebuilds `build/listen`).
+  touches: rw:python/abpage.py, rw:python/tests/test_abpage.py, rw:build/listen
+
+  added: 2026-10-30
+
 ## Auf Wiedersehen Monty to 99%
 
 Requested by the listener after the note-flag fix landed. Where it stands at

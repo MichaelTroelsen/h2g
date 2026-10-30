@@ -193,15 +193,11 @@ def _heard_trace(sid: Path, song: int, seconds: float) -> tuple[dict, Path] | No
         return None
 
 
-def roll_data(name: str) -> dict | None:
-    """The piano roll's notes for one staged pair: both sides' notes as
-    `heard.compare` segments and pairs them, ours shifted onto the original's
-    frame axis by the pair's lag. None when either trace is not in the cache.
-
-    The same sequence as `heard.compare` (frames, tuning, row grid, notes,
-    best_lag, pair), so the roll draws exactly the notes the census scores.
-    Rows are [start, end, semitone, paired]; `end` is the next note's start.
-    """
+def _heard_notes(name: str) -> dict | None:
+    """Both sides' notes for one staged pair, segmented and lag-aligned exactly
+    as `heard.compare` does it (frames, tuning, row grid, notes, best_lag), so
+    whatever is drawn from them is what the census scored. None when either
+    trace is not in the cache."""
     import extra_pages
     import heard as H
     try:
@@ -226,7 +222,48 @@ def roll_data(name: str) -> dict | None:
         row = H.row_length([H.note_starts(st, rose, v, grid)[0] for v in range(3)])
         sides.append(([H.notes(st, rose, v, tune, row, grid) for v in range(3)], len(st)))
     (on, n_o), (bn, n_b) = sides
-    lag = H.best_lag(on, bn)
+    spf = tj["orig"]["mult"] * (ta.get("period_median") or 19656) / PAL_CYCLES_PER_SECOND
+    return {"on": on, "bn": bn, "n_o": n_o, "n_b": n_b, "lag": H.best_lag(on, bn),
+            "spf": spf, "mult_b": tj["ours"]["mult"]}
+
+
+WORST_NOTES = 12
+
+
+def worst_notes(name: str, limit: int = WORST_NOTES) -> list[dict] | None:
+    """The paired notes whose instruments differ on the most CORE attributes,
+    worst first, then earliest: what the census counts, located in time so a
+    listener can seek to it. None when the traces are not cached."""
+    import heard as H
+    d = _heard_notes(name)
+    if d is None:
+        return None
+    out = []
+    for v in range(3):
+        pairs, _ = H.pair(d["on"][v], d["bn"][v], d["lag"])
+        for a, b in pairs:
+            if b is None:
+                continue
+            ds = H.diffs(a, b, d["mult_b"])
+            core = [k for k in H.CORE if k in ds]
+            if core:
+                out.append({"t": a["start"] * d["spf"], "voice": v + 1, "core": core,
+                            "known": [k for k in H.KNOWN if k in ds]})
+    out.sort(key=lambda n: (-len(n["core"]), n["t"]))
+    return out[:limit]
+
+
+def roll_data(name: str) -> dict | None:
+    """The piano roll's notes for one staged pair: both sides' notes as
+    `heard.compare` segments and pairs them, ours shifted onto the original's
+    frame axis by the pair's lag. None when either trace is not in the cache.
+    Rows are [start, end, semitone, paired]; `end` is the next note's start.
+    """
+    import heard as H
+    d = _heard_notes(name)
+    if d is None:
+        return None
+    on, bn, n_o, n_b, lag = d["on"], d["bn"], d["n_o"], d["n_b"], d["lag"]
     voices = []
     for v in range(3):
         pairs, invented = H.pair(on[v], bn[v], lag)
@@ -243,8 +280,7 @@ def roll_data(name: str) -> dict | None:
         orig_paired = {id(a) for a, b in pairs if b is not None}
         voices.append({"orig": rows(on[v], n_o, 0, lambda n: id(n) in orig_paired),
                        "ours": rows(bn[v], n_b, lag, lambda n: id(n) in ours_paired)})
-    spf = tj["orig"]["mult"] * (ta.get("period_median") or 19656) / PAL_CYCLES_PER_SECOND
-    return {"lag": lag, "spf": spf, "voices": voices}
+    return {"lag": lag, "spf": d["spf"], "voices": voices}
 
 
 def write_roll(name: str) -> bool:
@@ -318,10 +354,29 @@ def heard_card(name: str, r: dict | None) -> str:
   %(invented)d of ours have no original.</p>
   <div class="scroll"><table><caption>differs</caption>%(head)s%(core)s</table>
   <table><caption>known-equivalent</caption>%(head)s%(known)s</table></div>
-</div>""" % dict(instr=instr, n=n, lag=r.get("lag", "?"),
+%(worst)s</div>""" % dict(instr=instr, n=n, lag=r.get("lag", "?"),
                 missing=r.get("missing", 0) or 0,
                 invented=r.get("invented", 0) or 0, head=head,
-                core=rows(H.CORE), known=rows(H.KNOWN)))
+                core=rows(H.CORE), known=rows(H.KNOWN),
+                worst=worst_table(worst_notes(name))))
+
+
+def worst_table(worst: list[dict] | None) -> str:
+    """The heard card's worst paired notes, at the original's time."""
+    if worst is None:
+        return ('  <p class="worst">Worst notes: the traces are not in '
+                '<code>build/heard</code>; run <code>python heard.py</code>.</p>\n')
+    if not worst:
+        return '  <p class="worst">Worst notes: no paired note differs.</p>\n'
+    body = "".join(
+        '<tr><td class="num">%d:%04.1f</td><td class="num">%d</td><td>%s</td>'
+        '<td class="muted">%s</td></tr>' % (
+            int(w["t"] // 60), w["t"] % 60, w["voice"], ", ".join(w["core"]),
+            ", ".join(w["known"]) or "&mdash;")
+        for w in worst)
+    return ('  <div class="scroll"><table class="worst"><caption>worst notes '
+            '(original\'s time)</caption><tr><th>time</th><th>voice</th>'
+            '<th>differs</th><th>known-equivalent</th></tr>%s</table></div>\n' % body)
 
 
 def fidelity_json_rows() -> dict[str, dict]:
@@ -983,6 +1038,8 @@ header { display:flex; flex-direction:column; gap:10px; }
 .eyebrow { font-family:var(--mono); font-size:11.5px; letter-spacing:.13em;
   text-transform:uppercase; color:var(--muted); }
 .eyebrow a { color:var(--muted); }
+.heard td.muted { color:var(--muted); }
+.heard td.num { text-align:right; font-variant-numeric:tabular-nums; }
 h1 { margin:0; font-size:clamp(28px,5vw,44px); letter-spacing:-.02em; text-wrap:balance; }
 h1 small { display:block; font-size:15px; font-weight:400; color:var(--muted);
   letter-spacing:0; margin-top:6px; }

@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.624 presets.py",
+  "generator": "h2g 0.5.625 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2003,6 +2003,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "wave_program": true,
       "aligned_firstwave": true
     },
     "Pandora.sid": {
@@ -2151,6 +2152,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "wave_program": true,
       "aligned_firstwave": true,
       "arpeggio": false
     },

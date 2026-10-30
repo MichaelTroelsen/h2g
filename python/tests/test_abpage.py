@@ -1461,6 +1461,41 @@ def test_heard_card_without_a_row_names_the_command():
     assert "heard.py" in got and "No heard-census row" in got
 
 
+def test_worst_table_lists_each_note_at_the_originals_time():
+    got = A.worst_table([{"t": 75.25, "voice": 2, "core": ["gate", "pitch"],
+                          "known": ["testpre"]},
+                         {"t": 3.0, "voice": 1, "core": ["wave"], "known": []}])
+    assert got.count("<tr><td") == 2
+    assert ('<td class="num">1:15.2</td><td class="num">2</td><td>gate, pitch</td>'
+            '<td class="muted">testpre</td>') in got
+    assert '<td class="num">0:03.0</td><td class="num">1</td><td>wave</td>' in got
+    assert "not in <code>build/heard</code>" in A.worst_table(None)
+    assert "no paired note differs" in A.worst_table([])
+
+
+def test_heard_card_without_cached_traces_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    got = A.heard_card("A_Tune", HEARD_ROW)
+    assert "Worst notes: the traces are not in" in got
+
+
+@pytest.mark.skipif(not (A.LISTEN / "Commando.trace.json").exists()
+                    or not A.HEARD_RUNS.exists(),
+                    reason="needs the staged Commando pair and the heard trace cache")
+def test_worst_notes_are_exactly_the_census_mismatches_worst_first():
+    every = A.worst_notes("Commando", limit=10 ** 9)
+    if every is None:
+        pytest.skip("Commando's traces are not in build/heard")
+    row = A.heard_rows().get("Commando")
+    assert row is not None
+    # paired notes that differ on a CORE attribute = notes - match - missing
+    assert len(every) == row["notes"] - row["match"] - row["missing"] > 0
+    keys = [(-len(w["core"]), w["t"]) for w in every]
+    assert keys == sorted(keys)
+    assert A.worst_notes("Commando") == every[:A.WORST_NOTES]
+    assert "<table class=\"worst\">" in A.heard_card("Commando", row)
+
+
 # --- the live spectrum and scope ---
 
 def test_a_served_page_carries_the_live_card_and_its_drawing_code():
