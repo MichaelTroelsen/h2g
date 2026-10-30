@@ -1033,7 +1033,7 @@ body {
   font-family:var(--sans); line-height:1.55;
   padding:clamp(16px,4vw,44px) clamp(14px,4vw,32px);
 }
-.wrap { max-width:62rem; margin:0 auto; display:flex; flex-direction:column; gap:22px; }
+.wrap { max-width:93rem; margin:0 auto; display:flex; flex-direction:column; gap:22px; }
 header { display:flex; flex-direction:column; gap:10px; }
 .eyebrow { font-family:var(--mono); font-size:11.5px; letter-spacing:.13em;
   text-transform:uppercase; color:var(--muted); }

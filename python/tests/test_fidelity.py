@@ -1546,7 +1546,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | tail | adsr |"
             in text)
     # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1730,6 +1730,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  noise_run_instruments=1, noise_run_orig_only=0,
                  noise_run_ours_only=0,
                  sound_run_agreement=melody, sound_run_matched=1,
+                 sound_run_agreement_nofetch=melody, sound_run_fetch=0,
                  sound_run_instruments=1, sound_run_delta=0,
                  release_tail_agreement=melody, release_tail_matched=1,
                  release_tail_instruments=1, release_tail_ours_longer=0,
@@ -5627,3 +5628,69 @@ def test_aud_voices_columns_scores_the_paired_voice(tmp_path):
     assert got["aud_voices"] == [0.9, None, 0.9]
     assert got["aud_voice_pairing"] == [1, 0, 2]
     assert got["aud_voices_failed"] == ["voice 2: ours"]
+
+
+# --- `holdnf`: `hold` with the next-note fetch frame forgiven ----------------
+
+
+def _hold_voices(adsr, slot, held, n):
+    """`n` notes of `held` sounding frames in a `slot`-frame slot (see
+    tests/test_hold_census.py::_voice; a trailing attack closes the last)."""
+    wf, at = [], []
+    for i in range(n + 1):
+        a = i * slot
+        at.append(a)
+        wf.append((a, 0x11))
+        if held < slot:
+            wf.append((a + held, 0x09))
+    return [fidelity.Voice(wf_events=wf, adsr_events=[(0, adsr)],
+                           attack_frames=at),
+            fidelity.Voice(), fidelity.Voice()]
+
+
+def test_holdnf_forgives_the_fetch_frame_and_only_the_fetch_frame():
+    """Three instruments, one per voice: exact match, one frame short in an
+    unchanged slot (`fetch`), three frames short in the same slot (`short`).
+    `hold` scores 1 of 3; `holdnf` scores 2 of 3 -- the match and the fetch,
+    not the real length difference. A `slot` difference is checked below."""
+    oo = [_hold_voices(0x0A09, 8, 8, 6)[0], _hold_voices(0x0B09, 8, 8, 6)[0],
+          _hold_voices(0x0C09, 12, 12, 6)[0]]
+    uu = [_hold_voices(0x0A09, 8, 8, 6)[0], _hold_voices(0x0B09, 8, 7, 6)[0],
+          _hold_voices(0x0C09, 12, 9, 6)[0]]
+    assert [r["kind"] for r in fidelity.hold_census(oo, uu, 200)]         == ["match", "fetch", "short"]
+    hold = fidelity.sound_run_agreement(oo, uu, 200)
+    nf = fidelity.sound_run_agreement_nofetch(oo, uu, 200)
+    assert hold["sound_run_instruments"] == 3
+    assert hold["sound_run_agreement"] == 1 / 3          # the match alone
+    assert nf["sound_run_fetch"] == 1
+    assert nf["sound_run_agreement_nofetch"] == 2 / 3    # match + fetch only
+
+
+def test_holdnf_does_not_forgive_a_slot_difference():
+    oo = [_hold_voices(0x0D09, 8, 8, 6)[0], fidelity.Voice(), fidelity.Voice()]
+    uu = [_hold_voices(0x0D09, 6, 6, 6)[0], fidelity.Voice(), fidelity.Voice()]
+    assert [r["kind"] for r in fidelity.hold_census(oo, uu, 200)] == ["slot"]
+    assert fidelity.sound_run_agreement_nofetch(oo, uu, 200)[
+        "sound_run_agreement_nofetch"] == 0.0
+
+
+def test_holdnf_equals_hold_where_there_is_no_fetch_instrument():
+    oo = [_hold_voices(0x0A09, 8, 8, 6)[0], _hold_voices(0x0C09, 12, 12, 6)[0],
+          fidelity.Voice()]
+    uu = [_hold_voices(0x0A09, 8, 8, 6)[0], _hold_voices(0x0C09, 12, 9, 6)[0],
+          fidelity.Voice()]
+    nf = fidelity.sound_run_agreement_nofetch(oo, uu, 200)
+    assert nf["sound_run_fetch"] == 0
+    assert (nf["sound_run_agreement_nofetch"]
+            == fidelity.sound_run_agreement(oo, uu, 200)["sound_run_agreement"]
+            == 0.5)
+
+
+def test_holdnf_is_registered_beside_hold_and_says_what_it_is_blind_to():
+    cols = [d.column for d in fidelity.DIMENSIONS]
+    assert cols.index("holdnf") == cols.index("hold") + 1
+    d = next(x for x in fidelity.DIMENSIONS
+             if x.key == "sound_run_agreement_nofetch")
+    assert "Blind to a one-frame fetch difference" in d.of
+    # and `hold` itself is untouched: still keyed on the original key
+    assert next(x for x in fidelity.DIMENSIONS if x.column == "hold").key         == "sound_run_agreement"

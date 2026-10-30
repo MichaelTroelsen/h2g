@@ -704,6 +704,15 @@ Corpus at v0.5.259, 433 instruments across 81 files: `fetch` 211, `slot` 117,
 are one mechanism, a terminating `$00`/`$08` wavetable step the emitters do not
 write. See H2G-CONVERSION-METHOD.md § 7.xxxx.
 
+**`holdnf` (v0.5.626)** is the census turned into a column: the fraction of
+instruments whose kind is `match` **or `fetch`**, beside `hold`, which is
+unchanged. It is blind to a one-frame fetch difference by construction, so
+`hold` 0% with `holdnf` 100% says every miss is the next-note fetch and none
+is about note length. At v0.5.625 that was the whole 0% on Commando, Chimera,
+Commando_2, Last_V8, Mozart and Zoids (every instrument `fetch`); Gremlins,
+all `match`, read 100% on both. Whether that frame is audible is a listening
+question, not a measurement.
+
 ### The gate census — `--gate-census`
 
 ```sh
@@ -1158,6 +1167,22 @@ a full corpus — so the window sat silent and read as hung, and a browser opene
 against it got `ERR_CONNECTION_REFUSED`. `--no-build` serves what is already
 staged and binds at once. Rebuild with a plain `python abpage.py` when the
 pages are actually stale.
+
+**Checking a page renders: `render_check.py` (v0.5.626).** The Playwright MCP
+server hung twice (no response for 1800 s, then 120 s+), so the render check
+is a script around installed Chrome:
+
+```sh
+python render_check.py --listen Commando.html --select table.worst
+python render_check.py <url-or-file> [--select CSS ...]
+```
+
+`--listen` starts its own `abpage.py --no-build --serve` on a free port and
+stops it afterwards. Per page it prints the console errors and whether each
+selector is present, and exits non-zero on either. Chrome's stderr labels
+`console.error` and an uncaught exception alike as `INFO:CONSOLE`, so it counts
+every console line, `console.log` included. A probe page carrying one
+`console.error` and one ReferenceError reads exactly 2, so a 0 is not blind.
 
 ### The instrument map — `instrmap.py`
 

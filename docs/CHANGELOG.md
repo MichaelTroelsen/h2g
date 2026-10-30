@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.626 — 2026-10-30
+
+- holdnf column (fetch frame forgiven); render_check.py; song A/B pages 93rem wide
+
 ## 0.5.625 — 2026-10-30
 
 - wave_program adopted on Pacific_Coast and Radio_ACE (with aligned_firstwave: wave 68->98%/88->97%, onset ->100%, hold flat); A/B heard card lists its worst notes

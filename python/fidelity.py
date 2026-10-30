@@ -4726,6 +4726,31 @@ def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
     return out
 
 
+def sound_run_agreement_nofetch(orig: list[Voice], ours: list[Voice],
+                                nframes: int) -> dict:
+    """`hold` with the next-note fetch frame forgiven -- the `holdnf` column.
+
+    Same population and same modal reduction as `sound_run_agreement`, taken
+    from `hold_census` so the two cannot drift apart: an instrument counts as
+    agreeing when its census kind is `match` **or `fetch`** (one frame short in
+    an unchanged slot, Goattracker's own next-note fetch, gplay.c:905).
+
+    `hold` itself is left alone -- it is an acceptance term of
+    `fidelity_better`, and every figure ever quoted for it stays comparable.
+    This is the column to read when `hold` sits at 0%: whatever it still
+    misses is `slot`, `short`, `long` and the rest, not the fetch frame. It
+    is **blind to a one-frame fetch difference by construction**, so it cannot
+    be used to judge `--no-test-restart`; `hold` is the column for that.
+    """
+    recs = hold_census(orig, ours, nframes)
+    if not recs:
+        return {"sound_run_agreement_nofetch": None, "sound_run_fetch": 0}
+    fetch = sum(1 for r in recs if r["kind"] == "fetch")
+    ok = sum(1 for r in recs if r["kind"] in ("match", "fetch"))
+    return {"sound_run_agreement_nofetch": ok / len(recs),
+            "sound_run_fetch": fetch}
+
+
 def hold_census_report(rows: list[dict]) -> str:
     """The hold census over a whole run: what the length misses are made of.
 
@@ -7036,6 +7061,19 @@ DIMENSIONS = (
               "is the `$09` firstwave frame sitting below $10 and breaking the "
               "run, not a short note; `gate` counts that same frame's gate bit "
               "as a surplus, which is why the two report opposite signs"),
+    # `hold` with the fetch frame forgiven. `hold` is left exactly as it was
+    # (it is a `fidelity_better` acceptance term and every quoted figure
+    # stays comparable); this one reads `hold_census`'s kinds, so it can
+    # never drift from the census. See `sound_run_agreement_nofetch`.
+    Dimension("sound_run_agreement_nofetch", "holdnf", ("$D404",), "fraction",
+              "`hold`, but an instrument one frame short in an unchanged "
+              "slot (`hold_census`'s `fetch` kind -- Goattracker's next-note "
+              "fetch) counts as matching, so a 0% in `hold` that is all fetch "
+              "reads high here and what is left is a real note-length or "
+              "slot difference. **Blind to a one-frame fetch difference by "
+              "construction** -- do not use it to judge `--no-test-restart`; "
+              "`hold` is the column for that. Equals `hold` where the census "
+              "finds no `fetch` instrument"),
     # The column that sees a mechanism emitted one frame out of phase. `wave`
     # averages 3000 frames, so a wrong opening on a 43-note instrument is a
     # rounding error in it; `nrun` compares run lengths and is position-
@@ -8315,6 +8353,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
+            row.update(sound_run_agreement_nofetch(a, best_dump, nframes))
             row.update(release_tail_agreement(a, best_dump, nframes))
             # No `lag`: each side is read at its *own* attack frames, so the
             # startup latency cancels rather than needing correcting. See
@@ -9098,8 +9137,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -9135,6 +9174,7 @@ def report(rows: list[dict], args) -> str:
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('sound_run_agreement'))} | "
+            f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
             f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "

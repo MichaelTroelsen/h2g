@@ -74,6 +74,26 @@ def test_the_index_is_well_formed():
     assert _balanced(got) == []
 
 
+def _wrap_width(html: str) -> str:
+    """The max-width the page's outer `.wrap` resolves to: `.wrap.wide`
+    overrides `.wrap` on a page whose wrap carries the `wide` class."""
+    import re
+    base = re.search(r"\.wrap \{ max-width:([\d.]+rem)", html).group(1)
+    wide = re.search(r"\.wrap\.wide \{ max-width:([\d.]+rem)", html)
+    if wide and re.search(r'class="wrap wide"', html):
+        return wide.group(1)
+    return base
+
+
+def test_song_pages_are_93rem_wide_and_the_index_keeps_96rem():
+    """User, 2026-10-30: each song's A/B page 50% wider (62rem -> 93rem),
+    the index unchanged."""
+    page_got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=True)
+    index_got = A.index(["A_Tune", "B_Tune"], {"A_Tune": ROW}, "v1")
+    assert _wrap_width(page_got) == "93rem"
+    assert _wrap_width(index_got) == "96rem"
+
+
 def test_a_local_page_references_the_wavs_beside_it():
     """The reason a local page can carry two minutes where an embedded one
     cannot: it never inlines the audio."""
