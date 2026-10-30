@@ -176,9 +176,10 @@ def test_the_index_header_and_every_row_agree_on_the_column_count():
     head = re.search(r"<thead>.*?</thead>", got, re.S).group(0)
     widths = {len(re.findall(r"<td", r))
               for r in re.findall(r"<tr>(?:(?!</tr>).)*</tr>", got, re.S)[1:]}
-    # `<th[ >]`: the length and measure headings carry a title attribute.
-    assert len(re.findall(r"<th[ >]", head)) == 11
-    assert widths == {11}
+    # `<th[ >]`: the instr, length and measure headings carry a title
+    # attribute. 12 since the heard-census `instr` column.
+    assert len(re.findall(r"<th[ >]", head)) == 12
+    assert widths == {12}
 
 
 def test_length_text_reads_the_length_probe():
@@ -1418,3 +1419,157 @@ def test_timeline_card_prints_the_dip_second_and_says_so_when_there_is_none():
     none = A.timeline_card({"aud_timeline": [0.9, 0.9], "aud_first_dip_s": None})
     assert "No located stretch" in none and "uniform" in none
     assert A.timeline_card({}) == ""
+
+
+# --- the heard-instrument census (heard.py) on the pages ---
+
+HEARD_ROW = {"name": "A_Tune", "notes": 200, "match": 150, "instr": 0.75, "lag": 4,
+             "missing": 3, "invented": 2, "gate": 20, "wave": 10, "ad": 0, "sr_hi": 0,
+             "pitch": 30, "testpre": 7, "sr_rel": 5, "tail_env": 1, "gated_tick": 9,
+             "pitch_rel": 4, "tail_len": 12}
+
+
+def test_index_shows_the_heard_instr_column_and_a_dash_without_a_row():
+    got = A.index(["A_Tune", "B_Tune"], {"A_Tune": ROW}, "v1",
+                  heard={"A_Tune": HEARD_ROW})
+    assert ">instr</th>" in got
+    rows = re.findall(r"<tr><td><a href=\"(\w+)\.html\">.*?</tr>", got, re.S)
+    a_row = re.search(r'<tr><td><a href="A_Tune\.html">.*?</tr>', got, re.S).group(0)
+    b_row = re.search(r'<tr><td><a href="B_Tune\.html">.*?</tr>', got, re.S).group(0)
+    def cells(row):
+        return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+    # tune, SIDId, human, audio, test, melody, gate, wave, hold, instr
+    assert cells(a_row)[9] == "75%" and ' class="low">75%' in a_row
+    assert cells(b_row)[9] == "&mdash;"
+    assert rows == ["A_Tune", "B_Tune"]
+
+
+def test_heard_card_lists_real_and_known_attributes_apart():
+    import heard as H
+    got = A.heard_card("A_Tune", HEARD_ROW)
+    assert "<b>75%</b> of 200 original notes" in got
+    real, known = got.split("<caption>known-equivalent</caption>")
+    for k in H.CORE:
+        assert "<td>%s</td>" % k in real and "<td>%s</td>" % k not in known
+    for k in H.KNOWN:
+        assert "<td>%s</td>" % k in known and "<td>%s</td>" % k not in real
+    assert "<td>pitch</td><td class=\"num\">30</td><td class=\"num\">15.0%</td>" in real
+
+
+def test_heard_card_without_a_row_names_the_command():
+    got = A.heard_card("A_Tune", None)
+    assert "heard.py" in got and "No heard-census row" in got
+
+
+# --- the live spectrum and scope ---
+
+def test_a_served_page_carries_the_live_card_and_its_drawing_code():
+    got = A.page("Delta", ROW, [], "v1", embed=False, index_link=True)
+    assert 'id="livespec"' in got and 'id="livescope"' in got
+    # drawn from the pair the waveform picture decoded, never from the elements
+    assert "window.__abBufs = bufs" in got
+    assert 'getElementById("livespec")' in got and "createMediaElementSource" not in got
+    assert _balanced(got) == []
+
+
+def test_an_embedded_page_has_no_live_card():
+    got = A.page("Delta", ROW, [], "v1", embed=True, index_link=False)
+    assert 'id="livespec"' not in got
+
+
+# --- the piano roll ---
+
+def test_a_served_page_carries_the_roll_card_and_its_sidecar_name():
+    got = A.page("Delta", ROW, [], "v1", embed=False, index_link=True)
+    assert 'id="roll"' in got and 'window.__abRoll = "Delta.roll.json"' in got
+    assert _balanced(got) == []
+    emb = A.page("Delta", ROW, [], "v1", embed=True, index_link=False)
+    assert 'id="roll"' not in emb
+
+
+def test_roll_data_is_none_without_a_staged_trace(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    assert A.roll_data("No_Such_Tune") is None
+
+
+@pytest.mark.skipif(not (A.LISTEN / "Commando.trace.json").exists()
+                    or not A.HEARD_RUNS.exists(),
+                    reason="needs the staged Commando pair and the heard trace cache")
+def test_roll_data_pairs_exactly_as_the_census_does():
+    import heard as H
+    d = A.roll_data("Commando")
+    if d is None:
+        pytest.skip("Commando's traces are not in build/heard")
+    row = A.heard_rows().get("Commando")
+    assert row is not None and d["lag"] == row["lag"]
+    unpaired_orig = sum(1 - n[3] for v in d["voices"] for n in v["orig"])
+    assert unpaired_orig == row["missing"]
+    for v in d["voices"]:
+        for n in v["orig"] + v["ours"]:
+            assert n[0] < n[1] and n[3] in (0, 1)
+
+
+# --- the wavetable-step panel ---
+
+def _expand(entries, calls):
+    """An independent reading of a program: entry index per wavetable call,
+    built by repeating each entry for its call count and then the loop a jump
+    closes, instead of _program_step's modular arithmetic."""
+    seq, body = [], [i for i, e in enumerate(entries) if e[3] != "jump"]
+    for i in body:
+        seq += [i] * (entries[i][6] - entries[i][5] + 1)
+    jump = entries[-1] if entries and entries[-1][3] == "jump" else None
+    loop = [i for i in body if jump and jump[2] and entries[i][0] >= jump[2]]
+    lseq = [i for i in loop for _ in range(entries[i][6] - entries[i][5] + 1)]
+    while len(seq) < calls:
+        seq += lseq if lseq else [body[-1]]
+    return seq
+
+
+def test_program_step_agrees_with_an_expanded_program_on_every_call():
+    # pulse, a 3-call delay, then a two-entry loop closed by a jump to entry 2
+    entries = [(1, 0x41, 0, "wave", "", 1, 1), (2, 0x02, 0x80, "delay", "", 2, 4),
+               (3, 0x40, 0, "wave", "", 5, 5), (4, 0xFF, 2, "jump", "", 6, 5)]
+    seq = _expand(entries, 40)
+    assert [A._program_step(entries, c) for c in range(1, 41)] == seq[:40]
+
+
+@pytest.mark.skipif(not (A.LISTEN / "Commando.trace.json").exists()
+                    or not (A.LISTEN / "Commando.h2g.sng").exists(),
+                    reason="needs the staged Commando pair")
+def test_commando_lit_step_matches_songviews_call_ranges():
+    import json
+    import songview as SV
+    tr = json.loads((A.LISTEN / "Commando.trace.json").read_text(encoding="utf-8"))
+    sng = A.LISTEN / "Commando.h2g.sng"
+    sched = A.row_schedule(sng, tr["sub_ours"], tr["ours"]["mult"], tr["frames"])
+    steps = A.step_schedule(sng, sched)
+    song = SV.parse_sng(sng.read_bytes())
+    checked = 0
+    for v in range(3):
+        notes = [(r[0], r[7]) for r in sched["voices"][v]
+                 if r[1] not in ("...", "===") and r[3] != A.CMD_TONEPORTA_ and r[7]]
+        runs = steps["voices"][v]
+        for k, (nf, instr) in enumerate(notes[:40]):
+            stop = notes[k + 1][0] if k + 1 < len(notes) else nf + 1
+            entries = SV.wave_program(song, song.instruments[instr - 1].wave_ptr)
+            seq = _expand(entries, stop - nf + 1)
+            for f in range(nf, stop):
+                at = max(r for r in runs if r[0] <= f)
+                want = -1 if f == nf else seq[f - nf - 1]
+                assert at[1:] == [instr, want], (v, nf, f)
+                checked += 1
+    assert checked > 500
+
+
+@pytest.mark.skipif(not (A.LISTEN / "Commando.trace.json").exists()
+                    or not (A.LISTEN / "Commando.h2g.sng").exists(),
+                    reason="needs the staged Commando pair")
+def test_a_staged_page_carries_the_wavetable_step_panel():
+    got = A.page("Commando", ROW, [], "v1", embed=False, index_link=True)
+    for v in range(3):
+        assert 'id="ws%d"' % v in got
+    assert "window.__abWave = {" in got and "if (window.__abWave)" in got
+    assert _balanced(got) == []
+    assert 'id="ws0"' not in A.page("Commando", ROW, [], "v1", embed=True,
+                                    index_link=False)

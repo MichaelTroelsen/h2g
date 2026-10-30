@@ -45,6 +45,7 @@ from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
 from . import rest_park as _gw_rest_park
+from . import sfx_rest_click as _gw_sfx_rest_click
 from . import rest_ring as _gw_rest_ring
 from . import filters as _gw_filters
 from . import classic_filter_stop as _gw_classic_filter_stop
@@ -1932,6 +1933,16 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         stair_aliases.extend(tri_clones)
         for at, track in zip(track_at, tracks):
             out[at:at + len(track)] = bytes(track)
+    # The bit-$80 drum's hit on a rest of its record (`sfx_rest_click`): the
+    # player fires it unmasked one frame into the rest, a gate edge our KEYOFF
+    # masks. After every pass that names an instrument (the clone is made from
+    # the finished record and numbered after the last one), before the rest
+    # park, whose `CMD_SETWAVE` rows it may have taken.
+    if sfx_drum and fmt == FORMAT_GTS5:
+        patterns, wave_entries, written_instr = (
+            _gw_sfx_rest_click.sfx_rest_click_plan(
+                det, tracks, patterns, out, instr_at, written_instr,
+                wave_entries, multiplier, log))
     # `--rest-wave-silence`'s parked waveform under a LOOPING wavetable
     # (`rest_park`): the rest's `CMD_SETWAVE $08` is overwritten by the next
     # call's WAVEEXEC, so such a rest points at a parked program appended

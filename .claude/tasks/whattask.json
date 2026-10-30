@@ -1,19 +1,17 @@
 {
  "generated_from": {
-  "head": "65c516a",
+  "head": "8c35805",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at ef431be)",
+   ".claude/tasks/whattask.json (previous plan, 65c516a, patched through 5390dcb)",
    ".claude/tasks/runs.jsonl (whole file; no records since ef431be)",
    ".claude/tasks/decisions.jsonl (no new lines)",
-   "session 2026-10-29: MagPlaySID heard census (65c516a) and the user-approved aligned_firstwave adoption (uncommitted)",
-   "docs/MAGPLAYSID-ANALYSIS.md section 0 and plan rows 0a-0c",
+   "git log 65c516a..8c35805 (aligned_firstwave adoption and refresh)",
+   "todo.md (the 2026-10-29 entries: heard refresh, A/B pages, heard rules, drum census)",
+   "whats-next.md (2026-09-02 handoff; spent, contributes no tasks)",
    "hooks/prune.js with policy.json",
    "graphify-out/graph.json (graphify update this pass)",
-   "gh: no open issues or PRs",
-   "todo.md heard-census refresh entry and the tool-alignment pass (2026-10-29)",
-   "todo.md listening-page features entry (2026-10-29)",
-   "todo.md heard-measurement and drum census entries (MagPlaySID review, 2026-10-29)"
+   "gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work."
  },
@@ -38,54 +36,8 @@
   ".claude/tasks/serial.lock.d"
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1574,
+ "closed_count": 1575,
  "tasks": [
-  {
-   "offload": null,
-   "why_offload": null,
-   "mcp": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "needs_main": true,
-   "needs_main_reason": "regenerates SURVEY/presets/FIDELITY/QUEUE and commits; CLAUDE.md keeps both in the orchestrating session",
-   "depends_on": [],
-   "lane": "serial",
-   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, drum-fixed-vs-relative-census",
-   "id": "aligned-firstwave-six-songs-land",
-   "title": "Land aligned_firstwave on the six no_test_restart songs (user-approved) and refresh the artefacts",
-   "source": "session 2026-10-29: user approved adoption on the heard + fidelity A/B at 65c516a (C:/t/stale-pitch/ab_table.txt)",
-   "model": "session",
-   "effort": "medium",
-   "mode": "main",
-   "touches": [
-    "r:python/h2g",
-    "rw:presets.json",
-    "rw:python/presets.py",
-    "rw:docs/SURVEY.md",
-    "rw:docs/OPTIONS.md",
-    "rw:docs/CHANGELOG.md",
-    "rw:docs/MAGPLAYSID-ANALYSIS.md",
-    "rw:python/h2g/__init__.py",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:docs/LESSONS.md",
-    "rw:build/fidelity.json",
-    "rw:build/queue.json",
-    "rw:build/audio",
-    "rw:build/onset_census.md",
-    "rw:build/hold_census.md",
-    "rw:build/depth_census.md",
-    "rw:python/tests/test_claude_md_figures.py",
-    "rw:host:C:/t/stale-pitch",
-    "rw:CLAUDE.md"
-   ],
-   "verify": "In progress in the working tree: presets.json carries aligned_firstwave on Pacific_Coast, Powerplay_Hockey_USA_vs_USSR, Pygmies_Revenge, Radio_ACE, Sigma_Seven and Wiz; python/presets.py and docs/OPTIONS.md record the A/B; the version is bumped; SURVEY.md and presets.json are regenerated. DONE when a regenerated presets.json carries aligned_firstwave on exactly those six plus Chicken_Song and Ninja (list them with python over presets.json), python -m pytest tests/ -q -n 12 --dist worksteal reports 0 failed, the commit lands, and the CLAUDE.md on-demand refresh (fidelity.py -t 180 --presets ../presets.json --sound --jobs 16 with the three census flags --json ../build/fidelity.json -o ../docs/FIDELITY.md, then fidelity_queue.py) shows melody on each of the six at or above its row in C:/t/stale-pitch/f_afw.json. CLAUDE.md's on-demand refresh names heard.py (added with this commit).",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a documented regenerate-test-commit sequence on an adoption already decided",
-   "why_mode": "presets adoption, artefact regeneration and the commit are the orchestrating session's"
-  },
   {
    "id": "heard-census-refresh-after-commit",
    "title": "Keep the heard-instrument census current: restage build/listen and re-run heard.py after each converter or presets commit",
@@ -95,9 +47,7 @@
    "mode": "main",
    "needs_main": true,
    "needs_main_reason": "restages build/listen corpus-wide (six shards) and rewrites build/heard; both are plan hazards",
-   "depends_on": [
-    "aligned-firstwave-six-songs-land"
-   ],
+   "depends_on": [],
    "touches": [
     "r:presets.json",
     "r:build/fidelity.json",
@@ -123,7 +73,7 @@
    "blocked_on": null,
    "decision": null,
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census"
+   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census"
   },
   {
    "offload": null,
@@ -137,8 +87,7 @@
    "needs_main_reason": "merges converter changes and presets adoptions and runs the corpus byte-hash and A/B; CLAUDE.md keeps adoption and presets.json in the orchestrating session",
    "depends_on": [
     "melody99-attribute-misses-by-mechanism",
-    "thundercats-melody-82-root-cause",
-    "aligned-firstwave-six-songs-land"
+    "thundercats-melody-82-root-cause"
    ],
    "id": "melody99-land-top-mechanism-fixes",
    "title": "Land the Thundercats sfx_rest_click patch and the top-ranked melody mechanism fixes, corpus A/B gated",
@@ -163,7 +112,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "adoption decisions on corpus A/B evidence, where a regression on an untargeted song, or a deliberate trade read as a defect, is the failure",
    "why_mode": "adoption and presets.json are the orchestrating session job",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-regenerate-and-rerank, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census",
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-regenerate-and-rerank, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census",
    "lane": "serial"
   },
   {
@@ -206,7 +155,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a documented command sequence plus one comparison",
    "why_mode": "artefact regeneration is the orchestrating session job",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, drum-fixed-vs-relative-census",
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, drum-fixed-vs-relative-census",
    "lane": "serial"
   },
   {
@@ -236,7 +185,7 @@
    "why_model": "the work either side of the answer is a bounded preset search",
    "why_effort": "bounded once the answer is in",
    "why_mode": "whether the fixture song may diverge from its fixture is the user's call",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank",
+   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank",
    "lane": "serial"
   },
   {
@@ -268,7 +217,7 @@
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census"
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, real-firstwave-stale-attack-pitch, heard-shapes-noise-frame-and-late-gate-attributed, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release, drum-fixed-vs-relative-census"
   },
   {
    "offload": null,
@@ -282,7 +231,7 @@
    "needs_main_reason": null,
    "depends_on": [],
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
    "id": "real-firstwave-stale-attack-pitch",
    "title": "5_Title_Tunes and Auf_Wiedersehen_Monty: the attack frame plays our previous note's pitch under real_firstwave_instruments; A/B pitch_lead_tie",
    "source": "session 2026-10-29: heard census at 65c516a (C:/t/stale-pitch/census.py); aligned_firstwave measured flat or worse on both",
@@ -317,7 +266,7 @@
     "heard-measure-pitch-forms-silence-restrike-release"
    ],
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
    "id": "heard-shapes-noise-frame-and-late-gate-attributed",
    "title": "Attribute the next heard shapes against their emitters: frame-1 noise played as tone, gate 100000/111000 and gate 100000/100001",
    "source": "session 2026-10-29: heard census shapes at 65c516a (docs/MAGPLAYSID-ANALYSIS.md section 0)",
@@ -358,7 +307,7 @@
    "id": "abpage-heard-score-card",
    "title": "A/B pages: the heard instr score in the index and a per-song heard card",
    "source": "todo.md (Listening pages, item 1; added 2026-10-29); docs/MAGPLAYSID-ANALYSIS.md section 4",
-   "model": "sonnet",
+   "model": "session",
    "effort": "medium",
    "mode": "subtask",
    "touches": [
@@ -369,7 +318,7 @@
     "r:python/heard.py"
    ],
    "verify": "The index gains a sortable instr column read from build/heard.json, showing - for a song with no row. Each song page gains a card with the song's CORE attribute counts, the known-equivalent ones listed apart, and its worst paired notes (time, voice, differing attributes). Rebuild the pages (python abpage.py from python/), then open build/listen/index.html and the Commando page and one multispeed song's page in Playwright: each renders with no console errors and the new card shows its data. A new test in tests/test_abpage.py pins the card's HTML, and fails when the card's code is removed (print the removed region from disk to show the removal landed).",
-   "why_model": "bounded page work against a JSON file whose shape is fixed",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses (needs_main: the shared Playwright browser)",
    "why_effort": "one card and one column, no design choice",
    "why_mode": "self-contained page change; the orchestrator checks the render"
   },
@@ -391,7 +340,7 @@
    "id": "abpage-live-spectrum-and-scopes",
    "title": "A/B pages: a live WebAudio spectrum and oscilloscopes, original over ours, while a pair plays",
    "source": "todo.md (Listening pages, item 2; added 2026-10-29); docs/MAGPLAYSID-ANALYSIS.md section 4",
-   "model": "sonnet",
+   "model": "session",
    "effort": "medium",
    "mode": "subtask",
    "touches": [
@@ -400,7 +349,7 @@
     "rw:build/listen"
    ],
    "verify": "An AnalyserNode on each side's audio element drives a spectrum and a scope per side, drawn per animation frame, original over ours. It works on a page served by build/listen/Listen.cmd (abpage.serve, port 8730), and a page opened directly from disk still renders without errors. The existing static spectrogram card is kept. Rebuild the pages (python abpage.py from python/), then open build/listen/index.html and the Commando page and one multispeed song's page in Playwright: each renders with no console errors and the new card shows its data. A new test in tests/test_abpage.py pins the card's HTML, and fails when the card's code is removed (print the removed region from disk to show the removal landed).",
-   "why_model": "client-side page code with a known API",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses (needs_main: the shared Playwright browser)",
    "why_effort": "one card, the only constraint is how the page is served",
    "why_mode": "self-contained page change; the orchestrator checks the render"
   },
@@ -424,7 +373,7 @@
    "id": "abpage-piano-roll-original-vs-ours",
    "title": "A/B pages: a side-by-side piano roll, original against ours",
    "source": "todo.md (Listening pages, item 3; added 2026-10-29); docs/MAGPLAYSID-ANALYSIS.md section 4",
-   "model": "sonnet",
+   "model": "session",
    "effort": "high",
    "mode": "subtask",
    "touches": [
@@ -437,7 +386,7 @@
     "rw:python/tests/test_listen.py"
    ],
    "verify": "Design first, written to C:/t/abpage-piano-roll/design.md before any code. The choice is between adding freq to listen.trace_json (its docstring drops it deliberately for size) and a per-song sidecar of heard.notes (start frame, held pitch, voice, paired or not). Recommended: the sidecar. Then a card drawing both sides' notes on one time axis per voice, with unpaired notes marked, scrolling with playback. Rebuild the pages (python abpage.py from python/), then open build/listen/index.html and the Commando page and one multispeed song's page in Playwright: each renders with no console errors and the new card shows its data. A new test in tests/test_abpage.py pins the card's HTML, and fails when the card's code is removed (print the removed region from disk to show the removal landed). If the sidecar is chosen, python/listen.py and tests/test_listen.py stay unchanged.",
-   "why_model": "a data-source design choice plus page code, not the critical class",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses (needs_main: the shared Playwright browser)",
    "why_effort": "the design choice decides file sizes and what the roll can show",
    "why_mode": "self-contained once the design is written; the orchestrator reviews design.md"
   },
@@ -459,7 +408,7 @@
    "id": "abpage-wavetable-step-panel",
    "title": "A/B pages: an instrument panel that lights each wavetable step as it plays",
    "source": "todo.md (Listening pages, item 4; added 2026-10-29); docs/MAGPLAYSID-ANALYSIS.md section 4",
-   "model": "sonnet",
+   "model": "session",
    "effort": "high",
    "mode": "subtask",
    "touches": [
@@ -469,7 +418,7 @@
     "r:python/songview.py"
    ],
    "verify": "Design first, written to C:/t/abpage-wavetable-step-panel/design.md before any code. It must say how abpage.row_schedule's frame per row and songview.wave_program's first/last call per step map onto the audio clock when the multiplier is above 1, and which voice's step lights when the selector shows all three. Then a card that highlights the current step of each voice's instrument during playback. On Commando, the lit step at a chosen time matches songview's call range for that note. Rebuild the pages (python abpage.py from python/), then open build/listen/index.html and the Commando page and one multispeed song's page in Playwright: each renders with no console errors and the new card shows its data. A new test in tests/test_abpage.py pins the card's HTML, and fails when the card's code is removed (print the removed region from disk to show the removal landed).",
-   "why_model": "mapping two existing schedules onto one clock; checked against songview",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses (needs_main: the shared Playwright browser)",
    "why_effort": "multispeed timing is where a plausible panel lights the wrong step",
    "why_mode": "self-contained once the design is written; the orchestrator reviews design.md"
   },
@@ -551,7 +500,7 @@
    "needs_main_reason": null,
    "depends_on": [],
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: aligned-firstwave-six-songs-land, heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
+   "why_lane": "shares a path with a writer in: heard-census-refresh-after-commit, melody99-land-top-mechanism-fixes, melody99-regenerate-and-rerank, listen-current-builds-2026-10, abpage-heard-score-card, abpage-live-spectrum-and-scopes, abpage-piano-roll-original-vs-ours, abpage-wavetable-step-panel, abpage-original-as-tracker, heard-measure-pitch-forms-silence-restrike-release",
    "id": "drum-fixed-vs-relative-census",
    "title": "Drums on fixed notes versus drums that move with the note: does our wavetable choose as the original plays?",
    "source": "todo.md (added 2026-10-29); MagPlaySID source review 2026-10-29",

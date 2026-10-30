@@ -165,6 +165,165 @@ def preset_rows() -> dict[str, dict]:
     return out
 
 
+HEARD_JSON = ROOT / "build" / "heard.json"
+
+
+def heard_rows(path: Path | None = None) -> dict[str, dict]:
+    """Per-song rows of `build/heard.json` (`heard.py --json`), keyed by the
+    staged name. Empty when the census has not been run: the column and card
+    then say so rather than showing nothing."""
+    p = path or HEARD_JSON
+    try:
+        return {r["name"]: r for r in json.loads(p.read_text(encoding="utf-8"))}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+HEARD_RUNS = ROOT / "build" / "heard"
+PAL_CYCLES_PER_SECOND = 985248
+
+
+def _heard_trace(sid: Path, song: int, seconds: float) -> tuple[dict, Path] | None:
+    """A trace from heard.py's cache, read only: never traced from here."""
+    import heard as H
+    p = HEARD_RUNS / f"{sid.stem}.{H._sha(sid)}.s{song}.t{seconds:g}.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")), p
+    except (OSError, ValueError):
+        return None
+
+
+def roll_data(name: str) -> dict | None:
+    """The piano roll's notes for one staged pair: both sides' notes as
+    `heard.compare` segments and pairs them, ours shifted onto the original's
+    frame axis by the pair's lag. None when either trace is not in the cache.
+
+    The same sequence as `heard.compare` (frames, tuning, row grid, notes,
+    best_lag, pair), so the roll draws exactly the notes the census scores.
+    Rows are [start, end, semitone, paired]; `end` is the next note's start.
+    """
+    import extra_pages
+    import heard as H
+    try:
+        tj = json.loads((LISTEN / f"{name}.trace.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    src = extra_pages.EXTRA_PAGES.get(name, {}).get("source", name + ".sid")
+    orig, ours = find_sid(src), LISTEN / f"{name}.h2g.sid"
+    if orig is None or not ours.exists():
+        return None
+    secs = min(180, tj["seconds"])
+    a = _heard_trace(orig, tj["sub_orig"] + 1, secs)
+    b = _heard_trace(ours, tj["sub_ours"] + 1, secs)
+    if a is None or b is None:
+        return None
+    (ta, _), (tb, _) = a, b
+    sides = []
+    for tr, mult in ((ta, tj["orig"]["mult"]), (tb, tj["ours"]["mult"])):
+        st, rose = H.frames(tr, mult)
+        tune = H.tuning(st)
+        grid = H.shortest_row([H.rise_frames(rose, v) for v in range(3)])
+        row = H.row_length([H.note_starts(st, rose, v, grid)[0] for v in range(3)])
+        sides.append(([H.notes(st, rose, v, tune, row, grid) for v in range(3)], len(st)))
+    (on, n_o), (bn, n_b) = sides
+    lag = H.best_lag(on, bn)
+    voices = []
+    for v in range(3):
+        pairs, invented = H.pair(on[v], bn[v], lag)
+        ours_paired = {id(b) for _, b in pairs if b is not None}
+
+        def rows(ns, total, shift, paired):
+            out = []
+            for i, n in enumerate(ns):
+                end = ns[i + 1]["start"] if i + 1 < len(ns) else total
+                if n.get("held") is not None:
+                    out.append([n["start"] - shift, end - shift, n["held"],
+                                1 if paired(n) else 0])
+            return out
+        orig_paired = {id(a) for a, b in pairs if b is not None}
+        voices.append({"orig": rows(on[v], n_o, 0, lambda n: id(n) in orig_paired),
+                       "ours": rows(bn[v], n_b, lag, lambda n: id(n) in ours_paired)})
+    spf = tj["orig"]["mult"] * (ta.get("period_median") or 19656) / PAL_CYCLES_PER_SECOND
+    return {"lag": lag, "spf": spf, "voices": voices}
+
+
+def write_roll(name: str) -> bool:
+    """Write `<name>.roll.json` beside the page, recomputed on every build
+    from the cached traces (a stale roll is worse than a slow build). True when
+    a roll exists afterwards."""
+    out = LISTEN / f"{name}.roll.json"
+    data = roll_data(name)
+    if data is None:
+        return out.exists()
+    out.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+    return True
+
+
+def roll_card() -> str:
+    """The side-by-side piano roll, drawn by SCRIPT from `<name>.roll.json`."""
+    return (
+        '<div class="card wave roll">\n  <h2>Notes, original against ours</h2>\n'
+        '  <p class="roll-msg" id="rollmsg">Drawn from the heard census\'s paired '
+        'notes (<code>heard.py</code>), &plusmn;4 s around the playhead. Needs '
+        '<code>python abpage.py --serve</code>; over file:// a browser refuses '
+        'the fetch.</p>\n'
+        '  <canvas id="roll" aria-label="piano roll: three voices, original on the '
+        'upper half of each row, ours on the lower; an outlined note has no '
+        'partner on the other side"></canvas>\n'
+        '  <div class="legend">\n'
+        '    <span class="swatch orig"><i></i>original</span>\n'
+        '    <span class="swatch ours"><i></i>H2G</span>\n'
+        '    <span>outlined: no partner</span>\n'
+        '  </div>\n</div>\n')
+
+
+def heard_cell(r: dict | None) -> str:
+    """The index's `instr` cell: the share of original notes whose paired note
+    plays an identical instrument (heard.py's CORE), as a percentage."""
+    if not r or r.get("instr") is None:
+        return "&mdash;"
+    return "%.0f%%" % (100 * r["instr"])
+
+
+def heard_card(name: str, r: dict | None) -> str:
+    """The heard-instrument card: how many of this tune's notes differ, per
+    attribute, over their first frames (`python/heard.py`). Real differences
+    and the known-equivalent ones are listed apart, because the second kind
+    are recorded trades (the envelope cut, GoatTracker's `$09` frame, the
+    gated drum tick), not defects."""
+    if not r:
+        return ('<div class="card"><h2>Instruments, note by note</h2>'
+                '<p>No heard-census row for this tune: run '
+                '<code>python heard.py &lt;sid_dir&gt; --json ../build/heard.json'
+                '</code>.</p></div>')
+    import heard as H
+    n = r.get("notes") or 0
+
+    def rows(keys):
+        out = ""
+        for k in keys:
+            c = r.get(k, 0) or 0
+            share = (100.0 * c / n) if n else 0.0
+            out += ('<tr><td>%s</td><td class="num">%d</td>'
+                    '<td class="num">%.1f%%</td></tr>' % (k, c, share))
+        return out
+
+    head = '<tr><th>attribute</th><th>notes</th><th>share</th></tr>'
+    instr = heard_cell(r)
+    return ("""<div class="card heard">
+  <h2>Instruments, note by note</h2>
+  <p><b>%(instr)s</b> of %(n)d original notes are played by an identical
+  instrument over their first frames (gate, waveform, pitch, attack/decay and
+  sustain), at a lag of %(lag)s frames. %(missing)d have no partner of ours and
+  %(invented)d of ours have no original.</p>
+  <div class="scroll"><table><caption>differs</caption>%(head)s%(core)s</table>
+  <table><caption>known-equivalent</caption>%(head)s%(known)s</table></div>
+</div>""" % dict(instr=instr, n=n, lag=r.get("lag", "?"),
+                missing=r.get("missing", 0) or 0,
+                invented=r.get("invented", 0) or 0, head=head,
+                core=rows(H.CORE), known=rows(H.KNOWN)))
+
+
 def fidelity_json_rows() -> dict[str, dict]:
     """Per-file rows of `build/fidelity.json` (a `fidelity.py --json` run),
     keyed by stem the same way `fidelity_rows`/`preset_rows` key FIDELITY.md
@@ -705,6 +864,25 @@ def spectrogram_payload(name: str) -> dict | None:
     }
 
 
+def live_card() -> str:
+    """The live spectrum and scope: both sides at the playhead, original over
+    ours, redrawn per animation frame by SCRIPT from the WAVs the waveform
+    picture already decoded. Empty canvases with a note until that decode
+    lands -- which over file:// it never does, the same limit as the picture."""
+    return (
+        '<div class="card wave live">\n  <h2>At the playhead: spectrum and scope</h2>\n'
+        '  <p class="live-msg" id="livemsg">Drawn once both WAVs are decoded. Over '
+        'file:// a browser refuses that; run <code>python abpage.py --serve</code>.</p>\n'
+        '  <canvas id="livespec" aria-label="spectrum at the playhead, original over ours, '
+        '40 Hz to 16 kHz"></canvas>\n'
+        '  <canvas id="livescope" aria-label="waveform at the playhead: original above, '
+        'ours below"></canvas>\n'
+        '  <div class="legend">\n'
+        '    <span class="swatch orig"><i></i>original</span>\n'
+        '    <span class="swatch ours"><i></i>H2G</span>\n'
+        '  </div>\n</div>\n')
+
+
 def spectrogram_card(spec: dict | None) -> str:
     """The frequency-overlay card, or "" when no spectrogram was built."""
     if not spec:
@@ -963,6 +1141,18 @@ td.test .more { color:var(--muted); font-size:11px; }
 .trkrow .n { color:var(--ink); }
 .trkrow.note { color:var(--ink); }
 .trkrow.cur { background:color-mix(in srgb, var(--live) 22%, transparent); }
+.wsgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.wscol { border:1px solid var(--line); border-radius:6px; overflow:hidden;
+  background:var(--sunk); }
+.wscol h3 { margin:0; padding:6px 10px; font-family:var(--mono); font-size:12px;
+  letter-spacing:.06em; background:var(--panel); border-bottom:1px solid var(--line); }
+.wsbody { height:260px; overflow:hidden; position:relative;
+  font-family:var(--mono); font-size:12px; line-height:1.45; }
+.wshead { padding:4px 10px; color:var(--muted); font-size:11px; letter-spacing:.06em; }
+.wsline { display:flex; gap:8px; padding:0 10px; white-space:pre; color:var(--muted); }
+.wsline .ix { display:inline-block; width:2.6em; }
+.wsline .lr { display:inline-block; width:3.6em; color:var(--ink); }
+.wsline.on { background:color-mix(in srgb, var(--live) 22%, transparent); color:var(--ink); }
 .trkrow .ix { color:var(--muted); opacity:.65; }
 .trkrow .instr { color:var(--b); font-weight:600; }
 /* An instrument the row INHERITS rather than sets. Goattracker reads a 00
@@ -1515,6 +1705,8 @@ SCRIPT = r"""
     function loadPair(keepSync) {
     return Promise.all([load(au.src), load(bu.src)]).then(function (bufs) {
       envA = envelope(bufs[0]); envB = envelope(bufs[1]);
+      // the live card reads the same decoded pair (no second decode)
+      window.__abBufs = bufs;
       if (msg) msg.hidden = true;
       cv.hidden = false;
       // A solo render's first onset is that voice's, not the song's, so the
@@ -2012,6 +2204,198 @@ SCRIPT = r"""
     });
   })();
 
+  // ---- live spectrum and scope ---------------------------------------------
+  // Drawn per animation frame from the DECODED pair at each element's own
+  // currentTime, not from an AnalyserNode on the elements: the side not being
+  // heard plays at volume 0, which an element source would pass on as
+  // silence, and rerouting playback through the graph would put the sync both
+  // sides rely on at risk. So both sides are always drawn, original over ours.
+  var lspec = document.getElementById("livespec"), lscope = document.getElementById("livescope");
+  if (lspec && lscope) (function () {
+    var lmsg = document.getElementById("livemsg");
+    var N = 2048, SC = 1024, W = 1400, H = 200, FMIN = 40, FMAX = 16000;
+    var hann = new Float32Array(N);
+    for (var i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+    lspec.width = W; lspec.height = H; lscope.width = W; lscope.height = H;
+    var gs = lspec.getContext("2d"), gc = lscope.getContext("2d");
+    function cssv(n) {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    }
+    // in-place radix-2 FFT; returns magnitudes of bins 0..N/2
+    function mags(ch, at) {
+      var re = new Float32Array(N), im = new Float32Array(N);
+      for (var k = 0; k < N; k++) {
+        var j = at + k;
+        re[k] = (j >= 0 && j < ch.length ? ch[j] : 0) * hann[k];
+      }
+      for (var a = 1, b = 0; a < N; a++) {
+        var bit = N >> 1;
+        for (; b & bit; bit >>= 1) b ^= bit;
+        b ^= bit;
+        if (a < b) { var t = re[a]; re[a] = re[b]; re[b] = t; }
+      }
+      for (var len = 2; len <= N; len <<= 1) {
+        var ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+        for (var s = 0; s < N; s += len) {
+          var cr = 1, ci = 0;
+          for (var m = 0; m < len / 2; m++) {
+            var p = s + m, q = p + len / 2;
+            var xr = re[q] * cr - im[q] * ci, xi = re[q] * ci + im[q] * cr;
+            re[q] = re[p] - xr; im[q] = im[p] - xi; re[p] += xr; im[p] += xi;
+            var nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+          }
+        }
+      }
+      var out = new Float32Array(N / 2);
+      for (var k2 = 0; k2 < N / 2; k2++) out[k2] = Math.hypot(re[k2], im[k2]);
+      return out;
+    }
+    function specLine(buf, t, colour) {
+      var ch = buf.getChannelData(0), sr = buf.sampleRate;
+      var mg = mags(ch, Math.round(t * sr) - N / 2);
+      gs.strokeStyle = colour; gs.lineWidth = 2; gs.beginPath();
+      for (var x = 0; x < W; x++) {
+        var f = FMIN * Math.pow(FMAX / FMIN, x / (W - 1));
+        var bin = Math.min(N / 2 - 1, Math.round(f * N / sr));
+        var db = 20 * Math.log10(mg[bin] / (N / 4) + 1e-9);
+        var y = H - (Math.max(-90, Math.min(0, db)) + 90) / 90 * H;
+        if (x) gs.lineTo(x, y); else gs.moveTo(x, y);
+      }
+      gs.stroke();
+    }
+    function scopeLine(buf, t, colour, row) {
+      var ch = buf.getChannelData(0), at = Math.round(t * buf.sampleRate);
+      // trigger on the first rising zero crossing, so a held note stands still
+      for (var k = 0; k < SC && at + k + 1 < ch.length; k++)
+        if (ch[at + k] <= 0 && ch[at + k + 1] > 0) { at += k; break; }
+      var mid = row * H / 2 + H / 4, half = H / 4 - 4;
+      gc.strokeStyle = colour; gc.lineWidth = 1.5; gc.beginPath();
+      for (var x = 0; x < W; x++) {
+        var j = at + Math.floor(x * SC / W);
+        var v = j >= 0 && j < ch.length ? ch[j] : 0;
+        var y = mid - v * half;
+        if (x) gc.lineTo(x, y); else gc.moveTo(x, y);
+      }
+      gc.stroke();
+    }
+    var last = -1;
+    function draw() {
+      var bufs = window.__abBufs;
+      if (bufs && lmsg) lmsg.hidden = true;
+      var key = au.currentTime + ":" + bu.currentTime;
+      if (bufs && key !== last) {
+        last = key;
+        gs.clearRect(0, 0, W, H); gc.clearRect(0, 0, W, H);
+        specLine(bufs[1], bu.currentTime, cssv("--b"));
+        specLine(bufs[0], au.currentTime, cssv("--a"));
+        scopeLine(bufs[0], au.currentTime, cssv("--a"), 0);
+        scopeLine(bufs[1], bu.currentTime, cssv("--b"), 1);
+      }
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  })();
+
+  // ---- wavetable-step panel --------------------------------------------------
+  // abpage.step_schedule precomputed, per voice, the step sounding at each
+  // frame as a run-length list; this only looks it up on the tracker's clock
+  // (our render, 50 frames a second) and lights the line.
+  if (window.__abWave) (function () {
+    var W = window.__abWave, shown = [null, null, null], lit = [null, null, null];
+    function hex(n) { return (n < 16 ? "0" : "") + n.toString(16).toUpperCase(); }
+    function runAt(runs, f) {
+      var lo = 0, hi = runs.length - 1, at = -1;
+      while (lo <= hi) { var m = (lo + hi) >> 1; if (runs[m][0] <= f) { at = m; lo = m + 1; } else hi = m - 1; }
+      return at < 0 ? null : runs[at];
+    }
+    function build(v, instr) {
+      var box = document.getElementById("ws" + v);
+      if (!box) return;
+      var prog = W.progs[String(instr)] || [], fw = W.firstwave[String(instr)];
+      var html = '<div class="wshead">instrument ' + hex(instr) + '</div>'
+               + '<div class="wsline" data-e="-1"><span class="ix">init</span><span>'
+               + 'firstwave ' + hex(fw || 0) + '</span></div>';
+      prog.forEach(function (e, k) {
+        html += '<div class="wsline" data-e="' + k + '"><span class="ix">' + hex(e[0])
+              + '</span><span class="lr">' + hex(e[1]) + ':' + hex(e[2])
+              + '</span><span>' + e[3] + '</span></div>';
+      });
+      box.innerHTML = html;
+    }
+    function tick() {
+      var f = Math.floor((bu.currentTime || au.currentTime) * 50);
+      for (var v = 0; v < 3; v++) {
+        var r = runAt(W.voices[v] || [], f), box = document.getElementById("ws" + v);
+        if (!box) continue;
+        if (!r) { if (shown[v] !== 0) { box.innerHTML = '<div class="wshead">no note yet</div>'; shown[v] = 0; lit[v] = null; } continue; }
+        if (shown[v] !== r[1]) { build(v, r[1]); shown[v] = r[1]; lit[v] = null; }
+        if (lit[v] !== r[2]) {
+          var old = box.querySelector(".wsline.on"); if (old) old.classList.remove("on");
+          var el = box.querySelector('.wsline[data-e="' + r[2] + '"]');
+          if (el) { el.classList.add("on"); box.scrollTop = el.offsetTop - box.clientHeight / 2; }
+          lit[v] = r[2];
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  })();
+
+  // ---- piano roll: original against ours -----------------------------------
+  // Notes from `<name>.roll.json` (abpage.roll_data: the heard census's own
+  // segmentation and pairing), on the original's time axis, +-4 s around the
+  // original's playhead. Three lanes; in each semitone row the original takes
+  // the upper half and ours the lower, and a note with no partner is outlined.
+  var rcv = document.getElementById("roll");
+  if (rcv && window.__abRoll) (function () {
+    var rmsg = document.getElementById("rollmsg");
+    var W = 1400, LANE = 120, GAP = 8, SPAN = 4;
+    rcv.width = W; rcv.height = 3 * LANE + 2 * GAP;
+    var g = rcv.getContext("2d"), roll = null, lastT = -1;
+    function cssv(n) {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    }
+    fetch(window.__abRoll).then(function (r) { return r.json(); }).then(function (d) {
+      roll = d;
+      roll.voices.forEach(function (v) {
+        var lo = 127, hi = 0;
+        v.orig.concat(v.ours).forEach(function (n) { lo = Math.min(lo, n[2]); hi = Math.max(hi, n[2]); });
+        v.lo = lo > hi ? 0 : lo; v.hi = lo > hi ? 1 : hi;
+      });
+      if (rmsg) rmsg.hidden = true;
+    }).catch(function () {});
+    function lane(vi, v, t, ca, cb) {
+      var top = vi * (LANE + GAP), rows = v.hi - v.lo + 1, rh = LANE / rows;
+      var f0 = (t - SPAN) / roll.spf, f1 = (t + SPAN) / roll.spf;
+      function bars(list, upper, colour) {
+        list.forEach(function (n) {
+          if (n[1] < f0 || n[0] > f1) return;
+          var x0 = (n[0] - f0) / (f1 - f0) * W, x1 = (n[1] - f0) / (f1 - f0) * W;
+          var y = top + (v.hi - n[2]) * rh + (upper ? 0 : rh / 2);
+          var h = Math.max(1, rh / 2 - 0.5), w = Math.max(1, x1 - x0 - 1);
+          g.fillStyle = colour; g.fillRect(x0, y, w, h);
+          if (!n[3]) { g.strokeStyle = cssv("--ink") || "#000"; g.lineWidth = 1.5; g.strokeRect(x0, y, w, h); }
+        });
+      }
+      g.strokeStyle = cssv("--line") || "#ccc"; g.lineWidth = 1;
+      g.strokeRect(0.5, top + 0.5, W - 1, LANE - 1);
+      bars(v.orig, true, ca); bars(v.ours, false, cb);
+    }
+    function draw() {
+      var t = au.currentTime;
+      if (roll && t !== lastT) {
+        lastT = t;
+        g.clearRect(0, 0, rcv.width, rcv.height);
+        var ca = cssv("--a"), cb = cssv("--b");
+        roll.voices.forEach(function (v, vi) { lane(vi, v, t, ca, cb); });
+        g.strokeStyle = cssv("--live") || "#2F7D52"; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, rcv.height); g.stroke();
+      }
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  })();
+
   apply(); setNames();
 })();
 """
@@ -2349,6 +2733,102 @@ def row_schedule(sng_path: Path, subtune: int, multiplier: int,
                 break
         out.append(rows)
     return {"voices": out, "multiplier": multiplier}
+
+
+CMD_TONEPORTA_ = 0x03
+
+
+def _program_step(entries: list, c: int) -> int:
+    """Index into `entries` (songview.wave_program's list) of the entry current
+    on wavetable call `c` (1-based), wrapping through the loop a jump closes.
+    C:/t/abpage-wavetable-step-panel/design.md has the derivation."""
+    body = [i for i, e in enumerate(entries) if e[3] != "jump"]
+    if not body:
+        return -1
+    last = entries[body[-1]][6]
+    if c > last:
+        jump = entries[-1] if entries[-1][3] == "jump" else None
+        loop = [i for i in body if jump and jump[2] and entries[i][0] >= jump[2]]
+        if not loop:
+            return body[-1]
+        first = entries[loop[0]][5]
+        c = first + (c - first) % (last - first + 1)
+    for i in body:
+        if entries[i][5] <= c <= entries[i][6]:
+            return i
+    return body[-1]
+
+
+def step_schedule(sng_path: Path, sched: dict) -> dict | None:
+    """Per voice, a run-length list [frame, instrument, entry] of the wavetable
+    step sounding at each frame of `row_schedule`'s clock; entry -1 is the
+    note-init call (firstwave, no wavetable), None before the first note. A
+    note row restarts its instrument's program, except under CMD_TONEPORTA,
+    which keeps the running one. At frame f the voice has run
+    (f - note_frame) * multiplier + multiplier - 1 calls since the note."""
+    try:
+        from songview import parse_sng, wave_program
+        song = parse_sng(sng_path.read_bytes())
+    except Exception:
+        return None
+    mult = max(1, sched.get("multiplier", 1))
+    progs, fw, out = {}, {}, []
+    for v, rows in enumerate(sched["voices"]):
+        notes = [(r[0], r[7]) for r in rows
+                 if r[1] not in ("...", "===") and r[3] != CMD_TONEPORTA_ and r[7]]
+        end = (rows[-1][0] + 1) if rows else 0
+        runs, prev = [], None
+        for k, (nf, instr) in enumerate(notes):
+            if instr not in progs:
+                if not 1 <= instr <= len(song.instruments):
+                    continue
+                ins = song.instruments[instr - 1]
+                progs[instr] = wave_program(song, ins.wave_ptr)
+                fw[instr] = ins.firstwave
+            stop = notes[k + 1][0] if k + 1 < len(notes) else end
+            for f in range(nf, max(nf + 1, stop)):
+                c = (f - nf) * mult + mult - 1
+                ei = -1 if c == 0 else _program_step(progs[instr], c)
+                key = (instr, ei)
+                if key != prev:
+                    runs.append([f, instr, ei])
+                    prev = key
+        out.append(runs)
+    return {"mult": mult, "voices": out,
+            "progs": {str(i): [[e[0], e[1], e[2], e[4]] for e in p] for i, p in progs.items()},
+            "firstwave": {str(i): w for i, w in fw.items()}}
+
+
+def wavestep_card(name: str) -> str:
+    """The wavetable-step panel: each voice's instrument program at the
+    playhead, the step it is executing lit (design: C:/t/abpage-wavetable-
+    step-panel/design.md). Our side only -- the .sng is ours."""
+    trace_path = LISTEN / ("%s.trace.json" % name)
+    sng_path = LISTEN / ("%s.h2g.sng" % name)
+    if not (trace_path.exists() and sng_path.exists()):
+        return ""
+    try:
+        tr = json.loads(trace_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    sched = row_schedule(sng_path, tr.get("sub_ours", 0),
+                         tr.get("ours", {}).get("mult", 1), tr.get("frames", 3000))
+    steps = step_schedule(sng_path, sched) if sched else None
+    if not steps:
+        return ""
+    cols = "".join('<div class="wscol"><h3>Channel %d</h3><div class="wsbody" '
+                   'id="ws%d"></div></div>' % (v + 1, v) for v in range(3))
+    return (
+        '<div class="card wavestep">\n  <h2>The instrument, step by step</h2>\n'
+        '  <div class="wsgrid">%s</div>\n'
+        '  <script>window.__abWave = %s;</script>\n'
+        '  <p class="trknote">Each channel\u2019s instrument at the playhead and its '
+        'wavetable program; the lit line is the step running now, on the same '
+        'clock as the pattern above. <code>init</code> is the note\u2019s first call, '
+        'which writes the firstwave and runs no wavetable. Approximations: the '
+        'hard-restart lead before a note is not shown, and a toneportamento row '
+        'keeps the running program.</p>\n</div>\n'
+        % (cols, json.dumps(steps, separators=(",", ":"))))
 
 
 def panel_card(name: str, embed: bool) -> str:
@@ -2848,6 +3328,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
 %(b_audio)s
 <script>window.__abVoices = %(voice_map)s;
 window.__abTrace = "%(trace_src)s";
+window.__abRoll = "%(roll_src)s";
 window.__abSpectrogram = %(spectrogram_json)s;</script>
 <script>%(script)s</script>
 """ % dict(pretty=pretty, css=CSS, back=back, version=version, chips=chips,
@@ -2857,16 +3338,19 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            voice_row=voice_row, voice_map=json.dumps(voice_map),
            facts=facts_card(name, survey or {}, preset or {}, fidjson or {}),
            panel=panel_card(name, embed),
-           tracker=tracker_card(name),
-           notes_strip=notes_strip_card(name, fidjson) + timeline_card(fidjson),
+           tracker=tracker_card(name) + ("" if embed else wavestep_card(name)),
+           notes_strip=(notes_strip_card(name, fidjson) + timeline_card(fidjson)
+                        + heard_card(name, heard_rows().get(name))
+                        + ("" if embed else roll_card())),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
            approval=approval_badge(name, approval or {}, version, now_shas,
                                    inherited=inherited),
            staleaudio=audio_banner(name, now_shas, withheld),
-           spectrogram=spectrogram_card(spec),
+           spectrogram=spectrogram_card(spec) + ("" if embed else live_card()),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
+           roll_src="%s.roll.json" % name,
            script=SCRIPT)
 
 
@@ -2993,9 +3477,11 @@ def index(names: list[str], rows: dict, version: str,
           survey: dict | None = None,
           inherited: dict | None = None,
           notes: dict | None = None,
-          fidjson: dict | None = None) -> str:
+          fidjson: dict | None = None,
+          heard: dict | None = None) -> str:
     appr = appr or {}
     fidjson = fidjson or {}
+    heard = heard_rows() if heard is None else heard
     shas = shas or {}
     survey = survey or {}
     notes = notes if notes is not None else listening_notes()
@@ -3108,6 +3594,7 @@ def index(names: list[str], rows: dict, version: str,
                  "<td class=\"aud\">%s</td>"
                  "<td class=\"test\">%s</td>"
                  "<td%s>%s</td><td%s>%s</td><td%s>%s</td><td%s>%s</td>"
+                 "<td%s>%s</td>"
                  "<td class=\"len\" title=\"%s\">%s</td>"
                  "<td class=\"mtime\">%s</td></tr>"
                  % (n, n.replace("_", " "), badge,
@@ -3119,12 +3606,13 @@ def index(names: list[str], rows: dict, version: str,
                     verdict(n), audio(n), test(n),
                     *[x for k in ("melody", "gate", "wave", "hold")
                       for x in (_low(r.get(k, "")), r.get(k, "&mdash;"))],
+                    _low(heard_cell(heard.get(n))), heard_cell(heard.get(n)),
                     _attr(length_text(fidjson.get(n, {}))[1]),
                     length_text(fidjson.get(n, {}))[0],
                     measure_text(fidjson.get(n, {}))))
 
     head = ("<thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th>"
-            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title='where the original ends / where ours ends (m:ss); both loop = the original has no ending to match'>length</th><th title='how long fidelity.py took on this song: convert, pack, trace, render'>measure</th></tr></thead>")
+            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title='share of original notes played by an identical instrument over their first frames (heard.py)'>instr</th><th title='where the original ends / where ours ends (m:ss); both loop = the original has no ending to match'>length</th><th title='how long fidelity.py took on this song: convert, pack, trace, render'>measure</th></tr></thead>")
     held_card = ""
     if parked:
         held_card = ("""<div class="card held">
@@ -3165,7 +3653,7 @@ def index(names: list[str], rows: dict, version: str,
     <span class="count" id="shown"></span>
   </div>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
+    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="share of original notes played by an identical instrument over their first frames (heard.py)">instr</th><th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
@@ -3649,6 +4137,9 @@ def main() -> int:
     build_id = _new_build_id()
     rendered: dict[str, str] = {}
     for n in names:
+        # The piano roll's sidecar: data beside the page, not the page itself,
+        # so writing it ahead of the atomic page swap is harmless.
+        write_roll(n)
         html = page(n, rows.get(n, {}), notes.get(n, []), version,
                     embed=False, index_link=True,
                     survey=survey.get(n, {}), preset=presets.get(n, {}),

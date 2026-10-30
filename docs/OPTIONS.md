@@ -1947,6 +1947,18 @@ land on rests (Nineteen `-t 40`: 2 of 235).
 
 `tests/test_sfx_drum_bandpass.py`.
 
+**The hit on a rest (v0.5.624, `goatwriter/sfx_rest_click.py`).** The sfx
+block writes its hit unmasked, so one frame into a rest of the drum record the
+original raises the gate under ADSR `$0000`: a ~8 ms noise click siddump names
+C#6. Ours spells that rest as a KEYOFF, whose gate mask swallows the hit. Under
+`sfx_drum` with `--format gts5`, a player whose rest silence is the test-bit
+kind, and `rest_envelope_silence`, the rest is spelt instead as the previous
+note on a clicking clone of the drum record. Only Thundercats qualifies:
+melody 82% -> 100%, no agreement column falls, 1 of 89 files moved (`-t 180`
+under presets, v0.5.623 baseline; historical). Turning on
+`rest_envelope_silence` to reach Bangkok_Knights, I_Ball and Nineteen was
+refused: adsr, gate and `aud` fall. `tests/test_sfx_rest_click.py`.
+
 ## `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **44 corpus files** the instrument effect byte's bit `$04` is not an arpeggio

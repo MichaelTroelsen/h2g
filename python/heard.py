@@ -23,6 +23,34 @@ are known-equivalent, not defects:
 
 `instr` is the share of original notes whose paired note differs in none of
 `CORE`.
+
+Sharpened with four more of MagPlaySID's rules (todo.md, 2026-10-29), each
+re-implemented, none copied, each pinned by a test in `tests/test_heard.py`
+that fails with its code removed:
+
+1. Pitch is held in four forms per frame (relative to the note, absolute
+   semitone, offset from the note's frequency, raw frequency) and two frames
+   agree if ANY form matches. `pitch` now means "differs in every form" -- the
+   real defect. `pitch_rel` is new and KNOWN: the relative form differs
+   somewhere but no frame differs in every form, which is how two sides that
+   name a note after different frames of it (a fixed-frequency drum frame, a
+   pitch set up in the release) disagree without playing differently.
+2. No pitch is read on a silent frame (test bit, or no waveform: it takes the
+   next frame's pitch) or after the gate went off, and the note is named only
+   after its gated frames. A frame silent on one side only is not compared for
+   pitch (`wave` ignores the test bit, so the two sides' frames can still agree).
+3. A restrike (gate on at most 2 frames, off at most 2, waveform running and
+   envelope unchanged) continues the note instead of starting a new one --
+   unless it falls on the side's row grid (its shortest row, a fifth or more of
+   its rise gaps): rows of two to four frames play real notes that close.
+4. A gate-off inside the note's first row (all but the row's last 2 frames, the
+   row length being each side's most common gap between note starts) belongs
+   to the instrument: the note is compared up to gate-off plus its SID release
+   time, or up to the first silent frame after it. A gate-off at the row's end
+   is the tune's note-off, so the note is compared only up to it; that is the
+   `gate` versus `tail_len` split.
+
+Not done: telling vibrato from a slide (rule 5, optional).
 """
 from __future__ import annotations
 
@@ -47,8 +75,13 @@ K = 6          # frames of each note's program compared
 TAIL = 4       # longest hard-restart tail
 C0 = 0x0112    # PAL C-0, a reference only: tuning is fitted per side
 
+RESTRIKE = 2   # longest gate-on and gate-off of a restrike, in frames
+# SID release times in ms, indexed by the release nibble (datasheet values)
+RELEASE_MS = (6, 24, 48, 72, 114, 168, 204, 240, 300, 750, 1500, 2400,
+              3000, 9000, 15000, 24000)
+
 CORE = ("gate", "wave", "ad", "sr_hi", "pitch")
-KNOWN = ("testpre", "sr_rel", "tail_env", "gated_tick")
+KNOWN = ("testpre", "sr_rel", "tail_env", "gated_tick", "pitch_rel")
 ATTRS = CORE + KNOWN + ("tail_len",)
 
 
@@ -106,20 +139,112 @@ def semi(fr: int, tune: float) -> int | None:
     return None if fr < 0x40 else round(12 * math.log2(fr / C0) - tune)
 
 
-def notes(st: list[list[int]], rose: list[list[bool]], v: int,
-          tune: float) -> list[dict]:
-    """Voice `v`'s notes. A note is anchored on the first frame after its rise
-    that carries a waveform, so a `$09` frame before the attack is counted as
-    `testpre` rather than shifting the note."""
+def silent(ctl: int) -> bool:
+    """No sound this frame: the test bit holds the oscillator, or no waveform."""
+    return bool(ctl & 0x08) or not (ctl & 0xF0)
+
+
+def release_frames(sr: int) -> int:
+    """Play frames (20 ms) a release lasts."""
+    return (RELEASE_MS[sr & 15] + 19) // 20
+
+
+def restruck(st: list[list[int]], rises: list[int], v: int,
+             grid: int | None = None) -> set[int]:
+    """The rises that strike an earlier note again instead of starting one. A
+    rise a whole number of `grid` frames (the side's shortest row) after the
+    last is a note on a row, however briefly the one before it sounded."""
     b = 7 * v
+    falls = [i for i in range(1, len(st))
+             if (st[i - 1][b + 4] & 1) and not (st[i][b + 4] & 1)]
+    found: set[int] = set()
+    for n in range(1, len(rises)):
+        before, rise = rises[n - 1], rises[n]
+        if before in found:
+            continue
+        # >>> rule 3: restrike
+        # >>> rule 3b: a strike on a row is a note
+        if grid and (rise - before) % grid == 0:
+            continue
+        # <<< rule 3b
+        gone = [f for f in falls if before < f < rise]
+        if len(gone) != 1:
+            continue
+        fall = gone[0]
+        if fall - before > RESTRIKE or rise - fall > RESTRIKE:
+            continue
+        env = (st[before][b + 5], st[before][b + 6])
+        if (all(not silent(st[f][b + 4]) and (st[f][b + 5], st[f][b + 6]) == env
+                for f in range(fall, rise))
+                and (st[rise][b + 5], st[rise][b + 6]) == env):
+            found.add(rise)
+        # <<< rule 3
+    return found
+
+
+def rise_frames(rose: list[list[bool]], v: int) -> list[int]:
+    return [i for i in range(len(rose)) if rose[i][v]]
+
+
+def shortest_row(rises: list[list[int]]) -> int | None:
+    """The shortest gap between two rises that is a fifth or more of the gaps
+    of two frames or longer: the side's finest row."""
+    gaps = Counter(y - x for rs in rises for x, y in zip(rs, rs[1:]) if 2 <= y - x <= 64)
+    total = sum(gaps.values())
+    return min((g for g, n in gaps.items() if n * 5 >= total), default=None)
+
+
+def note_starts(st: list[list[int]], rose: list[list[bool]], v: int,
+                grid: int | None = None) -> tuple[list[int], list[int]]:
+    """Voice `v`'s note starts and each one's `$09`-style pre-frames. A note is
+    anchored on the first frame after its rise that carries a waveform, so a
+    `$09` frame before the attack is counted as `testpre` rather than shifting
+    the note."""
+    b = 7 * v
+    rises = rise_frames(rose, v)
+    skip = restruck(st, rises, v, grid)
     starts, pre = [], []
-    for i in (i for i in range(len(st)) if rose[i][v]):
+    for i in (i for i in rises if i not in skip):
         j = i
         while (j < len(st) - 1 and j - i < 2 and not (st[j][b + 4] & 0xF0)
                and (st[j][b + 4] & 0x08)):
             j += 1
         starts.append(j)
         pre.append(j - i)
+    return starts, pre
+
+
+def row_length(starts: list[list[int]]) -> int:
+    """A side's row length in frames: the most common gap between note starts."""
+    gaps = Counter(y - x for ss in starts for x, y in zip(ss, ss[1:]) if 2 <= y - x <= 64)
+    return min(gaps, key=lambda g: (-gaps[g], g)) if gaps else K
+
+
+def _named(st: list[list[int]], b: int, lo: int, hi: int,
+           tune: float) -> tuple[int | None, int]:
+    """The tonal pitch held longest in frames lo..hi-1 and its frequency."""
+    best, bfr, bl, i = None, 0, 0, lo
+    while i < hi:
+        fr, ctl, j = _freq(st[i], b), st[i][b + 4], i
+        while j < hi and _freq(st[j], b) == fr:
+            j += 1
+        if ((ctl & 0x70) and not (ctl & 0x88) and j - i > bl
+                and semi(fr, tune) is not None):
+            best, bfr, bl = semi(fr, tune), fr, j - i
+        i = j
+    return best, bfr
+
+
+def notes(st: list[list[int]], rose: list[list[bool]], v: int,
+          tune: float, row: int | None = None, grid: int | None = None) -> list[dict]:
+    """Voice `v`'s notes. `row` is the side's row length in frames (default:
+    estimated from this voice alone); `grid` its shortest row, which a restrike
+    cannot fall on (default: none)."""
+    b = 7 * v
+    starts, pre = note_starts(st, rose, v, grid)
+    if row is None:
+        row = row_length([starts])
+    in_first = min(K, max(row - 2, min(row, 4)))
     out = []
     for n, s in enumerate(starts):
         e = starts[n + 1] if n + 1 < len(starts) else len(st)
@@ -129,22 +254,42 @@ def notes(st: list[list[int]], rose: list[list[bool]], v: int,
         if tail >= TAIL or e - 1 - tail <= s:
             tail = 0
         snd = e - tail
-        # named after the tonal pitch it holds longest
-        best, bl, i = None, 0, s
-        while i < snd:
-            fr, ctl, j = _freq(st[i], b), st[i][b + 4], i
-            while j < snd and _freq(st[j], b) == fr:
-                j += 1
-            if ((ctl & 0x70) and not (ctl & 0x88) and j - i > bl
-                    and semi(fr, tune) is not None):
-                best, bl = semi(fr, tune), j - i
-            i = j
+        g = next((i for i in range(s + 1, snd) if not (st[i][b + 4] & 1)), None)
+        # >>> rule 4: the window the note is compared over
+        if g is not None and g - s < in_first:
+            end = min(snd, s + K, g + release_frames(st[g][b + 6]))  # rule 4a
+            sil = next((i for i in range(g, end) if silent(st[i][b + 4])), None)  # rule 4b
+            if sil is not None:
+                end = sil
+        else:
+            end = min(snd, s + K, g if g is not None else snd)  # rule 4c
+        end = max(end, s + 1)
+        # <<< rule 4
+        # >>> rule 2b: pitch is read only while the gate is on
+        gate_end = g if g is not None else snd
+        # <<< rule 2b
+        held, hfr = _named(st, b, s, gate_end, tune)
+        if held is None:
+            held, hfr = _named(st, b, s, snd, tune)
         first = semi(_freq(st[s], b), tune)
-        held = best if best is not None else first
-        prog = []
-        for k in range(s, min(snd, s + K)):
-            p = semi(_freq(st[k], b), tune)
-            prog.append((st[k][b + 4], None if p is None or held is None else p - held))
+        if held is None:
+            held, hfr = first, _freq(st[s], b)
+        # >>> rule 1: pitch forms
+        forms: list[tuple | None] = []
+        for k in range(s, end):
+            fr = _freq(st[k], b)
+            p = semi(fr, tune)
+            forms.append(None if k >= gate_end else  # rule 2b
+                         (None if p is None or held is None else p - held,
+                          p, fr - hfr, fr))
+        # <<< rule 1
+        # >>> rule 2a: a silent frame takes the next frame's pitch
+        for i in range(len(forms) - 1, -1, -1):
+            if silent(st[s + i][b + 4]):
+                forms[i] = forms[i + 1] if i + 1 < len(forms) else None
+        # <<< rule 2a
+        prog = [(st[s + i][b + 4], None if f is None else f[0], f)
+                for i, f in enumerate(forms)]
         quiet = st[snd] if tail else None
         out.append(dict(start=s, testpre=pre[n], held=held, first=first,
                         ad=st[s][b + 5], sr=st[s][b + 6], prog=prog, tail=tail,
@@ -210,8 +355,19 @@ def diffs(a: dict, b: dict, multiplier: int = 1) -> set[str]:
         out.add("sr_hi")
     if (a["sr"] & 15) != (b["sr"] & 15):
         out.add("sr_rel")
-    if any(a["prog"][i][1] != b["prog"][i][1] for i in range(k)):
+    # >>> rule 1: a frame agrees if any form of its pitch does
+    both = [(a["prog"][i][2], b["prog"][i][2]) for i in range(k)
+            if a["prog"][i][2] is not None and b["prog"][i][2] is not None
+            # >>> rule 2a: a frame silent on one side only has no pitch to compare
+            # (wave and gate say what differs there)
+            and silent(a["prog"][i][0]) == silent(b["prog"][i][0])
+            # <<< rule 2a
+            ]
+    if any(not any(x == y for x, y in zip(fa, fb)) for fa, fb in both):
         out.add("pitch")
+    elif any(fa[0] != fb[0] for fa, fb in both):
+        out.add("pitch_rel")
+    # <<< rule 1
     if a["tail"] != b["tail"]:
         out.add("tail_len")
     elif a["tail"] and a["tailenv"] != b["tailenv"]:
@@ -224,8 +380,12 @@ def compare(orig: dict, ours: dict, mult_o: int, mult_b: int) -> dict:
     so, ro = frames(orig, mult_o)
     sb, rb = frames(ours, mult_b)
     to, tb = tuning(so), tuning(sb)
-    on = [notes(so, ro, v, to) for v in range(3)]
-    bn = [notes(sb, rb, v, tb) for v in range(3)]
+    grid_o = shortest_row([rise_frames(ro, v) for v in range(3)])
+    grid_b = shortest_row([rise_frames(rb, v) for v in range(3)])
+    row_o = row_length([note_starts(so, ro, v, grid_o)[0] for v in range(3)])
+    row_b = row_length([note_starts(sb, rb, v, grid_b)[0] for v in range(3)])
+    on = [notes(so, ro, v, to, row_o, grid_o) for v in range(3)]
+    bn = [notes(sb, rb, v, tb, row_b, grid_b) for v in range(3)]
     lag = best_lag(on, bn)
     c = Counter()
     for v in range(3):

@@ -1278,9 +1278,18 @@ gated above -S1, `wavetable._drum_tick_noise`). **Check a new shape against the
 emitter's docstrings before calling it a defect**: the gated tick was first
 read as the largest fixable shape and is a measured loudness trade.
 
+Since v0.5.624 four more MagPlaySID rules (the module docstring, each pinned
+in `tests/test_heard.py`): pitch agrees in any of four forms (`pitch_rel`, a
+fifth known-equivalent, is the relative form alone differing); no pitch is
+read on a silent or released frame; a restrike off the row grid continues the
+note; a gate-off inside the note's first row is the instrument's, one at the
+row's end the tune's. **Figures across that change are not comparable**: on
+the same traces `instr` went 0.636 -> 0.717.
+
 At v0.5.621 over the 93 staged pairs: 169,881 notes, `instr` 0.612; `pitch`
-25.4% of notes and `gate` 10.4% are the largest real attributes. Origin and
-analysis: `docs/MAGPLAYSID-ANALYSIS.md` § 0.
+25.4% of notes and `gate` 10.4% are the largest real attributes. At v0.5.623's
+staging under the v0.5.624 rules: 170,961 notes, `instr` 0.717; `pitch` 13.1%,
+`gate` 8.0%. Origin and analysis: `docs/MAGPLAYSID-ANALYSIS.md` § 0.
 
 ### The song view — `songview.py`
 

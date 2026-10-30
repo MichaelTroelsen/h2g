@@ -263,6 +263,10 @@ from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,
                         program_instruments, programmed_instruments,
                         rest_park_pass, rest_park_plan,
                         rest_wave_rows)  # noqa: F401
+from .sfx_rest_click import (GT_ENDPATT, INSTR_BYTES, _carries_hit,
+                             _effect_byte, click_rests,
+                             sfx_rest_click_entries,
+                             sfx_rest_click_plan)  # noqa: F401
 from .rest_ring import (_ring_free, _ring_last_row, _ring_marker,
                         _ring_occurrences, rest_ring_pass)  # noqa: F401
 from .filters import (FETCH_HOLD_BACK, _FETCH_TAIL, _FETCH_TAIL_JMP,
