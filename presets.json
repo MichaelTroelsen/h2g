@@ -1,6 +1,6 @@
 {
-  "generator": "h2g 0.5.625 presets.py",
-  "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
+  "generator": "h2g 0.5.627 presets.py",
+  "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
     "tempo": "auto",
@@ -1158,8 +1158,8 @@
       "subtunes": 8,
       "rows": 4199,
       "multiplier": 1,
-      "drum_gate_off": true,
       "no_test_restart": false,
+      "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1453,10 +1453,8 @@
       "subtunes": 1,
       "rows": 23374,
       "multiplier": 1,
-      "wave_program": true,
-      "regrid": true,
-      "regrid_full_debt": true,
       "no_test_restart": false,
+      "wave_program": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1520,7 +1518,9 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true,
+      "regrid_full_debt": true
     },
     "International_Karate.sid": {
       "max_rows": 94,
@@ -2113,10 +2113,9 @@
       "subtunes": 1,
       "rows": 15682,
       "multiplier": 1,
+      "no_test_restart": false,
       "two_stage": true,
       "wave_program": true,
-      "regrid": true,
-      "no_test_restart": false,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2180,7 +2179,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true
     },
     "Nineteen.sid": {
       "max_rows": 128,
@@ -2704,12 +2704,11 @@
       "subtunes": 1,
       "rows": 19978,
       "multiplier": 2,
+      "no_test_restart": false,
       "two_stage": true,
       "wave_program": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "rest_envelope_silence": true,
-      "no_test_restart": false,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2773,7 +2772,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "rest_envelope_silence": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -3175,13 +3175,11 @@
       "subtunes": 1,
       "rows": 12899,
       "multiplier": 1,
+      "no_test_restart": false,
       "two_stage": true,
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "regrid": true,
-      "rest_program_stop": true,
-      "no_test_restart": false,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -3245,7 +3243,9 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true,
+      "rest_program_stop": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

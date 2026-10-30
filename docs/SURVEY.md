@@ -1,7 +1,7 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.625**
-- Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
+- Converter: `h2g` **0.5.627**
+- Corpus: `..\..\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
 - Output format: **GTS2** (of GTS2/GTS5) (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 importer overruns its pattern array on the portamento commands this converter emits — prefer `--format gts5` for files you will open in Goattracker)
@@ -13,7 +13,7 @@
 
 > "Converted" means the converter produced a `.sng` without erroring. It does **not** mean the output is musically correct. Only the repo's own `Commando.sid` is verified byte-exact against the original VB6 tool; note that the corpus copy of `Commando.sid` is a *different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 subtunes), so its row here is not comparable to that fixture.
 
-Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob" -o ../docs/SURVEY.md --legal-restart`
+Regenerate with: `python survey.py "..\..\c64server\SIDM2\SID\Hubbard_Rob" -o ../docs/SURVEY.md --legal-restart`
 
 ## Failure breakdown by stage
 
