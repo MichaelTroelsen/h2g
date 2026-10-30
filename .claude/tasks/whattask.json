@@ -80,7 +80,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a documented commit-and-regenerate sequence plus one comparison",
    "why_mode": "committing and regenerating the generated artefacts is the orchestrating session job",
-   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, abpage-original-as-tracker",
+   "why_lane": "shares a path with a writer in: melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, abpage-original-as-tracker, firstwave-arm-sweep-zero-hold-songs",
    "lane": "serial"
   },
   {
@@ -118,7 +118,7 @@
    "why_model": "a wavetable-allocation change in shared emitter code plus an undiagnosed column fall; Sonnet at high effort, not the critical class",
    "why_effort": "freeing table rows can move bytes on every song that fills its wavetable, and the ctrl fall is not yet explained",
    "why_mode": "confined to goatwriter and its tests, verified by a corpus byte-hash and a targeted A/B",
-   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, firstwave-arm-sweep-zero-hold-songs",
    "lane": "serial"
   },
   {
@@ -148,7 +148,7 @@
    "why_model": "the work either side of the answer is a bounded preset search",
    "why_effort": "bounded once the answer is in",
    "why_mode": "whether the fixture song may diverge from its fixture is the user's call",
-   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, firstwave-arm-sweep-zero-hold-songs",
    "lane": "serial"
   },
   {
@@ -180,7 +180,7 @@
    "why_effort": "bounded staging and recording",
    "why_offload": null,
    "why_mode": "no amount of work resolves it; the ear decides",
-   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, abpage-original-as-tracker"
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, abpage-original-as-tracker, firstwave-arm-sweep-zero-hold-songs"
   },
   {
    "id": "abpage-original-as-tracker",
@@ -190,7 +190,7 @@
    "effort": "high",
    "mode": "requires-user",
    "lane": "serial",
-   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, listen-current-builds-2026-10",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, listen-current-builds-2026-10, firstwave-arm-sweep-zero-hold-songs",
    "touches": [
     "rw:python/abpage.py",
     "rw:python/tests/test_abpage.py",
@@ -213,6 +213,42 @@
    "why_model": "page work plus a small C# change once allowed",
    "why_effort": "the transcription's pattern model differs from GoatTracker's and must be laid out to compare",
    "why_mode": "whether to show a GPL tool's output, and when, is the user's call"
+  },
+  {
+   "offload": null,
+   "why_offload": null,
+   "mcp": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": "user 2026-10-30: add the firstwave sweep from the index analysis as a plan task",
+   "needs_main": true,
+   "needs_main_reason": "adoption edits presets.json, a generated artefact CLAUDE.md reserves to the orchestrating session; the A/B is a multi-song --sound run",
+   "depends_on": [],
+   "id": "firstwave-arm-sweep-zero-hold-songs",
+   "title": "Firstwave-arm sweep on the zero-hold songs: gate-off firstwave against no_test_restart + aligned_firstwave, adopted per song where no agreement column falls",
+   "source": "index analysis 2026-10-30: hold reads 0% on 17 non-held songs, and the hold census (build/hold_census.md) puts its `fetch` kind (one frame short, Goattracker's next-note fetch) only on -S1/-S2 songs without no_test_restart; Knucklebusters' gate-off firstwave measured hold +22pp, gate +4.9pp (run knucklebusters-voice1-test-bit-writes)",
+   "model": "session",
+   "effort": "high",
+   "mode": "main",
+   "touches": [
+    "r:python/h2g",
+    "rw:presets.json",
+    "rw:python/presets.py",
+    "r:python/fidelity.py",
+    "r:build/fidelity.json",
+    "r:build/hold_census.md",
+    "rw:build/audio",
+    "rw:python/tests",
+    "rw:docs/LESSONS.md",
+    "rw:host:C:/t/firstwave-sweep"
+   ],
+   "verify": "Population: every song not in python/hold.py's ON_HOLD whose hold reads 0% in build/fidelity.json at the task's start (list them in C:/t/firstwave-sweep/sweep.md). Three arms per song under the shipped presets, each a forced A/B with fidelity.py -t 180 --presets <arm.json> --sound --baseline <copy of build/fidelity.json>: (A) shipped; (B) the gate-off firstwave on every instrument, spelt as Tarzan's entry spells it (`gate_off_firstwave_instruments` listing every instrument number, no_test_restart false); (C) no_test_restart true plus aligned_firstwave true. DONE when sweep.md has, per song and arm, melody, hold, gate, wave, onset, aud and loud, and names the chosen arm or the column that refused every arm; an arm is adopted only where hold rises, melody does not fall and no agreement column falls, as a song entry in presets.json with its attribution in python/presets.py. Commando is measured but not adopted (commando-melody-973-preset-or-cap is the user's decision). After any adoption: tests/test_commando.py passes, test_claude_md_figures passes (re-grade docs/LESSONS.md only where it names a moved figure), and the full suite reports no failure other than test_output_sha on the adopted songs, which clears at the next FIDELITY refresh.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "three arms across many songs judged column by column; a plausible adoption that trades gate or aud away is the failure mode (aligned_firstwave lowered gate on Wiz and Powerplay)",
+   "why_mode": "adoption writes presets.json and is a per-song judgement on the measurement",
+   "lane": "serial",
+   "why_lane": "shares a path with a writer in: wave-program-pacific-radio-with-aligned-firstwave, melody99-land-top-mechanism-fixes, commando-melody-973-preset-or-cap, listen-current-builds-2026-10, abpage-original-as-tracker"
   }
  ],
  "closed": []
