@@ -27,7 +27,7 @@ from .filters import (_classic_clearing_instruments, _filter_entries,
                       free_running_start, ilv_filter_routing_plan,
                       sfx_bandpass_plan, _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
-                          _cut_durations, _cut_note_pass,
+                          _cut_durations, _cut_note_pass, _duration_gate_pass,
                           _expanding_vibrato_counter, _expanding_vibrato_pass,
                           legato_tie_clones, legato_tie_rows, note_bit7_rows,
                           past_table_drum_plan, _tied_instrument_envelopes,
@@ -1516,6 +1516,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             no_test_restart=no_test_restart,
             real_firstwave_instruments=tuple(real_firstwave_instruments),
             log=log)
+    # The classic vibrato's DURATION gate, per event (`_duration_gate_pass`).
+    # After the passes that own a command column for a short note
+    # (the attack hold, the skydive, the drum fall, the cut), so it takes
+    # only the columns they left free, and before the budget.
+    if vibrato_command and vib_ptrs:
+        _duration_gate_pass(det, patterns, vib_ptrs, lead, log, tracks=tracks)
     # The zero-page triangle player reseeds its pulse on a REST event as on
     # a note (`rest_reseed`). After every pass that fills a command column,
     # so it takes only columns nobody else wanted, and before the budget,

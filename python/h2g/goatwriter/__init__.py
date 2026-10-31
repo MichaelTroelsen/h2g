@@ -212,6 +212,7 @@ from .classic_filter_stop import (apply_stops, classic_filter_stops,
                                     SweepLengths, _stop_row)  # noqa: F401
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass,
+                          _duration_gate_pass,
                           _entry_instruments, entry_instruments_start,
                           init_entry_start, _track_start,
                           _expanding_vibrato_counter,

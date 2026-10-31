@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.631 — 2026-10-31
+
+- classic duration-gate per event (vibrato damped on short events)
+
 ## 0.5.630 — 2026-10-31
 
 - presets adopted by ear: Proteus drum_gate_off + drum_sustain_gate_off, Lion_Heart wave_program

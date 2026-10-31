@@ -568,8 +568,12 @@ def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
       `vib` 0.887 -> 0.872, away from 1, its 53 late-onset notes pushed from
       frame 4 to frame 6 where the original has 2 notes starting at 6, and
       Tarzan (gate 3) flat (C:/t/classic-vibrato-gate/fb, 2026-09-30).
-      The reading stays on Detection for the per-note form
-      (`_vibrato_command_pass`'s shape) that can say "only notes this long".
+      The per-event form that CAN say "only events this long" is
+      `note_passes._duration_gate_pass`: `CMD_VIBRATO 00` on every free row
+      of an event of at most `gate` rows, the instrument's own pointer left
+      on the longer ones. It silences what the original never moves; the
+      long events' ONSET stays this function's (the frame-1 floor, or the
+      `vibrato_onset` option).
 
     None -- keep the frame-1 floor -- where nothing was read: no compare
     (Sigma_Seven, whose load is dead), or an operand detect leaves UNREAD

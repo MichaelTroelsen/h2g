@@ -1530,6 +1530,124 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
     return vib_ptrs
 
 
+def _duration_gate_pass(det: Detection, patterns: List[List[int]],
+                        vib_ptrs: dict, lead: int, log=None,
+                        tracks: Optional[List[List[int]]] = None) -> int:
+    """`CMD_VIBRATO 00` on every row of an EVENT too short for the classic
+    vibrato's duration gate, so the instrument's own vibrato cannot move it.
+
+    **The gate is a threshold on the event, not a delay**
+    (`detect.VibratoGate` form "duration", 25 corpus files). The classic loop
+    reads the event's stored length and branches over the frequency store
+    when it is below the operand:
+
+        B25A  29 1F     AND #$1F       ; the status byte's duration field
+        B25C  C9 03     CMP #$03
+        B25E  90 20     BCC out        ; duration < 3 -> never vibrates
+
+    `wait = status & $1F` is what `_build_raw_pattern` turns into hold rows,
+    so an event occupies `wait + 1` rows and is gated off when
+    `rows <= gate`, with nothing here depending on the frame rate. A
+    `vibdelay` cannot say it (Sanxion `vib` .887 -> .872 as a plain delay,
+    `_classic_gate_delay`): it postpones the long notes without silencing the
+    short ones. A row carrying `CMD_VIBRATO` with a zero parameter can: the
+    oscillator then adds a speed of 0 (the same damp `_vibrato_command_pass`
+    uses), and unlike zeroing the instrument's pointer it applies to one
+    event and leaves the instrument's own vibrato on the long ones.
+
+    **The gate is read per EVENT, a rest included.** The player compares the
+    length of whatever event is current, so a rest shorter than the gate
+    freezes a vibrato the note before it started, and a long rest oscillates
+    around a short note's pitch (`_held_to_attack`). A KEYOFF row and its
+    hold rows are therefore their own event here. Only the short events are
+    commanded: a long one keeps the instrument's pointer, which the hold
+    rows' empty command column hands back (gplay.c:406-409), so it is the
+    long events the original oscillates on that keep their bytes.
+
+    Which instrument is live decides everything: only a record that HAS a
+    vibrato (`vib_ptrs`) is damped, a known instrument without one is left
+    alone (its pointer is 0 already) and an instrument that cannot be
+    resolved (no row in the pattern names it and the orderlists disagree,
+    `_entry_instruments`) is left alone and counted -- the triangle pass
+    damps those, but there a wrong damp costs one length gate and here it
+    would cost a record whose gate may differ (`VibratoGate.gate_for`).
+
+    Written only into free command columns, so a portamento, a tempo change
+    or a wavetable command keeps its row (`busy`, counted); and only where
+    the pattern still packs (`over`). Patterns are COPIES when changed.
+    Returns the number of events damped.
+    """
+    vg = det.vibrato_gate
+    if (vg is None or vg.form != "duration" or not vib_ptrs
+            or det.vibrato_offset is None):
+        return 0
+    gate_of = {}
+    for rec in vib_ptrs:
+        g = vg.gate_for(rec)
+        if g is not None:
+            gate_of[rec + 1 + lead] = g
+    if not gate_of:
+        return 0
+    entry = _entry_instruments(tracks, patterns) if tracks else {}
+    damped = busy = unknown = over = long_ = 0
+    for pn, pat in enumerate(patterns):
+        held = entry.get(pn, set())
+        live = next(iter(held)) if len(held) == 1 else 0
+        cur = pat
+        copy = False
+        i = 0
+        while i + 3 < len(cur):
+            note, instr = cur[i], cur[i + 1]
+            if instr:
+                live = instr
+            if not (GT_FIRST_NOTE <= note <= GT_LAST_NOTE
+                    or note == GT_KEYOFF):
+                i += 4
+                continue
+            end = i + 4
+            while (end + 3 < len(cur) and cur[end] == GT_REST
+                   and (cur[end + 1] == 0
+                        or (cur[end + 1] == live
+                            and cur[end + 2] == CMD_SETSR))):
+                end += 4
+            gate = gate_of.get(live)
+            if gate is None:
+                if not live and (end - i) // 4 <= max(gate_of.values()):
+                    unknown += 1
+                i = end
+                continue
+            if (end - i) // 4 > gate:
+                long_ += 1
+                i = end
+                continue
+            trial = list(cur)
+            free = [row for row in range(i, end, 4) if trial[row + 2] == 0]
+            if not free:
+                busy += 1
+                i = end
+                continue
+            for row in free:
+                trial[row + 2] = CMD_VIBRATO
+                trial[row + 3] = 0
+            if packed_pattern_size(pattern_rows(trial)) > PACKED_PATTERN_LIMIT:
+                over += 1
+            else:
+                cur = trial
+                copy = True
+                damped += 1
+            i = end
+        if copy:
+            patterns[pn] = cur
+    if log and (damped or busy or unknown or over):
+        log(f"Duration gate...........: {damped} event(s) shorter than the "
+            f"vibrato's duration gate damped, {long_} long enough left to "
+            "the instrument"
+            + (f", {busy} with the column in use" if busy else "")
+            + (f", {unknown} on an instrument not resolved" if unknown else "")
+            + (f", {over} over the packed pattern size" if over else ""))
+    return damped
+
+
 def _attack_hold_records(sid: SidFile, det: Detection, instr_used: int,
                          lead: int, effects: bool, two_stage: bool) -> list:
     """Records whose fixed attack pitch the player holds on SOME notes only.
