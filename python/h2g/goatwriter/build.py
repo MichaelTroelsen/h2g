@@ -563,6 +563,13 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # to sid.subtunes whenever nothing was trimmed.
     lead = 0 if compact_instruments else 1
     instr_used = _instruments_used(det, log, lead)
+    # The derived dialect's attack-frame counter parity per instrument
+    # (`derived_arp_parities`), on `det` before any layout -- the dry ones
+    # below included -- and cleared where `effects` is off, so a second
+    # build under other options sees none.
+    det.derived_arp_parity = (
+        _gw_arpeggio.derived_arp_parities(sid, det, tracks, patterns)
+        if effects else {})
     # The decoder's bit-7 note rows (`patterns.PatternList`), read before any
     # pass below rebinds `patterns` to a plain list. Present only where a tie
     # is spelled under `note_flag`; see `legato_tie_clones`.

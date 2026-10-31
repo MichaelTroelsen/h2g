@@ -1339,7 +1339,9 @@
       "subtunes": 3,
       "rows": 7778,
       "multiplier": 1,
-      "no_test_restart": true
+      "no_test_restart": true,
+      "aligned_firstwave": true,
+      "wave_alternate": true
     },
     "Human_Race.sid": {
       "max_rows": 128,

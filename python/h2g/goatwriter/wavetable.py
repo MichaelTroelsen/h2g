@@ -559,6 +559,19 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # `AND #$07 / ORA #$80`, noise keeping the voice's control bits.
         elif wave_alternate and det.wave_alternate_noise:
             alt_byte = (wave & 0x07) | 0x80
+            # **Frame 1's half is the counter's, and the counter is global.**
+            # `_wave_alternate_entries` says the derived dialect sounds the
+            # noise on frame 1 (`tri noi tri noi`), and this branch never
+            # passed `alt_first`: the pair ran own/own/noise from the
+            # attack. With the attack's parity walked
+            # (`derived_arp_parities`) frame 1 is the noise where the attack
+            # is even. Hollywood_or_Bust sub 2 record 9, aligned_firstwave:
+            # the original reads `11/0C4E 81/1A13 11/0C4E` from each onset,
+            # this branch read `11/0C4E 11/0C4E 81/1A13`. Only where the
+            # wavetable owns the attack frame: see the nibble shape below.
+            parity = det.derived_arp_parity.get(i + lead + 1)
+            if parity is not None and not no_test_restart:
+                alt_first = parity == 0
             # **Bit $04 rides the pair where its block reads the same
             # counter** (`det.wave_alternate_arp`, Hollywood or Bust $0792):
             # at mask $01 the note lowered by the nibble sounds on the
@@ -1051,6 +1064,33 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         f"alternates {pair} calls instead")
             if shaped is not None:
                 return shaped
+        # **The derived dialect's mask-$01 nibble runs on the attack frame.**
+        # Every shape below takes Commando's reading -- the init path writes
+        # the note on frame 0 and the block starts on frame 1 -- so the
+        # unticked -S1 loop is `note note arp note arp`. Hollywood's block
+        # (`det.wave_alternate_arp`) runs on the note's own frame from a
+        # global counter (`derived_arp_parities`), so the lowered note is on
+        # the attack where the counter is even: `0C4E 1A13 0C4E 1A13` on all
+        # 375 record-9 onsets of sub 2, where this emitted `1A15 1A15 0C4F`.
+        # Two entries from the attack, each frame's half by `fixed_arp_up`.
+        # -S1 only, and only where the wavetable owns the attack frame
+        # (`aligned_firstwave`, or the test-bit firstwave): under a written
+        # one (`--no-test-restart`) the init call is a frame ahead of the
+        # pitch, and the entries answer the original's frames one later by
+        # the gate and on time by the pitch. Spelled there from the gate it
+        # cost voice 1's melody .999 -> .749 at -t 180 under presets, the
+        # stale init frame now naming each next attack from this note's
+        # last half -- so the written firstwave keeps its bytes.
+        parity = (det.derived_arp_parity.get(i + lead + 1)
+                  if effects and det.wave_alternate_arp else None)
+        if (parity is not None and not no_test_restart and not arp_fixed
+                and not tick and not drum and multiplier == 1
+                and tail == wave and per is not None and test is not None
+                and per.half(arp_note) == 1 and budget >= 3):
+            rel = _arp_relative(arp_fixed, arp_note, arp_up)
+            notes = [rel if _gw_arpeggio.fixed_arp_up(1, test[1], parity + k)
+                     else 0x00 for k in (0, 1)]
+            return [wave, wave, WAVE_JUMP], notes + [first]
         if hold is None or tail != wave or tick:
             # -S1: a call is a frame, so the plain two-entry loop is already
             # at the player's rate. A ticked record lands here too: at -S1,

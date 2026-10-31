@@ -730,6 +730,13 @@ EXCLUDED_FROM_ALWAYS = {
     # make the search authoritative over a hand-recorded adoption, the
     # `pulse_phase` trap above. Adopting it on Chicken_Song is a listening
     # decision: a song entry `"wave_alternate": true`.
+    # ADOPTED on Hollywood_or_Bust with `aligned_firstwave`, chosen by ear
+    # over both alone (user, 2026-10-31; run record
+    # hollywood-or-bust-melody-77-root-cause, the pair's phase from
+    # `derived_arp_parities`): -t 180 --sound, melody .774 -> .944, onset
+    # .778 -> 1.0, wave .833 -> .945, gate .329 -> .975; `vib` 1.16 -> 1.22 is
+    # the harness's attack anchor moving onto the pitch frame (the shipped
+    # trace re-anchored reads the same 1.2248). OPTIONS.md has it.
     "wave_alternate",
     # `aligned_firstwave`: the note-init call's gate write on the pitch's frame
     # (OPTIONS.md `--aligned-firstwave`). Per song and never a default: it
@@ -745,7 +752,9 @@ EXCLUDED_FROM_ALWAYS = {
     # FIDELITY_TOGGLES: the walk is 127 combinations a song and this would
     # double it for ten files, and its winners are decided by an edge census
     # at the file's lag, which no `fidelity_better` term reads. A song entry
-    # `"aligned_firstwave": true`.
+    # `"aligned_firstwave": true`. RETRACTED, "costs Hollywood melody .657 ->
+    # .552": retaken at ef431be it is .774 -> .828 alone and .944 with
+    # `wave_alternate` and record 9's phase (OPTIONS.md); adopted there.
     # ADOPTED at v0.5.623 on Pacific_Coast, Powerplay_Hockey_USA_vs_USSR,
     # Pygmies_Revenge, Radio_ACE, Sigma_Seven and Wiz (user decision on the
     # measurement). Measured at 65c516a, -t 180, presets, --sound, over the

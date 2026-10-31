@@ -464,6 +464,10 @@ class Detection:
     # LFO-table vibrato is a wave program (`convert(lfo_wave=)`), set by
     # goatwriter.build_sng on every build -- empty everywhere else.
     lfo_wave_phases: Dict[int, int] = field(default_factory=dict)
+    # {Goattracker instrument: the global counter's parity on its attack
+    # frame} where `wave_alternate_arp` holds (`derived_arp_parities`), set
+    # by goatwriter.build_sng on every build -- empty everywhere else.
+    derived_arp_parity: Dict[int, int] = field(default_factory=dict)
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.

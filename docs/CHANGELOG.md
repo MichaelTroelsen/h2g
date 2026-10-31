@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.632 — 2026-10-31
+
+- Hollywood_or_Bust: derived arp phase + wave_alternate + aligned_firstwave (heard)
+
 ## 0.5.631 — 2026-10-31
 
 - classic duration-gate per event (vibrato damped on short events)

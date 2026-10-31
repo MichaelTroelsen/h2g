@@ -578,6 +578,27 @@ Hollywood melody .774 -> .774, wave .833 -> .945, noise 0 -> 2998 (original
 Chicken .827 -> .788), which anchors each side on its own gate edge -- ours is
 the init call, a frame before the pitch.
 
+**Adopted on Hollywood_or_Bust with `--aligned-firstwave`, once the pair took
+its phase from the counter** (run record hollywood-or-bust-melody-77-root-cause,
+ef431be + the change). The player runs the alternation and the nibble block on
+the note's own frame from the global counter `$09A2`, which the new-song call
+zeroes, so frame 1 of an even attack is the noise (`tri noi tri noi`); this
+branch never passed `alt_first` and played `11 11 81` from each onset.
+`goatwriter.derived_arp_parities` walks the counter's parity per instrument,
+and where the wavetable owns the attack frame (not under a written firstwave)
+the pair and the mask-$01 nibble loop start on it. -t 180 --sound under
+presets, Hollywood shipped -> both options: melody .774 -> .944, seq .774 ->
+.948, pitch .900 -> .947, onset .778 -> 1.000, wave .833 -> .945, noise 0 ->
+2998 (orig 4500), gate .329 -> .975, tie 1.32 -> 0.94, bend .44 -> .69, travel
+.83 -> 1.19, aud .914 -> .935, loud .974 -> .986; the `--diagnose` diagonal s0
+55 -> 78%, s1 57 -> 100%, s2 77 -> 94%. `vib` reads 1.16 -> 1.22, and that is
+the harness's anchor, not the sound: the shipped trace with its attack anchors
+moved one frame onto the pitch reads 1.2248, the adopted one 1.2248, and the
+frequency registers are identical on voices 0 and 2 frame for frame. Chicken_Song
+(aligned_firstwave shipped) forced on, against the pre-change pair: wave .874
+-> .965, onset .769 -> .923, aud .936 -> .940, noise 3780 -> 3716 (orig
+4188); still off there.
+
 ## `--rest-instrument` (the instrument change that clicked)
 
 An instrument change landing on a rest used to be emitted as a fake `C-0` on
@@ -2277,6 +2298,20 @@ beside Chicken_Song and Ninja. The measurement was `-t 180`, presets, `--sound`.
   `wave_alternate`.
 
 Evidence is in `presets.py` beside the option.
+
+**Hollywood_or_Bust's melody loss is gone and it is adopted there** (with
+`--wave-alternate`; figures in that section). Retaken at ef431be, -t 180
+under presets, the option alone moves melody .774 -> .828 and gate .329 ->
+.975: under `--no-test-restart` the init call sounds the previous note's last
+frequency on the frame its gate rises, and siddump names the attack by it, so
+every note that ends off its own name -- voice 2's `$82` chord, voice 0's
+vibrato -- named the next attack wrong (voice 2 .338 -> 1.000; the frequency
+registers are identical frame for frame on voices 0 and 2 between the arms).
+What it cost was voice 1 (.999 -> .750): record 9's mask-$01 arpeggio started
+on the note where the player starts on the lowered note, hidden until the
+attack was read on its own pitch -- fixed by `derived_arp_parities`. The
+option makes `--lfo-wave` inert (its programs are laid out under
+`--no-test-restart` only).
 
 ## `--named-firstwave` (the init call that names its pitch step)
 

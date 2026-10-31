@@ -212,7 +212,9 @@ def test_a_program_that_does_not_fit_is_declined_and_adds_no_speed_row():
 def test_the_walk_puts_the_lead_on_index_4():
     """Measured: every onset of record 6 in sub 2 but the 3-frame pairs
     opens on index 4 (`0 -1 0 1 2 1`)."""
-    blob, lines = _convert(HOLLYWOOD, lfo_wave=True)
+    # The programs are laid out under no_test_restart only (build_sng), and
+    # the preset's aligned_firstwave overrides it: measured with it off.
+    blob, lines = _convert(HOLLYWOOD, lfo_wave=True, aligned_firstwave=False)
     msg = next(m for m in lines if m.startswith("LFO wave programs"))
     gt = {int(tok.split()[0], 16): int(tok.split()[-1])
           for tok in msg.split(": ", 1)[1].split(", ")}
@@ -261,7 +263,12 @@ def test_a_shared_row_under_two_records_gets_no_pointer():
 def test_off_by_default_and_inert_on_commando():
     off, _ = _convert(HOLLYWOOD)
     assert off == _convert(HOLLYWOOD, lfo_wave=False)[0]
-    assert off != _convert(HOLLYWOOD, lfo_wave=True)[0]
+    # Inert under the preset's aligned_firstwave (it overrides the
+    # no_test_restart the programs need); live without it.
+    assert off == _convert(HOLLYWOOD, lfo_wave=True)[0]
+    ntr, _ = _convert(HOLLYWOOD, aligned_firstwave=False)
+    assert ntr != _convert(HOLLYWOOD, lfo_wave=True,
+                           aligned_firstwave=False)[0]
     com = CORPUS / "Commando.sid"
     assert _convert(com, lfo_wave=True)[0] == _convert(com)[0]
 

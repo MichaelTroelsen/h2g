@@ -3041,6 +3041,46 @@ def nibble_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
             for instr, counts in votes.items()}
 
 
+def derived_arp_parities(sid: SidFile, det: Detection,
+                         tracks: List[List[int]],
+                         patterns: List[List[int]]) -> dict:
+    """{Goattracker instrument: the global counter's parity on its attack}.
+
+    For the derived dialect only (`det.wave_alternate_arp`: Hollywood or Bust
+    $0774/$0792, Chicken Song $1392), whose alternation (`AND #$01 / BEQ
+    own`) and nibble block (`AND #mask / BNE note`) read ONE global counter
+    and run on the note's own frame: the note-start path falls into the
+    per-frame effects (Hollywood `$058A ... $058E LDA $09A4 / BMI`), so the
+    attack frame already sounds the counter's half. The play routine's first
+    instruction is `INC $09A2` and the new-song path zeroes it on the call
+    that also clears every voice's duration cell (`$0421 LDA #0 / STA $09A2
+    ... STA $0971,X`), so row 0 is fetched on counter 0 and row `r` on
+    `r * det.frames_per_row`. Measured on the original, Hollywood_or_Bust
+    sub 2 at 180 s: all 375 record-9 (`$D6`) onsets sound the lowered note
+    on the attack frame (counter even), `0C4E/11 1A13/81` from each.
+
+    The majority over each instrument's untied notes, ties to even; empty
+    where the dialect is absent, the block's counter test is not read with
+    the reset (`nibble_arp_counter_test`), or a split subtune shifted the
+    numbering."""
+    per = det.arp_nibble_period
+    if not det.wave_alternate_arp or per is None or det.frames_per_row < 1:
+        return {}
+    test = nibble_arp_counter_test(sid, per)
+    if test is None or test[0] != 0:
+        return {}
+    if len(tracks) // 3 > max(sid.subtunes, 1):
+        return {}
+    votes: dict = {}
+    for track in tracks:
+        for row, current, pat, r in _walk_note_rows(track, patterns):
+            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
+                continue                 # a tie restarts no wavetable
+            votes.setdefault(current, [0, 0])[
+                (row * det.frames_per_row) & 1] += 1
+    return {instr: 0 if c[0] >= c[1] else 1 for instr, c in votes.items()}
+
+
 def nibble_gate_byte(sid: SidFile) -> Optional[int]:
     """The outer gate cell's byte at song start, or None where it is not read.
 
