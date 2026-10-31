@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.629 presets.py",
+  "generator": "h2g 0.5.631 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1913,9 +1913,9 @@
       "rows": 12348,
       "multiplier": 3,
       "two_stage": true,
+      "wave_program": true,
       "max_hard_restart": true,
-      "arpeggio": true,
-      "wave_program": true
+      "arpeggio": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
