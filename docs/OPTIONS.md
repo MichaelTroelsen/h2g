@@ -2938,6 +2938,12 @@ init frame. Bit `$01` alone reads `wave` .879 -> .855 (the harness aligns on the
 pitch, a frame behind our gate), so it is not a default either. Only Ninja has
 the block (corpus census, 95 files).
 
+**Adopted on Ninja, 2026-10-31: the trade above is gone.** Retaken at cb1530c
+(-t 180, presets, `--sound`, forced A/B): `aud` .862 -> .908, `onset` 75% ->
+100%, `tie` .03 -> .76, `wave` 94% -> 99%, and `melody` stays .9996 -- the
+`melody`/`seq` loss above no longer reproduces. No agreement column falls;
+`vib` .68 -> 1.19 moves nearer 1 in log space. `tests/test_voice_arp.py`.
+
 ## `--drum-gate-off` (the drum block's gate-off, where the gate was held)
 
 Hubbard's drum block (effect bit `$01`) closes the gate after the note's first

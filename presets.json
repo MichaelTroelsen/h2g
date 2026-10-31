@@ -2215,7 +2215,8 @@
       "no_test_restart": true,
       "max_hard_restart": true,
       "aligned_firstwave": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "voice_arp": true
     },
     "Off_the_Cuff.sid": {
       "max_rows": 94,

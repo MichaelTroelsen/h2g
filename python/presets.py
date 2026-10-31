@@ -796,9 +796,11 @@ EXCLUDED_FROM_ALWAYS = {
     # `"pitch_lead_tie": true`.
     "pitch_lead_tie",
     # `voice_arp`: Ninja's per-voice bit-$04 arpeggio (detect._find_voice_arp,
-    # goatwriter.arpeggio.voice_arp_entries). Off by default and per song:
-    # a trade -- `aud` and `onset` gain while `melody`/`seq` lose, because
-    # they name our note by its first post-attack pitch (see convert()).
+    # goatwriter.arpeggio.voice_arp_entries). Off by default and per song.
+    # HISTORICAL (e0b17bd): a trade -- `aud` and `onset` gained while
+    # `melody`/`seq` lost. RETAKEN 2026-10-31 at cb1530c the trade is gone:
+    # aud .862 -> .908, onset 75 -> 100%, melody .9996 unchanged, no agreement
+    # column falls (C:/t/ninja-aud-deficit/ab_va.md) -- ADOPTED on Ninja.
     # Not in FIDELITY_TOGGLES. A song entry `"voice_arp": true`.
     "voice_arp",
     # `drum_gate_off`: the drum block's gate-off on drum+arpeggio records

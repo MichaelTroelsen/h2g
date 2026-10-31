@@ -82,6 +82,10 @@ def _packed_run(no_test_restart: bool):
     # and spends the init call on a gate-clear waveform, so the readings below
     # (real waveform on the first call) are taken with it off.
     kwargs["aligned_firstwave"] = False
+    # voice_arp (adopted for Ninja after this test was pinned) rewrites the
+    # record 3/5/6/9 wavetables and the pulse layout they ride on; the readings
+    # below are about the pulse set row, so take them with it off as before.
+    kwargs["voice_arp"] = False
     kwargs["no_test_restart"] = no_test_restart
     # The reading pairs an operand with the captured table's entry number; the
     # drop of unnamed records renumbers the pulse table (it removes the rows

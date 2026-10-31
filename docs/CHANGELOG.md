@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.635 — 2026-10-31
+
+- voice_arp adopted on Ninja
+
 ## 0.5.634 — 2026-10-31
 
 - QUEUE drops hold-census fetch buckets (fetch frame heard inaudible)

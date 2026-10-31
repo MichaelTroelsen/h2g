@@ -186,3 +186,18 @@ def test_bit01_alone_holds_the_skipped_frames_under_the_option():
     opts["voice_arp"] = False
     sng = convert(str(CORPUS / "Ninja.sid"), **opts)
     assert search_file(sng, "81 81 41 81 41 41 81 41 FF") < 0
+
+
+@needs_corpus
+def test_ninja_ships_voice_arp_and_it_is_not_inert():
+    """Adopted 2026-10-31 (aud .862 -> .908, melody unchanged): the preset
+    carries the option, and turning it off changes Ninja's bytes."""
+    import json
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text())
+    opts = fidelity._preset_opts(doc, "Ninja.sid")
+    assert opts.get("voice_arp")
+    on = convert(str(CORPUS / "Ninja.sid"), log=lambda m: None, **opts)
+    off = convert(str(CORPUS / "Ninja.sid"), log=lambda m: None,
+                  **dict(opts, voice_arp=False))
+    assert on != off
