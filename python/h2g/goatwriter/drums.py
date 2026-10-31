@@ -55,10 +55,20 @@ def _arp_block(source: List[tuple], offsets: List[int],
     Returns None where there is nothing usable to copy.
     """
     body = []
-    for left, _ in source:
+    fixed = []
+    for left, src_right in source:
         if left == WAVE_JUMP:
             break
         body.append(left)
+        # **An absolute note in the source stays absolute.** The arpeggio adds
+        # to the NOTE, so a frame the record plays at a fixed pitch (a drum's
+        # noise strike, right byte above `$80`, gplay.c:717-723) is not
+        # arpeggiated: the original holds Sun_Never_Shines record 07's noise at
+        # `$AF68` on every row note, and Go_Go_Dash 03 and Lakers 08/0A the same
+        # (C:/t/drum-fixed-relative/finding.md). Rewriting `81 D8` to `81 00`
+        # made those strikes follow the note.
+        fixed.append(src_right if left >= 0x10 and src_right > WAVE_NOTE_KEEP
+                     else None)
     if not body:
         return None
 
@@ -99,10 +109,10 @@ def _arp_block(source: List[tuple], offsets: List[int],
     left: List[int] = []
     right: List[int] = []
     call = 0
-    for w in body:
+    for w, keep in zip(body, fixed):
         last = call + (w if w < 0x10 else 0)   # a delay covers `w + 1` calls
         left.append(w)
-        right.append(step_note(last))
+        right.append(step_note(last) if keep is None else keep)
         call = last + 1
 
     # The sustained waveform: the last real waveform the program reaches. A
