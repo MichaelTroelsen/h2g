@@ -1,3 +1,80 @@
-{"generated_from":{"head":"37eb862","plan_head":"37eb862"},"blockers":[
-{"id":"tempo-alignment-rounding-decision","kind":"decision","title_at_research":"Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)","blocked_on_at_research":"Answer adopt or refuse. The prototype evidence is in (runs.jsonl tempo-rounding-prototype-evidence at ab5fe67)","current_behaviour":"Shipped code does not round CMD_SETTEMPO (no rounding in patterns.apply_tempos path); prototype round_tempo exists only as C:/t/tempo-rounding-prototype-evidence/final.patch. Record ab5fe67: slot 3.6% on 39 misaligned vs 4.1% aligned; rounding costs Food_Feud +12.5% rate, Knucklebusters 14%.","sources":["runs.jsonl tempo-rounding-prototype-evidence (done, ab5fe67)"],"options":[{"label":"Refuse","consequence":"closes the fork; no byte changes; premise (slot artefact) is gone anyway"},{"label":"Adopt","consequence":"reopens as a converter task with 12-14% rate error on named files and a relisten of every mover"}],"recommendation":"Refuse","why":"the slot premise no longer holds and the rate cost is large.","question":"Refuse or adopt rounding CMD_SETTEMPO to a multiple of the multiplier?","unblocked_by_research":false},
-{"id":"listen-current-builds-2026-10","kind":"artifact","title_at_research":"Listen to the current conversion of every song (one pass), with the folded-in per-song questions","blocked_on_at_research":"The user listens to a SHORT current pass","current_behaviour":"Needs human ears on staged pairs; cannot be answered by a questionnaire.","sources":["whattask.json verify"],"options":[],"recommendation":"leave blocked","why":"a verdict requires listening first","question":null,"unblocked_by_research":false}]}
+{
+ "generated_from": {
+  "head": "e873cce",
+  "plan_head": "3323263"
+ },
+ "blockers": [
+  {
+   "id": "commando-melody-973-preset-or-cap",
+   "kind": "decision",
+   "title_at_research": "Commando melody .973: adopt a per-song preset or accept it as the fixture-bound cap",
+   "blocked_on_at_research": "The user decides whether Commando may ship a per-song preset that makes its measured conversion differ from the byte-exact Commando.sng fixture (the default conversion and tests/test_commando.py stay untouched either way), or whether .973 is accepted as the cap.",
+   "current_behaviour": "build/fidelity.json: Commando melody .973, pitch .945, seq .952 (sweep.md row A). The known pitch gap is the $68 stored-waveform rows, held at the clamp's G#7 by name (python/h2g/stored_wave.py:42-58 HELD={'Commando'}, past_table_wave.py:154, human decision 2026-10-01) for both the fixture and the corpus rip (same PSID name). Firstwave arms B/C leave melody at .973 and cost aud -0.028.",
+   "sources": [
+    "python/h2g/stored_wave.py:42",
+    "python/h2g/past_table_wave.py:154",
+    "C:/t/firstwave-sweep/sweep.md:23",
+    "runs.jsonl any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture"
+   ],
+   "options": [
+    {
+     "label": "Preset-gated release",
+     "consequence": "a per-song option lifts HELD for the corpus rip under presets.json only; Commando.sng and test_commando stay byte-exact; measured Commando diverges from the fixture"
+    },
+    {
+     "label": "Accept the cap",
+     "consequence": "closes the task; Commando stays .973 until the note-104 listen reopens the hold"
+    }
+   ],
+   "recommendation": "Preset-gated release",
+   "why": "the nine sibling files already ship the derived $68 pitch with every predicted frequency found in the originals' traces, and gating it on presets keeps the fixture untouched",
+   "question": "May the corpus Commando (under presets.json only) take the $68 stored-wave pitch fix the nine sibling files ship, leaving Commando.sng byte-exact?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "abpage-original-as-tracker",
+   "kind": "decision",
+   "title_at_research": "A/B pages: the original shown as a tracker, from MagPlaySID's transcription",
+   "blocked_on_at_research": "The user decides whether the A/B pages may show MagPlaySID's transcription (notes, instruments, patterns from MagPlay.Transcribe.Music, a GPL tool's output) beside our GoatTracker view, once items 1-3 have proved useful.",
+   "current_behaviour": "build/listen pages (gitignored, local) already show the heard card and worst-notes card fed by tools/magplay-rt (heard.py, v0.5.622/625); magplay-rt is built locally and never committed. No transcription view exists.",
+   "sources": [
+    "python/abpage.py",
+    "python/tools/magplay-rt/README.md",
+    "docs/MAGPLAYSID-ANALYSIS.md"
+   ],
+   "options": [
+    {
+     "label": "Yes, build it now",
+     "consequence": "magplay-rt gains a JSON score flag (our own code in the gitignored-binary tool), abpage renders it locally; no MagPlaySID code enters the repo"
+    },
+    {
+     "label": "Not now",
+     "consequence": "stays blocked until the heard/worst-notes cards have been used"
+    },
+    {
+     "label": "No",
+     "consequence": "task cancelled"
+    }
+   ],
+   "recommendation": "Yes, build it now",
+   "why": "the pages are local build output and the repo only gains our own calling code, the same boundary heard.py already uses",
+   "question": "Should the A/B pages show the original as a tracker from MagPlaySID's transcription?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "listen-current-builds-2026-10",
+   "kind": "artifact",
+   "title_at_research": "Listen to the current conversion of every song (one pass), with the folded-in per-song questions",
+   "blocked_on_at_research": "The user listens to a SHORT current pass",
+   "current_behaviour": "Needs ears on staged pairs; no questionnaire answers it.",
+   "sources": [
+    "whattask.json verify"
+   ],
+   "options": [],
+   "recommendation": "leave blocked",
+   "why": "a verdict requires listening first",
+   "question": null,
+   "unblocked_by_research": false
+  }
+ ]
+}

@@ -153,14 +153,14 @@ def test_a_held_file_is_not_touched():
 
 # --- the corpus ------------------------------------------------------------
 
-def _convert(name):
+def _convert(name, **override):
     import json
     import fidelity as F
     from h2g.convert import convert
     doc = json.load(open(PYTHON_ROOT.parent / "presets.json"))
     lines: list = []
     blob = convert(str(CORPUS / name), log=lines.append,
-                   **F._preset_opts(doc, name))
+                   **{**F._preset_opts(doc, name), **override})
     return blob, lines
 
 
@@ -188,5 +188,8 @@ def test_spellbound_plays_the_sweep_top_from_a_pinned_program():
 @pytest.mark.skipif(not (CORPUS / "Commando.sid").exists(),
                     reason="the Hubbard corpus is not on this machine")
 def test_commando_keeps_the_clamp():
-    blob, lines = _convert("Commando.sid")
+    # The held arm: presets.json lifts the hold for the corpus rip
+    # (`release_held_stored_wave`, user decision 2026-10-31); the fixture,
+    # converted without presets, keeps it.
+    blob, lines = _convert("Commando.sid", release_held_stored_wave=False)
     assert not any("Past-table wave split" in m for m in lines)

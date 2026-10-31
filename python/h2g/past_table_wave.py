@@ -686,7 +686,9 @@ def pin_past_table_wave_notes(blob: bytes, sid, det,
 
 def _pinned_song(blob: bytes, sid, det, log, stats):
     """(the parsed song with the pass applied, whether anything changed)."""
-    if det.freq_table is None or sid.name in HELD:
+    if det.freq_table is None or (
+            sid.name in HELD
+            and not getattr(det, "release_held_stored_wave", False)):
         return None, False
     top = top_rows_of(getattr(det, "top_cols", None))
     song = _parse_song(blob)

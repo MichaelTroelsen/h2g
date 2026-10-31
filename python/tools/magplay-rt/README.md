@@ -4,6 +4,10 @@ A 30-line console front end to [MagPlaySID](https://github.com/MagnarHarestad/Ma
 cycle-exact C64 (CIA timers, IRQ/NMI, RSID) that records every SID write with its cycle and
 the play call it belongs to. `python/heard.py` reads its output.
 
+```
+magplay-rt <sid> <seconds> <song, 1-based; 0 = start song> <out.json> [--score <score.json>]
+```
+
 ## Why, beside siddump
 
 siddump calls the play routine once a frame and samples the registers at the end of it. That
@@ -28,6 +32,30 @@ dotnet build python/tools/magplay-rt -c Release -p:MagPlaySrc=<checkout>/src
 
 `MagPlaySrc` defaults to `C:\Users\mit\Downloads\MagPlaySID-main\MagPlaySID-main\src`. The exe
 lands in `bin/Release/net8.0/magplay-rt.exe`; `heard.py` looks there, or at `$H2G_MAGPLAY`.
+
+## `--score`: the transcription, for the A/B pages
+
+`--score PATH` also writes MagPlaySID's *transcription* of the tune (`Transcriber.Transcribe`,
+the `Score` it returns) as JSON. `python/abpage.py` renders it as a tracker card, "The pattern, as
+the original plays it", beside `tracker_card` (ours) on each song page, and caches it as
+`build/listen/<name>.original.score.json`. Nothing is emitted that MagPlaySID's own types do not
+already hold; this repo's code only flattens them:
+
+| Key | Contents |
+|---|---|
+| `machine`, `clock_hz`, `calls`, `cycles_per_call`, `tempo`, `funk_tempo` | the recording's clock, from the score |
+| `music_share` | the fraction of the tune's register changes the score's music makes (`Report.Music`) |
+| `instruments[]` | `number`, `ad`, `sr`, `wave_program`, `pulse_program`, `filter_program` |
+| `patterns[]` | `number`, `rows` (a count; the rows themselves are in `voices`) |
+| `voices[v][]` | per voice, every row **in the order it plays** (`ScoreTimeline.Rows`): `t` seconds from the first play call, `call`, `pattern`, `row`, `note` (`C-4`, `---` gate off, `+++` gate on, `...` hold; the order entry's transpose is applied), `instr` (0 = keep), `fx[]` (effect labels) |
+
+The instruments are **heard** ones, numbered by the transcriber, not the player's own
+instrument records, and its pattern boundaries are its own; the page says so. Wave, pulse and
+filter *table steps* and the raw layer are not emitted.
+
+The flag adds to the GPL boundary below without moving it: the transcription is MagPlaySID's output
+and the code that writes it here is a call into its public types. `abpage.py` calls the exe when
+it is present and otherwise uses a matching cache; with neither it draws no card.
 
 ## Licence
 

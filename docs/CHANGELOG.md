@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.629 — 2026-10-31
+
+- Commando stored-wave release; original-as-tracker on A/B pages
+
 ## 0.5.628 — 2026-10-31
 
 - sfx rest click lands on Mega_Apocalypse (envelope kind)

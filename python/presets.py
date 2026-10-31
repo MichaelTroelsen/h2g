@@ -413,6 +413,10 @@ EXCLUDED_FROM_ALWAYS = {
     # would also move five songs nobody heard with it, one approved by ear
     # (Last_V8_C128_version).
     "drum_sustain_gate_off",
+    # Per song and never a default: lifts Commando's by-name stored-wave hold
+    # (`stored_wave.HELD`) for the corpus rip, so the byte-exact fixture,
+    # converted without presets, keeps the clamp (user decision 2026-10-31).
+    "release_held_stored_wave",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It
     # names the instruments whose first frame should carry the record's own

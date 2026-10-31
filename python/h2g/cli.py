@@ -157,6 +157,12 @@ def main(argv=None) -> int:
              "player's drum block does whatever the sustain. Per song. Off "
              "by default")
     parser.add_argument(
+        "--release-held-stored-wave", action="store_true",
+        help="lift Commando's by-name hold on the $68 stored-waveform pitch, "
+             "so those notes read the cells as the other players' do "
+             "instead of the clamp's G#7. Per song; off by default so "
+             "Commando.sng stays the byte-exact fixture")
+    parser.add_argument(
         "--force-park", action="store_true",
         help="park every voice on the silent pattern even where the restart "
              "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
@@ -774,6 +780,8 @@ def main(argv=None) -> int:
                           ("--master-volume", "master_volume"),
                           ("--keep-hard-restart", "keep_hard_restart"),
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
+                          ("--release-held-stored-wave",
+                           "release_held_stored_wave"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -886,6 +894,7 @@ def main(argv=None) -> int:
                       master_volume=args.master_volume,
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
+                      release_held_stored_wave=args.release_held_stored_wave,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

@@ -2975,6 +2975,22 @@ Per song (`presets.EXCLUDED_FROM_ALWAYS`): it costs `adsr` agreement where
 is a listening question. Adopted for Crazy_Comets.
 `tests/test_drum_sustain_gate_off.py`.
 
+## `--release-held-stored-wave` (Commando's `$68` notes, for the corpus rip)
+
+Ten players reach a `$68` note byte that lands on the per-voice
+stored-waveform cells, so it sounds what voices 0 and 1 hold at that fetch
+(`stored_wave`, `past_table_wave`). Nine ship that pitch; Commando was held
+by name (`HELD`) at the clamp's G#7 because `Commando.sng` is the byte-exact
+fixture. This option lifts the hold. It is per song
+(`presets.EXCLUDED_FROM_ALWAYS`) and set in presets.json for the corpus
+Commando only (user decision 2026-10-31), so the fixture, converted without
+presets, keeps its bytes.
+
+Measured at e873cce (-t 180 --presets --sound, forced A/B against
+build/fidelity.json): Commando melody 97% -> 100%, pitch and seq 95% -> 100%,
+travel 2.06 -> 0.96; `aud` up on both subtunes, `loud` -0.0003 (inside the
+floor); nothing else moved. `tests/test_stored_wave_pitch.py`.
+
 ## `--drum-fall` (Tarzan's bit-$01 drum: the pitch falls, the gate opens)
 
 Tarzan's player has its own spelling of the bit-$01 drum (`$57EA`,

@@ -475,6 +475,7 @@
       "drum_gate_off": true
     },
     "Commando.sid": {
+      "release_held_stored_wave": true,
       "max_rows": 128,
       "pack": true,
       "prune": false,

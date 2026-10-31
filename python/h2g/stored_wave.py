@@ -42,7 +42,9 @@ What the walk relies on is read from the player, not assumed:
 **COMMANDO IS HELD** (`HELD`), by human decision (2026-10-01, plan task
 `any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture`): its
 `$68` rows stay the clamp's G#7 until the note-104 listen reopens the
-question, because `Commando.sng` is the byte-exact fixture.
+question, because `Commando.sng` is the byte-exact fixture. The convert()
+option `release_held_stored_wave` lifts it, and presets.json sets it for the
+corpus rip only (user decision 2026-10-31), so the fixture keeps its bytes.
 """
 from collections import Counter
 from math import log2
@@ -122,7 +124,7 @@ def _applicable(sid: SidFile, det: Detection, log=None
     """The landings the walk reads, or {} where it does not run."""
     if det.pattern_dialect != "classic" or det.track_voices != 3:
         return {}
-    if sid.name in HELD:
+    if sid.name in HELD and not getattr(det, "release_held_stored_wave", False):
         if log and stored_wave_landings(sid, det):
             log("Stored-wave pitch.......: HELD for this tune (human decision, "
                 "the byte-exact fixture); past-table bytes stay clamped")

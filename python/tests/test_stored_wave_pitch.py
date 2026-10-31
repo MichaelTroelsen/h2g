@@ -103,3 +103,41 @@ def test_commando_is_held_and_keeps_the_clamp():
     assert notes == {} and trace == []
     ev = patterns.decode_entry(sid, det, 0x8, slides=True, status_bit6=True)
     assert ev[0] == patterns.GT_FIRSTNOTE + G_SHARP_7
+
+
+def _released_walk(path):
+    sid = load_sid(str(path))
+    sid, det = _detect_tables(sid, lambda m: None)
+    det.release_held_stored_wave = True
+    tracks = convert_tracks(sid, det, lambda m: None)
+    return stored_wave.stored_wave_notes(sid, det, tracks, slides=True,
+                                         status_bit6=True)
+
+
+def test_released_commando_reads_the_cells_as_the_nine_do():
+    # `release_held_stored_wave` (presets.json, corpus rip only, user
+    # decision 2026-10-31): the walk runs, and pattern $08's `$68` reads B-5
+    # where the clamp gave G#7.
+    notes = _released_walk(COMMANDO)
+    assert notes and notes.get(0x8), notes
+    assert set(notes[0x8].values()) == {B_5}
+
+
+def test_the_release_moves_commando_only_when_set():
+    from h2g.convert import convert
+    held = convert(str(COMMANDO), log=lambda m: None)
+    logs: list = []
+    released = convert(str(COMMANDO), log=logs.append,
+                       release_held_stored_wave=True)
+    assert released != held
+    assert not any("HELD for this tune" in m for m in logs), logs
+    assert any(m.startswith("Stored-wave pitch.......:")
+               and "past-table note(s)" in m for m in logs), logs
+
+
+@needs_corpus
+def test_the_release_is_inert_on_a_song_that_is_not_held():
+    from h2g.convert import convert
+    path = str(CORPUS / "Crazy_Comets.sid")
+    assert (convert(path, log=lambda m: None, release_held_stored_wave=True)
+            == convert(path, log=lambda m: None))

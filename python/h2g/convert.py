@@ -288,7 +288,8 @@ def convert(sid_path: str, log: Logger = print,
             unison_vibrato_phase: bool = False,
             master_volume: bool = False,
             keep_hard_restart: bool = False,
-            drum_sustain_gate_off: bool = False) -> bytes:
+            drum_sustain_gate_off: bool = False,
+            release_held_stored_wave: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -631,6 +632,14 @@ def convert(sid_path: str, log: Logger = print,
     keep_hard_restart. Not adopted where it was not heard (Last_V8_C128_version
     is approved by ear and would move).
 
+    release_held_stored_wave lifts the by-name hold on Commando
+    (`stored_wave.HELD`, `past_table_wave.HELD`): its `$68` notes read the
+    stored-waveform cells as the nine other players' do, instead of the
+    clamp's G#7. Off by default so `Commando.sng` stays the byte-exact
+    fixture; presets.json sets it for the corpus rip only (user decision
+    2026-10-31). Measured at -t 180 --sound: melody 97% -> 100%, pitch and
+    seq 95% -> 100%, loud -0.0003 on both subtunes.
+
     keep_hard_restart overrides `no_hard_restart` for one song: every
     instrument keeps Goattracker's hard restart (gatetimer bit $80 clear),
     which writes `adparam` ahead of each note and lowers the envelope's rate
@@ -726,6 +735,7 @@ def convert(sid_path: str, log: Logger = print,
     sid, det = _detect_tables(sid, log, engine)
     det.drum_gate_off = drum_gate_off
     det.drum_sustain_gate_off = drum_sustain_gate_off
+    det.release_held_stored_wave = release_held_stored_wave
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1

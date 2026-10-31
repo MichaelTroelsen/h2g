@@ -1628,3 +1628,74 @@ def test_a_staged_page_carries_the_wavetable_step_panel():
     assert _balanced(got) == []
     assert 'id="ws0"' not in A.page("Commando", ROW, [], "v1", embed=True,
                                     index_link=False)
+
+
+# ---- the original shown as a tracker (magplay-rt --score) ------------------
+# `magplay-rt` is a GPL build that stays out of the repo, so nothing here runs
+# it: the score dict it writes is built by hand and fed to the same renderer.
+
+def _score(rows=3):
+    def voice(v):
+        return [{"t": round(0.14 * i, 4), "call": 7 * i, "pattern": 10 * v + 1,
+                 "row": i, "note": ("E-5" if i % 2 == 0 else "..."),
+                 "instr": (0x2A if i % 2 == 0 else 0),
+                 "fx": (["P=180"] if i == 0 else [])} for i in range(rows)]
+    return {"machine": "Pal", "clock_hz": 985248, "music_share": 0.9604,
+            "instruments": [{"number": 42}], "patterns": [{"number": 1}] * 2,
+            "voices": [voice(0), voice(1), voice(2)]}
+
+
+def _stage_orig(tmp_path, monkeypatch, score):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "X.trace.json").write_text('{"sub_orig": 2, "seconds": 30}',
+                                           encoding="utf-8")
+    monkeypatch.setattr(A, "original_score", lambda name: score)
+
+
+def test_the_original_tracker_has_three_channels_with_rows_and_times():
+    got = A.original_tracker_html(_score(), 2)
+    for v in range(3):
+        assert 'id="otrk%d"' % v in got
+    assert got.count('class="trkrow note"') == 6          # E-5 rows, 2 a voice
+    assert ">E-5<" in got and ">2A<" in got and ">P=180<" in got
+    assert "window.__abOrigRows = [[0.0,0.14,0.28],[0.0,0.14,0.28],[0.0,0.14,0.28]];" in got
+    assert "96.0%" in got and "<b>heard</b> instruments" in got
+    assert _balanced(got) == []
+
+
+def test_the_original_tracker_is_empty_with_no_transcription():
+    assert A.original_tracker_html(None) == ""
+    assert A.original_tracker_html({"voices": [[], [], []]}) == ""
+
+
+def test_the_page_carries_the_original_tracker_beside_ours(tmp_path, monkeypatch):
+    _stage_orig(tmp_path, monkeypatch, _score())
+    got = A.page("X", ROW, [], "v1", embed=False, index_link=False)
+    assert 'id="origtrk"' in got and "window.__abOrigRows = [[" in got
+    assert "if (window.__abOrigRows)" in got               # the script that follows it
+    assert _balanced(got) == []
+
+
+def test_the_page_draws_no_original_tracker_without_a_score(tmp_path, monkeypatch):
+    _stage_orig(tmp_path, monkeypatch, None)
+    got = A.page("X", ROW, [], "v1", embed=False, index_link=False)
+    assert 'id="origtrk"' not in got and "window.__abOrigRows = [[" not in got
+
+
+def test_original_score_reuses_only_a_cache_with_the_same_key(tmp_path, monkeypatch):
+    import json
+    import heard as H
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    sid = tmp_path / "X.sid"
+    sid.write_bytes(b"PSID")
+    monkeypatch.setattr(A, "find_sid", lambda n: sid)
+    monkeypatch.setattr(H, "MAGPLAY_RT", tmp_path / "no-such-exe.exe")  # never run
+    (tmp_path / "X.trace.json").write_text('{"sub_orig": 2, "seconds": 30}',
+                                           encoding="utf-8")
+    key = {"sha": H._sha(sid), "song": 3, "seconds": 30}
+    cache = tmp_path / "X.original.score.json"
+    cache.write_text(json.dumps(dict(_score(), _key=key)), encoding="utf-8")
+    assert A.original_score("X")["_key"] == key
+    cache.write_text(json.dumps(dict(_score(), _key=dict(key, song=1))),
+                     encoding="utf-8")
+    assert A.original_score("X") is None                   # stale, and no exe to redo it

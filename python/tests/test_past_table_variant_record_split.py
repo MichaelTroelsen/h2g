@@ -74,7 +74,22 @@ def test_the_unsplit_conversion_does_overflow(name):
 
 
 def test_commando_is_held_and_keeps_its_relative_steps():
-    _out, seen = _corpus_convert("Commando.sid")
+    # The hold is by name and still covers the byte-exact fixture, converted
+    # without presets; presets.json lifts it for the corpus rip
+    # (`release_held_stored_wave`, user decision 2026-10-31), below.
+    from h2g.convert import _detect_tables, convert
+    from h2g.sidfile import load_sid
+    fixture = Path(__file__).resolve().parents[2] / "Commando.sid"
+    sid, det = _detect_tables(load_sid(str(fixture)), lambda m: None)
+    blob = convert(str(fixture), log=lambda m: None)
     assert "Commando" in W.HELD
-    assert seen and all(a == b for b, a, _s, _d in seen), "the held file was edited"
-    assert any(_overflowing_visits(a) > 0 for _b, a, _s, _d in seen)
+    assert _overflowing_visits(blob) > 0
+    assert W.pin_past_table_wave_notes(blob, sid, det, lambda m: None) == blob,         "the held file was edited"
+
+
+def test_released_commando_is_pinned_under_presets():
+    _out, seen = _corpus_convert("Commando.sid")
+    assert seen and all(a != b for b, a, _s, _d in seen), "the release did not reach the pass"
+    # Measured 2026-10-31: visits past the table 88 -> 20.
+    assert all(_overflowing_visits(a) < _overflowing_visits(b)
+               for b, a, _s, _d in seen)

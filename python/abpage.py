@@ -41,6 +41,7 @@ import sys
 import uuid
 import wave
 from datetime import datetime
+from html import escape as _html_escape
 from pathlib import Path
 
 import hold
@@ -1211,6 +1212,11 @@ td.test .more { color:var(--muted); font-size:11px; }
 .wsline .lr { display:inline-block; width:3.6em; color:var(--ink); }
 .wsline.on { background:color-mix(in srgb, var(--live) 22%, transparent); color:var(--ink); }
 .trkrow .ix { color:var(--muted); opacity:.65; }
+.trkhead .pr, .trkrow .pr { display:inline-block; width:4.6em; }
+.trkrow .pr { color:var(--muted); opacity:.65; }
+/* The original's tracker: columns keep a readable width and the card scrolls
+   sideways at phone width, so the PAGE never does. */
+.trk.otrk { grid-template-columns:repeat(3,minmax(15rem,1fr)); overflow-x:auto; }
 .trkrow .instr { color:var(--b); font-weight:600; }
 /* An instrument the row INHERITS rather than sets. Goattracker reads a 00
    in the instrument column as "keep the current one", so the literal byte
@@ -2261,6 +2267,69 @@ SCRIPT = r"""
     });
   })();
 
+  // ---- the original's tracker --------------------------------------------
+  // Rows carry their own start time in seconds (MagPlaySID's transcription),
+  // so this follows the ORIGINAL's element and needs no frame rate.
+  if (window.__abOrigRows) (function () {
+    var cols = [0, 1, 2].map(function (v) { return document.getElementById("otrk" + v); });
+    if (cols.some(function (c) { return !c; })) return;
+    var cur = [null, null, null];
+    function rowAt(ts, t) {
+      var lo = 0, hi = ts.length - 1, best = 0;
+      while (lo <= hi) {
+        var mid = (lo + hi) >> 1;
+        if (ts[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1;
+      }
+      return best;
+    }
+    function tick() {
+      var t = au.currentTime;
+      for (var v = 0; v < 3; v++) {
+        var ts = window.__abOrigRows[v], box = cols[v];
+        if (!ts || !ts.length) continue;
+        var i = rowAt(ts, t), el = box.children[i];
+        if (!el) continue;
+        if (cur[v] !== i) {
+          cur[v] = i;
+          var prev = box.querySelector(".trkrow.cur");
+          if (prev) prev.classList.remove("cur");
+          el.classList.add("cur");
+        }
+        var nextEl = box.children[i + 1], top = el.offsetTop;
+        if (nextEl && i + 1 < ts.length) {
+          var span = ts[i + 1] - ts[i];
+          var frac = span > 0 ? Math.min(1, Math.max(0, (t - ts[i]) / span)) : 0;
+          top += (nextEl.offsetTop - el.offsetTop) * frac;
+        }
+        box.scrollTop = top - box.clientHeight / 2 + el.offsetHeight / 2;
+      }
+    }
+    var raf = null;
+    function loop() { tick(); raf = requestAnimationFrame(loop); }
+    au.addEventListener("play", function () { if (raf === null) raf = requestAnimationFrame(loop); });
+    function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } tick(); }
+    au.addEventListener("pause", stop);
+    au.addEventListener("ended", stop);
+    seek.addEventListener("input", tick);
+    tick();
+    cols.forEach(function (box, v) {
+      box.addEventListener("click", function (e) {
+        var row = e.target.closest(".trkrow");
+        if (!row || !box.contains(row)) return;
+        if (au.readyState < 1 || bu.readyState < 1) return;
+        var ts = window.__abOrigRows[v], i = Number(row.dataset.i);
+        if (!ts || !(i in ts)) return;
+        var t = ts[i];
+        au.pause(); bu.pause();
+        play.innerHTML = "&#9654;"; play.setAttribute("aria-label", "Play");
+        au.currentTime = t; bu.currentTime = bAt(t);
+        now.textContent = fmt(t);
+        if (au.duration) seek.value = String(Math.round(t / au.duration * 1000));
+        tick();
+      });
+    });
+  })();
+
   // ---- live spectrum and scope ---------------------------------------------
   // Drawn per animation frame from the DECODED pair at each element's own
   // currentTime, not from an AnalyserNode on the elements: the side not being
@@ -2972,6 +3041,118 @@ def tracker_card(name: str) -> str:
            tr.get("sub_ours", 0)))
 
 
+ORIG_SCORE_SECONDS = 180
+
+
+def original_score(name: str) -> dict | None:
+    """MagPlaySID's transcription of the ORIGINAL, for the subtune the WAVs are of.
+
+    `magplay-rt --score` writes it; it is cached beside the staged pair as
+    `<name>.original.score.json` with a `_key` (sid sha, 1-based song, window)
+    so a changed file, subtune or window is never read through a stale one. The
+    exe is the GPL build that stays out of the repo (tools/magplay-rt/README.md):
+    absent, a cache that matches is still used, and with neither this returns
+    None and the page draws nothing rather than an empty card.
+    """
+    import extra_pages
+    import heard as H
+    import subprocess
+    try:
+        tj = json.loads((LISTEN / f"{name}.trace.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    src = extra_pages.EXTRA_PAGES.get(name, {}).get("source", name + ".sid")
+    orig = find_sid(src)
+    if orig is None:
+        return None
+    key = {"sha": H._sha(orig), "song": tj["sub_orig"] + 1,
+           "seconds": min(ORIG_SCORE_SECONDS, tj["seconds"])}
+    cache = LISTEN / f"{name}.original.score.json"
+    try:
+        doc = json.loads(cache.read_text(encoding="utf-8"))
+        if doc.get("_key") == key:
+            return doc
+    except (OSError, ValueError):
+        pass
+    if not H.MAGPLAY_RT.exists():
+        return None
+    scratch = LISTEN / f"{name}.original.score.tmp"
+    rt_out = LISTEN / f"{name}.original.rt.tmp"
+    try:
+        subprocess.run([str(H.MAGPLAY_RT), str(orig), str(key["seconds"]),
+                        str(key["song"]), str(rt_out), "--score", str(scratch)],
+                       check=True, capture_output=True, text=True, timeout=900)
+        doc = json.loads(scratch.read_text(encoding="utf-8"))
+        doc["_key"] = key
+        cache.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
+        return doc
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    finally:
+        for f in (scratch, rt_out):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def original_tracker_html(score: dict | None, sub_orig: int = 0) -> str:
+    """The original's rows as MagPlaySID's transcription has them, three
+    channels, scrolling with the ORIGINAL's clock. Pure: takes the score dict
+    `magplay-rt --score` writes, so it is testable without the exe."""
+    voices = (score or {}).get("voices") or []
+    if len(voices) < 3 or not any(voices[:3]):
+        return ""
+    cols, times = "", []
+    for v in range(3):
+        rows = voices[v]
+        times.append([r["t"] for r in rows])
+        body = "".join(
+            '<div class="trkrow%s" data-i="%d" title="pattern %d row %d, play call %d">'
+            '<span class="pr">%3d.%02d</span><span class="n">%s</span>'
+            '<span class="instr">%s</span><span class="cmd">%s</span></div>'
+            % (" note" if r["note"] not in ("...", "---", "+++") else "", i,
+               r["pattern"], r["row"], r["call"], r["pattern"], r["row"],
+               _html_escape(r["note"]),
+               "%02X" % r["instr"] if r["instr"] else "..",
+               _html_escape(" ".join(r["fx"])) or "...")
+            for i, r in enumerate(rows))
+        cols += ('<div class="trkcol"><h3>Voice %d</h3>'
+                 '<div class="trkhead"><span class="pr">pat.row</span>'
+                 '<span class="n">note</span><span class="instr">instr</span>'
+                 '<span class="cmd">fx</span></div>'
+                 '<div class="trkbody" id="otrk%d">%s</div></div>' % (v + 1, v, body))
+    share = score.get("music_share")
+    return (
+        '<div class="card" id="origtrk">\n  <h2>The pattern, as the original plays it</h2>\n'
+        '  <div class="trk otrk">%s</div>\n'
+        '  <script>window.__abOrigRows = %s;</script>\n'
+        '  <p class="trknote">The <b>original</b>&rsquo;s subtune %d as '
+        'MagPlaySID transcribes it from the register writes (<code>magplay-rt '
+        '--score</code>): %d instruments and %d patterns it <i>heard</i>, '
+        '%s of the tune&rsquo;s register changes made by the score. These are '
+        '<b>heard</b> instruments, numbered by the transcriber &mdash; not '
+        'Hubbard&rsquo;s own records &mdash; and the pattern boundaries are the '
+        'transcriber&rsquo;s, so compare notes and timing with the card above, '
+        'not the numbers. Follows the <b>original</b>&rsquo;s clock; <b>click a '
+        'row</b> to jump both sides there and pause.</p>\n</div>\n'
+        % (cols, json.dumps(times, separators=(",", ":")), sub_orig,
+           len(score.get("instruments") or []), len(score.get("patterns") or []),
+           "%.1f%%" % (100 * share) if isinstance(share, (int, float)) else "?"))
+
+
+def original_tracker_card(name: str) -> str:
+    """The original shown as a tracker, from MagPlaySID's transcription."""
+    score = original_score(name)
+    if not score:
+        return ""
+    try:
+        tj = json.loads((LISTEN / f"{name}.trace.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return original_tracker_html(score, tj.get("sub_orig", 0))
+
+
 # Cap on how many tick marks one strip draws. build/fidelity.json's densest
 # corpus voice is in the hundreds; this keeps a pathological file from
 # emitting thousands of <i> elements while the printed *count* stays exact
@@ -3395,7 +3576,8 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            voice_row=voice_row, voice_map=json.dumps(voice_map),
            facts=facts_card(name, survey or {}, preset or {}, fidjson or {}),
            panel=panel_card(name, embed),
-           tracker=tracker_card(name) + ("" if embed else wavestep_card(name)),
+           tracker=(tracker_card(name) + original_tracker_card(name)
+                    + ("" if embed else wavestep_card(name))),
            notes_strip=(notes_strip_card(name, fidjson) + timeline_card(fidjson)
                         + heard_card(name, heard_rows().get(name))
                         + ("" if embed else roll_card())),
