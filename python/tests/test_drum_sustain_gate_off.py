@@ -105,7 +105,8 @@ def test_the_option_reaches_only_the_heard_songs():
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     took = {k for k in doc["songs"]
             if F._preset_opts(doc, k).get("drum_sustain_gate_off")}
-    assert took == {"Crazy_Comets.sid", "Spellbound.sid", "Warhawk.sid"}
+    assert took == {"Crazy_Comets.sid", "Spellbound.sid", "Warhawk.sid",
+                    "Proteus.sid"}  # Proteus heard 2026-10-31
 
 
 @needs_corpus

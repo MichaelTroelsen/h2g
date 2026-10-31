@@ -1914,7 +1914,8 @@
       "multiplier": 3,
       "two_stage": true,
       "max_hard_restart": true,
-      "arpeggio": true
+      "arpeggio": true,
+      "wave_program": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -2448,7 +2449,9 @@
       "subtunes": 1,
       "rows": 16038,
       "multiplier": 7,
-      "max_hard_restart": true
+      "max_hard_restart": true,
+      "drum_gate_off": true,
+      "drum_sustain_gate_off": true
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,

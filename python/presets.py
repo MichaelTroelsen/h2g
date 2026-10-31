@@ -411,7 +411,8 @@ EXCLUDED_FROM_ALWAYS = {
     # record (gate-off and fall), heard right on Crazy_Comets, Spellbound and
     # Warhawk (2026-10-25). Not an extension of drum_gate_off because that
     # would also move five songs nobody heard with it, one approved by ear
-    # (Last_V8_C128_version).
+    # (Last_V8_C128_version). Adopted with drum_gate_off on Proteus, heard
+    # 2026-10-31: gate 68% -> 91% at -t 180 --sound, melody/aud/loud flat.
     "drum_sustain_gate_off",
     # Per song and never a default: lifts Commando's by-name stored-wave hold
     # (`stored_wave.HELD`) for the corpus rip, so the byte-exact fixture,
@@ -631,6 +632,9 @@ EXCLUDED_FROM_ALWAYS = {
     # 90 -> 94%; Radio_ACE wave 88 -> 97%, gate 63 -> 79%, onset 79 -> 100%,
     # aud 92 -> 94%. No agreement column falls (Radio_ACE travel .79 -> 1.22x
     # is a ratio, about as far from 1 in log space).
+    # ADOPTED on Lion_Heart by ear (user, 2026-10-31): the drum noise and 129
+    # attacks come back (onset 85 -> 100%) at melody 95 -> 92%, a trade the
+    # columns cannot settle, so it was heard instead.
     "wave_program",
     # Effect bit $10's arpeggio -- per song, never in `always`. The player steps the sequence with a *global* phase counter; a
     # wavetable restarts at every note, so which step a note opens on cannot be
