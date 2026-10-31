@@ -50,6 +50,16 @@ def test_census_buckets_group_by_cause_across_files():
     assert len(got) == 4        # two causes x (subagent confirm, main fix)
 
 
+def test_hold_fetch_buckets_are_not_queued():
+    rows = [_row("A.sid", hold_census=[{"kind": "fetch", "effect": 0x01},
+                                       {"kind": "slot", "effect": 0x01}]),
+            _row("B.sid", hold_census=[{"kind": "fetch", "effect": None},
+                                       {"kind": "slot", "effect": 0x01}])]
+    got = Q.census_buckets(rows)
+    assert got and all("fetch" not in e["id"] for e in got)
+    assert {e["cause"] for e in got} == {"hold slot with effect $01"}
+
+
 def test_column_outliers_use_the_corpus_spread():
     rows = [_row(f"F{i}.sid", gate=0.7) for i in range(10)] + [_row("Bad.sid", gate=0.1)]
     got = Q.column_outliers(rows)

@@ -231,6 +231,11 @@ def census_buckets(rows: list[dict]) -> list[dict]:
             for rec in r.get(key) or []:
                 if rec.get("kind") in ("match",):
                     continue
+                # User ruling 2026-10-31 (listen-current-builds-2026-10:fetch-frame):
+                # the one-frame next-note fetch is inaudible, so a hold `fetch`
+                # bucket is not a defect to queue.
+                if col == "hold" and rec.get("kind") == "fetch":
+                    continue
                 k = (col, rec.get("kind"), rec.get("effect"))
                 buckets[k]["files"].add(stem)
                 buckets[k]["n"] += 1
