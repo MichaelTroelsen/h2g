@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.628 presets.py",
+  "generator": "h2g 0.5.629 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -475,7 +475,6 @@
       "drum_gate_off": true
     },
     "Commando.sid": {
-      "release_held_stored_wave": true,
       "max_rows": 128,
       "pack": true,
       "prune": false,
@@ -485,7 +484,8 @@
       "rows": 14044,
       "multiplier": 1,
       "drum_gate_off": true,
-      "pulse_phase": true
+      "pulse_phase": true,
+      "release_held_stored_wave": true
     },
     "Commodore_64_Music_Examples.sid": {
       "max_rows": 94,
