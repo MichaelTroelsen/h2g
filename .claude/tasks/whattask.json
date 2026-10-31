@@ -1,12 +1,12 @@
 {
  "generated_from": {
-  "head": "6938b12",
+  "head": "3323263",
   "focus": null,
   "sources": [
    ".claude/tasks/whattask.json (previous plan at 8a35b59)",
    ".claude/tasks/runs.jsonl (whole file)",
    ".claude/tasks/decisions.jsonl (no new lines)",
-   "git log 8a35b59..6938b12",
+   "git log 6938b12..3323263 (FIDELITY/QUEUE refresh only)",
    "todo.md",
    "whats-next.md (2026-09-02 handoff; spent, contributes no tasks)",
    "hooks/prune.js with policy.json",
@@ -14,7 +14,7 @@
    "gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work.",
-  "date": "2026-10-30"
+  "date": "2026-10-31"
  },
  "hazards": [
   "presets.json",

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.628 — 2026-10-31
+
+- sfx rest click lands on Mega_Apocalypse (envelope kind)
+
 ## 0.5.627 — 2026-10-30
 
 - gate-off firstwave on 7 zero-hold songs; attribute.py

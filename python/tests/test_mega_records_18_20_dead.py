@@ -138,6 +138,12 @@ def test_no_pattern_names_records_17_to_20_and_they_are_dropped(monkeypatch):
     # counts the records alone.
     import h2g.goatwriter.note_passes as NP
     monkeypatch.setattr(NP, "legato_tie_family", lambda sid, det: False)
+    # The arm without the sfx rest click (Mega_Apocalypse spells 5 drum-record
+    # rests as a clone note since the envelope kind landed): it moves this pin.
+    import h2g.goatwriter.sfx_rest_click as _SRC
+    monkeypatch.setattr(_SRC, "sfx_rest_click_plan",
+                        lambda det, tracks, patterns, out, instr_at, written,
+                        wave_entries, *a: (patterns, wave_entries, written))
     blob, _ = _convert(drop_unnamed_instruments=False)
     count = len(songview.parse_sng(blob).instruments)
     assert count == RECORDS            # GT n is record n-1: 1..21

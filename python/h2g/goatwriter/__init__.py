@@ -263,8 +263,11 @@ from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,
                         program_instruments, programmed_instruments,
                         rest_park_pass, rest_park_plan,
                         rest_wave_rows)  # noqa: F401
-from .sfx_rest_click import (GT_ENDPATT, INSTR_BYTES, _carries_hit,
-                             _effect_byte, click_rests,
+from .sfx_rest_click import (ENVELOPE_FIRSTWAVE, ENVELOPE_HELD,
+                             ENVELOPE_LEAD, ENVELOPE_PARK_WAVE,
+                             ENVELOPE_ROW_FRAMES, GT_ENDPATT, INSTR_BYTES,
+                             _carries_hit, _effect_byte, _starts_of,
+                             click_rests, drop_unreached_rows,
                              sfx_rest_click_entries,
                              sfx_rest_click_plan)  # noqa: F401
 from .rest_ring import (_ring_free, _ring_last_row, _ring_marker,

@@ -193,7 +193,15 @@ def test_mega_apocalypse_pattern_0f_is_copied_and_commanded():
     notes = lambda p: [p[i] for i in range(0, min(len(p), 4 * 64), 4)]
     cmds = lambda p: [p[i + 2] for i in range(0, min(len(p), 4 * 64), 4)]
     shape = notes(song.patterns[15])
-    holders = [p for p in song.patterns[16:] if notes(p) == shape]
+    # Pattern 15 plays on voice 2, whose drum-record rest at row 16 the sfx
+    # rest click spells as a clone note; the copy plays on voice 0 and keeps
+    # the rest (KEYOFF $BE). Any other differing row is not a copy.
+    def _copy(p):
+        n = notes(p)
+        diff = [i for i, (a, b) in enumerate(zip(shape, n)) if a != b]
+        return (len(n) == len(shape) and len(diff) <= 1
+                and all(n[i] == 0xBE for i in diff))
+    holders = [p for p in song.patterns[16:] if _copy(p)]
     assert holders, "no copy of pattern 15 in the finished song"
     assert not any(cmds(song.patterns[15]))
     assert max(cmds(p).count(CMD_SETWAVEPTR) for p in holders) >= 20
@@ -353,6 +361,12 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
                         lambda *a, **k: None)
     import h2g.detect as D
     monkeypatch.setattr(D, "_find_effect_bit40", lambda sid: False)
+    # The arm without the sfx rest click (Mega_Apocalypse spells 5 drum-record
+    # rests as a clone note since the envelope kind landed): it moves this pin.
+    import h2g.goatwriter.sfx_rest_click as _SRC
+    monkeypatch.setattr(_SRC, "sfx_rest_click_plan",
+                        lambda det, tracks, patterns, out, instr_at, written,
+                        wave_entries, *a: (patterns, wave_entries, written))
     _fid, sng = _mega(lambda m: None, gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with

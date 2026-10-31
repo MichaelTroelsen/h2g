@@ -73,7 +73,13 @@ def test_the_reset_code_makes_17_every_voices_instrument_index():
     assert bytes.fromhex("A911 95C9 CA 10E6".replace(" ", "")) in sid.data
 
 
-def test_no_pattern_names_record_17_so_it_is_dropped():
+def test_no_pattern_names_record_17_so_it_is_dropped(monkeypatch):
+    # The sfx rest click's clone record is numbered after the legato
+    # clones; this test counts the records and the legato clones alone.
+    import h2g.goatwriter.sfx_rest_click as _SRC
+    monkeypatch.setattr(_SRC, "sfx_rest_click_plan",
+                        lambda det, tracks, patterns, out, instr_at, written,
+                        wave_entries, *a: (patterns, wave_entries, written))
     blob, _ = _convert(drop_unnamed_instruments=False)
     named = named_instruments(blob)
     # GT instrument n is record n-1 under compact_instruments: record 17 is

@@ -327,6 +327,12 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     import h2g.detect as _D
     monkeypatch.setattr(_NP, "_swell_phase_model", lambda *a, **k: None)
     monkeypatch.setattr(_D, "_find_effect_bit40", lambda sid: False)
+    # The arm without the sfx rest click (Mega_Apocalypse spells 5 drum-record
+    # rests as a clone note since the envelope kind landed): it moves this pin.
+    import h2g.goatwriter.sfx_rest_click as _SRC
+    monkeypatch.setattr(_SRC, "sfx_rest_click_plan",
+                        lambda det, tracks, patterns, out, instr_at, written,
+                        wave_entries, *a: (patterns, wave_entries, written))
     sng, _ = _converted(gate_off_firstwave_instruments=())
     # Re-pinned by the -S1 slide frames (wave-program-slide-frames-0797-family):
     # Mega's $09F9/$07E7 slide frames are now semitone counts; with
