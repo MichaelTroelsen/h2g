@@ -2000,6 +2000,22 @@ under presets, v0.5.623 baseline; historical). Turning on
 `rest_envelope_silence` to reach Bangkok_Knights, I_Ball and Nineteen was
 refused: adsr, gate and `aud` fall. `tests/test_sfx_rest_click.py`.
 
+Since v0.5.641 two guards are relaxed. A rest at pattern row 0 with no
+earlier note in its pattern is spelt as the note the voice last sounded
+before entering it (`entry_notes`, transposes honoured), when every entry
+agrees on one note; other rows still refuse. And a drum record may carry up
+to `STRAY_ROWS_MAX` (2) rows, at most 1/`STRAY_SHARE` (1/20) of its plays,
+on another voice (`_sfx_voice_record`); the rewrite then touches only
+patterns every orderlist plays on the sfx voice (`sfx_only_patterns`). No
+shipped conversion moves. **The refusal above does not hold for Nineteen at
+bf244a1**: with `rest_envelope_silence` forced on, adsr rises .838 -> .938,
+gate and `aud` are flat at print, and melody reaches .9996 (was .9914 under
+the old guards); the printed costs are bend .80 -> .75, travel .75 -> .73,
+hold 23% -> 21%, holdnf 85% -> 79%. I_Ball and Bangkok_Knights do not move
+with the relaxation: their row-0 rests sit in patterns shared with another
+voice or entered from two different notes. Adopting the key per song is the
+user's call.
+
 ## `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **44 corpus files** the instrument effect byte's bit `$04` is not an arpeggio

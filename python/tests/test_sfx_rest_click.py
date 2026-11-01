@@ -222,3 +222,116 @@ def test_mega_apocalypse_ships_the_envelope_click_in_a_full_wavetable():
     named = {c.number for c in clones}
     assert sum(1 for p in song.patterns for k in range(1, len(p), 4)
                if p[k] in named) >= 1
+
+
+# --- the two relaxed guards (row-0 rest, a drum record with a stray row) -----
+
+def test_a_row_zero_rest_follows_the_previous_patterns_last_note():
+    """Guard 1: no note before the rest IN ITS PATTERN, but the voice's last
+    note (the previous pattern's) is known -- the clone row takes that note."""
+    pat = _pattern(_row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(GT_REST, 0, CMD_SETAD, 0),
+                   _row(E2))
+    (new,), placed, used = click_rests([pat], {0: {DRUM}}, {DRUM: CLONE},
+                                       entry_note={0: {D2}})
+    assert (placed, used) == (1, {DRUM})
+    assert new[0:4] == [D2, CLONE, 0, 0]
+    assert new[4:8] == [GT_REST, 0, 0, 0]
+    assert new[8:12] == [E2, DRUM, 0, 0]
+    assert pat[0] == GT_KEYOFF, "changed patterns are copies"
+
+
+@pytest.mark.parametrize("why,carried,rows", [
+    ("two different previous notes", {D2, E2},
+     [_row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(E2)]),
+    ("a path with no note yet", {None},
+     [_row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(E2)]),
+    ("no answer for the pattern", None,
+     [_row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(E2)]),
+    ("only row 0 borrows the previous pattern's note", {D2},
+     [_row(GT_REST), _row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(E2)]),
+])
+def test_a_row_zero_rest_without_one_known_previous_note_is_left_alone(
+        why, carried, rows):
+    pat = _pattern(*rows)
+    entry_note = {} if carried is None else {0: carried}
+    (new,), placed, _ = click_rests([pat], {0: {DRUM}}, {DRUM: CLONE},
+                                    entry_note=entry_note)
+    assert placed == 0 and new is pat, why
+
+
+def test_the_envelope_kind_keeps_refusing_a_row_zero_rest():
+    """Its even-row rule counts rows from an in-pattern note."""
+    pat = _pattern(_row(GT_KEYOFF), _row(GT_REST), _row(E2))
+    (new,), placed, _ = click_rests([pat], {0: {DRUM}}, {DRUM: CLONE},
+                                    envelope_kind=True, entry_note={0: {D2}})
+    assert placed == 0 and new is pat
+
+
+def test_entry_notes_walks_transposes_repeats_and_the_first_entry():
+    from h2g.goatwriter.sfx_rest_click import entry_notes
+    p0 = _pattern(_row(D2), _row(GT_REST))
+    p1 = _pattern(_row(GT_REST), _row(GT_REST))
+    # pattern 1 entered under transpose +2 after a D2 played at transpose 0:
+    # the same pitch is a pattern note two semitones lower.
+    got = entry_notes([[0, 0xF2, 1, 0xFF, 3]], [p0, p1])
+    assert got == {0: {None}, 1: {D2 - 2}}
+    # a repeated pattern is re-entered holding its own last note
+    got = entry_notes([[0xD1, 0, 0xFF, 2]], [p0, p1])
+    assert got[0] == {None, D2}
+    # a pattern reached after two different notes names both (the caller refuses)
+    p2 = _pattern(_row(E2))
+    got = entry_notes([[0, 1, 0xFF, 3], [2, 1, 0xFF, 3]], [p0, p1, p2])
+    assert got[1] == {D2, E2}
+
+
+def test_sfx_only_patterns_names_the_patterns_of_the_sfx_voice_alone():
+    from h2g.goatwriter.sfx_rest_click import sfx_only_patterns
+    pats = [[0xFF, 0, 0, 0]] * 4
+    # voice 0: 0, 1;  voice 1: -;  voice 2: 2, 1, 3
+    tracks = [[0, 1, 0xFF, 0], [0xFF, 0], [2, 1, 3, 0xFF, 0]]
+    assert sfx_only_patterns(tracks, pats, 2) == {2, 3}
+    assert sfx_only_patterns(tracks, pats, 0) == {0}
+
+
+def test_a_rest_in_a_pattern_played_off_the_sfx_voice_is_left_alone():
+    pat = _pattern(_row(D2, DRUM), _row(GT_KEYOFF, 0, CMD_SETSR, 0), _row(E2))
+    (new,), placed, _ = click_rests([pat], {}, {DRUM: CLONE}, sfx_patterns=set())
+    assert placed == 0 and new is pat
+    (new,), placed, _ = click_rests([pat], {}, {DRUM: CLONE}, sfx_patterns={0})
+    assert placed == 1
+
+
+@pytest.mark.parametrize("voices,ok", [
+    ({2: 358}, True),                    # the sfx voice alone (voice 2)
+    ({2: 358, 0: 1}, True),              # Nineteen's instrument 1: one stray row
+    ({2: 358, 0: 2}, True),
+    ({2: 358, 0: 3}, False),             # more than a stray row
+    ({2: 19, 0: 1}, False),              # a stray row, but not a stray share
+    ({0: 5}, False),                     # never on the sfx voice
+    ({2: 358, 0: 1, 1: 2}, False),       # strays add up across voices
+])
+def test_a_drum_record_may_carry_a_stray_row_on_another_voice(voices, ok):
+    from h2g.goatwriter.sfx_rest_click import _sfx_voice_record
+    assert _sfx_voice_record(voices, 2) is ok
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(CORPUS, "Nineteen.sid"))
+                    or not os.path.exists(PRESETS),
+                    reason="corpus or presets.json absent")
+def test_nineteen_clones_its_bass_record_for_the_rests_that_open_a_pattern():
+    """Both guards at once: Nineteen's bass record (`02:...`, instrument 1) is named once on voice 0
+    and its rests that open a pattern follow a note of the previous pattern.
+    Before the relaxation only record 15 (2 rests) was cloned."""
+    import songview
+    from fidelity import _preset_opts
+    from h2g.convert import convert
+    doc = json.load(open(PRESETS))
+    opts = dict(_preset_opts(doc, "Nineteen.sid"), rest_envelope_silence=True)
+    song = songview.parse_sng(convert(os.path.join(CORPUS, "Nineteen.sid"),
+                                      log=lambda m: None, **opts))
+    clones = [i for i in song.instruments
+              if (i.ad, i.sr, i.firstwave) == (0, 0, 0x08)]
+    bass = {c.number for c in clones if c.name.startswith("02:")}
+    assert bass, [i.name for i in clones]
+    assert sum(1 for p in song.patterns for k in range(1, len(p), 4)
+               if p[k] in bass) >= 3

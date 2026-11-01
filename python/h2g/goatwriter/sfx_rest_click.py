@@ -86,6 +86,22 @@ land on the fifth; none is in the file and none is spelt. So for this kind:
 * only a rest an EVEN number of rows after the pattern's last note qualifies
   (`ENVELOPE_ROW_FRAMES`, the tick this reading was taken at).
 
+**Two guards the testbit kind relaxes** (Nineteen, I_Ball, Bangkok_Knights; the
+in-process experiment reached Nineteen melody .9996 with `rest_envelope_silence`):
+
+* a rest at pattern ROW 0 has no earlier note in its pattern, because the note it
+  follows is the voice's last one in the PREVIOUS pattern. `entry_notes` walks
+  the orderlists (transposes and repeats honoured, the restart one lap) and names
+  that note, as the raw pattern-note byte the clone row needs under the entering
+  pattern's own transpose; a pattern reached with two different answers, or from
+  a start with no note yet, keeps its plain key-off. The envelope kind's even-row
+  rule counts rows from an in-pattern note, so it keeps refusing row 0;
+* a drum record named on the sfx voice AND on another voice a few times
+  (`STRAY_ROWS_MAX`, and at most 1/`STRAY_SHARE` of its sfx-voice rows) qualifies:
+  the clone only ever replaces a rest in a pattern played on the sfx voice alone
+  (`sfx_only_patterns`), so the stray row's voice is never touched. A record with
+  real use on another voice still clicks voice 3 from there and is left alone.
+
 **Room.** The program is six rows and Mega_Apocalypse's wavetable holds 254 of
 255. Six of those rows are `$FF 00` stops that NOTHING reaches -- the fifth row
 of a five-row instrument block whose program already stopped at the fourth (rows
@@ -141,6 +157,10 @@ ENVELOPE_FIRSTWAVE = 0x40
 ENVELOPE_ROW_FRAMES = 3
 # Held frames before the first hit: the hit is on frame 1 + lead.
 ENVELOPE_LEAD = 1
+# A drum record also named on another voice qualifies when that is at most this
+# many (play-weighted) rows and no more than 1/STRAY_SHARE of its sfx-voice rows.
+STRAY_ROWS_MAX = 2
+STRAY_SHARE = 20
 
 
 def sfx_rest_click_entries(pitch_hi: int, period: int, multiplier: int = 1,
@@ -191,20 +211,92 @@ def _carries_hit(wave_entries: List[Tuple[int, int]], start: int,
     return False
 
 
+def entry_notes(tracks: List[List[int]], patterns: List[List[int]]
+                ) -> Dict[int, set]:
+    """Pattern number -> the set of raw pattern-note bytes that, played under
+    the entering orderlist position's transpose, sound the pitch the voice's
+    last note sounded before the pattern (None in the set: no note yet, or a
+    pitch the entering transpose cannot spell). Walked as `_entry_instruments`
+    does (`_lapped_tracks`, repeats honoured); a transpose `$E0-$FE` is
+    `b - $F0` and persists along the orderlist."""
+    from .note_passes import _lapped_tracks
+    out: Dict[int, set] = {}
+    for track in _lapped_tracks(tracks):
+        played: Optional[int] = None        # the last note's pitch + transpose
+        trans, repeat, operand = 0, 1, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                trans = b - 0xF0
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                raw = None if played is None else played - trans
+                if raw is not None and not GT_FIRST_NOTE <= raw <= GT_LAST_NOTE:
+                    raw = None
+                out.setdefault(b, set()).add(raw)
+                for r in range(0, len(pat), 4):
+                    if pat[r] == GT_ENDPATT:
+                        break
+                    if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                        played = pat[r] + trans
+            repeat = 1
+    return out
+
+
+def sfx_only_patterns(tracks: List[List[int]], patterns: List[List[int]],
+                      sfx_voice: int) -> set:
+    """The patterns every orderlist that plays them plays on the sfx voice."""
+    voices: Dict[int, set] = {}
+    for ti, track in enumerate(tracks):
+        operand = False
+        for b in track:
+            if operand:
+                operand = False
+            elif b == 0xFF:
+                operand = True
+            elif b < len(patterns):
+                voices.setdefault(b, set()).add(ti % 3)
+    return {p for p, v in voices.items() if v == {sfx_voice}}
+
+
 def click_rests(patterns: List[List[int]], entry: Dict[int, set],
-                clone_of: Dict[int, int], envelope_kind: bool = False
+                clone_of: Dict[int, int], envelope_kind: bool = False,
+                entry_note: Optional[Dict[int, set]] = None,
+                sfx_patterns: Optional[set] = None
                 ) -> Tuple[List[List[int]], int, set]:
     """(patterns, rests rewritten, drum instruments used). Changed patterns
     are COPIES; see the module docstring for what qualifies. `envelope_kind`
     drops the `CMD_SETSR $00` requirement and takes only a rest an even number
-    of rows after the pattern's last note."""
+    of rows after the pattern's last note. `entry_note` (`entry_notes`) lets a
+    rest at pattern row 0 follow the previous pattern's last note; without it
+    such a rest is left alone. `sfx_patterns` (`sfx_only_patterns`), where
+    given, restricts the rewrite to the patterns it names."""
     out: List[List[int]] = []
     placed = 0
     used: set = set()
     for number, pat in enumerate(patterns):
+        if sfx_patterns is not None and number not in sfx_patterns:
+            out.append(pat)
+            continue
         cands = set(entry.get(number, ()))
         rows = len(pat) // 4
         last_note = None
+        carried = None
+        if entry_note is not None and not envelope_kind:
+            got = entry_note.get(number, ())
+            if len(got) == 1:
+                carried = next(iter(got))
         last_row = -1
         copy: Optional[List[int]] = None
         r = 0
@@ -218,8 +310,11 @@ def click_rests(patterns: List[List[int]], entry: Dict[int, set],
                 last_note = note
                 last_row = r
             drum = next(iter(cands)) if len(cands) == 1 else None
+            prev = last_note
+            if prev is None and r == 0:
+                prev = carried
             if (note != GT_KEYOFF or ins or drum not in clone_of
-                    or last_note is None):
+                    or prev is None):
                 r += 1
                 continue
             h = r + 1
@@ -237,7 +332,7 @@ def click_rests(patterns: List[List[int]], entry: Dict[int, set],
                 continue
             if copy is None:
                 copy = list(pat)
-            copy[4 * r] = last_note
+            copy[4 * r] = prev
             copy[4 * r + 1] = clone_of[drum]
             for k in range(r, h):
                 cmd, data = copy[4 * k + 2], copy[4 * k + 3]
@@ -294,6 +389,14 @@ def drop_unreached_rows(wave_entries: List[Tuple[int, int]],
     return entries, moved, row_map
 
 
+def _sfx_voice_record(voices: Dict[int, int], sfx_voice: int) -> bool:
+    """Whether a record's {voice: rows} is the sfx voice's, give or take a
+    stray row elsewhere (`STRAY_ROWS_MAX`, `STRAY_SHARE`)."""
+    mine = voices.get(sfx_voice, 0)
+    other = sum(n for v, n in voices.items() if v != sfx_voice)
+    return mine > 0 and other <= STRAY_ROWS_MAX and other * STRAY_SHARE <= mine
+
+
 def sfx_rest_click_plan(det, tracks: List[List[int]],
                         patterns: List[List[int]], out: bytearray,
                         instr_at: int, written: int,
@@ -318,7 +421,7 @@ def sfx_rest_click_plan(det, tracks: List[List[int]],
         eff = _effect_byte(out, instr_at, g)
         if eff is None or not eff & 0x80:
             continue
-        if set(voices.get(g, {})) != {det.sfx_voice}:
+        if not _sfx_voice_record(voices.get(g, {}), det.sfx_voice):
             continue
         if not _carries_hit(wave_entries,
                             out[instr_at + 1 + (g - 1) * INSTR_BYTES + 2],
@@ -353,7 +456,10 @@ def sfx_rest_click_plan(det, tracks: List[List[int]],
     entry = _entry_instruments(tracks, patterns)
     clone_of = {g: written + 1 + k for k, g in enumerate(drums)
                 if written + 1 + k <= ceiling}
-    new, placed, used = click_rests(patterns, entry, clone_of, envelope_kind)
+    carried = entry_notes(tracks, patterns)
+    only = sfx_only_patterns(tracks, patterns, det.sfx_voice)
+    new, placed, used = click_rests(patterns, entry, clone_of, envelope_kind,
+                                    carried, only)
     if not placed:
         return unplaced
     if used != set(clone_of):
@@ -361,7 +467,7 @@ def sfx_rest_click_plan(det, tracks: List[List[int]],
         clone_of = {g: written + 1 + k
                     for k, g in enumerate(g for g in drums if g in used)}
         new, placed, used = click_rests(patterns, entry, clone_of,
-                                        envelope_kind)
+                                        envelope_kind, carried, only)
     written_before = written
     for g in sorted(clone_of, key=clone_of.get):
         rec = bytearray(out[instr_at + 1 + (g - 1) * INSTR_BYTES:
