@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.645 — 2026-11-01
+
+- runqueue drain: three aud-dip diagnoses recorded
+
 ## 0.5.644 — 2026-11-01
 
 - four adoptions: Bangkok regrid_prepay, Nineteen rest_envelope_silence, Thanatos vibrato_hold, Monty aligned_firstwave
