@@ -598,7 +598,15 @@ zeroes, so frame 1 of an even attack is the noise (`tri noi tri noi`); this
 branch never passed `alt_first` and played `11 11 81` from each onset.
 `goatwriter.derived_arp_parities` walks the counter's parity per instrument,
 and where the wavetable owns the attack frame (not under a written firstwave)
-the pair and the mask-$01 nibble loop start on it. -t 180 --sound under
+the pair and the mask-$01 nibble loop start on it. **An octave record needs
+the counter's residue, not its parity** (v0.5.640): record 4 (`$0D`, mask
+$04) lowers where bit 2 is clear, and notes 6 calls apart attack on residues
+0, 6, 4, 2 of 8, so `derived_arp_residues` walks the residue mod the block's
+cycle and `derived_arp_phase_split_plan` clones the record per minority
+residue (3 clones). 100 of 224 attacks had opened an octave high: melody .944
+-> .997, seq .948 -> .997, aud .935 -> .943, no printed column fell; the
+corpus byte-hash moves Hollywood_or_Bust alone (Chicken_Song identical).
+`tests/test_derived_arp_phase.py`. -t 180 --sound under
 presets, Hollywood shipped -> both options: melody .774 -> .944, seq .774 ->
 .948, pitch .900 -> .947, onset .778 -> 1.000, wave .833 -> .945, noise 0 ->
 2998 (orig 4500), gate .329 -> .975, tie 1.32 -> 0.94, bend .44 -> .69, travel

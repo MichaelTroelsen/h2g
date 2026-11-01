@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.640 — 2026-11-01
+
+- derived octave arp split on the counter residue (Hollywood_or_Bust melody .944 -> .997)
+
 ## 0.5.639 — 2026-11-01
 
 - past-table byte on the sequencer read pointers (Thing_on_a_Spring melody .977 -> 1.000)

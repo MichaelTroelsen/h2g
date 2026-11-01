@@ -468,6 +468,10 @@ class Detection:
     # frame} where `wave_alternate_arp` holds (`derived_arp_parities`), set
     # by goatwriter.build_sng on every build -- empty everywhere else.
     derived_arp_parity: Dict[int, int] = field(default_factory=dict)
+    # {Goattracker instrument: the global counter's residue (mod the block's
+    # cycle, 8 at an octave's mask $04) on the majority of its attacks} for
+    # the same dialect (`derived_arp_residues`), set beside the parity.
+    derived_arp_residue: Dict[int, int] = field(default_factory=dict)
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.

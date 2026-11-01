@@ -570,6 +570,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     det.derived_arp_parity = (
         _gw_arpeggio.derived_arp_parities(sid, det, tracks, patterns)
         if effects else {})
+    det.derived_arp_residue = (
+        _gw_arpeggio.derived_arp_residues(sid, det, tracks, patterns)
+        if effects else {})
     # The decoder's bit-7 note rows (`patterns.PatternList`), read before any
     # pass below rebinds `patterns` to a plain list. Present only where a tie
     # is spelled under `note_flag`; see `legato_tie_clones`.
@@ -830,6 +833,63 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                     for rec, res in sorted(failed)))
                 no_room |= failed
                 phase_split = None
+    # The derived dialect's octave record (Hollywood_or_Bust record 4): the
+    # block reads the global counter on the note's own call, and notes six
+    # calls apart attack on residues 0, 6, 4, 2 of 8 (`derived_arp_residues`),
+    # so one block per residue, in the same slot and by the same plan as the
+    # gated nibble's. `distinct` probes with the residues the table is laid
+    # out with; a clone the table has no room for is dropped and the plan
+    # made again, as there.
+    if (phase_split is None and duty_split is None and effects
+            and det.derived_arp_residue and not det.arp_fixed_up):
+        derived_probe = ({}, None, None, None)
+        derived_distinct = _arp_phase_distinct(
+            sid, det, tracks, patterns, instr_used, effects, fmt,
+            table, multiplier, min_notes, lead, two_stage, sfx_drum,
+            wave_program, pitch_seq, note_rows, row_calls,
+            no_test_restart, voice_two_stage, instr_voices,
+            gate_skip, real_firstwave_instruments,
+            wave_alternate=wave_alternate,
+            instr_row_calls=instr_row_calls, phases=derived_probe)
+        no_room = set()
+        for _pass in range(2):
+            phase_split = _gw_arpeggio.derived_arp_phase_split_plan(
+                sid, det, tracks, patterns, effects, instr_used + 1,
+                distinct=(lambda rec, res: (rec, res) not in no_room
+                          and derived_distinct(rec, res)),
+                log=log if _pass else None,
+                block_of=derived_distinct.block)
+            if phase_split is None:
+                break
+            dry_starts = []
+            _wavetable_layout(
+                sid, det, instr_used, effects, fmt, list(table),
+                multiplier, min_notes, lead, two_stage, sfx_drum,
+                wave_program, pitch_seq, note_rows, row_calls,
+                no_test_restart, voice_two_stage, instr_voices,
+                gate_skip, real_firstwave_instruments, arps,
+                arp_phases={}, phase_clones=phase_split.clones,
+                phase_clone_starts=dry_starts,
+                wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls,
+                hold_travel=not (no_test_restart
+                                 or real_firstwave_instruments
+                                 or gate_off_firstwave_instruments),
+                note_pitches=note_pitches, note_spans=stale_spans)
+            failed = {(rec, res) for (rec, _c, res), at
+                      in zip(phase_split.clones, dry_starts) if not at}
+            if not failed:
+                if not _pass and log:
+                    _gw_arpeggio.derived_arp_phase_split_plan(
+                        sid, det, tracks, patterns, effects,
+                        instr_used + 1, distinct=derived_distinct, log=log,
+                        block_of=derived_distinct.block)
+                break
+            if log:
+                log(f"derived arp phase split: {len(failed)} clone(s) the "
+                    "wavetable has no room for stay on their record")
+            no_room |= failed
+            phase_split = None
     # Bit $02's EOR toggle (Rasputin, `wave_eor.wave_eor_split_plan`): the
     # phase is the voice's event parity and the period the note's tick, so a
     # record's notes split evenly between two blocks and each gets the one

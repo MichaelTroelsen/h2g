@@ -148,3 +148,34 @@ def test_hollywood_converts_record_9_lowered_first():
 def test_hollywoods_preset_takes_both():
     o = _opts(HOLLYWOOD.name)
     assert o["aligned_firstwave"] and o["wave_alternate"]
+
+
+def _split_lines(path):
+    from h2g.convert import convert
+    logs = []
+    convert(str(path), log=logs.append, **_opts(path.name))
+    return [m for m in logs if m.startswith("derived arp phase split")]
+
+
+@needs_corpus
+def test_hollywoods_octave_record_splits_on_the_counters_residue():
+    """Record 4 (`$0D`, an octave on mask $04) lowers its note where the
+    counter's bit 2 is clear, and notes 6 calls apart attack on residues
+    0, 6, 4, 2 of 8: one block per residue. Measured at -t 180 under
+    presets (run record hollywood-or-bust-melody-shortfall): 100 of 224
+    attacks opened an octave high; melody .944 -> .997, no printed column
+    fell, corpus byte-hash moved Hollywood_or_Bust alone."""
+    assert _split_lines(HOLLYWOOD) == [
+        "derived arp phase split: 3 clone(s) [(4, 21, 2), (4, 22, 4), "
+        "(4, 23, 0)], 3 pattern copy(ies), 113 instrument byte(s)"]
+
+
+@needs_corpus
+def test_the_residue_split_needs_the_residues(monkeypatch):
+    monkeypatch.setattr(A, "derived_arp_residues", lambda *a, **k: {})
+    assert _split_lines(HOLLYWOOD) == []
+
+
+@needs_corpus
+def test_chicken_takes_no_residue_split():
+    assert _split_lines(CHICKEN) == []

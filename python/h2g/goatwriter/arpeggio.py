@@ -3081,6 +3081,108 @@ def derived_arp_parities(sid: SidFile, det: Detection,
     return {instr: 0 if c[0] >= c[1] else 1 for instr, c in votes.items()}
 
 
+def _derived_arp_gate(sid: SidFile, det: Detection) -> Optional[tuple]:
+    """(period, test) of the derived dialect's counter, or None.
+
+    The reading `derived_arp_parities` makes, shared: the dialect present,
+    the counter reset by the new-song call (`test[0] == 0`, so row `r` is
+    fetched on counter `r * det.frames_per_row`), and no split subtune
+    shifting the numbering. `period` is the longest cycle any record's mask
+    makes, as `nibble_arp_phases`'."""
+    per = det.arp_nibble_period
+    if not det.wave_alternate_arp or per is None or det.frames_per_row < 1:
+        return None
+    test = nibble_arp_counter_test(sid, per)
+    if test is None or test[0] != 0:
+        return None
+    return fixed_arp_period(max(per.on_interval, per.otherwise)), test
+
+
+def derived_arp_residues(sid: SidFile, det: Detection,
+                         tracks: List[List[int]],
+                         patterns: List[List[int]]) -> dict:
+    """{Goattracker instrument: the counter's residue on its attack}, mod the
+    block's whole cycle -- `derived_arp_parities`' walk with the period
+    `nibble_arp_phases` uses, 8 where an octave record's mask is `$04`.
+
+    **A parity is not enough for an octave record.** Its lowered half is
+    where `counter & 4` is zero (`fixed_arp_up(4, BNE, c)`), so the half
+    the attack sounds is the counter's bit 2, and Hollywood_or_Bust's notes
+    are 6 calls apart: successive attacks sit on residues 0, 6, 4, 2 of
+    8 -- lowered, raised, raised, lowered. Measured on the original, sub 2
+    voice 0 record `$0D`/GT 4, all 224 attacks: the first call is the
+    lowered note on exactly the 100 whose frame has bit 2 clear
+    (`frame - row * frames_per_row` is 0 on all 224). The record's own
+    block takes the majority; `derived_arp_phase_split_plan` clones it for
+    the other residues. Empty wherever `derived_arp_parities` is."""
+    gate = _derived_arp_gate(sid, det)
+    if gate is None or len(tracks) // 3 > max(sid.subtunes, 1):
+        return {}
+    period = gate[0]
+    votes: dict = {}
+    for track in tracks:
+        for row, current, pat, r in _walk_note_rows(track, patterns):
+            if pat[r + 2] == CMD_TONEPORTA and pat[r + 3] == 0:
+                continue                 # a tie restarts no wavetable
+            votes.setdefault(current, [0] * period)[
+                (row * det.frames_per_row) % period] += 1
+    return {instr: max(range(period), key=lambda p: (counts[p], -p))
+            for instr, counts in votes.items()}
+
+
+def derived_arp_note_residues(sid: SidFile, det: Detection,
+                              tracks: List[List[int]],
+                              patterns: List[List[int]]) -> Optional[tuple]:
+    """(period, {(track, orderlist position, play): {row: residue}}) -- the
+    walk `derived_arp_residues` votes from, keyed by where each note sits
+    (`fixed_arp_note_residues`' shape), so a caller can rename it."""
+    gate = _derived_arp_gate(sid, det)
+    if gate is None or len(tracks) // 3 > max(sid.subtunes, 1):
+        return None
+    period = gate[0]
+    out: dict = {}
+    for ti, track in enumerate(tracks):
+        row, seen = 0, Counter()
+        for pos, p in _orderlist_occurrences(track):
+            if p >= len(patterns):
+                continue
+            pat = patterns[p]
+            play = seen[pos]
+            seen[pos] += 1
+            res = out.setdefault((ti, pos, play), {})
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:
+                    break
+                if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                    res[r // 4] = (row * det.frames_per_row) % period
+                row += 1
+    return period, out
+
+
+def derived_arp_phase_split_plan(sid: SidFile, det: Detection,
+                                 tracks: List[List[int]],
+                                 patterns: List[List[int]], effects: bool,
+                                 first_clone: int, distinct=None, log=None,
+                                 block_of=None) -> Optional[ArpPhaseSplit]:
+    """Clone each derived-dialect record whose notes attack on more than one
+    counter residue and whose block depends on it, one clone per residue
+    (`_note_phase_split` with no factor: every minority residue), and rename
+    each such note to its residue's clone. `distinct(record, residue)` is
+    whether the clone's block would differ from the record's own; residues
+    of one record laying out one block share one clone (`block_of`)."""
+    if not (effects and det.derived_arp_residue):
+        return None
+    walked = derived_arp_note_residues(sid, det, tracks, patterns)
+    if walked is None:
+        return None
+    _period, residues = walked
+    return _note_phase_split(tracks, patterns, residues,
+                             det.derived_arp_residue,
+                             set(det.derived_arp_residue), first_clone,
+                             distinct, "derived arp phase split", log,
+                             factor=None, block_of=block_of)
+
+
 def nibble_gate_byte(sid: SidFile) -> Optional[int]:
     """The outer gate cell's byte at song start, or None where it is not read.
 

@@ -23,7 +23,7 @@ from .arpeggio import (fixed_arp_duty_entries, gateoff_nibble_arp_budget_pair,
                        gateoff_nibble_arp_entries, _half_cycle,
                        nibble_arp_counter_test, nibble_arp_entries,
                        nibble_arp_first_half, nibble_arp_half_calls,
-                       nibble_arp_half_cycle, nibble_arp_up,
+                       nibble_arp_half_cycle, nibble_arp_up, fixed_arp_up,
                        _nibble_gate_shape, unticked_arp_octave_entry,
                        GatePhase)
 from .call_phase import nibble_gate_step_lead
@@ -1010,6 +1010,37 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                 or arp_mask[0] == FIXED_ARP_PARITY_MASK)
                            else None),
                 half_calls=arp_half)
+            if shaped is not None:
+                return shaped
+        # **The derived dialect's octave record runs on the attack frame, from
+        # the counter's residue.** The block (`det.wave_alternate_arp`, mask
+        # `$04` at an octave) reads the global counter on the note's own call,
+        # so the call the attack sounds is the lowered note where
+        # `fixed_arp_up(mask, branch, residue)` and the half runs on from
+        # there (`derived_arp_residues`). The phased shape below takes
+        # Commando's reading -- the init writes the note on call 0 and the
+        # block starts on call 1 -- which is a call late here; and no
+        # residue at all started every note on the raised half, wrong on
+        # the half of Hollywood_or_Bust's record-4 attacks that sit on a
+        # residue with bit 2 clear. Only where the wavetable owns the attack
+        # frame, as the mask-$01 shape below.
+        residue = (arp_phase if arp_phase is not None
+                   else det.derived_arp_residue.get(i + lead + 1))
+        if (effects and not arp_fixed and det.wave_alternate_arp
+                and residue is not None and isinstance(arp_half, int)
+                and not tick and tail == wave and not no_test_restart
+                and multiplier == 1 and per is not None
+                and test is not None and per.half(arp_note) > 1):
+            mask = per.half(arp_note)
+            first_up = fixed_arp_up(mask, test[1], residue)
+            first_calls = 1
+            while (first_calls < 2 * mask
+                   and fixed_arp_up(mask, test[1], residue + first_calls)
+                   == first_up):
+                first_calls += 1
+            shaped = nibble_arp_entries(
+                wave, _arp_relative(arp_fixed, arp_note, arp_up), arp_half,
+                base_entry, budget, phase=([], [], first_up, first_calls))
             if shaped is not None:
                 return shaped
         if arp_half is not None and not tick and tail == wave:
