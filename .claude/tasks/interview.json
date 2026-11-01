@@ -1,25 +1,15 @@
 {
- "generated_from": {"head": "230737a", "plan_head": "cb1530c"},
+ "generated_from": {"head": "bf244a1", "plan_head": "bf244a1"},
  "blockers": [
-  {"id": "kings-of-the-beach-ingame-ntsc-render-decision", "kind": "decision",
-   "title_at_research": "Kings_of_the_Beach_ingame is an NTSC original: pin PAL renders, or carry the NTSC rate into the packed sid",
-   "blocked_on_at_research": "pin PAL / carry NTSC / leave",
-   "current_behaviour": "Original PSID flags 0x18 (NTSC); listen.render_sidplayfp passes no clock flag so sidplayfp renders it at 60 Hz; ours is flagged PAL; every register column already compares at PAL (C:/t/kings-of-the-beach-ingame-aud-deficit/finding.md).",
-   "sources": ["C:/t/kings-of-the-beach-ingame-aud-deficit/finding.md", "python/listen.py render_sidplayfp", "python/call_rate.py retime_packed"],
-   "options": [{"label": "pin-pal-renders", "consequence": "harness-only patch ready; aud .734 -> .926; listeners on a default player still hear the original faster"},
-               {"label": "carry-ntsc-rate", "consequence": "new converter work: NTSC clock bit + 60 Hz CIA latch in the packed sid; changes what our file plays"},
-               {"label": "leave", "consequence": "aud stays the corpus minimum for a reason that is not a defect"}],
-   "recommendation": "pin-pal-renders", "why": "every column already measures both sides at PAL; the render is the one place the harness disagrees with itself, and the patch is ready with no byte moving",
-   "question": "Kings_of_the_Beach_ingame: pin PAL renders, carry the NTSC rate, or leave?", "unblocked_by_research": false},
-  {"id": "dragons-lair-part-ii-tempo-remap-decision", "kind": "decision",
-   "title_at_research": "Dragons_Lair_Part_II plays 6.25% fast: adopt the init song-remap fix despite bend/travel/depth falling at -S3?",
-   "blocked_on_at_research": "adopt / investigate-first / leave",
-   "current_behaviour": "pack_subtune packs song 0's 5/2 frames while the init plays song 9's 8/3; drift -62.5/1000 (C:/t/dragons-lair-part-ii-aud-deficit/finding.md, ab.md).",
-   "sources": ["C:/t/dragons-lair-part-ii-aud-deficit/finding.md", "C:/t/dragons-lair-part-ii-aud-deficit/ab.md", "python/h2g/goatwriter/tempo.py pack_subtune"],
-   "options": [{"label": "adopt", "consequence": "correct tempo now; vibrato/slide ratios fall and become a follow-up"},
-               {"label": "investigate-first", "consequence": "diagnose the -S3 vibrato shortfall before landing; song stays 6.25% fast meanwhile"},
-               {"label": "leave", "consequence": "keeps the wrong tempo"}],
-   "recommendation": "adopt", "why": "a 6.25% tempo error is audible on every note while the falling columns are vibrato-size ratios, and the patch moves only this song",
-   "question": "Dragons_Lair_Part_II: adopt the tempo fix now, investigate the vibrato shortfall first, or leave?", "unblocked_by_research": false}
+  {"id": "warhawk-top-note-copy-adoption", "kind": "decision",
+   "title_at_research": "Warhawk: adopt the pinned-copy-over-duplicate-rows fix (melody .982 -> 1.000) although W_A_R aud/loud fall below print precision?",
+   "blocked_on_at_research": "user: adopt as is, hold W_A_R back by name, or leave it. Measured: Warhawk melody .982 -> 1.000; Crazy_Comets aud/loud rise; W_A_R pitch exact but aud .9312 -> .9281 and loud .9810 -> .9805 (printed 93%/98% unchanged); byte-hash moves those three.",
+   "current_behaviour": "past_table_wave.retarget_mixed_steps drops a pinned copy that does not fit past the wavetable end (Warhawk: 20 rows free, copies need 10+11), so A#7 plays as the clamp's G#7; _duplicate_runs is absent at bf244a1 (grep 0); fix.patch applies clean; past_table_wave.HELD (line 154) already holds Commando by name.",
+   "sources": ["C:/t/warhawk-melody-shortfall/finding.md", "C:/t/warhawk-melody-shortfall/fix.patch", "python/h2g/past_table_wave.py:154"],
+   "options": [{"label": "adopt", "consequence": "Warhawk melody 1.000, Crazy_Comets aud up, W_A_R pitch exact with aud -0.003 / loud -0.0005 (unprinted)"},
+               {"label": "adopt-hold-war", "consequence": "Warhawk and Crazy_Comets gain; W_A_R keeps its bytes via a name hold, and its pitch error stays"},
+               {"label": "leave", "consequence": "34 Warhawk notes stay an octave-ish wrong (A#7 -> G#7)"}],
+   "recommendation": "adopt", "why": "W_A_R's pitch becomes exact while its falls are below print precision and inside the loud floor; a name hold would keep a known-wrong pitch to protect an unprinted digit",
+   "question": "Warhawk fix: adopt as is (W_A_R pitch exact, aud -0.003 unprinted), hold W_A_R back by name, or leave?", "unblocked_by_research": false}
  ]
 }

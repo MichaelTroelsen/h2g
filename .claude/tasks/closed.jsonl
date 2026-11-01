@@ -1607,3 +1607,15 @@
 {"id":"dragons-lair-part-ii-aud-deficit","title":"Dragons_Lair_Part_II aud .863","closed_by":"measured:2026-10-31","reason":"Diagnosis done; finding.md and fix.patch in C:/t/dragons-lair-part-ii-aud-deficit/ (runs.jsonl). Follow-up is a task in this plan."}
 {"id":"ninja-aud-deficit","title":"Ninja aud .862","closed_by":"measured:2026-10-31","reason":"Diagnosis done; finding.md and fix.patch in C:/t/ninja-aud-deficit/ (runs.jsonl). Follow-up is a task in this plan."}
 {"id":"apply-ninja-voice-arp","title":"Ninja: adopt voice_arp (aud .862 -> .908 measured, no agreement column falls)","closed_by":"230737a","reason":"voice_arp adopted on Ninja; byte-hash moved Ninja alone (runs.jsonl)."}
+{"id":"kings-of-the-beach-ingame-ntsc-render-decision","title":"Kings_of_the_Beach_ingame is an NTSC original: pin PAL renders, or carry the NTSC rate into the packed sid","closed_by":"d37a77c","reason":"landed"}
+{"id":"dragons-lair-part-ii-tempo-remap-decision","title":"Dragons_Lair_Part_II plays 6.25% fast: adopt the init song-remap fix despite bend/travel/depth falling at -S3?","closed_by":"4604ae3","reason":"landed"}
+{"id":"thanatos-aud-ceiling","title":"What caps aud near .95 when every register column reads 100% (Thanatos aud .944 with gate/wave/adsr/vol at 100%)","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/thanatos-aud-ceiling)"}
+{"id":"i-ball-melody-shortfall","title":"I_Ball melody .965","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/i-ball-melody-shortfall)"}
+{"id":"bangkok-knights-melody-shortfall","title":"Bangkok_Knights melody .969","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/bangkok-knights-melody-shortfall)"}
+{"id":"thing-on-a-spring-melody-shortfall","title":"Thing_on_a_Spring melody .977","closed_by":"4231f62","reason":"landed"}
+{"id":"warhawk-melody-shortfall","title":"Warhawk melody .982","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/warhawk-melody-shortfall)"}
+{"id":"auf-wiedersehen-monty-melody-shortfall","title":"Auf_Wiedersehen_Monty melody .988","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/auf-wiedersehen-monty-melody-shortfall)"}
+{"id":"nineteen-melody-shortfall","title":"Nineteen melody .988","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/nineteen-melody-shortfall)"}
+{"id":"hollywood-or-bust-melody-shortfall","title":"Hollywood_or_Bust melody .944","closed_by":"c0635f3","reason":"landed"}
+{"id":"gate-column-without-fetch","title":"gatenf: a gate column that forgives the one-frame next-note fetch, as holdnf does for hold","closed_by":"b79d5d8","reason":"landed"}
+{"id":"adsr-key-census","title":"How much of the adsr deficit is the same sound under a different AD/SR key (20 songs below adsr .80)","closed_by":"measured:2026-11-01","reason":"run record outcome done (diagnosis/census, findings under C:/t/adsr-key-census)"}

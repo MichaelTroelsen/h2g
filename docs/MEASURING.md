@@ -726,6 +726,21 @@ Commando and Skate_or_Die_intro to .95-.99, so their whole gate gap was the
 fetch. 34 of the 54 files below .90 did not move: their gap is a real
 release difference.
 
+**`adsrnf` (v0.5.643)** does the same for `adsr`. A census of the 20 songs
+below .80 found 83.6% of their miss frames were envelope-register
+differences the SID cannot hear at that frame. `adsr_audible_compare` drops
+a disagreeing frame from the count when the gate is off on both sides and
+either both envelopes are at level zero, or a release is still running and
+the masked difference holds no release nibble. A gated frame, or one where
+the gates differ, keeps its charge; `adsr` is unchanged. The level is a
+frame-stepped envelope model (`_EnvLevel`), not reSID, so a frame at the
+release's edge can be misjudged; the column is absent under `--vice`. On a
+scratch corpus pass at bf244a1 `adsr` moved on none of 93 files and the mean
+went .879 (`adsr`) -> .971 (`adsrnf`); Crazy_Comets, Formula_1_Simulator,
+Phantoms_of_the_Asteroid and Thing_on_a_Spring read 1.000, while
+5_Title_Tunes (.85), Bangkok_Knights (.84) and Ninja (.88) keep real
+envelope differences.
+
 ### Why a column misses — `attribute.py` (v0.5.627)
 
 ```sh

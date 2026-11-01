@@ -2520,6 +2520,163 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+class _EnvLevel:
+    """A frame-stepped SID envelope level, one voice, one side.
+
+    The cycle-budget model `adsr_audible_compare` needs ONLY to know whether a
+    released voice has run down to level zero: PAL 19656 cycles a frame, the
+    6581 rate periods (`SID_RATE_PERIOD`), the exponential divider (1, 2, 4,
+    8, 16, 30 below $FF, $5D, $36, $1A, $0E, $06). It is an approximation, not
+    reSID -- no delay bug, no sustain-below-level glitches -- and is good for
+    that one question; do not widen it into a loudness model.
+
+    Call `phase` (the state at the START of the frame, after the gate edge),
+    then `step` with the frame's ADSR pair.
+    """
+
+    def __init__(self) -> None:
+        self.level = 0
+        self.state = "R"
+        self.gate = 0
+        self.acc = 0
+
+    @staticmethod
+    def _divisor(level: int) -> int:
+        for above, div in ((93, 1), (54, 2), (26, 4), (14, 8), (6, 16)):
+            if level > above:
+                return div
+        return 30
+
+    def phase(self, adsr: int, gate: int) -> str:
+        """'A' attack, 'D' decay, 'S' sustain, 'R' release, 'Z' released to 0."""
+        if gate and not self.gate:
+            self.state = "A"
+        if not gate and self.gate:
+            self.state = "R"
+        self.gate = gate
+        if not gate:
+            return "Z" if self.level == 0 else "R"
+        if self.state == "A":
+            return "A"
+        return "D" if self.level > ((adsr >> 4) & 15) * 17 else "S"
+
+    def step(self, adsr: int) -> None:
+        sustain = ((adsr >> 4) & 15) * 17
+        if self.gate and self.state == "A":
+            period = SID_RATE_PERIOD[(adsr >> 12) & 15]
+            n, self.acc = divmod(PAL_FRAME_CYCLES + self.acc, period)
+            if self.level + n >= 255:
+                self.level, self.state, self.acc = 255, "D", 0
+            else:
+                self.level += n
+            return
+        if self.gate:
+            floor, nibble = sustain, (adsr >> 8) & 15
+        else:
+            floor, nibble = 0, adsr & 15
+        if self.level <= floor:
+            return
+        period = SID_RATE_PERIOD[nibble]
+        budget = PAL_FRAME_CYCLES + self.acc
+        while self.level > floor:
+            cost = period * self._divisor(self.level)
+            if budget < cost:
+                break
+            budget -= cost
+            self.level -= 1
+        self.acc = budget if self.level > floor else 0
+
+
+def adsr_audible_compare(orig: list[Voice], ours: list[Voice],
+                         nframes: int, lag: int = 0,
+                         mask_release: bool = False) -> dict:
+    """`adsr` with the frames the SID cannot hear not charged -- the `adsrnf`
+    column.
+
+    Walks the frames exactly as `adsr_compare` does (same alignment, same
+    `x == 0 and y == 0` skip, same `mask_release`), and leaves a DISAGREEING
+    frame out of the count when the gate is off on BOTH sides and no differing
+    nibble governs the sound on either:
+
+    * `a1` -- both envelopes have released to level zero: nothing sounds, so
+      no nibble governs, the release one included;
+    * `a2` -- a release is still running (so only the release nibble governs)
+      and only A, D or S differ. With `mask_release` the release nibble is
+      never in the difference, so every gate-off frame of that shape is
+      forgiven; without it a differing release nibble keeps its charge.
+
+    Both players reload the pair from the instrument at the next gate-on
+    (gplay.c:397-398, player.s:882-892), which is why a gate-off A/D/S
+    difference is inaudible; the gate-on frame carries its own charge if the
+    pair is still wrong there. The classes are `a1`/`a2` of the 2026-11-01
+    census of the twenty songs under .80 (class (a) as a whole was 83.6% of
+    their 139845 missing frames; a1 + a2 were 106821 of them, 76.4%, the rest
+    of (a) being frames where the gates differ, which this does not forgive;
+    historical, re-measure).
+
+    **Frames leave the denominator rather than being credited as agreement**
+    (as `gate_nofetch_compare` does), so a real miss beside them is not
+    diluted. A frame where the two gates DIFFER is never forgiven -- one side
+    is gated on, the nibbles of the sustaining side govern, and the `gate`
+    column owns the disagreement. A gated frame is never forgiven, A/D/S
+    included.
+
+    **Blind to** whatever the level model above gets wrong at the edge of the
+    release (it is a frame-stepped approximation, not reSID, so a frame
+    either side of the true zero can be misfiled between a1 and a2 -- with
+    the release nibble masked that moves nothing, since both are forgiven),
+    and to anything the pair does AFTER the gate-off that is audible only
+    through the next note (an instrument reload that never comes). `adsr` is
+    unchanged and stays the strict reading.
+
+    `adsr_nf_forgiven` is how many frames were not charged (`_zero` the a1
+    share, `_ads` the a2). Equals `adsr` on a file with none.
+    """
+    agree = total = 0
+    forgiven = zero = ads = 0
+    keep = ~RELEASE_NIBBLE if mask_release else -1
+    per_voice = []
+    for a, b in zip(orig, ours):
+        ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
+                          register_timeline(b.adsr_events, nframes), lag)
+        wa, wb = _aligned(register_timeline(a.wf_events, nframes),
+                          register_timeline(b.wf_events, nframes), lag)
+        ea, eb = _EnvLevel(), _EnvLevel()
+        va = vt = 0
+        for x, y, ga, gb in zip(ta, tb, wa, wb):
+            ga, gb = (ga or 0) & GATE_BIT, (gb or 0) & GATE_BIT
+            pa, pb = ea.phase(x, ga), eb.phase(y, gb)
+            ea.step(x)
+            eb.step(y)
+            if x == 0 and y == 0:
+                continue
+            if (x & keep) == (y & keep):
+                va += 1
+                vt += 1
+                continue
+            if not ga and not gb:
+                if pa == "Z" and pb == "Z":
+                    zero += 1
+                    forgiven += 1
+                    continue
+                if not (((x ^ y) & keep) & RELEASE_NIBBLE):
+                    ads += 1
+                    forgiven += 1
+                    continue
+            vt += 1
+        per_voice.append({"adsr_nf": (va / vt) if vt else None, "frames": vt})
+        agree += va
+        total += vt
+    return {
+        "adsr_nf": (agree / total) if total else None,
+        "adsr_nf_frames": total,
+        "adsr_nf_forgiven": forgiven,
+        "adsr_nf_forgiven_zero": zero,
+        "adsr_nf_forgiven_ads": ads,
+        "adsr_nf_voices": per_voice,
+    }
+
+
 # The ADSR bits an instrument key may be built from.
 #
 # `$D405/$D406` is a verbatim per-instrument copy of the record on the
@@ -6827,6 +6984,22 @@ DIMENSIONS = (
               source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
               "per-frame agreement of the envelope pair; the release nibble is NOT compared on a file converted with `cut_release` (every preset file), which zeroes it on our side, so a wrong release is invisible to this column (unmasked figure in the row's `adsr_exact`; the `--vice` path masks it the same way) (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte; `vicetrace.parse` repairs that by continuity, which is a guess where a whole note's ADSR low byte is >= $80, so read with that residual blindness)"),
+    # `adsr` with the frames the SID cannot hear not charged; `adsr` is untouched.
+    Dimension("adsr_nf", "adsrnf", ("$D405/$D406", "$D404"), "fraction",
+              "`adsr`, but a frame is not charged when the gate is off on BOTH "
+              "sides and no differing nibble governs the sound: both envelopes "
+              "released to level zero (nothing sounds), or a release still "
+              "running with only A/D/S differing (the release nibble is the "
+              "one that governs, and it agrees or is masked). Both players "
+              "reload the pair at the next gate-on, so those frames are "
+              "inaudible (census 2026-11-01, classes a1/a2). **Blind to** "
+              "anything on a gated frame (never forgiven), to a frame where "
+              "the two gates differ (`gate` owns it), and to the level "
+              "model's error at the edge of the release (a frame-stepped "
+              "approximation, not reSID); forgiven frames leave the "
+              "denominator rather than counting as agreement. Same release "
+              "mask as `adsr`, and absent under `--vice` (`-`). Equals `adsr` "
+              "where it forgives nothing"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
     # read. That exclusion is right for a timbre column and it made a whole
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
@@ -8440,6 +8613,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                                       lag=lag)
             row.update(adsr_compare(a, best_dump, nframes, lag=lag,
                                     mask_release=bool(opts.get("cut_release"))))
+            row.update(adsr_audible_compare(
+                a, best_dump, nframes, lag=lag,
+                mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(gate_nofetch_compare(a, best_dump, nframes, lag=lag))
             row.update(tie_compare(a, best_dump, nframes, lag=lag))
@@ -9231,8 +9407,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr | adsrnf | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -9272,7 +9448,8 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('gate_nofetch'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
-            f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
+            f"{_fmt_pct(r.get('adsr'))} | {_fmt_pct(r.get('adsr_nf'))} | "
+            f"{_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "

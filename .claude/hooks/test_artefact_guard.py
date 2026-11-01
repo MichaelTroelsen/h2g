@@ -132,6 +132,33 @@ def matrix():
                 "cwd-resolved root (not CLAUDE_PROJECT_DIR, which is clean)",
              'python fidelity.py /c -t 180 --json ../build/fidelity.json',
              dirty_repo, de),
+
+            # -- Launch spelled through a subshell / chain. Must block (2). --
+            (2, "subshell-backgrounded launch with spaces",
+             '( python fidelity.py /c -t 180 --json ../build/fidelity.json & )',
+             dirty_repo, de),
+            (2, "subshell launch with NO space after the paren",
+             '(python fidelity.py /c -t 180 & )', dirty_repo, de),
+            (2, "cd then launch",
+             'cd python && python fidelity.py /c -t 180 --json ../build/fidelity.json',
+             dirty_repo, de),
+            (2, "semicolon chain",
+             'cd python; python survey.py /c -o ../docs/SURVEY.md',
+             dirty_repo, de),
+            (2, "pipe chain",
+             'echo x | python presets.py /c -o ../presets.json',
+             dirty_repo, de),
+            (2, "backgrounded with bare ampersand, no space before python",
+             'sleep 1 &python listen.py /c', dirty_repo, de),
+            (2, "command substitution",
+             'x=$(python fidelity.py /c -t 180)', dirty_repo, de),
+            (2, "braces group",
+             '{ python fidelity.py /c -t 180; }', dirty_repo, de),
+            (0, "subshell read-only run still passes",
+             '( python fidelity.py --baseline b.json --from-json x & )',
+             dirty_repo, de),
+            (0, "subshell launch on clean tree passes",
+             '( python fidelity.py /c -t 180 & )', clean_repo, de),
         ])
 
         for want, desc, cmd, cwd, extra_env in CASES:

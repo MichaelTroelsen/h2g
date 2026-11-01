@@ -68,7 +68,7 @@ GENERATORS = re.compile(
 # class of defect the flag-guard fix at d3775b4 corrected in the guard
 # written alongside this one.
 INVOCATION = re.compile(
-    r"(?:^|[\s/\\])(?:python[0-9.]*\s+|\./)"
+    r"(?:^|[\s/\\(){&`])(?:python[0-9.]*\s+|\./)"
     r"[^\s\"']*\b(?:%s)\.py\b" % "|".join(GENERATOR_NAMES))
 
 # Reading is not regenerating: these flags mean "consume an existing run".

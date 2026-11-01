@@ -1548,10 +1548,10 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
     text = fidelity.report(rows, _Args())
     assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr |"
             in text)
-    # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
+    # adsr | adsrnf | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
     # test is the record that it did.
-    assert "| 50% | 60/100 | 0.75x | 1.00x | 40/0 ! | 2.00x |" in text
+    assert "| 50% | 100% | 60/100 | 0.75x | 1.00x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
     assert "filtered frames, ours/original: **40/0**" in text
@@ -1739,6 +1739,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  onset_ours_early=0, onset_ours_late=0,
                  onset_timing=melody, onset_timing_paired=1,
                  gate=melody, gate_frames=100, gate_nofetch=melody,
+                 adsr_nf=melody,
                  tie_agreement=melody, tie_same_frame=10,
                  tie_ours_only=0, tie_orig_only=0,
                  gate_ours_ringing=0, gate_ours_silent=0,
@@ -2317,10 +2318,11 @@ def test_the_registers_no_dimension_reads_are_named():
     assert "never as a duration" not in note_length_item
     assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
     # `adsr` and `tail` both read the envelope pair -- one while the note
-    # plays, one after it ends -- so dropping either alone leaves it read.
+    # plays, one after it ends -- so dropping either alone leaves it read
+    # (`adsrnf` is `adsr` again with frames left out, so it goes with it).
     assert "$D405/$D406" in dict(fidelity.registers_unread(
         {d.key for d in fidelity.DIMENSIONS
-         if d.key not in ("adsr", "release_tail_agreement")}))
+         if d.key not in ("adsr", "adsr_nf", "release_tail_agreement")}))
     assert len(fidelity.registers_unread(set())) == len(fidelity.SID_REGISTERS)
 
 
@@ -5790,3 +5792,100 @@ def test_gatenf_is_registered_beside_gate_and_says_what_it_is_blind_to():
     assert "rises when notes are removed" in d.of
     # and `gate` itself is untouched: still keyed on its own key
     assert next(x for x in fidelity.DIMENSIONS if x.column == "gate").key == "gate"
+
+
+# --- `adsrnf`: `adsr` with the frames the SID cannot hear not charged ---------
+
+
+def _adsr_voice(gate_off, pairs, gate_on_again=None):
+    """One voice: gate on at 0 (`$11`), off at `gate_off` (`$10`, waveform kept
+    selected), and again on at `gate_on_again` when given. `pairs` is the
+    ADSR timeline, `[(frame, pair), ...]`."""
+    wf = [(0, 0x11), (gate_off, 0x10)]
+    if gate_on_again is not None:
+        wf.append((gate_on_again, 0x11))
+    return fidelity.Voice(wf_events=wf, adsr_events=list(pairs),
+                          attack_frames=[0])
+
+
+def test_adsrnf_gate_off_ads_difference_reads_full_and_adsr_below_it():
+    """R=9 on both sides, so a release still runs for ~37 frames after the
+    gate drops at 10; from 12 ours has other A/D/S nibbles. Nothing that
+    differs governs the release, so `adsrnf` forgives all of it."""
+    oo = _three(_adsr_voice(10, [(0, 0x0A09)]))
+    uu = _three(_adsr_voice(10, [(0, 0x0A09), (12, 0x1B49)]))
+    a = fidelity.adsr_compare(oo, uu, 40)
+    nf = fidelity.adsr_audible_compare(oo, uu, 40)
+    assert a["adsr"] < 1.0
+    assert nf["adsr_nf"] == 1.0
+    assert nf["adsr_nf_forgiven"] == 28
+    assert nf["adsr_nf_forgiven_ads"] == 28 and nf["adsr_nf_forgiven_zero"] == 0
+    # `adsr` is the strict reading and gained no forgiveness key
+    assert "adsr_nf_forgiven" not in a
+
+
+def test_adsrnf_gated_sustain_difference_lowers_both_equally():
+    oo = _three(_adsr_voice(60, [(0, 0x0A09)]))
+    uu = _three(_adsr_voice(60, [(0, 0x0A09), (5, 0x0A59)]))   # gate stays on
+    a = fidelity.adsr_compare(oo, uu, 40)["adsr"]
+    nf = fidelity.adsr_audible_compare(oo, uu, 40)
+    assert a < 1.0
+    assert nf["adsr_nf"] == a
+    assert nf["adsr_nf_forgiven"] == 0
+
+
+def test_adsrnf_charges_a_release_nibble_that_governs_a_running_release():
+    oo = _three(_adsr_voice(10, [(0, 0x0A09)]))
+    uu = _three(_adsr_voice(10, [(0, 0x0A09), (12, 0x0A03)]))   # R 9 -> 3
+    a = fidelity.adsr_compare(oo, uu, 40)["adsr"]
+    nf = fidelity.adsr_audible_compare(oo, uu, 40)
+    assert nf["adsr_nf"] == a < 1.0
+    assert nf["adsr_nf_forgiven"] == 0
+    # cut_release masks that nibble out of `adsr` itself; nothing to forgive
+    m = fidelity.adsr_audible_compare(oo, uu, 40, mask_release=True)
+    assert m["adsr_nf"] == 1.0 and m["adsr_nf_forgiven"] == 0
+
+
+def test_adsrnf_forgives_every_difference_once_both_are_released_to_zero():
+    """R=0 falls the whole way inside a frame or two: after that the level is
+    zero on both sides and not even a differing release nibble is heard."""
+    oo = _three(_adsr_voice(10, [(0, 0x0A00)]))
+    uu = _three(_adsr_voice(10, [(0, 0x0A00), (20, 0x1B45)]))   # all four differ
+    nf = fidelity.adsr_audible_compare(oo, uu, 40)
+    assert fidelity.adsr_compare(oo, uu, 40)["adsr"] < 1.0
+    assert nf["adsr_nf"] == 1.0
+    assert nf["adsr_nf_forgiven_zero"] == 20 and nf["adsr_nf_forgiven_ads"] == 0
+
+
+def test_adsrnf_does_not_forgive_a_frame_where_the_gates_differ():
+    oo = _three(_adsr_voice(10, [(0, 0x0A09)]))
+    # ours is still gated on at 10..14, with other A/D/S nibbles from 10
+    uu = _three(fidelity.Voice(
+        wf_events=[(0, 0x11), (15, 0x10)],
+        adsr_events=[(0, 0x0A09), (10, 0x1B49)], attack_frames=[0]))
+    nf = fidelity.adsr_audible_compare(oo, uu, 40)
+    # frames 10..14 (gates differ) keep their charge; 15..39 are forgiven
+    assert nf["adsr_nf_frames"] == 10 + 5
+    assert nf["adsr_nf_forgiven"] == 25
+    assert nf["adsr_nf"] == 10 / 15
+
+
+def test_adsrnf_maps_the_lag_like_adsr():
+    oo = _three(_adsr_voice(10, [(0, 0x0A09)]))
+    uu = _three(fidelity.Voice(
+        wf_events=[(2, 0x11), (12, 0x10)],
+        adsr_events=[(2, 0x0A09), (14, 0x1B49)], attack_frames=[2]))
+    nf = fidelity.adsr_audible_compare(oo, uu, 40, lag=2)
+    assert fidelity.adsr_compare(oo, uu, 40, lag=2)["adsr"] < 1.0
+    assert nf["adsr_nf"] == 1.0 and nf["adsr_nf_forgiven"] > 0
+
+
+def test_adsrnf_is_registered_beside_adsr_and_says_what_it_is_blind_to():
+    keys = [d.key for d in fidelity.DIMENSIONS]
+    assert keys.index("adsr_nf") == keys.index("adsr") + 1
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "adsr_nf")
+    assert d.column == "adsrnf" and d.kind == "fraction"
+    assert "Blind to" in d.of and "gated frame" in d.of
+    assert "level model" in d.of
+    # and `adsr` itself is untouched: still keyed on its own key
+    assert next(x for x in fidelity.DIMENSIONS if x.column == "adsr").key == "adsr"

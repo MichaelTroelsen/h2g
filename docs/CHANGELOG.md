@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.643 — 2026-11-01
+
+- adsrnf column; artefact_guard catches no-space launches
+
 ## 0.5.642 — 2026-11-01
 
 - past-table copy laid over a duplicate program (Warhawk)
