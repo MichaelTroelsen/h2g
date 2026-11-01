@@ -1546,7 +1546,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | tail | adsr |"
+    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr |"
             in text)
     # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1738,7 +1738,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  onset_instruments=1, onset_first_matched=1,
                  onset_ours_early=0, onset_ours_late=0,
                  onset_timing=melody, onset_timing_paired=1,
-                 gate=melody, gate_frames=100,
+                 gate=melody, gate_frames=100, gate_nofetch=melody,
                  tie_agreement=melody, tie_same_frame=10,
                  tie_ours_only=0, tie_orig_only=0,
                  gate_ours_ringing=0, gate_ours_silent=0,
@@ -5694,3 +5694,99 @@ def test_holdnf_is_registered_beside_hold_and_says_what_it_is_blind_to():
     assert "Blind to a one-frame fetch difference" in d.of
     # and `hold` itself is untouched: still keyed on the original key
     assert next(x for x in fidelity.DIMENSIONS if x.column == "hold").key         == "sound_run_agreement"
+
+
+# --- `gatenf`: `gate` with the next-note fetch frame not charged -------------
+
+
+def _gate_voice(adsr, slot, off_at, n, fetch, shift=0):
+    """`n` notes of `slot` frames: gate on at the attack, released `off_at`
+    frames in (waveform kept selected, so `hold` reads the full slot). With
+    `fetch`, each of the first `n` notes ends on `$09` -- Goattracker's
+    next-note fetch writing the firstwave a frame early, no waveform and the
+    gate SET -- which `gate` charges as a voice we sustain. The last note is
+    left open so it never ends in the window."""
+    wf, at = [], []
+    for i in range(n + 1):
+        a = i * slot + shift
+        at.append(a)
+        wf.append((a, 0x11))
+        wf.append((a + off_at, 0x10))
+        if fetch and i < n:
+            wf.append((a + slot - 1, 0x09))
+    return fidelity.Voice(wf_events=wf, adsr_events=[(shift, adsr)],
+                          attack_frames=at)
+
+
+def _three(v):
+    return [v, fidelity.Voice(), fidelity.Voice()]
+
+
+def test_gatenf_fetch_only_difference_reads_full_and_gate_below_it():
+    oo = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=False))
+    uu = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=True))
+    assert [r["kind"] for r in fidelity.hold_census(oo, uu, 200)] == ["fetch"]
+    g = fidelity.gate_compare(oo, uu, 200)
+    nf = fidelity.gate_nofetch_compare(oo, uu, 200)
+    assert g["gate"] < 1.0 and g["gate_ours_ringing"] == 6
+    assert nf["gate_nofetch"] == 1.0
+    assert nf["gate_fetch_forgiven"] == 6
+    # `gate` itself is the unforgiving reading, and carries no new key
+    assert "gate_forgiven" not in g
+    assert g["gate"] == fidelity.gate_compare(
+        oo, uu, 200, forgive=[set(), set(), set()])["gate"]
+
+
+def test_gatenf_real_release_difference_lowers_both_equally():
+    oo = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=False))
+    uu = _three(_gate_voice(0x0A09, 8, 6, 6, fetch=False))   # releases 2 late
+    g = fidelity.gate_compare(oo, uu, 200)["gate"]
+    nf = fidelity.gate_nofetch_compare(oo, uu, 200)
+    assert g < 1.0
+    assert nf["gate_nofetch"] == g
+    assert nf["gate_fetch_forgiven"] == 0
+
+
+def test_gatenf_forgives_the_fetch_frame_and_not_the_release_beside_it():
+    oo = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=False))
+    release_only = _three(_gate_voice(0x0A09, 8, 6, 6, fetch=False))
+    both = _three(_gate_voice(0x0A09, 8, 6, 6, fetch=True))
+    g = fidelity.gate_compare(oo, both, 200)["gate"]
+    nf = fidelity.gate_nofetch_compare(oo, both, 200)["gate_nofetch"]
+    # the frame leaves the count rather than being credited as agreement, so
+    # the release's own miss is left standing and never over-credited: below
+    # the same file without a fetch frame, above `gate` on the file with one
+    clean = fidelity.gate_compare(oo, release_only, 200)["gate"]
+    assert g < nf < clean < 1.0
+
+
+def test_gatenf_does_not_forgive_a_slot_difference():
+    """A `$09` last frame in an instrument the census calls `slot` is not the
+    fetch: the slot is shorter, so it keeps its charge."""
+    oo = _three(_gate_voice(0x0D09, 8, 4, 6, fetch=False))
+    uu = _three(_gate_voice(0x0D09, 6, 4, 6, fetch=True))
+    assert [r["kind"] for r in fidelity.hold_census(oo, uu, 200)] == ["slot"]
+    nf = fidelity.gate_nofetch_compare(oo, uu, 200)
+    assert nf["gate_fetch_forgiven"] == 0
+    assert nf["gate_nofetch"] == fidelity.gate_compare(oo, uu, 200)["gate"]
+
+
+def test_gatenf_maps_the_forgiven_frame_through_the_lag():
+    """Ours starts 2 frames late; at `lag=2` the fetch frames still land on
+    the aligned frames they were taken from."""
+    oo = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=False))
+    uu = _three(_gate_voice(0x0A09, 8, 4, 6, fetch=True, shift=2))
+    assert fidelity.gate_compare(oo, uu, 200, lag=2)["gate"] < 1.0
+    nf = fidelity.gate_nofetch_compare(oo, uu, 200, lag=2)
+    assert nf["gate_nofetch"] == 1.0
+    assert nf["gate_fetch_forgiven"] == 6
+
+
+def test_gatenf_is_registered_beside_gate_and_says_what_it_is_blind_to():
+    cols = [d.column for d in fidelity.DIMENSIONS]
+    assert cols.index("gatenf") == cols.index("gate") + 1
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "gate_nofetch")
+    assert "Blind to a one-frame fetch difference" in d.of
+    assert "rises when notes are removed" in d.of
+    # and `gate` itself is untouched: still keyed on its own key
+    assert next(x for x in fidelity.DIMENSIONS if x.column == "gate").key == "gate"

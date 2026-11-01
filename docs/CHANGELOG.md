@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.638 — 2026-11-01
+
+- gatenf column: gate without the next-note fetch frame
+
 ## 0.5.637 — 2026-11-01
 
 - start subtune packs the song the init starts (Dragons_Lair_Part_II -S3, aud 86 -> 93%)

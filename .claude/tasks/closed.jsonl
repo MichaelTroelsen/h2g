@@ -1606,3 +1606,4 @@
 {"id":"kings-of-the-beach-ingame-aud-deficit","title":"Kings_of_the_Beach_ingame aud .734","closed_by":"measured:2026-10-31","reason":"Diagnosis done; finding.md and fix.patch in C:/t/kings-of-the-beach-ingame-aud-deficit/ (runs.jsonl). Follow-up is a task in this plan."}
 {"id":"dragons-lair-part-ii-aud-deficit","title":"Dragons_Lair_Part_II aud .863","closed_by":"measured:2026-10-31","reason":"Diagnosis done; finding.md and fix.patch in C:/t/dragons-lair-part-ii-aud-deficit/ (runs.jsonl). Follow-up is a task in this plan."}
 {"id":"ninja-aud-deficit","title":"Ninja aud .862","closed_by":"measured:2026-10-31","reason":"Diagnosis done; finding.md and fix.patch in C:/t/ninja-aud-deficit/ (runs.jsonl). Follow-up is a task in this plan."}
+{"id":"apply-ninja-voice-arp","title":"Ninja: adopt voice_arp (aud .862 -> .908 measured, no agreement column falls)","closed_by":"230737a","reason":"voice_arp adopted on Ninja; byte-hash moved Ninja alone (runs.jsonl)."}

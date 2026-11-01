@@ -1,32 +1,25 @@
 {
- "generated_from": {
-  "head": "5f36c07",
-  "plan_head": "5f36c07"
- },
+ "generated_from": {"head": "230737a", "plan_head": "cb1530c"},
  "blockers": [
-  {
-   "id": "listen-current-builds-2026-10",
-   "kind": "artifact",
-   "title_at_research": "Listen to the current conversion of every song (one pass), with the folded-in per-song questions",
-   "blocked_on_at_research": "The user listens to a SHORT current pass",
-   "current_behaviour": "build/listen staged at v0.5.625 (heard-restage); Commando and Mega_Apocalypse moved since (v0.5.628/629), so their staged pairs are stale; the per-song A/B pairs (keep_hard_restart, Proteus, duration-gate, firstwave B/C) are only partly staged under C:/t.",
-   "sources": [
-    "whattask.json verify"
-   ],
-   "options": [
-    {
-     "label": "Stage it, then I listen",
-     "consequence": "a main task restages build/listen at v0.5.629 and stages every A/B pair in the pass; verdicts asked afterwards"
-    },
-    {
-     "label": "Later",
-     "consequence": "stays blocked, nothing staged"
-    }
-   ],
-   "recommendation": "Stage it, then I listen",
-   "why": "the verdicts cannot be given against stale or missing pairs, and staging is agent work",
-   "question": "Should the listening pass be staged now (restage at v0.5.629 plus every A/B pair), so you can give verdicts afterwards?",
-   "unblocked_by_research": false
-  }
+  {"id": "kings-of-the-beach-ingame-ntsc-render-decision", "kind": "decision",
+   "title_at_research": "Kings_of_the_Beach_ingame is an NTSC original: pin PAL renders, or carry the NTSC rate into the packed sid",
+   "blocked_on_at_research": "pin PAL / carry NTSC / leave",
+   "current_behaviour": "Original PSID flags 0x18 (NTSC); listen.render_sidplayfp passes no clock flag so sidplayfp renders it at 60 Hz; ours is flagged PAL; every register column already compares at PAL (C:/t/kings-of-the-beach-ingame-aud-deficit/finding.md).",
+   "sources": ["C:/t/kings-of-the-beach-ingame-aud-deficit/finding.md", "python/listen.py render_sidplayfp", "python/call_rate.py retime_packed"],
+   "options": [{"label": "pin-pal-renders", "consequence": "harness-only patch ready; aud .734 -> .926; listeners on a default player still hear the original faster"},
+               {"label": "carry-ntsc-rate", "consequence": "new converter work: NTSC clock bit + 60 Hz CIA latch in the packed sid; changes what our file plays"},
+               {"label": "leave", "consequence": "aud stays the corpus minimum for a reason that is not a defect"}],
+   "recommendation": "pin-pal-renders", "why": "every column already measures both sides at PAL; the render is the one place the harness disagrees with itself, and the patch is ready with no byte moving",
+   "question": "Kings_of_the_Beach_ingame: pin PAL renders, carry the NTSC rate, or leave?", "unblocked_by_research": false},
+  {"id": "dragons-lair-part-ii-tempo-remap-decision", "kind": "decision",
+   "title_at_research": "Dragons_Lair_Part_II plays 6.25% fast: adopt the init song-remap fix despite bend/travel/depth falling at -S3?",
+   "blocked_on_at_research": "adopt / investigate-first / leave",
+   "current_behaviour": "pack_subtune packs song 0's 5/2 frames while the init plays song 9's 8/3; drift -62.5/1000 (C:/t/dragons-lair-part-ii-aud-deficit/finding.md, ab.md).",
+   "sources": ["C:/t/dragons-lair-part-ii-aud-deficit/finding.md", "C:/t/dragons-lair-part-ii-aud-deficit/ab.md", "python/h2g/goatwriter/tempo.py pack_subtune"],
+   "options": [{"label": "adopt", "consequence": "correct tempo now; vibrato/slide ratios fall and become a follow-up"},
+               {"label": "investigate-first", "consequence": "diagnose the -S3 vibrato shortfall before landing; song stays 6.25% fast meanwhile"},
+               {"label": "leave", "consequence": "keeps the wrong tempo"}],
+   "recommendation": "adopt", "why": "a 6.25% tempo error is audible on every note while the falling columns are vibrato-size ratios, and the patch moves only this song",
+   "question": "Dragons_Lair_Part_II: adopt the tempo fix now, investigate the vibrato shortfall first, or leave?", "unblocked_by_research": false}
  ]
 }

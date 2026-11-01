@@ -713,6 +713,19 @@ Commando_2, Last_V8, Mozart and Zoids (every instrument `fetch`); Gremlins,
 all `match`, read 100% on both. Whether that frame is audible is a listening
 question, not a measurement.
 
+**`gatenf` (v0.5.638)** does for `gate` what `holdnf` does for `hold`, after
+the 2026-10-31 listening ruling that the next-note fetch frame is inaudible.
+`fidelity.fetch_frames` takes every note of a `fetch`-kind instrument held
+exactly one frame short of its slot and names that slot's last frame;
+`gate_nofetch_compare` drops such a frame from the count only where it would
+be charged (original released, ours gated), mapped through the lag. `gate` is
+unchanged. Notes of `slot`, `short` and `gap` instruments keep their charge.
+On a scratch corpus pass it rose on 20 of 93 files and fell on none;
+Hunter_Patrol and Gerry_the_Germ went to 100% and Mega_Apocalypse, Chimera,
+Commando and Skate_or_Die_intro to .95-.99, so their whole gate gap was the
+fetch. 34 of the 54 files below .90 did not move: their gap is a real
+release difference.
+
 ### Why a column misses — `attribute.py` (v0.5.627)
 
 ```sh

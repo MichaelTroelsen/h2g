@@ -1828,8 +1828,15 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
 
 
 def gate_compare(orig: list[Voice], ours: list[Voice],
-                 nframes: int, lag: int = 0) -> dict:
+                 nframes: int, lag: int = 0,
+                 forgive: list[set[int]] | None = None) -> dict:
     """Per-frame agreement of the GATE bit -- $D404 bit 0 -- and its direction.
+
+    `forgive` is `gate_nofetch_compare`'s hook and is None for the `gate`
+    column, whose figures it leaves exactly as they were: per voice, the set
+    of OUR frames (before alignment) whose gate-on-against-original-off
+    charge is not counted. Only that charge is dropped; a forgiven frame
+    where the two agree is scored as it always was.
 
     **The bit every other column here ignores.** `wave_compare` says so
     outright and gives a good reason: a gated-off voice keeps its waveform
@@ -1867,15 +1874,18 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
     an event in time and the packed player reaches its first note several
     frames after the original.
     """
-    both = either = ringing = silent = 0
+    both = either = ringing = silent = forgiven = 0
     per_voice = []
-    for a, b in zip(orig, ours):
+    for vi, (a, b) in enumerate(zip(orig, ours)):
         ta = register_timeline(a.wf_events, nframes)
         tb = register_timeline(b.wf_events, nframes)
         ta, tb = _aligned(ta, tb, lag)
+        # Our frame f sits at aligned index f - lag when lag > 0, else at f.
+        skip = ({f - max(lag, 0) for f in forgive[vi]}
+                if forgive is not None and vi < len(forgive) else set())
         vb = ve = vr = vs = 0
         sounded = False
-        for x, y in zip(ta, tb):
+        for i, (x, y) in enumerate(zip(ta, tb)):
             sounded = sounded or bool(x or y)
             # A voice neither side has ever written reads $00 on every frame,
             # which is "gate off" on both -- and would score as perfect
@@ -1898,6 +1908,9 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
             ox, oy = not (x & 0x01), not (y & 0x01)
             if not (ox or oy):
                 continue
+            if ox and not oy and i in skip:
+                forgiven += 1                # the next-note fetch frame
+                continue
             ve += 1
             if ox and oy:
                 vb += 1
@@ -1911,13 +1924,79 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
         either += ve
         ringing += vr
         silent += vs
-    return {
+    out = {
         "gate": (both / either) if either else None,
         "gate_frames": either,
         "gate_ours_ringing": ringing,
         "gate_ours_silent": silent,
         "gate_voices": per_voice,
     }
+    if forgive is not None:
+        out["gate_forgiven"] = forgiven
+    return out
+
+
+def fetch_frames(orig: list[Voice], ours: list[Voice],
+                 nframes: int) -> list[set[int]]:
+    """Per OUR voice, the frames a `fetch`-kind note loses to the next-note fetch.
+
+    Goattracker fetches the next note `gatetimer & $3f` play calls early
+    (gplay.c:905) and writes the instrument's firstwave then, so the note
+    before it ends on a `$09`-shaped frame: no waveform selected, gate set.
+    `hold_census` classifies an instrument `fetch` when its modal note is one
+    frame short in an unchanged slot; this returns, for the notes of those
+    instruments, the last frame of every note that is exactly one frame short
+    of its slot (`held == slot - 1`). A note of a `fetch` instrument that is
+    not short that way is left out, as is every note of any other kind --
+    `slot`, `short`, `long` ... are real differences and keep their charge.
+    """
+    a = sound_note_runs(orig, nframes)
+    b = sound_note_runs(ours, nframes)
+    recs = hold_census(orig, ours, nframes)
+    fetch_keys = {uk for (_, uk), r in zip(paired_keys(a, b), recs)
+                  if r["kind"] == "fetch"}
+    out: list[set[int]] = []
+    for v in ours:
+        frames: set[int] = set()
+        if fetch_keys:
+            wf = register_timeline(v.wf_events, nframes)
+            adsr = register_timeline(v.adsr_events, nframes)
+            attacks = sorted(x for x in v.attack_frames if 0 <= x < nframes)
+            for i, at in enumerate(attacks):
+                stop = attacks[i + 1] if i + 1 < len(attacks) else nframes
+                if stop >= nframes:
+                    continue                  # cut by the window
+                if adsr[min(at + 1, nframes - 1)] not in fetch_keys:
+                    continue
+                held = 0
+                while at + held < stop and wf[at + held] & 0xF0:
+                    held += 1
+                if held == stop - at - 1 and held > 0:
+                    frames.add(stop - 1)
+        out.append(frames)
+    return out
+
+
+def gate_nofetch_compare(orig: list[Voice], ours: list[Voice],
+                         nframes: int, lag: int = 0) -> dict:
+    """`gate` with the next-note fetch frame not charged -- the `gatenf` column.
+
+    Scored exactly as `gate_compare` (it IS `gate_compare`, given the frames
+    from `fetch_frames`): the overlap of the frames each side has the voice
+    released. The one frame a conversion's note loses to Goattracker's
+    next-note fetch carries a set gate against the original's released one,
+    which `gate` charges as a sustained voice. That frame is inaudible (user
+    ruling 2026-10-31), so here it leaves the count -- from the numerator's
+    complement only: a forgiven frame on which the two sides agree is scored
+    as before. `gate` is left alone, as `hold` is by `holdnf`.
+
+    `gate_fetch_forgiven` is how many frames were not charged. Equals `gate`
+    on a file with none.
+    """
+    r = gate_compare(orig, ours, nframes, lag=lag,
+                     forgive=fetch_frames(orig, ours, nframes))
+    return {"gate_nofetch": r["gate"],
+            "gate_fetch_forgiven": r["gate_forgiven"]}
 
 
 def tie_compare(orig: list[Voice], ours: list[Voice], nframes: int,
@@ -6791,6 +6870,20 @@ DIMENSIONS = (
               "nibble at its open, and on Action Biker they read +1.4 frames "
               "long and -1 frame short at the same time while both are "
               "correct"),
+    # `gate` with the next-note fetch frame not charged; `gate` is untouched.
+    Dimension("gate_nofetch", "gatenf", ("$D404",), "fraction",
+              "`gate`, but the last frame of a note of a `fetch`-kind "
+              "instrument (`hold_census`: one frame short in an unchanged "
+              "slot -- Goattracker's next-note fetch) is not charged when we "
+              "have the gate set there and the original has it released; "
+              "that frame is inaudible (user ruling 2026-10-31). **Blind to "
+              "a one-frame fetch difference by construction**, and to any "
+              "fetch on an instrument the census does not call `fetch` "
+              "(`slot`, `short`, `gap` ... keep their charge) -- do not use "
+              "it to judge `--no-test-restart`; `gate` is the column for "
+              "that. Inherits `gate`'s blindness: **rises when notes are "
+              "removed**, not a note-length measure. Equals `gate` where "
+              "the census finds no `fetch` instrument"),
     # The only column that can see how *long* a drum sounds. Every other
     # reading of the drum anchors on a gate-edge attack, and that anchor moves
     # when the run's length changes -- which made two corpus comparisons come
@@ -8348,6 +8441,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag,
                                     mask_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
+            row.update(gate_nofetch_compare(a, best_dump, nframes, lag=lag))
             row.update(tie_compare(a, best_dump, nframes, lag=lag))
             row.update(tie_audibility(a, best_dump, nframes))
             row.update(pulse_compare(a, best_dump, nframes))
@@ -9137,8 +9231,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -9176,6 +9270,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('sound_run_agreement'))} | "
             f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
             f"{_fmt_pct(r.get('gate'))} | "
+            f"{_fmt_pct(r.get('gate_nofetch'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
