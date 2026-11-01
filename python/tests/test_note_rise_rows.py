@@ -305,9 +305,13 @@ def test_crazy_comets_rise_leaves_the_past_table_split_its_wavetable_rows():
     sng, lines, _ = _converted("Crazy_Comets")
     rise = [m for m in lines if "Note rise (bit $02)" in m]
     assert len(rise) == 1 and "left to the vibrato" not in rise[0], rise
-    assert "46 of 46 store value(s)" in rise[0] and "reused from" in rise[0]
+    assert "46 of 46 store value(s)" in rise[0]
     split = [m for m in lines if m.startswith("Past-table wave split")]
     assert len(split) == 1 and "pinned copy(ies)" in split[0], split
+    # The split no longer comes up short of rows (it lays a copy that does
+    # not fit past the table's end over the rows of duplicate programs,
+    # `past_table_wave._duplicate_runs`), so the rise is built once with
+    # every free entry and does not need to reuse the duplicates itself.
     assert "left on a relative step" not in split[0], split
     assert len(songview.parse_sng(sng).tables["WTBL"]) <= 255
 

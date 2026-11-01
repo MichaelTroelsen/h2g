@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.642 — 2026-11-01
+
+- past-table copy laid over a duplicate program (Warhawk)
+
 ## 0.5.641 — 2026-11-01
 
 - sfx_rest_click: row-0 rest and a drum record with a stray row

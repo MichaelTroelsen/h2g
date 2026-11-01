@@ -446,3 +446,54 @@ def test_5_title_tunes_keeps_every_subtune_without_compact_instruments():
     assert not any("mixed wave steps left relative" in m for m in lines)
     assert any("unnamed instruments dropped from the appended players" in m
                for m in lines)
+
+
+_STOP_BLOCK = [(0x41, 0), (0x05, 0), (0x41, 0), (0xFF, 0), (0xFF, 0)]
+
+
+def _full_table_song():
+    """Instruments 1 and 2 are the same stop-terminated block (rows 1-5 and
+    6-10); instrument 3 is the octave arpeggio at row 11, and the table is
+    padded to 253 rows, so the 3-row pinned copy has 2 rows of room."""
+    wave = (_STOP_BLOCK + _STOP_BLOCK + [(0x10, 0x0C), (0x10, 0x00), (0xFF, 11)]
+            + [(0x11, 0)] * 240)
+    assert len(wave) == 253
+    song = _song([_row(_note(85), 3), _row(_note(60), 3)], wave=wave,
+                 instruments=3)
+    for ins, start in zip(song.instruments, (1, 6, 11)):
+        ins[2] = start
+    return song
+
+
+def test_a_copy_past_the_tables_end_is_laid_over_a_duplicate_program():
+    """Warhawk: its second pinned copy (11 rows) was one row past the table's
+    255, so four A#7 rows kept the clamp's G#7. The rows of a duplicate
+    program are free, and the record that named them is repointed."""
+    song = _full_table_song()
+    changed, log = _split(song)
+    assert changed and "3 laid over duplicate programs" in log[0]
+    wave = song.tables[0]
+    assert len(wave) == 253                           # nothing appended
+    assert wave[5:8] == [(0x10, 0x81), (0x10, 0x00), (0xFF, 6)]
+    assert wave[:5] == _STOP_BLOCK                    # the canonical block
+    assert song.instruments[1][2] == 1                # repointed off the hole
+    assert song.instruments[0][2] == 1 and song.instruments[2][2] == 11
+    assert list(song.patterns[0][0:4]) == [_note(85), 3, 8, 6]
+
+
+def test_a_copy_that_fits_the_table_is_still_appended():
+    song = _full_table_song()
+    song.tables[0][:] = song.tables[0][:13]           # the room is there
+    changed, log = _split(song)
+    assert changed and "laid over" not in log[0]
+    assert len(song.tables[0]) == 16
+    assert song.instruments[1][2] == 6                # nothing was moved
+
+
+def test_a_pointer_to_a_duplicate_block_keeps_it_out_of_the_free_rows():
+    """A CMD_SETWAVEPTR operand naming row 6 is a reason not to reclaim it."""
+    song = _full_table_song()
+    song.patterns[0][4 * 1 + 2:4 * 1 + 4] = bytes([8, 6])
+    changed, log = _split(song)
+    assert not changed or "laid over" not in log[0]
+    assert song.tables[0][5:10] == _STOP_BLOCK

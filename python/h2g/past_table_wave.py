@@ -133,7 +133,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 from .goatwriter.appending import _parse_song, _write_song
 from .goatwriter.constants import (CMD_VIBRATO as _CMD_VIBRATO, GT_MAX_TABLELEN,
                                   GT_TEMPO_INSTRUMENT, PACKED_PATTERN_LIMIT)
+from .goatwriter.note_rise import reclaimable_holes
 from .goatwriter.pulse import packed_pattern_size, pattern_rows
+from .goatwriter.skydive import coalesce_holes, take_from_runs
 from .patterns import MAX_PATTERNS, note_column
 
 # Goattracker's frequency table length (gcommon.h:37 MAX_NOTES).
@@ -471,6 +473,27 @@ def _variant_rows(wave: List[Tuple[int, int]], spans, pins: Dict[int, int],
     return rows
 
 
+def _duplicate_runs(song):
+    """([[first row, rows], ...], [(first row, rows, instruments' new start)])
+    the wavetable rows that duplicate instrument programs leave free
+    (`note_rise.reclaimable_holes`), as runs of adjacent holes, and each hole
+    with the row its records move to when its rows are taken.
+
+    Warhawk's table is 235 rows of which three stop-terminated 5-row blocks
+    at the head and six more at the tail are the same `41 00 / 05 00 / 41 00
+    / FF 00 / FF 00`: 40 rows a pinned copy can be laid over, where the 20
+    past the table's end were one short of the second copy's 11."""
+    wave = song.tables[0]
+    pointers = [pat[k + 3] for pat in song.patterns
+                for k in range(0, len(pat), 4)
+                if pat[k + 2] & 0x0F == _CMD_SETWAVEPTR]
+    starts = [ins[2] for ins in song.instruments]
+    holes, moved = reclaimable_holes(wave, starts, pointers)
+    target = {s: m for s, m in zip(starts, moved) if s != m}
+    detail = [(a, n, target[a]) for a, n in holes if a in target]
+    return [list(r) for r in coalesce_holes([(a, n) for a, n, _t in detail])], detail
+
+
 def _offset_in(spans, start: int) -> int:
     """Rows from the first copied row to the copy of `start`."""
     off = 0
@@ -572,6 +595,7 @@ def retarget_mixed_steps(song, sid, det,
                 f"command column in use, {edge} ending their pattern)")
         return False
     wave_room = GT_MAX_TABLELEN - len(wave)
+    runs, hole_detail = _duplicate_runs(song)
     instr_room = _MAX_SONG_INSTRUMENTS - len(song.instruments)
     noroom = over = 0
     wave_short, first_pass = 0, True
@@ -579,17 +603,28 @@ def retarget_mixed_steps(song, sid, det,
         usage = Counter(p[1] for p in plans.values())
         starts: Dict[tuple, int] = {}
         bodies: Dict[tuple, list] = {}
+        laid: Dict[tuple, Tuple[int, list]] = {}
+        free = [list(r) for r in runs]
         used = 0
         for key in sorted(usage, key=lambda c: (-usage[c], c)):
-            body = _variant_rows(wave, cache[key[0]], dict(key[1]),
-                                 len(wave) + used)
-            if used + len(body) > wave_room:
-                if first_pass:
-                    wave_short += len(body)
+            size = sum(b - a + 1 for a, b in cache[key[0]])
+            if used + size <= wave_room:
+                body = _variant_rows(wave, cache[key[0]], dict(key[1]),
+                                     len(wave) + used)
+                starts[key] = (len(wave) + used + 1
+                               + _offset_in(cache[key[0]], key[0]))
+                bodies[key] = body
+                used += size
                 continue
-            starts[key] = len(wave) + used + 1 + _offset_in(cache[key[0]], key[0])
-            bodies[key] = body
-            used += len(body)
+            # Past the table's end: over the rows of duplicate programs.
+            at = take_from_runs(free, size)
+            if at is None:
+                if first_pass:
+                    wave_short += size
+                continue
+            laid[key] = (at, _variant_rows(wave, cache[key[0]], dict(key[1]),
+                                           at - 1))
+            starts[key] = at + _offset_in(cache[key[0]], key[0])
         cloned = Counter((p[2], p[1], p[0]) for p in plans.values()
                          if p[0] in _CLONE_MODES)
         clones: Dict[tuple, int] = {}
@@ -633,8 +668,15 @@ def retarget_mixed_steps(song, sid, det,
                 f"on a relative step past the table ({noroom} wavetable or "
                 f"instruments full, {over} pattern would pack too large)")
         return False
-    for key in starts:
+    for key in bodies:
         wave.extend(bodies[key])
+    for at, body in laid.values():
+        wave[at - 1:at - 1 + len(body)] = body
+        for first, rows, target in hole_detail:
+            if first < at + len(body) and at < first + rows:
+                for ins in song.instruments:
+                    if ins[2] == first:
+                        ins[2] = target
     for (instr, key, mode), number in sorted(clones.items(),
                                              key=lambda c: c[1]):
         rec = bytearray(song.instruments[instr - 1])
@@ -650,7 +692,10 @@ def retarget_mixed_steps(song, sid, det,
         pointed = sum(1 for p in plans.values() if p[0] == "ptr")
         log(f"Past-table wave split...: {len(plans)} note row(s) play one of "
             f"{len(starts)} pinned copy(ies) of their wave program "
-            f"({used} row(s); {pointed} by pointer, {len(plans) - pointed} "
+            f"({used + sum(len(b) for _a, b in laid.values())} row(s)"
+            + (f", {sum(len(b) for _a, b in laid.values())} laid over "
+               "duplicate programs" if laid else "")
+            + f"; {pointed} by pointer, {len(plans) - pointed} "
             f"by {len(clones)} instrument clone(s)); steps "
             f"{', '.join(map(str, steps))} read past the table on those "
             "notes and inside it on others"

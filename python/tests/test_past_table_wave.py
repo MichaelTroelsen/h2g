@@ -155,9 +155,18 @@ def test_a_step_some_note_reaches_inside_the_table_keeps_its_relative_byte(name)
     the relative step serves inside the table: one byte cannot be both, so
     the original rows are not rewritten (`test_past_table_split.py` covers
     the rows that now point at a pinned COPY of the program)."""
+    from h2g import past_table_wave as W
     out, before, _sid, _det, _final = _convert(name)
     old, new = _song(before), _song(out)
-    assert new.tables[0][:len(old.tables[0])] == old.tables[0]
+    # A pinned copy that does not fit past the table's end is laid over the
+    # rows of a duplicate program (`past_table_wave._duplicate_runs`); no
+    # other row of the original table is rewritten.
+    free = {row for first, rows in W._duplicate_runs(old)[0]
+            for row in range(first, first + rows)}
+    changed = {i + 1 for i, row in enumerate(old.tables[0])
+               if new.tables[0][i] != row}
+    assert changed <= free
+    assert len(new.tables[0]) >= len(old.tables[0])
     assert new.tables[1:] == old.tables[1:] and new.tracks == old.tracks
 
 

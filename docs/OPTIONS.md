@@ -3079,6 +3079,19 @@ fetches equal a py65 run of the player). Melody .977 -> 1.000, seq and pitch
 Thing_on_a_Spring. 36 players can land there; only this one reaches `$64`.
 `tests/test_stored_wave_pointer.py`.
 
+**A pinned copy that does not fit past the wavetable's end is laid over a
+duplicate program** (v0.5.642, no option). `retarget_mixed_steps` only
+appended past the table, so on Warhawk the second pinned copy (11 rows, for
+the A#7 entry 94 the note column cannot name) found 10 rows left and was
+dropped: the 34 plays of it stayed on the clamp's G#7. The table holds
+duplicate stop-terminated blocks `note_rise.reclaimable_holes` already frees,
+and the copy now goes there. Forced A/B at bf244a1 (-t 180 --presets
+--sound): Warhawk melody .982 -> 1.000, pitch .964 -> 1.000; Crazy_Comets
+`aud` .922 -> .925; W_A_R pitch 96% -> 100% with `aud` .9312 -> .9281 and
+`loud` .9810 -> .9805, both unprinted (adopted without a name hold, user
+decision 2026-11-01). The corpus byte-hash moves exactly those three.
+`tests/test_past_table_split.py`.
+
 ## `--drum-fall` (Tarzan's bit-$01 drum: the pitch falls, the gate opens)
 
 Tarzan's player has its own spelling of the bit-$01 drum (`$57EA`,
