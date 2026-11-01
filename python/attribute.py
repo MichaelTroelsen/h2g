@@ -230,6 +230,24 @@ def _row(path: Path, name: str) -> dict:
 # --------------------------------------------------------------------------
 # running
 # --------------------------------------------------------------------------
+def make_spies(real_g, real_w, calls: dict):
+    """Spies for `gate_compare` / `wave_compare`. `gate_nofetch_compare` calls
+    `gate_compare` again with `forgive=`; only the plain call (forgive None) is
+    the one `measure` scores for the `gate` column, so only it is recorded."""
+    def spy_g(o, u, nframes, lag=0, forgive=None):
+        r = real_g(o, u, nframes, lag=lag, forgive=forgive)
+        if forgive is None:
+            calls["gate"].append((o, u, nframes, lag, r))
+        return r
+
+    def spy_w(o, u, nframes=None, lag=0):
+        r = real_w(o, u, nframes=nframes, lag=lag)
+        calls["wave"].append((o, u, nframes, lag, r))
+        return r
+
+    return spy_g, spy_w
+
+
 def capture(song: str, seconds: int, scratch: Path) -> dict:
     """Run `fidelity.main` on a scratch copy of `song` under presets.json and
     keep the arguments and result of the gate and wave comparisons it made."""
@@ -246,17 +264,7 @@ def capture(song: str, seconds: int, scratch: Path) -> dict:
     work.mkdir(parents=True)
     calls: dict[str, list] = {"gate": [], "wave": []}
     real_g, real_w = F.gate_compare, F.wave_compare
-
-    def spy_g(o, u, nframes, lag=0):
-        r = real_g(o, u, nframes, lag=lag)
-        calls["gate"].append((o, u, nframes, lag, r))
-        return r
-
-    def spy_w(o, u, nframes=None, lag=0):
-        r = real_w(o, u, nframes=nframes, lag=lag)
-        calls["wave"].append((o, u, nframes, lag, r))
-        return r
-
+    spy_g, spy_w = make_spies(real_g, real_w, calls)
     F.gate_compare, F.wave_compare = spy_g, spy_w
     jpath = scratch / f"{song}.row.json"
     try:

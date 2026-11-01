@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.646 — 2026-11-01
+
+- attribute.py gate spy forwards forgive; Chicken_Song adopts wave_alternate
+
 ## 0.5.645 — 2026-11-01
 
 - runqueue drain: three aud-dip diagnoses recorded

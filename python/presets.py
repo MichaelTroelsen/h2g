@@ -730,6 +730,11 @@ EXCLUDED_FROM_ALWAYS = {
     # make the search authoritative over a hand-recorded adoption, the
     # `pulse_phase` trap above. Adopting it on Chicken_Song is a listening
     # decision: a song entry `"wave_alternate": true`.
+    # ADOPTED on Chicken_Song (user, 2026-11-01; run record
+    # chicken-song-opening-aud-dip). The onset-veto refusal above no longer
+    # reproduces at 3f80203: forced A/B -t 180 --sound, aud .9255 -> .9404,
+    # wave 92 -> 96%, onset 77 -> 92%, no printed column falls; it is the
+    # record-3 drum's $41/$81 flip on voice 2. Still not a search toggle.
     # ADOPTED on Hollywood_or_Bust with `aligned_firstwave`, chosen by ear
     # over both alone (user, 2026-10-31; run record
     # hollywood-or-bust-melody-77-root-cause, the pair's phase from

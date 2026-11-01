@@ -578,6 +578,14 @@ fires, and on Hollywood `keeps_notes` does. So it is listed in
 `presets.EXCLUDED_FROM_ALWAYS` rather than in the always block or the search
 toggles. Adopting it is a listening decision.
 
+**Chicken_Song adopts it** (user decision 2026-11-01). The onset-veto refusal
+above no longer reproduces: forced A/B at c090118 (-t 180 --presets --sound),
+aud .9255 -> .9404, loud .9825 -> .9851, wave 92 -> 96%, onset 77 -> 92%,
+and no printed column falls. What it fixes is voice 2's record-3 drum, which
+the original flips between `$41` and `$81` every frame for 11 frames; the
+drum's `$0100`-a-frame pitch fall is still not emitted. The corpus byte-hash
+moves only Chicken_Song.
+
 **Retaken at v0.5.588 + the arpeggio fix (v0.5.589): the melody cost is
 gone.** Hollywood's record 9 (`$D6`) also sets bit `$04`, whose nibble block
 reads the same counter (`detect.WAVE_ALT_ARP_SHAPE`): at mask `$01` the note

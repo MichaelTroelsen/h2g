@@ -146,3 +146,17 @@ def test_a_dropped_group_is_refused():
     del g[next(iter(g))]
     with pytest.raises(AssertionError):
         A.verify(g, 4, "instr")
+
+
+def test_gate_spy_forwards_forgive_and_records_only_the_plain_call():
+    orig, ours = pair_of_voices()
+    calls = {"gate": [], "wave": []}
+    spy_g, _ = A.make_spies(F.gate_compare, F.wave_compare, calls)
+    res = spy_g(orig, ours, NFRAMES, lag=0, forgive=F.fetch_frames(orig, ours, NFRAMES))
+    assert res == F.gate_compare(orig, ours, NFRAMES, lag=0,
+                                 forgive=F.fetch_frames(orig, ours, NFRAMES))
+    assert "gate_forgiven" in res
+    assert calls["gate"] == []
+    plain = spy_g(orig, ours, NFRAMES, lag=0)
+    assert plain == F.gate_compare(orig, ours, NFRAMES, lag=0)
+    assert len(calls["gate"]) == 1

@@ -445,7 +445,8 @@
       "rows": 7830,
       "multiplier": 1,
       "no_test_restart": true,
-      "aligned_firstwave": true
+      "aligned_firstwave": true,
+      "wave_alternate": true
     },
     "Chimera.sid": {
       "max_rows": 94,
