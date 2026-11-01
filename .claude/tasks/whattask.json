@@ -1,12 +1,12 @@
 {
  "generated_from": {
-  "head": "c090118",
+  "head": "4978add",
   "focus": null,
   "sources": [
    ".claude/tasks/whattask.json (previous plan at c090118)",
-   ".claude/tasks/runs.jsonl (whole file)",
-   ".claude/tasks/decisions.jsonl (chicken-song-wave-alternate-adoption: adopt, 2026-11-01)",
-   "working tree (attribute fix and Chicken_Song adoption uncommitted)",
+   ".claude/tasks/runs.jsonl (chicken-song-wave-alternate-adoption chose adopt)",
+   ".claude/tasks/decisions.jsonl",
+   "git log c090118..4978add",
    "todo.md (nothing new)",
    "gh: no open issues or PRs"
   ],
@@ -34,43 +34,8 @@
   ".claude/tasks/serial.lock.d"
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1638,
+ "closed_count": 1639,
  "tasks": [
-  {
-   "offload": null,
-   "why_offload": null,
-   "mcp": [],
-   "fork": [
-    "adopt",
-    "leave"
-   ],
-   "branch": null,
-   "blocked_on": null,
-   "decision": "Add \"wave_alternate\": true to Chicken_Song.sid in presets.json (C:/t/chicken-song-opening-aud-dip/fix.patch), rewrite the onset-veto refusal in docs/OPTIONS.md and the python/presets.py comment to say it no longer reproduces and the key is adopted, and record chose: adopt (user 2026-11-01).",
-   "depends_on": [],
-   "lane": "serial",
-   "why_lane": "shares a written path with chicken-song-record3-pitch-fall",
-   "needs_main": false,
-   "needs_main_reason": null,
-   "id": "chicken-song-wave-alternate-adoption",
-   "title": "Chicken_Song: adopt wave_alternate (aud .926 -> .940, opening .88 -> .93, nothing printed falls)?",
-   "source": "runs.jsonl chicken-song-opening-aud-dip (C:/t/chicken-song-opening-aud-dip/fix.patch)",
-   "model": "session",
-   "effort": "medium",
-   "mode": "main",
-   "touches": [
-    "rw:presets.json",
-    "rw:docs/OPTIONS.md",
-    "rw:python/presets.py",
-    "rw:python/tests/test_presets.py",
-    "r:python/h2g",
-    "rw:build/audio"
-   ],
-   "verify": "After the user's answer: on adopt, apply C:/t/chicken-song-opening-aud-dip/fix.patch; a forced A/B on Chicken_Song (-t 180 --presets ../presets.json --sound --baseline a copy of build/fidelity.json) reproduces aud rising and no printed agreement column falling; rewrite the onset-veto refusal in docs/OPTIONS.md and the python/presets.py comment to say it no longer reproduces and the key is adopted; the corpus byte-hash (C:/t/melody99-land-fixes/hash.py, from python/) moves Chicken_Song only; python -m pytest tests/ -q -n 12 --dist worksteal passes except test_output_sha on Chicken_Song (fixed by the FIDELITY refresh after the commit). On leave, record chose leave and change nothing. The record carries chose (adopt or leave).",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a measured preset change",
-   "why_mode": "a listening-shaped preset adoption only the user can rule on"
-  },
   {
    "offload": null,
    "why_offload": null,
@@ -84,8 +49,8 @@
    "depends_on": [
     "chicken-song-wave-alternate-adoption"
    ],
-   "lane": "serial",
-   "why_lane": "shares a written path with chicken-song-wave-alternate-adoption",
+   "lane": "parallel",
+   "why_lane": "no written path shared with another task",
    "needs_main": false,
    "needs_main_reason": null,
    "id": "chicken-song-record3-pitch-fall",
@@ -104,7 +69,7 @@
     "rw:build/audio",
     "rw:host:C:/t/chicken-song-record3-pitch-fall"
    ],
-   "verify": "Read-only diagnosis plus scratch patch, on top of the adopted wave_alternate. The player's command-table fall at $133B lowers voice 2's frequency high byte $0100 a frame from call 4 of a record-3 note until hi = 0; detect.py rejects it as effect_drum on purpose, so name why and the narrowest emitter that reproduces it without reaching other effect_drum files. Work on a scratch copy in C:/t/chicken-song-record3-pitch-fall/sid at -t 180 --presets ../presets.json --sound, every fidelity.py run with --baseline a copy of build/fidelity.json; launch fidelity.py and pytest as plain commands. If a fix is in reach, write C:/t/chicken-song-record3-pitch-fall/fix.patch with a test and give its forced A/B: Chicken_Song's aud rises and no other agreement column's printed value falls, or say which one falls; check it in a detached worktree under C:/t/chicken-song-record3-pitch-fall (remove any build/audio junction with rmdir, then the worktree) and run the corpus byte-hash there (C:/t/melody99-land-fixes/hash.py with ROOT at the worktree), naming every moved file. DONE when C:/t/chicken-song-record3-pitch-fall/finding.md names the emitter decision with a trace excerpt from each side; the task writes nothing under python/, presets.json or docs/.",
+   "verify": "Read-only diagnosis plus scratch patch, on top of wave_alternate (adopted on Chicken_Song at 4978add, so the shipped presets.json already carries it). The player's command-table fall at $133B lowers voice 2's frequency high byte $0100 a frame from call 4 of a record-3 note until hi = 0; detect.py rejects it as effect_drum on purpose, so name why and the narrowest emitter that reproduces it without reaching other effect_drum files. Work on a scratch copy in C:/t/chicken-song-record3-pitch-fall/sid at -t 180 --presets ../presets.json --sound, every fidelity.py run with --baseline a copy of build/fidelity.json; launch fidelity.py and pytest as plain commands. If a fix is in reach, write C:/t/chicken-song-record3-pitch-fall/fix.patch with a test and give its forced A/B: Chicken_Song's aud rises and no other agreement column's printed value falls, or say which one falls; check it in a detached worktree under C:/t/chicken-song-record3-pitch-fall (remove any build/audio junction with rmdir, then the worktree) and run the corpus byte-hash there (C:/t/melody99-land-fixes/hash.py with ROOT at the worktree), naming every moved file. DONE when C:/t/chicken-song-record3-pitch-fall/finding.md names the emitter decision with a trace excerpt from each side; the task writes nothing under python/, presets.json or docs/.",
    "why_model": "emitter design against a player routine",
    "why_effort": "the guard it must relax exists on purpose",
    "why_mode": "scratch patch; main adopts"
