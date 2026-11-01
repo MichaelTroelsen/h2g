@@ -126,6 +126,7 @@ def test_no_corpus_file_packs_for_a_subtune_it_does_not_start_on():
     regression would land in: every file it must leave alone.
     """
     seen = agreed = 0
+    remapped = set()
     for path in sorted(CORPUS.glob("*.sid")):
         got = _speeds_for(path)
         if got is None:
@@ -133,6 +134,14 @@ def test_no_corpus_file_packs_for_a_subtune_it_does_not_start_on():
         sid, _det, speeds = got
         seen += 1
         want = fidelity.resolve_subtune(path, "auto")
+        # v0.5.636: where the init itself plays another song's speed entry
+        # (tempo.init_song_remap), the packed subtune follows the init.
+        # Dragons_Lair_Part_II sends PSID 0 to song 9 (8/3 frames a row, not
+        # 5/2), and is the only corpus file the remap reaches.
+        if (speeds is not None and want < len(speeds.song_of)
+                and speeds.song_of[want] is not None):
+            want = speeds.song_of[want]
+            remapped.add(path.name)
         ps = pack_subtune(speeds, sid.start_song)
         if speeds is not None and want >= len(speeds.frames):
             assert ps == 0, f"{path.name}: over-declared start must fall back to 0"
@@ -140,6 +149,7 @@ def test_no_corpus_file_packs_for_a_subtune_it_does_not_start_on():
             assert ps == want, f"{path.name}: packs s{ps}, starts on s{want}"
         agreed += 1
     assert seen > 50, "corpus present but almost nothing parsed -- vacuous"
+    assert remapped == {"Dragons_Lair_Part_II.sid"}, remapped
     assert agreed == seen
 
 

@@ -31,6 +31,10 @@ class SongSpeeds:
     # the player has no such counter -- which is most of the corpus.
     skip: Tuple[Optional[int], ...] = ()
     skip_table_addr: Optional[int] = None
+    # Per PSID subtune, the player song its INIT actually starts, where that
+    # is not the subtune's own number (`init_song_remap`). Empty for every
+    # player whose init passes the subtune straight through.
+    song_of: Tuple[Optional[int], ...] = ()
 
     def frames_for(self, subtune: int) -> Optional[int]:
         if 0 <= subtune < len(self.frames):
@@ -395,6 +399,56 @@ def outer_gate_skip(sid: SidFile, subtune: int = 0) -> Optional[int]:
     return None
 
 
+def init_song_remap(sid: SidFile, speeds: SongSpeeds) -> Tuple[Optional[int], ...]:
+    """Per PSID subtune, the player song its init starts when that is another
+    song than the subtune's own number, else None; empty where nothing differs.
+
+    Only a PRIMED player is read (the init loads the subtune's outer skip
+    from a table and stores it into the outer cell and the gate's reload,
+    `arpeggio._init_primes_outer`): there the init run (`arpeggio._init_cells`)
+    leaves the clock the subtune really runs at, as the speed cell's value and
+    the outer cell, and that pair names the song when exactly one table entry
+    carries it. Dragons_Lair_Part_II is the corpus case: its init sends PSID 0
+    to song 9, whose row is 2 frames x 4/3 = 8/3, while subtune 0's own table
+    entries read 5/2. `pack_subtune` asked for the table's subtune 0, so the
+    file was packed at -S2 for a 5/2 row and the tune everyone hears (the
+    header's startSong) ran 6.25% fast.
+
+    A subtune whose own entry already matches the init run keeps its number;
+    an ambiguous or absent match declines (None) rather than guess.
+    """
+    from . import arpeggio as _arp      # arpeggio imports this module
+    m = outer_gate_match(sid)
+    if m is None or speeds.reload_addr < 0 or not speeds.skip:
+        return ()
+    outer = m.group(1)
+    imm_addr = sid.to_address(m.start() + 6)
+    if _arp._init_primes_outer(sid, outer, imm_addr) is None:
+        return ()
+    cell = outer[0] | outer[1] << 8
+    out: List[Optional[int]] = []
+    for g in range(max(sid.subtunes, 1)):
+        ran = _arp._init_cells(sid, g)
+        song = None
+        if ran is not None:
+            _, read = ran
+            try:
+                skip, imm = read(cell), read(imm_addr)
+                if skip == imm and skip:
+                    want = (read(speeds.reload_addr) + 1, skip)
+                    own = (speeds.frames_for(g), speeds.skip_for(g))
+                    if own != want:
+                        hits = [k for k in range(len(speeds.frames))
+                                if (speeds.frames_for(k), speeds.skip_for(k))
+                                == want]
+                        if len(hits) == 1:
+                            song = hits[0]
+            except LookupError:
+                pass
+        out.append(song)
+    return tuple(out) if any(v is not None for v in out) else ()
+
+
 def find_song_speeds(sid: SidFile,
                      det: Detection | None = None) -> Optional[SongSpeeds]:
     """The tune's frames-per-duration-unit, or None where it cannot be read.
@@ -447,6 +501,8 @@ def find_song_speeds(sid: SidFile,
         return None
     skip, skip_table = _find_outer_gate(sid, max(sid.subtunes, 1))
     candidates = [(pos, replace(sp, skip=skip, skip_table_addr=skip_table))
+                  for pos, sp in candidates]
+    candidates = [(pos, replace(sp, song_of=init_song_remap(sid, sp)))
                   for pos, sp in candidates]
     if len(candidates) == 1:
         return candidates[0][1]
@@ -526,6 +582,9 @@ def pack_subtune(speeds: Optional[SongSpeeds], start_song: int) -> int:
     silence, with `melody` still reading 100%.
     """
     s = max(0, start_song - 1)
+    if (speeds is not None and s < len(speeds.song_of)
+            and speeds.song_of[s] is not None):
+        return speeds.song_of[s]
     if speeds is not None and s >= len(speeds.frames):
         return 0
     return s

@@ -205,7 +205,7 @@ def test_the_coincident_pair_is_one_record_in_one_file():
 
 
 @needs_corpus
-def test_the_coincident_record_is_played():
+def test_the_coincident_record_is_played(monkeypatch):
     """It is worth emitting because a pattern reaches it.
 
     A record past `instr_used` is a dead cell and correcting it would buy
@@ -230,6 +230,11 @@ def test_the_coincident_record_is_played():
     # Instrument numbers below are the player's own: drop_unnamed_instruments
     # (always-on since v0.5.495) would renumber them.
     opts = dict(fidelity._preset_opts(doc, name), drop_unnamed_instruments=False)
+    # Pinned before v0.5.636 sent this file's PSID 0 to song 9 (-S3): at the
+    # new rate the record's wavetable gains a delay entry. The record's
+    # waveform is what this test is about, so take it at the old rate.
+    import h2g.goatwriter.tempo as tempo
+    monkeypatch.setattr(tempo, "init_song_remap", lambda *a, **k: ())
     song = songview.parse_sng(convert(str(CORPUS / name), log=lambda _m: None,
                                       **opts))
     assert len(song.instruments) >= 25

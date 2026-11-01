@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.637 — 2026-11-01
+
+- start subtune packs the song the init starts (Dragons_Lair_Part_II -S3, aud 86 -> 93%)
+
 ## 0.5.636 — 2026-11-01
 
 - renders pinned PAL: an NTSC-flagged original renders with -vpf (Kings_of_the_Beach_ingame aud .734 -> .926)

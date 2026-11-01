@@ -140,6 +140,18 @@ complete readings; only the classic one moves numbers.
   and a clone with gatetimer 1 that the funk subtune's patterns name
   (instrument 1, opened on without a pattern, is never split). Gerry_the_Germ,
   Human_Race and Auf_Wiedersehen_Monty are the files it moves.
+- **The start subtune's speed is the song the init actually starts**
+  (v0.5.637). An init may remap the PSID song number before the player runs:
+  Dragons_Lair_Part_II's init sends PSID song 0 to song 9 (a row of 8/3
+  frames), but `pack_subtune` read speed-table entry 0 (5/2) and packed 6.25%
+  fast at `-S2`. `tempo.init_song_remap` runs the init for a primed outer-gate
+  player and names the song when exactly one table entry matches the clock it
+  leaves and the subtune's own entry does not; `SongSpeeds.song_of` carries
+  it and `pack_subtune` packs that song (Dragons: `-S3`, aud 86 -> 93%,
+  melody 95 -> 100%, drift -62.5 -> 0 frames/1000). It moves only that file
+  in the corpus (`tests/test_pack_subtune_init_remap.py`). Its vibrato and
+  slide ratios (bend, travel, depth) fall at the higher call rate -- an open
+  follow-up.
 - Where no speed gate is found (the command-table dialect derives its row
   from the duration table instead; Mozart/Ninja/Mega Apocalypse use a
   *prescaler* — run the player v of every v+1 calls — whose jittery rate no
