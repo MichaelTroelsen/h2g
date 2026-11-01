@@ -1936,8 +1936,9 @@ test dependency).
   point on anything. See § 7.hhhhh.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
-  and **49 of the 89 preset songs pack above `-S1` -- 19 at `-S2`, 31 at
-  `-S2` or `-S3`**, the rest higher (re-counted from `presets.json` at v0.5.520,
+  and **49 of the 89 preset songs pack above `-S1` -- 18 at `-S2`, 31 at
+  `-S2` or `-S3`**, the rest higher (re-counted from `presets.json` at v0.5.638,
+  when Dragons_Lair_Part_II went from `-S2` to `-S3`; 19 at `-S2` at v0.5.520,
   when Bump_Set_Spike went from `-S5` to `-S3`; 30 at v0.5.454; it was 44 of 83 with 18 and 26 at v0.5.407). Anything new that carries a
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
