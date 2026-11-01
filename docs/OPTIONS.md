@@ -3044,6 +3044,17 @@ build/fidelity.json): Commando melody 97% -> 100%, pitch and seq 95% -> 100%,
 travel 2.06 -> 0.96; `aud` up on both subtunes, `loud` -0.0003 (inside the
 floor); nothing else moved. `tests/test_stored_wave_pitch.py`.
 
+**A past-table byte can land on the sequencer's own read pointers**
+(v0.5.639, no option -- always on). Thing_on_a_Spring's `$64` (Y=$C8) reads
+past the 96-entry table onto `$C471/$C472`, voices 1 and 2's pattern read
+pointers, so the original sounds `ptr[2] << 8 | ptr[1]` at the fetch -- a ramp
+F#1..E-6 -- where the clamp played a constant G#7. `stored_wave.pointer_landings`
+names such a cell and its walk tracks the pointers per fetch (all 60 voice-1
+fetches equal a py65 run of the player). Melody .977 -> 1.000, seq and pitch
+-> 1.000; `loud` -0.025 pp, unprinted; corpus byte-hash moves only
+Thing_on_a_Spring. 36 players can land there; only this one reaches `$64`.
+`tests/test_stored_wave_pointer.py`.
+
 ## `--drum-fall` (Tarzan's bit-$01 drum: the pitch falls, the gate opens)
 
 Tarzan's player has its own spelling of the bit-$01 drum (`$57EA`,

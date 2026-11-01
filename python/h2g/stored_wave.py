@@ -68,6 +68,15 @@ WAVE_LOAD_WINDOW = 0x60
 # The voice loop: `LDX #$02 / DEC divider / BPL` at the top, `DEX / BMI out /
 # JMP top` at the bottom -- X counts 2, 1, 0.
 VOICE_LOOP_SHAPES = ("A2 02 CE ?? ?? 10", "CA 30 03 4C ?? ??")
+# The pattern read pointer: `LDY ptr,X / LDA #$FF / STA flag / LDA (zp),Y`
+# at the top of a voice's fetch (Thing_on_a_Spring `$C0AB`). `ptr` is a
+# three-byte array, one pattern byte index per voice, that the fetch steps
+# with `INC ptr,X`; `POINTER_STEP` is that INC with the base filled in.
+POINTER_SHAPE = "BC ?? ?? A9 FF 8D ?? ?? B1 ??"
+POINTER_STEP = "FE %02X %02X"
+# `landings` value for a pointer cell: (voice k, POINTER_CELL). A wave landing
+# carries a record offset (>= 0) there instead.
+POINTER_CELL = -1
 
 # The walk runs every subtune for this many times its longest voice's first
 # pass, so every loop phase of the voices against each other is sampled at
@@ -114,6 +123,36 @@ def stored_wave_landings(sid: SidFile, det: Detection) -> Dict[int, Tuple[int, i
     return out
 
 
+def pointer_landings(sid: SidFile, det: Detection) -> Dict[int, Tuple[int, int]]:
+    """Past-table entries whose two bytes are voices' pattern read pointers.
+
+    Returns {entry: (k, POINTER_CELL)}: the fetch at `entry` reads voice k's
+    pointer as the frequency LO byte and voice k+1's as the HI byte. The
+    pointer is the byte index, in the pattern a voice is reading, of the note
+    byte it has just fetched (and the index of the next event once the event
+    is done, 0 at a pattern's end). Thing_on_a_Spring's `$64` is `$C471` /
+    `$C472` = voice 1's and voice 2's pointers, so the original sounds
+    `v2 << 8 | v1` -- a ramp F#1 ... E-6 that climbs with the patterns.
+    Empty where the shape or the INC of its array is not found.
+    """
+    ft = det.freq_table
+    if ft is None:
+        return {}
+    data = sid.data
+    at = search_file(data, POINTER_SHAPE)
+    if at < 0:
+        return {}
+    base = data[at + 1] | (data[at + 2] << 8)
+    if search_file(data, POINTER_STEP % (base & 0xFF, base >> 8)) < 0:
+        return {}
+    out: Dict[int, Tuple[int, int]] = {}
+    for n in range(ft.length, 0x80):
+        k = ft.addr + 2 * n - base
+        if k in (0, 1):
+            out[n] = (k, POINTER_CELL)
+    return out
+
+
 def _nearest_entry(table: List[int], freq: int) -> int:
     return min(range(len(table)),
                key=lambda i: abs(log2(max(table[i], 1) / max(freq, 1))))
@@ -129,7 +168,7 @@ def _applicable(sid: SidFile, det: Detection, log=None
             log("Stored-wave pitch.......: HELD for this tune (human decision, "
                 "the byte-exact fixture); past-table bytes stay clamped")
         return {}
-    return stored_wave_landings(sid, det)
+    return {**pointer_landings(sid, det), **stored_wave_landings(sid, det)}
 
 
 def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
@@ -149,14 +188,18 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
     floor = command_floor(det.read_track_version, det.track_fd_transpose)
 
     cache: Dict[int, List[tuple]] = {}
+    span_cache: Dict[int, List[tuple]] = {}
 
     def events(entry: int) -> List[tuple]:
         if entry not in cache:
             ev: List[tuple] = []
+            sp: List[tuple] = []
             if decode_entry(sid, det, entry, slides=slides,
-                            status_bit6=status_bit6, event_log=ev) is None:
-                ev = []
+                            status_bit6=status_bit6, event_log=ev,
+                            event_span=sp) is None:
+                ev, sp = [], []
             cache[entry] = ev
+            span_cache[entry] = sp
         return cache[entry]
 
     def record_byte(rec: Optional[int], off: int) -> Optional[int]:
@@ -218,6 +261,10 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
         # player writes the cell AFTER the lookup, so it is updated below
         # the vote: a voice reading its own cell reads its previous event.
         held: List[Optional[int]] = [None, None, None]
+        # Each voice's pattern read pointer (`POINTER_CELL` landings): the
+        # fetch steps it to the note byte BEFORE the lookup, and past the
+        # event (to 0 at the pattern's end) after it.
+        ptr = [0, 0, 0]
         ended = False
         t = 0
         while t < horizon and not ended:
@@ -243,10 +290,16 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
                     break
                 entry = bodies[v][pos[v]]
                 wait, rec, note = events(entry)[evi[v]]
+                note_at, after = span_cache[entry][evi[v]]
+                if note_at is not None:
+                    ptr[v] = note_at
                 if note in landings:
                     k, off = landings[note]
-                    lo = record_byte(held[k], off)
-                    hi = record_byte(held[k + 1], off)
+                    if off == POINTER_CELL:
+                        lo, hi = ptr[k], ptr[k + 1]
+                    else:
+                        lo = record_byte(held[k], off)
+                        hi = record_byte(held[k + 1], off)
                     if lo is not None and hi is not None:
                         freq = (hi << 8) | lo
                         votes.append((g, v, t, places[v][pos[v]], entry,
@@ -255,6 +308,7 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
                 if rec is not None:
                     held[v] = rec
                 evi[v] += 1
+                ptr[v] = after if evi[v] < len(events(entry)) else 0
                 nxt[v] = t + wait + 1
             t = min(nxt)
     return votes

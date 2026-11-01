@@ -724,7 +724,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        event_rows: Optional[List[int]] = None,
                        gate_clear_records: frozenset = frozenset(),
                        legato_bit7: bool = False,
-                       top_rows: Optional[Dict[int, int]] = None
+                       top_rows: Optional[Dict[int, int]] = None,
+                       event_span: Optional[List[tuple]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -932,6 +933,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         # and the table entry its note fetch reads.
         log_record = None
         log_entry = None
+        log_note_at = None
         b1 = data[addr + i2]
         ring_chain_next = False
 
@@ -1242,6 +1244,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         free_note = False
         if get_next or not no_note:
             i2 += 1
+            log_note_at = i2
             g_note = data[addr + i2]
             free_note = bool((note_flag or legato_bit7) and g_note & 0x80)
             # **THE LOOKUP IS EIGHT BITS WIDE, SO A BYTE AT OR ABOVE $80 WRAPS
@@ -1676,6 +1679,8 @@ def _build_raw_pattern(data: bytes, addr: int,
         events += [g_note, g_instrument, *(row0_cmd or (cmd1, cmd2))]
         if event_log is not None:
             event_log.append((wait, log_record, log_entry))
+        if event_span is not None:
+            event_span.append((log_note_at, i2 + 1))
         ordinal += 1
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
@@ -2692,7 +2697,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  event_rows: Optional[List[int]] = None,
                  top_rows: Optional[Dict[int, int]] = None,
                  record_exit: Optional[List[tuple]] = None,
-                 entry_record: Optional[int] = None
+                 entry_record: Optional[int] = None,
+                 event_span: Optional[List[tuple]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2714,6 +2720,11 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     to learn what `det.instr_entry_transposes` should say. The classic
     grammar is the only one with the mechanism, and the only one that fills
     the list.
+
+    `event_span` is _build_raw_pattern's out-parameter of that name: per
+    event, `(index of its note byte in the pattern data or None, index one
+    past its last byte)` -- the value the player's per-voice read pointer
+    holds at the note fetch and after the event. Classic grammar only.
 
     `event_rows` is _build_raw_pattern's out-parameter of that name, every
     event's first row. Classic grammar only, like `free_rows`; on the other
@@ -2779,7 +2790,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               gate_clear_records=(record_gate_clear(sid, det)
                                                   if tie else frozenset()),
                               legato_bit7=det.counter_fall is not None,
-                              top_rows=top_rows)
+                              top_rows=top_rows,
+                              event_span=event_span)
 
 
 def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
