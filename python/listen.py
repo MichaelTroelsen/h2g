@@ -73,6 +73,31 @@ SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
 # those pre-flag renders are cache misses and get re-rendered.
 SIDPLAYFP_POWER_ON_DELAY = 0
 
+
+def forced_pal_flags(sid) -> list[str]:
+    """`["-vpf"]` for a PSID whose header names the NTSC clock only, else `[]`.
+
+    Every register column of this repo traces at the PAL clock (`siddump -v1`,
+    50 calls a second) and `call_rate_compare` states its `rate` "under the PAL
+    clock both are rendered at". sidplayfp does not do that by itself: its
+    `-v[p|n][f]` default is "defined by song", so an original whose header
+    flags say NTSC (PSID v2 flags bits 2-3 == 2) is rendered at 60 Hz while our
+    packed .sid, which says PAL, is rendered at 50. Kings_of_the_Beach_ingame
+    (the one PSID of the corpus that says so) read `aud` 0.734 for it: the
+    original's WAV fell silent at 5.98 s, ours at 7.2 s. `-vp` alone changes
+    nothing -- "speed fixing" rescales the play rate back to the song's own --
+    so the `f` is what pins the clock. RSID files are left alone: their own
+    interrupt code is timed against the clock they were written for.
+    """
+    try:
+        b = Path(sid).read_bytes()[:0x78]
+    except OSError:
+        return []
+    if b[:4] != b"PSID" or len(b) < 0x78 or int.from_bytes(b[4:6], "big") < 2:
+        return []
+    flags = int.from_bytes(b[0x76:0x78], "big")
+    return ["-vpf"] if (flags >> 2) & 3 == 2 else []
+
 # The bands FIDELITY.md reports, and what a listener is being asked to decide
 # in each. Ordered worst-first: the interesting listening is at the bottom of
 # the corpus, not the top.
@@ -178,7 +203,8 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
     try:
         subprocess.run([exe, f"-t{seconds}", "-f44100", "-p16", "-m", "-fo0",
                         f"--delay={SIDPLAYFP_POWER_ON_DELAY}",
-                        f"-o{subtune + 1}", *mutes, f"-w{out}", str(sid)],
+                        f"-o{subtune + 1}", *forced_pal_flags(sid), *mutes,
+                        f"-w{out}", str(sid)],
                        capture_output=True, timeout=seconds * 6 + 120,
                        stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError):

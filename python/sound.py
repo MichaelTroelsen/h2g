@@ -657,6 +657,11 @@ def content_key(path: Path, delay: int | None = None,
     h.update(b"\0sidplayfp-delay=%d" % delay)
     if mute:
         h.update(b"\0mute=" + ",".join(str(v) for v in sorted(mute)).encode())
+    if listen.forced_pal_flags(path):
+        # The clock the render was pinned to is part of what the WAV is a
+        # render OF, exactly as the delay and the mute set are. Added only
+        # where it applies, so every other file's key stays valid.
+        h.update(b"\0clock=pal-forced")
     return h.hexdigest()[:12]
 
 

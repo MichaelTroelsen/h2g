@@ -1069,6 +1069,17 @@ no chip model — Hubbard is 6581-era and the difference is audible. `sidplayfp`
 renders the whole corpus with one engine, at exactly the length asked for, with
 `-fo0` for no fade.
 
+**Every render is PAL** (v0.5.636). sidplayfp's clock default is "defined by
+song", so a PSID v2 whose clock bits read NTSC (`(flags >> 2) & 3 == 2`) was
+rendered at 60 Hz while our packed `.sid` -- always PAL -- rendered at 50 Hz,
+and every register column, which assumes PAL on both sides, was compared
+against audio from another clock. `listen.forced_pal_flags` passes `-vpf` for
+such a file, and `sound.content_key` folds it into the cache key so no 60 Hz
+render is reused. One corpus original carries the bit: Kings_of_the_Beach_ingame,
+whose aud read .734 (one side silent from 5.95 s) and reads .926 pinned. The
+NTSC tempo a default player gives that tune is not reproduced by the conversion
+(user ruling 2026-10-31: pin the renders; `tests/test_render_clock.py`).
+
 **RSID files need the C64 ROMs**, and the failure is silent-looking: without a
 KERNAL, libsidplayfp runs the tune to an illegal instruction having already
 written a 44-byte header, which reads as a tune that renders silence. Point
