@@ -52,6 +52,7 @@ import fidelity                                              # noqa: E402
 import songview                                              # noqa: E402
 from corpus import CORPUS, needs_corpus                      # noqa: E402
 from h2g.convert import convert                              # noqa: E402
+from monty_fixture import pinned_preset_opts  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PRESETS = REPO_ROOT / "presets.json"
@@ -74,7 +75,7 @@ def _opts() -> dict:
     assert doc["songs"][NAME].get("multiplier", 1) == 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return fidelity._preset_opts(doc, NAME)
+        return pinned_preset_opts(doc, NAME)
 
 
 def _arm(name: str) -> dict:

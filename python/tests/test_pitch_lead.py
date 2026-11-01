@@ -16,6 +16,7 @@ where the previous record's wavetable still writes a frequency on the tie row
 Own file: reads no shared fixture.
 """
 import json
+from monty_fixture import pinned_preset_opts  # noqa: E402
 import pathlib
 import shutil
 import sys
@@ -53,7 +54,7 @@ def _quiet(sid, **kw) -> bytes:
 
 def _monty_opts() -> dict:
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
-    return fidelity._preset_opts(doc, MONTY)
+    return pinned_preset_opts(doc, MONTY)
 
 
 def test_off_by_default_changes_no_byte():

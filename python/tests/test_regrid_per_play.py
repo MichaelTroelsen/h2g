@@ -125,8 +125,13 @@ def _corpus_ledger(monkeypatch, name, **force):
 @needs_corpus
 def test_bangkok_knights_is_never_late_at_a_play_boundary(monkeypatch):
     name = "Bangkok_Knights.sid"
-    assert max(_corpus_ledger(monkeypatch, name, regrid_full_debt=True)) > 10
-    assert max(_corpus_ledger(monkeypatch, name, regrid_per_play=True)) <= 1e-9
+    # The shipped preset also carries `regrid_prepay`, which implies the
+    # per-play walk and lifts its ceiling; switch it off to compare the two
+    # budgets themselves.
+    assert max(_corpus_ledger(monkeypatch, name, regrid_full_debt=True,
+                              regrid_prepay=0)) > 10
+    assert max(_corpus_ledger(monkeypatch, name, regrid_per_play=True,
+                              regrid_prepay=0)) <= 1e-9
 
 
 @needs_corpus

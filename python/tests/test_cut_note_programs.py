@@ -10,6 +10,7 @@ its main block keeps the frame (`keep_slide`), a second one declines it, and
 where every such note can take the pointer.
 """
 import json
+from monty_fixture import pinned_preset_opts  # noqa: E402
 import pathlib
 import sys
 
@@ -128,7 +129,7 @@ def _convert(**over):
     import fidelity
     doc = json.loads((PYTHON_ROOT.parent / "presets.json")
                      .read_text(encoding="utf-8"))
-    opts = fidelity._preset_opts(doc, f"{MONTY}.sid")
+    opts = pinned_preset_opts(doc, f"{MONTY}.sid")
     opts.update(over)
     log = []
     got = convert(str(CORPUS / f"{MONTY}.sid"), log.append, **opts)

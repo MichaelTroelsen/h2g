@@ -849,6 +849,24 @@ EXCLUDED_FROM_ALWAYS = {
     # our pitch frame (attack + 1) voice 1's melody is .825 in both arms.
     # Not in FIDELITY_TOGGLES. A song entry `"lfo_wave": true`.
     "lfo_wave",
+    # `vibrato_hold`: the classic vibrato of a multispeed song as a
+    # frame-held wavetable program (h2g.vibrato_hold), where the original moves
+    # a voice once a frame and Goattracker's vibrato steps on every play call.
+    # Off by default and per song: forced on over the shipped presets (bf244a1
+    # + the change, -t 180 --sound, task thanatos-s4-vibrato-frame-hold;
+    # historical) 23 of the 89 converting files move, all multispeed, and
+    # `depth` goes from 0.52-1.12 to 1.04-1.08 on 24 of the 25 rows that
+    # print one (Knucklebusters 0.56 -> 0.65), `bend` and `travel` toward 1,
+    # melody/seq/pitch/wave/adsr/gate unchanged on every row. It
+    # trades: `aud` is up on 17 of the 26 rows and down on 9 (mean +0.0006;
+    # Thanatos +0.0042, W_A_R_Preview +0.0036, Lightforce -0.0028), the
+    # printed `aud` falls on Food_Feud and Lightforce (94% -> 93%), `loud`
+    # on Shockway_Rider (99% -> 98%), and `tiefr` falls on 15 rows (Samantha_
+    # Fox 91% -> 74%, ACE_II 81% -> 75%, Flash_Gordon 92% -> 87%). Thanatos
+    # is the one file every printed column agrees on: `aud` .9440 -> .9482,
+    # `tiefr` 15% -> 72%, `tie` 0.31x -> 0.92x. Not in FIDELITY_TOGGLES. A
+    # song entry `"vibrato_hold": true`.
+    "vibrato_hold",
 }
 
 

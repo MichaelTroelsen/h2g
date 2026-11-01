@@ -42,6 +42,7 @@ from .instrument_drop import (
 from .funk_gatetimers import split_funk_gatetimers
 from .pitch_lead import lead_ties
 from .unison_vibrato import chorus_doubled_notes
+from .vibrato_hold import hold_classic_vibrato
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -286,6 +287,7 @@ def convert(sid_path: str, log: Logger = print,
             lfo_wave: bool = False,
             voice_arp: bool = False,
             unison_vibrato_phase: bool = False,
+            vibrato_hold: bool = False,
             master_volume: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
@@ -510,6 +512,14 @@ def convert(sid_path: str, log: Logger = print,
     clone of its record with `vibdelay` longer by the offset's share of the
     entry's period; its patterns are copied. Only the clamp-then-step-back
     update, all absolute,X (International_Karate's `$AFF7`), is read.
+
+    vibrato_hold (multiplier > 1) replaces the classic vibrato's per-call
+    speed-table entry with a frame-held wavetable program (`vibrato_hold`):
+    the original moves a voice once a frame and holds each value, where the
+    instrument vibrato steps on every play call. Records with a one-frame
+    half-period, a looping or pointed-into wave program, or a song whose
+    update is stretched (outer gate, dwell, extra depth shift) keep the
+    per-call entry.
 
     pitch_lead_tie writes, on the command-free rest row before each note
     whose record's firstwave is a gated real waveform, that note with
@@ -1552,6 +1562,10 @@ def convert(sid_path: str, log: Logger = print,
             # or renumbers an instrument column; before the startup record,
             # which keeps instrument 63.
             sng = chorus_doubled_notes(sng, sid, det, log)
+        if vibrato_hold:
+            # On the finished rows and records, after every pass that writes
+            # or renumbers an instrument column; before the startup record.
+            sng = hold_classic_vibrato(sng, sid, det, multiplier, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

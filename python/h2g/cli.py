@@ -360,6 +360,14 @@ def main(argv=None) -> int:
              "In presets.json's always block; off leaves every conversion "
              "byte-identical.")
     parser.add_argument(
+        "--vibrato-hold", action="store_true",
+        help="at a multiplier above 1, play the classic vibrato as a "
+             "frame-held wavetable program (one full-depth step every "
+             "multiplier calls) where the original moves the voice once a "
+             "frame, instead of the instrument vibrato's step on every "
+             "call. Needs --format gts5. Off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -814,6 +822,7 @@ def main(argv=None) -> int:
                           ("--tie-pulse-restart", "tie_pulse_restart"),
                           ("--voice-arp", "voice_arp"),
                           ("--unison-vibrato-phase", "unison_vibrato_phase"),
+                          ("--vibrato-hold", "vibrato_hold"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -941,6 +950,7 @@ def main(argv=None) -> int:
                       tie_pulse_restart=args.tie_pulse_restart,
                       voice_arp=args.voice_arp,
                       unison_vibrato_phase=args.unison_vibrato_phase,
+                      vibrato_hold=args.vibrato_hold,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

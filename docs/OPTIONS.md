@@ -1646,7 +1646,9 @@ travel follows, so the tail is within a quarter-tone of the accumulator and not
 on it. Under a real firstwave (`no_test_restart`, `real_firstwave_instruments`)
 the first slide frame of a run that some played note of the instrument ENDS on
 stays on the note, because the next note's init call would open at the shifted
-pitch (Auf_Wiedersehen_Monty melody 0.9830 -> 0.9876). Above `-S1` nothing else changes. A record the player vibrates takes no
+pitch (Auf_Wiedersehen_Monty melody 0.9830 -> 0.9876; since v0.5.644 Monty
+ships `aligned_firstwave` instead, melody .9876 -> .9996, and
+`tests/monty_fixture.py` keeps the real-firstwave spelling for the tests). Above `-S1` nothing else changes. A record the player vibrates takes no
 closing travel at any `-S` (since v0.5.532). Mega_Apocalypse `$09F9`/`$07E7` and the
 `$0797` drums of I_Ball, Bangkok_Knights and Nineteen are the records it moves;
 see H2G-CONVERSION-METHOD.md §7.fff for the figures and the two losses.
@@ -2013,8 +2015,10 @@ gate and `aud` are flat at print, and melody reaches .9996 (was .9914 under
 the old guards); the printed costs are bend .80 -> .75, travel .75 -> .73,
 hold 23% -> 21%, holdnf 85% -> 79%. I_Ball and Bangkok_Knights do not move
 with the relaxation: their row-0 rests sit in patterns shared with another
-voice or entered from two different notes. Adopting the key per song is the
-user's call.
+voice or entered from two different notes. **Adopted on Nineteen** (user
+decision 2026-11-01): melody .988 -> .9996, adsr .838 -> .938, with the bend,
+travel, hold and holdnf costs above and `loud` .9379 -> .9374 unprinted;
+the corpus byte-hash moves only Nineteen.
 
 ## `--two-stage` (the attack waveform, and the drums that were missing)
 
@@ -2919,6 +2923,41 @@ against the original's 599 at -t 180; `aud` .8965 -> .8962, reversal .8692 ->
 reached: the tie's `CMD_TONEPORTA` zeroes `vibtime` and `vibdelay` is not
 reloaded (361 frames left).
 
+## `--vibrato-hold` (the classic vibrato moves once a frame)
+
+At `-S2` and above Goattracker's instrument vibrato steps on every play call,
+a finer ramp of a fraction of the depth, where the classic `$78/$07` player
+moves the voice once a frame and holds the value (Thanatos voice 0, original:
+`3A8C 3B5E 3A8C 39BA 3A8C 3B5E`, +-`$D2`; ours at `-S4`: `$37` a call, four
+calls to the frame). Sampled once a frame ours reads 0.75 direction changes a
+frame against the original's 0.38, and the rendered sound sees it:
+substituting the original's pitch registers into our player lifts Thanatos'
+`aud` by 0.0102.
+
+The option replaces that per-call entry with a wavetable program
+(`h2g/vibrato_hold.py`): `$F4 nn` runs one `CMD_VIBRATO` step of a full depth
+and a delay row waits the rest of the frame, with the speed entry `($80 |
+(bound - 2), shift)` whose walk from the note is `+ - - + + - -`, the counter's
+path. The program's own waveform rows are kept and the steps merged in on the
+same call lattice; a waveform row that opens the gate keeps its "+0" (an
+attack), the others say "no note" so they do not restart the swing. Left on the
+per-call entry: records with a bound of 1, a looping or pointed-into wave
+program, one with a pitch command of its own, songs whose update is stretched
+(outer gate, dwell, extra depth shift) and songs whose patterns command a
+vibrato (`CMD_VIBRATO nn`). Per song, off by default
+(`presets.EXCLUDED_FROM_ALWAYS`); forced on it moves 23 files and trades -- see
+the comment there. Not carried: the original's free-running counter phase at a
+note, a note the duration gate damped with `CMD_VIBRATO 0` (it still steps),
+and the +6% depth of the interval above the note. Built but off,
+`vibrato_hold.LIFT_ODD_BOUND` mirrors an odd bound's swing back (Samantha_Fox
+`tiefr` 74% -> 91%, `aud` -0.015 summed over 22 files).
+
+**Set in presets.json for Thanatos only** (user decision 2026-11-01). Forced
+A/B at f3d8987 (-t 180 --presets --sound): `aud` .9440 -> .9482, `loud`
+.9854 -> .9877, `tiefr` 15% -> 72%, tie .31 -> .92, bend .69 -> 1.07, travel
+.66 -> 1.05, depth .86 -> 1.05; nothing printed falls, and the corpus
+byte-hash moves only Thanatos.
+
 ## `--pitch-lead-tie` (drum attacks open on their own pitch)
 
 Goattracker's packed player writes only `$D404` when a new note starts
@@ -3391,9 +3430,14 @@ wrong way on Sanxion (0.00 -> 0.79), Sigma_Seven (0.00 -> 0.42) and Wiz
 (-0.53 -> 1.21). A ceiling above zero moves
 the whole song later by the same amount, and whether the harness's estimated
 `startup_lag` agrees is a property of the file. So it is hand-adopted per song
-like `regrid`, and **no song adopts it yet**: Star_Paws is the candidate
-(`regrid`, `regrid_prepay: 1`, ~0.3 s of search), and adopting it is a
-`presets.json` decision.
+like `regrid`. Star_Paws was the first candidate (`regrid`, `regrid_prepay: 1`,
+~0.3 s of search). **Bangkok_Knights adopts `regrid_prepay: 1`** (user
+decision 2026-11-01): its outer gate reload stalls the row counter, and
+`regrid` paid that debt only through voice-0-exclusive patterns. Forced A/B
+at f3d8987 (-t 180 --presets --sound): drift .62 -> 0.00, adsr 69 -> 81,
+gate 51 -> 77, aud 87 -> 90, loud 90 -> 93; `noise` 5137 -> 5134 and `pul`
+12603 -> 12586 fall, melody .9688 -> .9679 unprinted. The corpus byte-hash
+moves only Bangkok_Knights.
 
 An earlier form of this option, a single ceiling over the whole pass, was
 tried first. A small one centres the song better than the windowed form does

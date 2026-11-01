@@ -30,6 +30,7 @@ from h2g.convert import convert
 from songview import parse_sng
 
 from corpus import CORPUS, needs_corpus
+from monty_fixture import pinned_preset_opts  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -38,7 +39,7 @@ def _song(name):
     import fidelity
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     sng = convert(str(CORPUS / name), log=lambda m: None,
-                  **fidelity._preset_opts(doc, name))
+                  **pinned_preset_opts(doc, name))
     return parse_sng(sng)
 
 

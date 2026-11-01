@@ -29,6 +29,7 @@ from h2g.sidfile import load_sid
 from songview import parse_sng
 
 from corpus import CORPUS, needs_corpus
+from monty_fixture import pinned_preset_opts  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 NOTE = 0x60
@@ -39,7 +40,7 @@ TIE = (G.CMD_TONEPORTA, 0x00)
 def _preset_opts(name):
     import fidelity
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
-    return fidelity._preset_opts(doc, name)
+    return pinned_preset_opts(doc, name)
 
 
 def _convert(name, legato=True):

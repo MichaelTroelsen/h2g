@@ -1,15 +1,4 @@
 {
- "generated_from": {"head": "bf244a1", "plan_head": "bf244a1"},
- "blockers": [
-  {"id": "warhawk-top-note-copy-adoption", "kind": "decision",
-   "title_at_research": "Warhawk: adopt the pinned-copy-over-duplicate-rows fix (melody .982 -> 1.000) although W_A_R aud/loud fall below print precision?",
-   "blocked_on_at_research": "user: adopt as is, hold W_A_R back by name, or leave it. Measured: Warhawk melody .982 -> 1.000; Crazy_Comets aud/loud rise; W_A_R pitch exact but aud .9312 -> .9281 and loud .9810 -> .9805 (printed 93%/98% unchanged); byte-hash moves those three.",
-   "current_behaviour": "past_table_wave.retarget_mixed_steps drops a pinned copy that does not fit past the wavetable end (Warhawk: 20 rows free, copies need 10+11), so A#7 plays as the clamp's G#7; _duplicate_runs is absent at bf244a1 (grep 0); fix.patch applies clean; past_table_wave.HELD (line 154) already holds Commando by name.",
-   "sources": ["C:/t/warhawk-melody-shortfall/finding.md", "C:/t/warhawk-melody-shortfall/fix.patch", "python/h2g/past_table_wave.py:154"],
-   "options": [{"label": "adopt", "consequence": "Warhawk melody 1.000, Crazy_Comets aud up, W_A_R pitch exact with aud -0.003 / loud -0.0005 (unprinted)"},
-               {"label": "adopt-hold-war", "consequence": "Warhawk and Crazy_Comets gain; W_A_R keeps its bytes via a name hold, and its pitch error stays"},
-               {"label": "leave", "consequence": "34 Warhawk notes stay an octave-ish wrong (A#7 -> G#7)"}],
-   "recommendation": "adopt", "why": "W_A_R's pitch becomes exact while its falls are below print precision and inside the loud floor; a name hold would keep a known-wrong pitch to protect an unprinted digit",
-   "question": "Warhawk fix: adopt as is (W_A_R pitch exact, aud -0.003 unprinted), hold W_A_R back by name, or leave?", "unblocked_by_research": false}
- ]
+ "generated_from": {"head": "f3d8987", "plan_head": "f3d8987"},
+ "blockers": []
 }

@@ -221,6 +221,10 @@ def _convert(name, **extra):
     from h2g.convert import convert
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = _preset_opts(doc, name)
+    # Nineteen ships rest_envelope_silence since v0.5.644, which spells its
+    # rests as click notes instead of KEYOFFs; these tests pin the park on
+    # the KEYOFF spelling, so they keep the option off.
+    opts["rest_envelope_silence"] = False
     opts.update(extra)
     # These tests pin the park-by-pointer pass on EVERY rest. The rule that a
     # rest after a record the player rewrites each frame is not parked at all

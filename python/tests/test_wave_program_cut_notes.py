@@ -19,6 +19,7 @@ note's pitch and the bounce back up would be a reversal the original does not
 make.
 """
 import json
+from monty_fixture import pinned_preset_opts  # noqa: E402
 import pathlib
 import sys
 
@@ -148,7 +149,7 @@ def _spans_seen(monkeypatch, **over):
     import fidelity
     doc = json.loads((PYTHON_ROOT.parent / "presets.json")
                      .read_text(encoding="utf-8"))
-    opts = fidelity._preset_opts(doc, f"{MONTY}.sid")
+    opts = pinned_preset_opts(doc, f"{MONTY}.sid")
     opts.update(over)
     seen = []
     real = wavetable._wave_program_entries

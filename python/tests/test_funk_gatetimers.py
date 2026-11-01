@@ -35,6 +35,7 @@ from h2g.goatwriter import HEADER_LEN  # noqa: E402
 from h2g.goatwriter.appending import _parse_song  # noqa: E402
 from h2g.goatwriter.constants import FUNK_ROW_CALLS  # noqa: E402
 from h2g.patterns import MAX_PATTERNS  # noqa: E402
+from monty_fixture import pinned_preset_opts  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 END = [0xFF, 0x00]                       # an orderlist's end and its restart
@@ -226,7 +227,7 @@ def conversions():
     for name in CORPUS_SPLITS:
         lines = []
         blob = convert(str(CORPUS / name), log=lines.append,
-                       **F._preset_opts(doc, name))
+                       **pinned_preset_opts(doc, name))
         out[name] = (blob, lines)
     return out
 
@@ -263,7 +264,7 @@ def test_no_record_a_longer_subtune_alone_plays_keeps_the_funk_gatetimer(
 
     import fidelity as F
     doc = json.loads((ROOT / "presets.json").read_text())
-    opts = F._preset_opts(doc, name)
+    opts = pinned_preset_opts(doc, name)
     C.instrument_row_calls = spy
     try:
         C.convert(str(CORPUS / name), log=lambda m: None, **opts)

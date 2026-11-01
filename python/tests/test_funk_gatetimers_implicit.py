@@ -29,6 +29,7 @@ from test_funk_gatetimers import (END, gt, named, record, sng,  # noqa: E402
 from h2g.funk_gatetimers import split_funk_gatetimers  # noqa: E402
 from h2g.goatwriter.appending import _parse_song  # noqa: E402
 from h2g.goatwriter.constants import FUNK_ROW_CALLS  # noqa: E402
+from monty_fixture import pinned_preset_opts  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ROWS = [3, FUNK_ROW_CALLS]
@@ -123,7 +124,7 @@ def conversions():
     for name in FILES:
         lines = []
         blob = convert(str(CORPUS / name), log=lines.append,
-                       **F._preset_opts(doc, name))
+                       **pinned_preset_opts(doc, name))
         out[name] = (blob, lines)
     return out
 

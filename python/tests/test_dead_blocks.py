@@ -19,6 +19,7 @@ Hunter_Patrol, Mega_Apocalypse, W_A_R_Preview) are the files whose freed rows
 a pass then used.
 """
 import json
+from monty_fixture import pinned_preset_opts  # noqa: E402
 import pathlib
 import sys
 
@@ -215,7 +216,7 @@ def test_setwaveptr_operands_are_read_and_remapped_in_place():
 def _convert(name, **over):
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     lines = []
-    opts = F._preset_opts(doc, f"{name}.sid")
+    opts = pinned_preset_opts(doc, f"{name}.sid")
     opts.update(over)
     sng = convert(str(CORPUS / f"{name}.sid"), log=lines.append, **opts)
     return sng, lines
