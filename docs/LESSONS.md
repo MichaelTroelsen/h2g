@@ -1598,9 +1598,11 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **79 zero / 10 drifting of 89 rows** (95
-    traced, 89 measured, all 89 with a fit; re-graded at v0.5.638 against
-    that refresh's `build/fidelity.json`, where Dragons_Lair_Part_II's drift
+  * **The drift split at 180 s is **80 zero / 9 drifting of 89 rows** (95
+    traced, 89 measured, all 89 with a fit; re-graded at v0.5.644 against
+    that refresh's `build/fidelity.json`, where Bangkok_Knights' drift went
+    .62 -> 0/1000 (the v0.5.644 `regrid_prepay` adoption); 79 / 10 at
+    v0.5.638, where Dragons_Lair_Part_II's drift
     went -62.5 -> 0/1000 (the v0.5.637 init song remap); 78 / 11 at
     v0.5.623, where Wiz's drift went
     -0.25 -> 0/1000 (the v0.5.623 `aligned_firstwave` adoption) -- it read
