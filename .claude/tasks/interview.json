@@ -1,4 +1,21 @@
 {
- "generated_from": {"head": "c090118", "plan_head": "c090118"},
- "blockers": []
+ "generated_from": {"head": "3a59332", "plan_head": "3a59332"},
+ "blockers": [
+  {
+   "id": "chicken-song-record3-pitch-fall-adoption",
+   "kind": "decision",
+   "title_at_research": "Chicken_Song: adopt the record-3 drum pitch fall (aud .9404 -> .9424, tiefr 59 -> 68%, loud prints 99 -> 98%)?",
+   "blocked_on_at_research": "listening decision: Chicken_Song record-3 pitch fall gains aud .94044 -> .94238 and tiefr 59 -> 68% but loud .98505 -> .98452 prints 99% -> 98%; only the user can say whether the drum now sounds closer",
+   "current_behaviour": "Shipped (4978add, wave_alternate on): voice 2's record-3 drum alternates 41/81 at one pitch 0F82 where the original falls $0100 a frame 0E82 -> 0782 (runs.jsonl chicken-song-record3-pitch-fall trace). fix.patch applies at 3a59332: new detect._find_stored_wave_fall (matches Chicken_Song only) + goatwriter/stored_fall.py, +404 -11 in 8 files.",
+   "sources": ["C:/t/chicken-song-record3-pitch-fall/finding.md", "C:/t/chicken-song-record3-pitch-fall/fix.patch", "C:/t/chicken-song-record3-pitch-fall/run2_ab.txt"],
+   "options": [
+    {"label": "Adopt", "consequence": "aud .9404 -> .9424, tie .76 -> .86, drum-frame agreement .888 -> .924; loud -.0005 prints 99 -> 98%; ~400 lines of new code reaching one song"},
+    {"label": "Leave", "consequence": "keeps the drum at one pitch and the code smaller; the fall stays unemitted"}
+   ],
+   "recommendation": "Adopt",
+   "why": "Every agreement measure that targets the drum rises and the loud fall is 0.05%, a rounding-boundary crossing; byte-hash moves Chicken_Song only.",
+   "question": "Chicken_Song: add the drum's pitch drop (the voice-2 drum now slides down like the original instead of holding one pitch)?",
+   "unblocked_by_research": false
+  }
+ ]
 }

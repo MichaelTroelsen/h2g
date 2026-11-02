@@ -361,6 +361,8 @@ from .counter_fall import (_pattern_positions, _Segment, _setup, _visits,
                             record_threshold, row_falls, step_command,
                             unroll_fall_repeats, unroll_repeats,
                             WAVECMD_TIE)  # noqa: F401
+from .stored_fall import (STORED_FALL_MAX_DOWN, STORED_FALL_MODAL_SHARE,
+                          stored_fall_offsets)  # noqa: F401
 from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
                         DRUM_FALL_ROW_FRAMES, DrumFallPlan, drum_fall_plan,
                         drum_fall_records, fall_steps)  # noqa: F401

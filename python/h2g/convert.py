@@ -428,7 +428,8 @@ def convert(sid_path: str, log: Logger = print,
     counter (`det.wave_alternate_arp`); it now carries it, and the melody
     cost is gone -- what is left is the gate-edge-anchored onset column
     (figures in presets.EXCLUDED_FROM_ALWAYS). Byte-inert on every other
-    file.
+    file. Chicken Song's record 3 also carries bit $01's frequency fall on
+    the alternation's rows (`goatwriter.stored_fall`).
 
     aligned_firstwave puts the note-init call's gate write on the pitch's
     frame. Goattracker's init call writes only `$D404` (player.s

@@ -38,6 +38,7 @@ from .drums import (_arp_block, _chord_block, _arp_offsets, _sfx_drum_entries,
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
+from .stored_fall import stored_fall_offsets
 from .wave_eor import (EOR_STOP_PROGRAM, EorPhase, eor_library,
                        has_skip_rows, wave_eor_block)
 from . import constants as _gw_constants
@@ -75,7 +76,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        pitches: Optional[dict] = None,
                        spans: Optional[dict] = None,
                        cut_out: Optional[list] = None,
-                       keep_slide: bool = False) -> tuple:
+                       keep_slide: bool = False,
+                       stored_fall: bool = True) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -641,7 +643,18 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 gate_frames=(1 + _noise_tick_frames(sid, det)
                              if det.drum_gate_off and (drum or tick)
                              else None),
-                own_note=own_note)
+                own_note=own_note,
+                # Bit $01's stored-waveform fall beside the alternation
+                # (`goatwriter.stored_fall`): Chicken Song record 3 only,
+                # `det.stored_wave_fall` being the one corpus file's block.
+                fall=(None if arp or not stored_fall else
+                      stored_fall_offsets(
+                          sid, det, i, arp_style, pitches,
+                          (None if note_rows is None
+                           or not note_rows.get(i + 1 + lead)
+                           or row_calls <= 0
+                           else note_rows[i + 1 + lead] * row_calls),
+                          multiplier)))
             if alt is not None:
                 return alt
 
@@ -2229,7 +2242,11 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                        hold_attack: bool = False,
                        phase=None, toggled: bool = False,
                        cut_out: Optional[list] = None,
-                       keep_slide: bool = False) -> tuple:
+                       keep_slide: bool = False,
+                       plain: bool = False) -> tuple:
+        # `plain` is the program without bit $01's stored-waveform fall
+        # (`goatwriter.stored_fall`): the fall's relative notes belong to the
+        # record's own notes, not to a block derived from its program.
         # `phase` is a phase clone's residue: an int is the fixed arp's
         # (`arp_phase`), a tuple bit $10's phase cells (`pitch_phase`,
         # `pitch_seq_phase_split_plan`), a `GatePhase` the gated nibble
@@ -2316,7 +2333,8 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                                   spans=(None if note_spans is None
                                          else note_spans.get(gt_number)),
                                   cut_out=cut_out,
-                                  keep_slide=keep_slide)
+                                  keep_slide=keep_slide,
+                                  stored_fall=not plain)
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is
@@ -2420,9 +2438,20 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
         if ((chord or offsets is not None)
                 and 0 <= record < len(starts) - lead):
             src = starts[record + lead] - 1
+            source = entries[src:]
+            if det.stored_wave_fall is not None and record < n:
+                # A block derived from the record's program reads the program
+                # the record had before the fall (shipped chord blocks
+                # unchanged): the fall's rows would replay as a waveform
+                # sequence ending on the alternation's noise half.
+                bare = record_entries(record, 1,
+                                      _gw_constants.GT_MAX_TABLELEN,
+                                      plain=True)
+                if bare is not None and not isinstance(bare, int):
+                    source = list(zip(*bare))
             if chord:
                 program = []
-                for left_, _r in entries[src:]:
+                for left_, _r in source:
                     program.append(left_)
                     if left_ == WAVE_JUMP or len(program) > 64:
                         break
@@ -2430,9 +2459,9 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                 if shared in chord_blocks:
                     arp_starts.append(chord_blocks[shared])
                     continue
-            block = (_chord_block(entries[src:], operand, multiplier, start)
+            block = (_chord_block(source, operand, multiplier, start)
                      if chord else
-                     _arp_block(entries[src:], offsets, multiplier, start))
+                     _arp_block(source, offsets, multiplier, start))
         if block is None or start - 1 + len(block[0]) > _gw_constants.GT_MAX_TABLELEN:
             arp_starts.append(0)
             continue

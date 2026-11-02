@@ -1,17 +1,17 @@
 {
  "generated_from": {
-  "head": "4978add",
+  "head": "3a59332",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at c090118)",
-   ".claude/tasks/runs.jsonl (chicken-song-wave-alternate-adoption chose adopt)",
+   ".claude/tasks/whattask.json (previous plan at 3a59332)",
+   ".claude/tasks/runs.jsonl (chicken-song-record3-pitch-fall done)",
    ".claude/tasks/decisions.jsonl",
-   "git log c090118..4978add",
+   "git log (no commits since 3a59332)",
    "todo.md (nothing new)",
    "gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work.",
-  "date": "2026-11-01"
+  "date": "2026-11-02"
  },
  "hazards": [
   "presets.json",
@@ -34,45 +34,47 @@
   ".claude/tasks/serial.lock.d"
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1639,
+ "closed_count": 1640,
  "tasks": [
   {
    "offload": null,
    "why_offload": null,
    "mcp": [],
-   "fork": null,
-   "branch": {
-    "chicken-song-wave-alternate-adoption": "adopt"
-   },
-   "blocked_on": null,
-   "decision": null,
-   "depends_on": [
-    "chicken-song-wave-alternate-adoption"
+   "fork": [
+    "adopt",
+    "leave"
    ],
+   "branch": null,
+   "blocked_on": null,
+   "decision": "Apply C:/t/chicken-song-record3-pitch-fall/fix.patch (detect._find_stored_wave_fall + goatwriter/stored_fall.py); accept loud printing 98%; confirm the byte-hash moves Chicken_Song only and the forced A/B raises aud; record the run with chose: adopt.",
+   "depends_on": [],
    "lane": "parallel",
    "why_lane": "no written path shared with another task",
    "needs_main": false,
    "needs_main_reason": null,
-   "id": "chicken-song-record3-pitch-fall",
-   "title": "Chicken_Song voice 2 record 3: emit the $0100-a-frame pitch fall wave_alternate leaves at 0F82 (original frames 76-82, 0E82 -> 0782)",
-   "source": "runs.jsonl chicken-song-opening-aud-dip opened",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
+   "id": "chicken-song-record3-pitch-fall-adoption",
+   "title": "Chicken_Song: adopt the record-3 drum pitch fall (aud .9404 -> .9424, tiefr 59 -> 68%, loud prints 99 -> 98%)?",
+   "source": "runs.jsonl chicken-song-record3-pitch-fall opened",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
    "touches": [
-    "r:python/h2g",
-    "r:python/fidelity.py",
-    "r:python/sound.py",
-    "r:python/listen.py",
+    "rw:python/h2g/detect.py",
+    "rw:python/h2g/convert.py",
+    "rw:python/h2g/goatwriter/__init__.py",
+    "rw:python/h2g/goatwriter/attack.py",
+    "rw:python/h2g/goatwriter/stored_fall.py",
+    "rw:python/h2g/goatwriter/wavetable.py",
+    "rw:python/tests/test_stored_wave_fall.py",
+    "rw:docs/OPTIONS.md",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:build/audio",
-    "rw:host:C:/t/chicken-song-record3-pitch-fall"
+    "rw:host:C:/t/q643"
    ],
-   "verify": "Read-only diagnosis plus scratch patch, on top of wave_alternate (adopted on Chicken_Song at 4978add, so the shipped presets.json already carries it). The player's command-table fall at $133B lowers voice 2's frequency high byte $0100 a frame from call 4 of a record-3 note until hi = 0; detect.py rejects it as effect_drum on purpose, so name why and the narrowest emitter that reproduces it without reaching other effect_drum files. Work on a scratch copy in C:/t/chicken-song-record3-pitch-fall/sid at -t 180 --presets ../presets.json --sound, every fidelity.py run with --baseline a copy of build/fidelity.json; launch fidelity.py and pytest as plain commands. If a fix is in reach, write C:/t/chicken-song-record3-pitch-fall/fix.patch with a test and give its forced A/B: Chicken_Song's aud rises and no other agreement column's printed value falls, or say which one falls; check it in a detached worktree under C:/t/chicken-song-record3-pitch-fall (remove any build/audio junction with rmdir, then the worktree) and run the corpus byte-hash there (C:/t/melody99-land-fixes/hash.py with ROOT at the worktree), naming every moved file. DONE when C:/t/chicken-song-record3-pitch-fall/finding.md names the emitter decision with a trace excerpt from each side; the task writes nothing under python/, presets.json or docs/.",
-   "why_model": "emitter design against a player routine",
-   "why_effort": "the guard it must relax exists on purpose",
-   "why_mode": "scratch patch; main adopts"
+   "verify": "The user's answer is recorded in decisions.jsonl and, on adopt, the run record carries chose: adopt. On adopt: git apply C:/t/chicken-song-record3-pitch-fall/fix.patch applies at the plan head; python/tests/test_stored_wave_fall.py passes, and fails when stored_fall's emitter is short-circuited to emit nothing (sabotage), then passes again once restored; the corpus byte-hash (C:/t/melody99-land-fixes/hash.py) names Chicken_Song.sid as the only moved file; a forced A/B on Chicken_Song (-t 180 --presets ../presets.json --sound --baseline a copy of build/fidelity.json) shows aud above the shipped row. python/tests/test_detect.py, test_wavetable.py and test_attack.py do not exist at this head; test_stored_wave_fall.py is the patch's new pin for all three modules. On leave: the run record carries chose: leave and nothing under python/ or docs/ changes.",
+   "why_model": "requires-user: the answer is the user's; the adoption itself runs in the invoking session",
+   "why_effort": "applying a checked patch and re-measuring one song",
+   "why_mode": "a listening verdict on a trade where one printed column falls"
   }
  ],
  "closed": []

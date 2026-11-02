@@ -210,7 +210,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             alt_first: bool = False,
                             alt_note: Optional[int] = None,
                             gate_frames: Optional[int] = None,
-                            own_note: Optional[int] = None) -> Optional[tuple]:
+                            own_note: Optional[int] = None,
+                            fall: Optional[dict] = None) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -358,6 +359,29 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     first, second = (alt, wave) if alt_first else (wave, alt)
     first_r, second_r = ((alt_r, own_note) if alt_first
                          else (own_note, alt_r))
+    if fall and multiplier == 1 and lead and gate_frames is None:
+        # **`fall`: bit $01's stored-waveform fall beside the alternation**
+        # (`goatwriter.stored_fall`). `{call: right side}`: the frame k's
+        # waveform keeps the pair's phase and its right side names the
+        # pitch the player's fall writes on that call, held after the last
+        # one (the pair loops on it). Row k is call k because the lead is
+        # call 0 (traced: Chicken Song record 3, the fall's first step on
+        # the row after `first_call`). Falls back to the plain pair when it
+        # does not fit, never to a truncated fall.
+        pair = [(first, first_r), (second, second_r)]
+        f_left, f_right = list(lead), list(lead_r)
+        last = max(fall)
+        for k in range(1, last + 1):
+            w, n = pair[(k - 1) % 2]
+            f_left.append(w)
+            f_right.append(fall.get(k, n))
+        loop = len(f_left)
+        for k in (last + 1, last + 2):
+            w, _n = pair[(k - 1) % 2]
+            f_left.append(w)
+            f_right.append(fall[last])
+        if len(f_left) + 1 <= budget:
+            return f_left + [0xFF], f_right + [(start + loop) & 0xFF]
     if gate_frames is not None and gate_frames >= 1:
         # **`gate_frames`: the drum block's gate mask under the alternation**
         # (`convert(drum_gate_off=...)`). A record setting bit $01 beside $02

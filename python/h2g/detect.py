@@ -193,6 +193,12 @@ class Detection:
     # the gate is masked off. 0 where the block is absent. Consulted only
     # where `effect_drum` matched nothing.
     drum_fall_step: int = 0
+    # Bit $01 in Chicken Song's dialect (`STORED_WAVE_FALL_SHAPE`): from call
+    # `first_call` of a note the voice's frequency HIGH byte falls one a call
+    # (`$0100`) with the stored waveform kept. None where the block is
+    # absent. Consulted only where `effect_drum` and `drum_fall_step` matched
+    # nothing.
+    stored_wave_fall: Optional["StoredWaveFall"] = None
     # Instrument-record offset of the byte that enables the player's per-call
     # re-assert of $D400/$D401 from its own note table, or None where the
     # player has no such block. **This is what decides whether a bit-$01 drum
@@ -2259,6 +2265,12 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             log(f"Effect bit $01..........: frequency falls "
                 f"${det.drum_fall_step:04X} a frame from the note's second "
                 f"tick, gate off (16-bit drum fall)")
+    if not det.effect_drum and not det.drum_fall_step:
+        det.stored_wave_fall = _find_stored_wave_fall(sid, det)
+        if det.stored_wave_fall is not None:
+            log(f"Effect bit $01..........: frequency high byte falls $0100 "
+                f"a call from call {det.stored_wave_fall.first_call} of the "
+                f"note, stored waveform kept (not a drum)")
     if not det.effect_rise:
         det.effect_fall = _find_effect_fall(sid, det)
         if det.effect_fall is not None:
@@ -5692,6 +5704,85 @@ def _find_drum_fall16(sid: SidFile, det: Detection) -> int:
         return 0
     lead = 2 if zp else 3
     return sid.data[at + lead + DRUM_FALL16_AT_STEP]
+
+
+# Bit $01 in Chicken Song's dialect: the block `DRUM_NOISE_IMMEDIATE` rejects as
+# a drum, read for what it is. Chicken Song $133B:
+#
+#     133B  LDA effect / AND #$01 / BEQ out
+#           LDA freqhi,X / BEQ out         ; the fall stops at hi = 0
+#           LDA ticks,X  / BEQ out         ; ticks left in the note
+#           LDA len,X / SEC / SBC #$03     ; the note's fetched length - 3
+#           CMP ticks,X / LDY voice
+#           BCC +                          ; ticks > len - 3: no fall yet
+#           LDA freqhi,X / DEC freqhi,X
+#           STA $D401,Y                    ; the value BEFORE the DEC
+#           LDA wave,X / BNE ++            ; the STORED waveform...
+#         + LDA freqhi,X / STA $D401,Y
+#           LDA gate,X                     ; ...or the gate-off cell
+#        ++ STA $D404,Y
+#
+# `ticks` is reloaded with `len` at the fetch and decremented once a call, so
+# the fall runs from call `SBC operand` of the note (the fetch call is call 0)
+# and writes the high byte $0100 lower each call, down to 1 -- and `D404`
+# gets the waveform the record stored, not `#$80`. That is why
+# `_find_effect_routines` refuses it as a drum: the noise is what makes the
+# Warhawk routine a drum, and this one never writes it (44 of the 45 corpus
+# files matching the guards carry `LDA #$80` in the block; this is the 45th).
+# The two DEC/LDA operands must name the same cell, which is what makes the
+# store a falling byte and not any table read.
+STORED_WAVE_FALL_SHAPE = ("29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0 ?? "
+                          "BD ?? ?? 38 E9 ?? DD ?? ?? AC ?? ?? 90 ?? "
+                          "BD ?? ?? DE ?? ?? 99 01 D4")
+# Offsets into STORED_WAVE_FALL_SHAPE (past the effect-byte load): the first
+# guard's cell, the SBC operand, the CMP's cell, the LDA and DEC cells.
+STORED_WAVE_FALL_AT_HI = 5
+STORED_WAVE_FALL_AT_TICKS = 10
+STORED_WAVE_FALL_AT_FIRST = 19
+STORED_WAVE_FALL_AT_CMP = 21
+STORED_WAVE_FALL_AT_LOAD = 29
+STORED_WAVE_FALL_AT_DEC = 32
+
+
+@dataclass(frozen=True)
+class StoredWaveFall:
+    """Chicken Song's bit-$01 block, read from the block itself."""
+    first_call: int     # the note's call (fetch = 0) the fall first writes on
+
+
+def _find_stored_wave_fall(sid: SidFile, det: Detection) -> Optional[StoredWaveFall]:
+    """The block of STORED_WAVE_FALL_SHAPE, or None.
+
+    Keyed on the resolved +7 address like every other effect-byte probe. The
+    guards must read the cell the block decrements (`freqhi`), the compare
+    must read the cell the second guard read (`ticks`), and a drum -- the
+    `#$80` immediate within `DRUM_NOISE_WINDOW` -- is refused, so this can
+    never reach a file `effect_drum` reads.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    data = sid.data
+    at = search_file(data, f"{load} {STORED_WAVE_FALL_SHAPE}")
+    if at < 1:
+        return None
+    b = at + lead
+
+    def word(o: int) -> int:
+        return data[b + o] | data[b + o + 1] << 8
+
+    if not (word(STORED_WAVE_FALL_AT_HI) == word(STORED_WAVE_FALL_AT_LOAD)
+            == word(STORED_WAVE_FALL_AT_DEC)
+            and word(STORED_WAVE_FALL_AT_TICKS)
+            == word(STORED_WAVE_FALL_AT_CMP)):
+        return None
+    if search_file(data[at:at + DRUM_NOISE_WINDOW],
+                   DRUM_NOISE_IMMEDIATE) >= 1:
+        return None
+    return StoredWaveFall(first_call=data[b + STORED_WAVE_FALL_AT_FIRST])
 
 
 # Hubbard's own "skydive" -- bit $02 of the effect byte read as the

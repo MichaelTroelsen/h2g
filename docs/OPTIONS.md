@@ -583,8 +583,22 @@ above no longer reproduces: forced A/B at c090118 (-t 180 --presets --sound),
 aud .9255 -> .9404, loud .9825 -> .9851, wave 92 -> 96%, onset 77 -> 92%,
 and no printed column falls. What it fixes is voice 2's record-3 drum, which
 the original flips between `$41` and `$81` every frame for 11 frames; the
-drum's `$0100`-a-frame pitch fall is still not emitted. The corpus byte-hash
-moves only Chicken_Song.
+drum's `$0100`-a-frame pitch fall was not emitted at that point (see below).
+The corpus byte-hash moves only Chicken_Song.
+
+**The fall rides the same option** (`goatwriter.stored_fall`,
+`detect.STORED_WAVE_FALL_SHAPE`). Record 3's bit `$01` is not a drum -- the
+block writes the record's stored waveform to `$D404`, never `#$80`, which is
+why `effect_drum` refuses it -- but from call 3 of the note it lowers the
+frequency high byte `$0100` a call. A wavetable row is one call and an `F2`
+row writes no waveform, so the fall is carried on the alternation's own rows
+as relative notes (the nearest of Goattracker's 96 to the frequency the player
+writes, -1 -2 -4 -5 -7 -8 -10 -13 semitones from A#3, which is the note
+column of the original's own siddump). Byte-inert on every file but
+Chicken_Song (guard census: 45 corpus files match the block's guards, 44 carry
+`LDA #$80`, one does not). Adopted by ear at v0.5.647: forced A/B at 3a59332
+(-t 180 --presets --sound) aud .9404 -> .9424, tie .76 -> .86, tiefr 59 ->
+68%, travel 2.92 -> 1.11; loud .9851 -> .9845 prints 99 -> 98%, accepted.
 
 **Retaken at v0.5.588 + the arpeggio fix (v0.5.589): the melody cost is
 gone.** Hollywood's record 9 (`$D6`) also sets bit `$04`, whose nibble block
