@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.647 presets.py",
+  "generator": "h2g 0.5.648 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
