@@ -89,6 +89,20 @@ from .note_passes import _entry_instruments, _pattern_successors
 from .pulse import packed_pattern_size, pattern_rows
 
 
+# The note-rise files on which the ring-out `chains` stay on. `build_sng`
+# turns them off for every note-rise file because the rise claims the rows
+# through a rest itself, and measured on Chimera, Game_Killer and Human_Race
+# (v0.5.647) turning them on costs the rise rows it carries (tests/
+# test_note_rise_rest_carry.py). Battle_of_Britain loses 2 of its 409 store
+# rows to the same switch and gains the tied rests' tail: its voices 2 and 3
+# end a sweep with the gate off and NO `$0000` envelope write (the original
+# rings at R=$F for up to 190 frames: seconds 12-21 of the render), and with
+# the chains off the instrument's zeroed release cuts all of it (aud 0.9315 ->
+# 0.9387, loud 0.936 -> 0.975, v0.5.647). Keyed on the header name, as
+# `stored_wave.HELD` is.
+CHAINS_WITH_NOTE_RISE = frozenset({"Battle of Britain"})
+
+
 def _ring_free(rows: list, q: int) -> bool:
     k = q * 4
     return (rows[k] == GT_REST and rows[k + 1] == 0

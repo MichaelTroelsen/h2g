@@ -1,20 +1,20 @@
 {
- "generated_from": {"head": "3a59332", "plan_head": "3a59332"},
+ "generated_from": {"head": "4842796", "plan_head": "4842796"},
  "blockers": [
   {
-   "id": "chicken-song-record3-pitch-fall-adoption",
+   "id": "battle-of-britain-ring-chain-adoption",
    "kind": "decision",
-   "title_at_research": "Chicken_Song: adopt the record-3 drum pitch fall (aud .9404 -> .9424, tiefr 59 -> 68%, loud prints 99 -> 98%)?",
-   "blocked_on_at_research": "listening decision: Chicken_Song record-3 pitch fall gains aud .94044 -> .94238 and tiefr 59 -> 68% but loud .98505 -> .98452 prints 99% -> 98%; only the user can say whether the drum now sounds closer",
-   "current_behaviour": "Shipped (4978add, wave_alternate on): voice 2's record-3 drum alternates 41/81 at one pitch 0F82 where the original falls $0100 a frame 0E82 -> 0782 (runs.jsonl chicken-song-record3-pitch-fall trace). fix.patch applies at 3a59332: new detect._find_stored_wave_fall (matches Chicken_Song only) + goatwriter/stored_fall.py, +404 -11 in 8 files.",
-   "sources": ["C:/t/chicken-song-record3-pitch-fall/finding.md", "C:/t/chicken-song-record3-pitch-fall/fix.patch", "C:/t/chicken-song-record3-pitch-fall/run2_ab.txt"],
+   "title_at_research": "Battle_of_Britain: adopt C:/t/battle-of-britain-aud-dip-13/fix.patch (rest_ring chains on for this note-rise file: aud .9315 -> .9387, loud .9359 -> .9750)?",
+   "blocked_on_at_research": "listening decision: does Battle_of_Britain with voices 2/3's release tails ringing (seconds 1-20) sound like the original? A/B shows no printed column falling; byte-hash moves Battle_of_Britain only",
+   "current_behaviour": "HEAD 4842796: build.py:1156 passes chains=not (effects and det.note_rise is not None), so rest_ring chains are off for every note-rise file; CHAINS_WITH_NOTE_RISE does not exist in python/h2g (grep 0). Voices 2/3 ring release F in the original and are cut to release 0 in ours (finding.md, 30-35 dB gaps at s14/s16). fix.patch applies cleanly at HEAD.",
+   "sources": ["python/h2g/goatwriter/build.py:1156", "C:/t/battle-of-britain-aud-dip-13/finding.md", "C:/t/battle-of-britain-aud-dip-13/fix.ab.md", "C:/t/battle-of-britain-aud-dip-13/hash_fix.json", "C:/t/battle-of-britain-ring-chain-adoption/patched.3b6f9a961a2d.s0.t40.wav", "C:/t/battle-of-britain-ring-chain-adoption/original.83e8beeb187f.s0.t40.wav"],
    "options": [
-    {"label": "Adopt", "consequence": "aud .9404 -> .9424, tie .76 -> .86, drum-frame agreement .888 -> .924; loud -.0005 prints 99 -> 98%; ~400 lines of new code reaching one song"},
-    {"label": "Leave", "consequence": "keeps the drum at one pitch and the code smaller; the fall stays unemitted"}
+    {"label": "Adopt", "consequence": "aud .9315 -> .9387, loud .9359 -> .9750, no printed column falls, only Battle_of_Britain moves; a per-file set in rest_ring that names one song"},
+    {"label": "Reject", "consequence": "the tails stay cut; nothing under python/ changes and the task closes"}
    ],
    "recommendation": "Adopt",
-   "why": "Every agreement measure that targets the drum rises and the loud fall is 0.05%, a rounding-boundary crossing; byte-hash moves Chicken_Song only.",
-   "question": "Chicken_Song: add the drum's pitch drop (the voice-2 drum now slides down like the original instead of holding one pitch)?",
+   "why": "The original demonstrably rings these tails (release F, no $0000 write) and the patch restores them with no printed column falling and a single-file blast radius.",
+   "question": "Battle_of_Britain: adopt the patch that lets voices 2 and 3's release tails ring out in seconds 1-20, as the original does?",
    "unblocked_by_research": false
   }
  ]

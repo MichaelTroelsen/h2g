@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.648 — 2026-11-03
+
+- Battle_of_Britain's release tails ring (rest_ring chains on for this note-rise file)
+
 ## 0.5.647 — 2026-11-02
 
 - the record-3 drum pitch fall on Chicken_Song

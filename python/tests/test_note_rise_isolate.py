@@ -136,13 +136,13 @@ def test_three_more_files_carry_the_rise_through_their_rest_rows():
 
 @needs_corpus
 @pytest.mark.parametrize("name,rows", [("Game_Killer", None),
-                                       ("Battle_of_Britain", "370 store row(s)"),
+                                       ("Battle_of_Britain", "368 store row(s)"),
                                        ("Human_Race", None)])
 def test_without_the_copies_the_rest_rows_are_mixed(name, rows, monkeypatch):
     """The rest rows are `mixed` without a copy. Game_Killer and Human_Race
     then place under half of what they carry on and keep the plan without
-    the continuation; Battle_of_Britain places 58 of 97 and keeps 370 rows
-    where the copy takes 409."""
+    the continuation; Battle_of_Britain places 58 of 97 and keeps 368 rows
+    where the copy takes 407 (409 before its tied rests rang out)."""
     monkeypatch.setattr(R, "_isolate", lambda t, p, *a: (t, p, 0))
     _sng, lines, _ = _converted(name)
     (rise,) = [m for m in lines if "Note rise (bit $02)" in m]
@@ -150,7 +150,7 @@ def test_without_the_copies_the_rest_rows_are_mixed(name, rows, monkeypatch):
     if rows is None:
         assert "carried on" not in rise, rise
     else:
-        assert rows in rise and "41 row(s) mixed" in rise, rise
+        assert rows in rise and "43 row(s) mixed" in rise, rise
 
 
 @needs_corpus

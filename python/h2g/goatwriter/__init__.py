@@ -277,8 +277,9 @@ from .sfx_rest_click import (ENVELOPE_FIRSTWAVE, ENVELOPE_HELD,
                              entry_notes, sfx_only_patterns,
                              sfx_rest_click_entries,
                              sfx_rest_click_plan)  # noqa: F401
-from .rest_ring import (_ring_free, _ring_last_row, _ring_marker,
-                        _ring_occurrences, rest_ring_pass)  # noqa: F401
+from .rest_ring import (CHAINS_WITH_NOTE_RISE, _ring_free, _ring_last_row,
+                        _ring_marker, _ring_occurrences,
+                        rest_ring_pass)  # noqa: F401
 from .filters import (FETCH_HOLD_BACK, _FETCH_TAIL, _FETCH_TAIL_JMP,
                       _FILTER_BLOCK_LEN, _VOICE_LOOP_DOWN, _fetch_hold_pattern,
                       _fetch_hold_plan, free_running_fetch_hold_voice,
