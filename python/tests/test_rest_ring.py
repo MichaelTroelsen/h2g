@@ -112,9 +112,9 @@ def test_a_pattern_ending_on_an_untied_note_is_unmarked():
 
 # --- the pass: where the ring goes ------------------------------------------
 
-def _pass(patterns, tracks, ring=RING, cut=CUT):
+def _pass(patterns, tracks, ring=RING, cut=CUT, **kw):
     out, new_tracks = rest_ring_pass([_flat(p) for p in patterns], ring, cut,
-                                     tracks)
+                                     tracks, **kw)
     return [_rows(p) for p in out], new_tracks
 
 
@@ -134,6 +134,35 @@ def test_the_ring_goes_on_the_row_before_the_keyoff():
     assert p[1] == (REST, 0, SETSR, 0x0C), "the ring, a row early"
     assert p[2] == (KEYOFF, 0, CMD_TONEPORTA, 0), "the KEYOFF row is untouched"
     assert p[4] == (REST, 0, SETSR, 0), "the cut stays on the last hold row"
+
+
+def test_untie_takes_the_tie_off_a_ringing_keyoff():
+    """With `untie_instruments` naming the held instrument (one with a
+    vibrato, classic engine only) the tie that marked the open gate is dropped
+    once the ring stood: the packed player would run it a tick after the row
+    and restart `vibtime`, re-centring a vibrato the original keeps (Thrust's
+    opening, dip-thrust-0)."""
+    (p,), _ = _pass([_own_rest()], [[0, 0xFF, 0]],
+                    untie_instruments=frozenset({1}))
+    assert p[1] == (REST, 0, SETSR, 0x0C), "the ring is still written"
+    assert p[2] == (KEYOFF, 0, 0, 0), "the KEYOFF row loses its tie"
+
+
+def test_an_instrument_with_no_vibrato_keeps_its_tie():
+    """Nothing to restart: the tie stays and the bytes with it (Las Vegas and
+    Warhawk moved without a register changing, confuzion-keyoff-untie-scope)."""
+    (p,), _ = _pass([_own_rest()], [[0, 0xFF, 0]],
+                    untie_instruments=frozenset({2}))
+    assert p[1] == (REST, 0, SETSR, 0x0C)
+    assert p[2] == (KEYOFF, 0, CMD_TONEPORTA, 0)
+
+
+def test_untie_is_off_by_default():
+    """The triangle engine's original stops its vibrato at the gate-off, which
+    the tie's restart approximates (Confuzion, confuzion-keyoff-untie-scope):
+    the default leaves the tie where the decoder put it."""
+    (p,), _ = _pass([_own_rest()], [[0, 0xFF, 0]])
+    assert p[2] == (KEYOFF, 0, CMD_TONEPORTA, 0)
 
 
 def test_a_ring_with_no_free_row_before_it_is_dropped_with_its_cut():

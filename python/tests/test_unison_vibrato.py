@@ -116,16 +116,19 @@ def test_off_by_default():
 
 
 @needs_corpus
-def test_thrust_is_declined_for_its_start_records():
+def test_thrust_is_read_from_its_measured_start_not_its_image():
     """Thrust starts its voices on records 23, 26, 21 (vibrato bytes $00,
     $30, $11), so the calls before the first fetch step voices 2 and 3 and
-    not voice 1 (traced: frame 1 moves $0CCF/$0CD0 only). No pair is in
-    lockstep from the image."""
+    not voice 1 (traced: frame 1 moves $0CCF/$0CD0 only), and its init
+    writes the counters over the image's. The image cannot say where the
+    voices stand, so `MEASURED_START` carries the state at the first fetch
+    (tests/test_thrust_opening_phase.py)."""
     sid, det = _sid("Thrust.sid")
     assert uv.counter_cells(sid, det) == (0x0CCE, 0x0CEE)
     blob = convert(str(CORPUS / "Thrust.sid"), log=lambda m: None,
                    **_opts("Thrust.sid", False))
-    assert uv.doubled_note_delays(blob, sid, det) == {}
+    assert set(uv.doubled_note_delays(blob, sid, det)) == {
+        (1, 0, 0, 0), (2, 0, 0, 0)}
 
 
 @needs_corpus
@@ -140,9 +143,10 @@ def test_an_init_time_clear_declines():
 
 @needs_corpus
 def test_forced_on_only_international_karate_moves():
-    """Corpus byte-hash, option forced on under presets: IK is the one mover
-    (C:/t/ik-chorus/hash.py, 2026-10-18). Here: every file the update is
-    read on, other than IK, has nothing to emit."""
+    """Corpus byte-hash, option forced on under presets: IK was the one mover
+    (C:/t/ik-chorus/hash.py, 2026-10-18); Thrust joins it from its
+    `MEASURED_START` (dip-thrust-0). Here: every file the update is read
+    on, other than those two, has nothing to emit."""
     movers = []
     for path in sorted(CORPUS.glob("*.sid")):
         try:
@@ -158,7 +162,7 @@ def test_forced_on_only_international_karate_moves():
             continue
         if uv.doubled_note_delays(blob, sid, det):
             movers.append(path.name)
-    assert movers == [IK]
+    assert movers == [IK, "Thrust.sid"]
 
 
 def _freqs(trace, n):

@@ -1,20 +1,132 @@
 {
- "generated_from": {"head": "4842796", "plan_head": "4842796"},
+ "generated_from": {
+  "head": "aa7614c",
+  "plan_head": "aa7614c"
+ },
  "blockers": [
   {
-   "id": "battle-of-britain-ring-chain-adoption",
+   "id": "kentilla-open-cut-adoption",
    "kind": "decision",
-   "title_at_research": "Battle_of_Britain: adopt C:/t/battle-of-britain-aud-dip-13/fix.patch (rest_ring chains on for this note-rise file: aud .9315 -> .9387, loud .9359 -> .9750)?",
-   "blocked_on_at_research": "listening decision: does Battle_of_Britain with voices 2/3's release tails ringing (seconds 1-20) sound like the original? A/B shows no printed column falling; byte-hash moves Battle_of_Britain only",
-   "current_behaviour": "HEAD 4842796: build.py:1156 passes chains=not (effects and det.note_rise is not None), so rest_ring chains are off for every note-rise file; CHAINS_WITH_NOTE_RISE does not exist in python/h2g (grep 0). Voices 2/3 ring release F in the original and are cut to release 0 in ours (finding.md, 30-35 dB gaps at s14/s16). fix.patch applies cleanly at HEAD.",
-   "sources": ["python/h2g/goatwriter/build.py:1156", "C:/t/battle-of-britain-aud-dip-13/finding.md", "C:/t/battle-of-britain-aud-dip-13/fix.ab.md", "C:/t/battle-of-britain-aud-dip-13/hash_fix.json", "C:/t/battle-of-britain-ring-chain-adoption/patched.3b6f9a961a2d.s0.t40.wav", "C:/t/battle-of-britain-ring-chain-adoption/original.83e8beeb187f.s0.t40.wav"],
+   "title_at_research": "Kentilla open cut, rebased after the Thrust untie: Kentilla aud .9002 -> .9026 and Spellbound .9222 -> .9224 rise but Thrust slips .9213 -> .9211 (loud .9751 -> .9750)",
+   "blocked_on_at_research": "The decision said land it only if Kentilla, Spellbound and Thrust all still rise after the rebase; Thrust slips .0002 aud / .0001 loud against the Thrust-only state (still above HEAD .9136). Land C:/t/kentilla-open-cut-adoption/fix.rebased2.patch accepting the slip, or drop it?",
+   "current_behaviour": "_CARRY_OPEN_CUT absent from python/h2g (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside). Thrust -.0002 aud is inside the +-.002-.007 band identical-register controls produce (samantha-fox, confuzion-keyoff-untie-scope).",
+   "sources": [
+    "runs.jsonl kentilla-open-cut-adoption",
+    "C:/t/kentilla-open-cut-adoption/fix.rebased2.patch"
+   ],
    "options": [
-    {"label": "Adopt", "consequence": "aud .9315 -> .9387, loud .9359 -> .9750, no printed column falls, only Battle_of_Britain moves; a per-file set in rest_ring that names one song"},
-    {"label": "Reject", "consequence": "the tails stay cut; nothing under python/ changes and the task closes"}
+    {
+     "label": "Land it",
+     "consequence": "Kentilla +.0024, Spellbound +.0002, Thrust -.0002 vs Thrust-only (all up vs HEAD)"
+    },
+    {
+     "label": "Drop it",
+     "consequence": "Kentilla keeps its uncut tail; task closes"
+    }
+   ],
+   "recommendation": "Land it",
+   "why": "The Thrust slip is within measurement noise while Kentilla gains ten times as much.",
+   "question": "Kentilla: land the rebased open cut although Thrust slips .9213 -> .9211?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "mega-apocalypse-rest-envelope-silence-adoption-2",
+   "kind": "decision",
+   "title_at_research": "Adopt rest_envelope_silence in Mega_Apocalypse's preset (aud .9076 -> .9134, adsr 86% -> 96%); the body fall is a 59-124 sample render shift",
+   "blocked_on_at_research": "Adopt C:/t/mega-apocalypse-aud-dip-17/fix.patch (rest_envelope_silence on Mega_Apocalypse's presets.json entry)? aud .9076 -> .9134, adsr 86% -> 96%; the s60-174 per-second fall is a render shift with identical registers (C:/t/mega-apocalypse-body-fall-under-rest-envelope-silence/finding.md). Moves Mega_Apocalypse only.",
+   "current_behaviour": "Mega_Apocalypse preset has no rest_envelope_silence; git apply --check passes on the working tree (Thrust untie applied, Devils set aside). Body fall: identical registers, render shift 59-124 samples.",
+   "sources": [
+    "C:/t/mega-apocalypse-body-fall-under-rest-envelope-silence/finding.md"
+   ],
+   "options": [
+    {
+     "label": "Adopt",
+     "consequence": "aud .9076 -> .9134, adsr 86 -> 96%, Mega only"
+    },
+    {
+     "label": "Reject",
+     "consequence": "closes"
+    }
    ],
    "recommendation": "Adopt",
-   "why": "The original demonstrably rings these tails (release F, no $0000 write) and the patch restores them with no printed column falling and a single-file blast radius.",
-   "question": "Battle_of_Britain: adopt the patch that lets voices 2 and 3's release tails ring out in seconds 1-20, as the original does?",
+   "why": "The fall you asked to explain turned out to be a render-alignment artefact, not a change in what plays.",
+   "question": "Mega_Apocalypse: adopt rest_envelope_silence now that the body fall is shown to be a render shift?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "nineteen-regrid-unshare-rest-adoption",
+   "kind": "decision",
+   "title_at_research": "Adopt regrid_unshare_rest in Nineteen's preset (aud .8885 -> .8996; the slides/bend/sync falls are a corrected note length and a removed spurious bend)",
+   "blocked_on_at_research": "Turn regrid_unshare_rest on for Nineteen only? aud .8885 -> .8996, real bend .633 -> .636; the printed falls are one over-long note now matching the original and one spurious bend removed (C:/t/nineteen-regrid-unshare-rest-columns/finding.md). The option is off by default and moves no other file.",
+   "current_behaviour": "regrid_unshare_rest absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside).",
+   "sources": [
+    "C:/t/nineteen-regrid-unshare-rest-columns/finding.md"
+   ],
+   "options": [
+    {
+     "label": "Adopt",
+     "consequence": "aud .8885 -> .8996, Nineteen only"
+    },
+    {
+     "label": "Reject",
+     "consequence": "closes"
+    }
+   ],
+   "recommendation": "Adopt",
+   "why": "The three falling columns were explained as corrections toward the original.",
+   "question": "Nineteen: adopt regrid_unshare_rest for Nineteen only?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "sanxion-master-fade-adoption",
+   "kind": "decision",
+   "title_at_research": "Adopt the position-driven master fade for Sanxion (aud .8759 -> .8844, loud .9048 -> .9312)",
+   "blocked_on_at_research": "Adopt C:/t/sanxion-position-driven-master-fade/fix.patch (master_fade option, off by default, on in Sanxion's preset)? aud .8759 -> .8844, loud .9048 -> .9312, moves Sanxion only; Confuzion's second spelling is a separate open task.",
+   "current_behaviour": "master_fade absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside); adds a convert option (may need a rebase if Star_Paws lands first).",
+   "sources": [
+    "C:/t/sanxion-position-driven-master-fade/fix.patch"
+   ],
+   "options": [
+    {
+     "label": "Adopt",
+     "consequence": "aud .8759 -> .8844, loud .9048 -> .9312, Sanxion only"
+    },
+    {
+     "label": "Reject",
+     "consequence": "Sanxion keeps no end fade; closes"
+    }
+   ],
+   "recommendation": "Adopt",
+   "why": "Largest loud gain on the list, one file, derived from the player.",
+   "question": "Sanxion: adopt the position-driven master fade?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "star-paws-regrid-park-adoption",
+   "kind": "decision",
+   "title_at_research": "Adopt regrid_park with regrid_park_shift 16 for Star_Paws (aud .9238 -> .9388, hold 91% -> 100%; pspan .9895 -> .9803)",
+   "blocked_on_at_research": "Adopt C:/t/star-paws-regrid-park-hold/fix.patch (regrid_park_shift option; the patch carries Star_Paws's presets.json entry)? aud .9238 -> .9388, hold 91% -> 100%, moves Star_Paws only; pspan .9895 -> .9803 and travel .4512 -> .4382 still fall (open task star-paws-regrid-park-pulse-travel).",
+   "current_behaviour": "regrid_park_shift absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside).",
+   "sources": [
+    "C:/t/star-paws-regrid-park-hold/finding.md"
+   ],
+   "options": [
+    {
+     "label": "Adopt shift 16",
+     "consequence": "aud .9238 -> .9388, hold 100%; pspan/travel fall"
+    },
+    {
+     "label": "Wait for pulse-travel task",
+     "consequence": "adoption after star-paws-regrid-park-pulse-travel"
+    },
+    {
+     "label": "Reject",
+     "consequence": "closes"
+    }
+   ],
+   "recommendation": "Adopt shift 16",
+   "why": "The pspan fall belongs to regrid_park at any shift, so waiting buys nothing for this patch; the follow-up can still improve it.",
+   "question": "Star_Paws: adopt regrid_park with shift 16 now?",
    "unblocked_by_research": false
   }
  ]

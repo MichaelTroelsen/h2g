@@ -1155,7 +1155,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             # The note rise claims the rows through a rest itself, after
             # this pass; on its files the ring keeps its older reach.
             chains=(not (effects and det.note_rise is not None)
-                    or sid.name in _gw_rest_ring.CHAINS_WITH_NOTE_RISE))
+                    or sid.name in _gw_rest_ring.CHAINS_WITH_NOTE_RISE),
+            untie_instruments=(
+                frozenset(rec + 1 + lead for rec in vib_ptrs)
+                if det.vibrato_offset is not None else None))
     # After the layout because it needs the speed-table indices it allocated,
     # and before the records because it decides what goes in their byte 5.
     # Triangle-dialect only: it is that player's length gate this expresses,

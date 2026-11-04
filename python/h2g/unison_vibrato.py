@@ -57,6 +57,7 @@ explicitly, and the base record restored on the first free row after the
 last clone so a later `instr 00` note keeps the base. One lap of each
 orderlist; a repeated entry is copied only where every repeat agrees.
 """
+import hashlib
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .detect import (Detection, VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
@@ -77,6 +78,27 @@ _NAME_AT = 9
 # Row commands that replace the instrument vibrato on a note: portamento up
 # and down, tone portamento (tie or slide), and an explicit vibrato.
 _PITCH_COMMANDS = (0x01, 0x02, CMD_TONEPORTA, CMD_VIBRATO)
+
+
+# Counter state `(position, direction)` per voice at the FIRST FETCH CALL, for
+# a player whose init WRITES the counters and whose voices start on records
+# with different vibrato bytes -- the two things the image-and-rows walk below
+# cannot read (no 6502 here). Read off the original, never derived:
+#
+#     siddump -a0 -w0cce,0ccf,0cd0,0cee,0cef,0cf0 Thrust.sid
+#       frame 0 (after init)   02 05 01 / 00 FF FF
+#       frame 3 (first fetch)  02 04 00 / 00 FF 00
+#
+# The image holds `02 06 02 / 00 00 00` (Thrust's `$0CCE`/`$0CEE`), which is
+# neither; the calls between run the update on the records the player starts
+# each voice on (23, 26, 21: vibrato bytes $00, $30, $11) and step voices 2
+# and 3 once. Keyed on the sha1 of the image bytes so it cannot reach another
+# file. The result is the three voices' free-running offset (Thrust's opening
+# is one 8-second note on all three: calls 3-426, voices at +0, +6 and +8
+# updates), which Goattracker's per-note `vibtime` restart puts back in phase.
+MEASURED_START = {
+    "1025582979c0e3e2b3670ba6d4b0e157f4036faf": [(2, 0x00), (4, 0xFF), (0, 0x00)],
+}
 
 
 def counter_cells(sid: SidFile, det: Detection) -> Optional[Tuple[int, int]]:
@@ -293,9 +315,11 @@ def doubled_note_delays(blob: bytes, sid: SidFile, det: Detection
         return d[off] if 0 <= off < len(d) else None
 
     ctr, dirc = cells
+    measured = MEASURED_START.get(hashlib.sha1(bytes(d)).hexdigest())
     try:
-        start = [(d[sid.to_offset(ctr + v)], d[sid.to_offset(dirc + v)])
-                 for v in range(3)]
+        start = (list(measured) if measured is not None else
+                 [(d[sid.to_offset(ctr + v)], d[sid.to_offset(dirc + v)])
+                  for v in range(3)])
     except Exception:                       # noqa: BLE001 -- unreadable cells
         return {}
     subtunes = blob[HEADER_LEN]
@@ -355,7 +379,7 @@ def doubled_note_delays(blob: bytes, sid: SidFile, det: Detection
                 ta, tb = trails[a], trails[b]
                 u = next((u for u in range(min(len(ta), len(tb)))
                           if ta[u] != tb[u]), min(len(ta), len(tb)))
-                if firsts[a] != firsts[b]:
+                if firsts[a] != firsts[b] and measured is None:
                     # The calls before the first fetch run the update on the
                     # record the player starts each voice on, which the rows
                     # do not show (Thrust: records 23, 26, 21, vibrato bytes

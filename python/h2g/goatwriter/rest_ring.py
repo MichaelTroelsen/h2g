@@ -82,6 +82,8 @@ Written only where it is SAFE, every other case dropped:
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from .constants import (CMD_SETSR, CMD_TONEPORTA, GT_FIRST_NOTE, GT_KEYOFF,
                         GT_LAST_NOTE, GT_REST, PACKED_PATTERN_LIMIT,
                         _SONG_MAX_PATTERNS)
@@ -159,7 +161,8 @@ def _ring_occurrences(tracks: list, count: int) -> dict:
 
 
 def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
-                   tracks=None, log=None, chains: bool = True):
+                   tracks=None, log=None, chains: bool = True,
+                   untie_instruments: Optional[frozenset] = None):
     """Finish the rest-end markers `_build_raw_pattern` wrote; returns
     `(patterns, tracks)` -- a pattern played where one rest follows and a tie
     elsewhere is copied, and only the positions that want the ring repointed.
@@ -177,6 +180,18 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     programs (`goatwriter.note_rise`, run later) want the same command
     column through the rest (Chimera, Game_Killer, Battle_of_Britain,
     Human_Race).
+
+    `untie_instruments` names the Goattracker instruments whose KEYOFF loses
+    the `CMD_TONEPORTA 00` of a tied note once its ring stood (see the end of
+    the pass); None, the default, leaves every tie. `build_sng` passes the
+    instruments that carry a vibrato, and only for the CLASSIC vibrato engine
+    (`det.vibrato_offset`): its oscillator runs through a rest, so the tie's
+    `vibtime` restart is the defect there. The triangle engine gates the
+    vibrato on the event's length and the original stops it at the gate-off
+    (Confuzion's B-4, calls 3158-3176: centre, then static for 12 frames),
+    which the tie's restart delay approximates and the untie does not; an
+    instrument with no vibrato has nothing to restart, so its tie stays and
+    its bytes with it.
     """
     entry = _entry_instruments(tracks, patterns) if tracks else {}
     successors = _pattern_successors(tracks, len(patterns)) if tracks else {}
@@ -189,6 +204,8 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     # rests that never cut, or a chain whose cut the 94-row slicing put in the
     # next pattern. It rings with no cut of its own (see the end of the loop).
     wanted_open = []
+    # (pattern, KEYOFF row) -> the instruments that may be held there.
+    held_of: dict = {}
 
     def held_pair(named, live, held, shared):
         if named or len(held) == 1:
@@ -244,6 +261,8 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
                     inert += 1
                 else:
                     wanted.append((pn, open_at, r, ring[1] & 0xFF))
+                    held_of[(pn, open_at)] = (
+                        {live} if named or len(held) == 1 else set(held))
                     open_at = None
                     continue
                 rows[k + 2:k + 4] = [0, 0]
@@ -266,6 +285,8 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
                 inert += 1
             else:
                 wanted_open.append((pn, open_at, ring[1] & 0xFF))
+                held_of[(pn, open_at)] = (
+                    {live} if named or len(held) == 1 else set(held))
 
     opening = {pn: sr for pn, a, _m, sr in wanted if a == 0}
 
@@ -285,16 +306,21 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
             return True
         return GT_FIRST_NOTE <= note <= GT_LAST_NOTE and cmd != CMD_TONEPORTA
 
+    # KEYOFF rows whose ring this pass wrote, untied after the roll-back below.
+    ringing: list = []
+
     mine: set = set()             # (pattern, row) this pass leaves behind
     # The rests that open inside their pattern put the ring on the row before.
     for pn, a, m, sr in wanted:
         if a > 0 and _ring_free(out[pn], a - 1):
             out[pn][(a - 1) * 4 + 2:(a - 1) * 4 + 4] = [CMD_SETSR, sr]
+            ringing.append((pn, a))
             mine.update({(pn, a - 1), (pn, m)})
     rung_open = 0
     for pn, a, sr in wanted_open:
         if _ring_free(out[pn], a - 1):
             out[pn][(a - 1) * 4 + 2:(a - 1) * 4 + 4] = [CMD_SETSR, sr]
+            ringing.append((pn, a))
             mine.add((pn, a - 1))
             rung_open += 1
 
@@ -375,6 +401,23 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
         if packed_pattern_size(pattern_rows(bare)) <= PACKED_PATTERN_LIMIT:
             out[pn] = bare
             rolled += 1
+    # The `CMD_TONEPORTA 00` a rest after a tied note is given only marks that
+    # the gate was open (`tied_open`, read above). Left on a KEYOFF whose ring
+    # stood, the packed player runs it a tick after the row -- freq = note and
+    # `vibtime` = 0 -- which re-centres a vibrato the original keeps running
+    # through the rest (Thrust's opening, calls 328 -> 338; aud .71 -> .73 only
+    # together with `unison_vibrato.MEASURED_START`). After the size roll-back
+    # on purpose: the column counted toward the limit, and a ring that was put
+    # back leaves the tie the pass found.
+    for pn, a in ringing:
+        if (untie_instruments is None or not held_of.get((pn, a))
+                or not held_of[(pn, a)] <= untie_instruments):
+            continue
+        k = a * 4
+        if (out[pn][k] == GT_KEYOFF and out[pn][k + 2] == CMD_TONEPORTA
+                and out[pn][k + 3] == 0
+                and out[pn][k - 2] == CMD_SETSR):
+            out[pn][k + 2:k + 4] = [0, 0]
     if log is not None and (wanted or wanted_open or unknown or inert):
         log(f"Rest ring-out...........: {len(wanted) - declined} rest(s) "
             f"ring at the held instrument's release, cut on their last tick"

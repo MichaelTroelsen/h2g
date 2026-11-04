@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.649 — 2026-11-04
+
+- Thrust's opening vibrato keeps its phase across the KEYOFF (untie_instruments)
+
 ## 0.5.648 — 2026-11-03
 
 - Battle_of_Britain's release tails ring (rest_ring chains on for this note-rise file)
