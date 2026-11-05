@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.649 presets.py",
+  "generator": "h2g 0.5.650 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -873,7 +873,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23831,
+      "bytes": 23833,
       "subtunes": 1,
       "rows": 16023,
       "multiplier": 2,
@@ -2000,7 +2000,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 42851,
+      "bytes": 43362,
       "subtunes": 3,
       "rows": 32320,
       "multiplier": 2,
@@ -2186,9 +2186,9 @@
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true,
-      "regrid_unshare_rest": true,
       "regrid_full_debt": true,
       "regrid_per_play": true,
+      "regrid_unshare_rest": true,
       "rest_envelope_silence": true
     },
     "Ninja.sid": {
@@ -2623,7 +2623,6 @@
       "rows": 17663,
       "multiplier": 1,
       "two_stage": true,
-      "master_fade": true,
       "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -2689,6 +2688,7 @@
         61,
         62
       ],
+      "master_fade": true,
       "regrid": true
     },
     "Shockway_Rider.sid": {
@@ -2888,9 +2888,9 @@
       ],
       "regrid": true,
       "regrid_full_debt": true,
-      "regrid_per_play": true,
       "regrid_park": true,
-      "regrid_park_shift": 16
+      "regrid_park_shift": 16,
+      "regrid_per_play": true
     },
     "Sun_Never_Shines.sid": {
       "max_rows": 94,
