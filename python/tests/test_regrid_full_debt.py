@@ -163,7 +163,7 @@ def _star_paws_regrid(monkeypatch, full_debt):
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, "Star_Paws.sid")
     opts.update(regrid=True, regrid_full_debt=full_debt,
-                regrid_per_play=False)
+                regrid_per_play=False, regrid_park=False)   # Star_Paws ships the park
     seen = {}
     real = C.regrid_tempos
 

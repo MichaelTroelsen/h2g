@@ -104,6 +104,10 @@ from .pulse import packed_pattern_size, pattern_rows
 # `stored_wave.HELD` is.
 CHAINS_WITH_NOTE_RISE = frozenset({"Battle of Britain"})
 
+# Test seam: False reads an open chain the way the pass did before the cut
+# was carried into the next pattern (tests/test_rest_ring_open_cut.py).
+_CARRY_OPEN_CUT = True
+
 
 def _ring_free(rows: list, q: int) -> bool:
     k = q * 4
@@ -204,6 +208,10 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     # rests that never cut, or a chain whose cut the 94-row slicing put in the
     # next pattern. It rings with no cut of its own (see the end of the loop).
     wanted_open = []
+    # pattern -> row of the first cut marker that follows nothing but free
+    # rests from the pattern's top: where a chain that ran off the end of the
+    # PREVIOUS pattern is cut (the 94-row slicing put the cut here).
+    lead_cut: dict = {}
     # (pattern, KEYOFF row) -> the instruments that may be held there.
     held_of: dict = {}
 
@@ -223,10 +231,17 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
         named = False
         open_at = None
         tied_open = False
+        lead_free = True
         for r in range(n):
             k = r * 4
             if rows[k] == 0xFF:
                 break
+            if lead_free:
+                if _ring_marker(rows, r):
+                    lead_cut[pn] = r
+                    lead_free = False
+                elif not _ring_free(rows, r):
+                    lead_free = False
             if rows[k + 1]:
                 live = rows[k + 1]
                 named = True
@@ -317,12 +332,14 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
             ringing.append((pn, a))
             mine.update({(pn, a - 1), (pn, m)})
     rung_open = 0
+    placed_open = []
     for pn, a, sr in wanted_open:
         if _ring_free(out[pn], a - 1):
             out[pn][(a - 1) * 4 + 2:(a - 1) * 4 + 4] = [CMD_SETSR, sr]
             ringing.append((pn, a))
             mine.add((pn, a - 1))
             rung_open += 1
+            placed_open.append(pn)
 
     # The rests that open a pattern put it on the last row of whatever plays
     # before them -- per orderlist POSITION, because a pattern that leads to a
@@ -330,6 +347,40 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
     # them; the others get a copy (filters.free_running_fetch_holds' rule).
     new_tracks = [list(t) for t in tracks] if tracks else []
     occurrences = _ring_occurrences(new_tracks, len(out)) if tracks else {}
+
+    # The cut of a chain that ran off the end of its pattern. The ring was
+    # rung with no cut of its own because the slicing put the chain's last
+    # rest in the pattern that plays next, whose cut marker was then taken
+    # out as an orphan (no KEYOFF in that pattern): the ring ran on to the
+    # next attack at the held release, Kentilla's record 0 at $F for 25 s
+    # where the original zeroes the pair on the chain's last tick. The marker
+    # comes back where the open chain's pattern is followed by one pattern
+    # only, and that pattern is reached from nowhere else.
+    cut_next = 0
+    if placed_open and occurrences and _CARRY_OPEN_CUT:
+        preds: dict = {}
+        firsts: set = set()
+        seen_track: set = set()
+        for (ti, ps), (q, repeat, nxt) in sorted(occurrences.items()):
+            if ti not in seen_track:
+                seen_track.add(ti)
+                firsts.add(q)
+            if nxt is not None:
+                preds.setdefault(nxt, set()).add(q)
+            if repeat > 1:
+                preds.setdefault(q, set()).add(q)
+        for pn in dict.fromkeys(placed_open):
+            here = [(r, nxt) for (q, r, nxt) in occurrences.values()
+                    if q == pn]
+            x = here[0][1] if here else None
+            if (x is None or x == pn or x >= len(out) or x not in lead_cut
+                    or any(r > 1 or nxt != x for r, nxt in here)
+                    or preds.get(x) != {pn} or x in firsts):
+                continue
+            m = lead_cut[x]
+            out[x][m * 4 + 2:m * 4 + 4] = [CMD_SETSR, 0]
+            mine.add((x, m))
+            cut_next += 1
     asks: dict = {}                       # pattern -> {position: (SR, opener)}
     for (ti, pos), (q, repeat, nxt) in occurrences.items():
         sr = opening.get(nxt)
@@ -423,6 +474,8 @@ def rest_ring_pass(patterns, ring_envelopes: dict, cut_envelopes: dict,
             f"ring at the held instrument's release, cut on their last tick"
             + (f", {rung_open} tied rest chain(s) ring uncut to the next "
                "note" if rung_open else "")
+            + (f", {cut_next} of them cut where the slicing moved their "
+               "last rest" if cut_next else "")
             + (f", {clones} pattern copy(ies)" if clones else "")
             + (f", {declined} with no free row before them" if declined
                else "")

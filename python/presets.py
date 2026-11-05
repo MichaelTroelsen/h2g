@@ -395,12 +395,28 @@ EXCLUDED_FROM_ALWAYS = {
     # (it reaches Star_Paws and Ricochet), and where it acts it moves the whole
     # song's clock. Inert without `regrid`.
     "regrid_park",
+    # Per song: gives voice 0 a private copy of a rest-only pattern it shares
+    # with another voice so `regrid`'s compensation can land during a long
+    # voice-0 rest (convert's `regrid_unshare_rest`). Inert without `regrid`.
+    "regrid_unshare_rest",
+    # An INTEGER (rows), not a toggle: where in the looping voice's pattern
+    # `regrid_park`'s pairs sit, as a rotation of the evenly spread rows. The
+    # original's extra frame is a free-running counter and the pairs are
+    # pattern-fixed, so WHICH row they take decides the phase the lengthened
+    # rows land at against the music; measured per song (Star_Paws), no value
+    # for `always`, and the boolean --fidelity walk cannot search it. Inert
+    # without `regrid_park`, and 0 changes no byte anywhere.
+    "regrid_park_shift",
     # Per song and never a default: writes one D0v per subtune carrying the
     # $D418 volume nibble the original holds below $F (`detect.find_master_
     # volume`). Off everywhere until a task adopts it for a measured song
     # (Mega_Apocalypse, Pygmies_Revenge); the read also reaches held DIGI
     # files, which the hold forbids working, so it cannot be an `always` flag.
     "master_volume",
+    # Per song and never a default: reproduces a $D418 volume the player
+    # derives from a voice's orderlist position (`detect.find_master_fade`),
+    # one pattern copy per fading position. Reaches Sanxion.sid alone.
+    "master_fade",
     # Per song and never a default: overrides the `always` block's
     # no_hard_restart for a song whose drum otherwise loses beats to the
     # SID's ADSR delay (Crazy_Comets, heard 2026-10-25). Turning it on for

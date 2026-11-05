@@ -3520,6 +3520,35 @@ file, so not measured further). One_on_One's voice 2 loops 17 rows, which owes
 for Star_Paws (`regrid`, `regrid_park`, with or without `regrid_per_play`) is a
 `presets.json` decision, like `regrid` itself.
 
+**`--regrid-park-shift ROWS` (`regrid_park_shift`) rotates the parked pairs.**
+The park spreads its pairs evenly over the loop, so which rows run long is
+fixed by the loop's length, not by the music. The original's extra frame comes
+off a free-running counter, and on Star_Paws the even rows put the 64/65-frame
+split of the `$0AA9` lead notes (voice 0, 125-144 s) on the wrong notes: the
+instrument's modal held length flips from 64 frames to 32 and `hold` loses it.
+A shift of 16 rows reproduces the original's slot sequence note for note over
+85-165 s; shifts 13-19 all give `hold` 11 of 11, 43-50 give 10, 0 gives 9. A
+static rotation cannot align a free-running counter over the whole song, so the
+value is measured per song. Star_Paws ships `regrid_park` with shift 16,
+measured at aa7614c (`-t 180 --presets --sound`): `aud` .9238 -> .9388, `hold`
+91% -> 100%; `pspan` .9895 -> .9803 and `travel` .4512 -> .4382 fall, and are
+the park's own (identical at shifts 0, 16 and 46). 0 is the even spread, and
+no other file sets it. `tests/test_regrid_park.py` pins it.
+
+**`--regrid-unshare-rest` (`regrid_unshare_rest`) gives voice 0 its own rest.**
+`--regrid` writes only into patterns voice 0 alone plays, so a rest-only pattern
+all three voices open on pays nothing. Nineteen's voice 0 plays shared pattern 0
+(32 rows) for 21 s; the original's 3.0268-frame row accrues about 9 frames in
+that time, ours delivers none, and the next exclusive pattern repays it in one
+24-call burst (attack lag ours-original 6 -> -3 -> +6 frames against one global
+audio lag). The option repoints voice 0's orderlist at a private copy of each
+such rest-only pattern, which the budget can then pay into; the shared one and
+the other voices are untouched, a pattern carrying a note is never copied, and
+`patterns.MAX_PATTERNS` is respected. Nineteen ships it, measured at aa7614c:
+`aud` .8885 -> .8996; the printed `slides`, `bend` and `sync` falls are one
+over-long note now matching the original and one spurious bend removed. Off by
+default and on for Nineteen only; `tests/test_regrid_unshare_rest.py` pins both.
+
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
 perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is
@@ -3589,6 +3618,21 @@ play at this row" has up to 14 answers.
 adopt `--regrid` on a file carrying `--no-test-restart` without tracing that file
 and reading its collapsed surplus.**
 
+
+## `--master-fade` (a volume the orderlist position decides)
+
+Sanxion fades to silence by deriving `$D418` from a voice's orderlist
+position: the player computes the level from the position counter at the row
+fetch, so the fade is a property of *where* the song is, not of any pattern's
+contents. A Goattracker pattern cannot read its position, so the option gives
+each fading position its own pattern copy carrying its own `CMD_SETMASTERVOL`
+(`D0v`) on row 0, so ours steps at the pattern boundary while the original's
+write lags the position change by 0-13 frames. A song without the shape is
+unchanged. Sanxion ships it, measured at aa7614c (`-t 180 --presets --sound`):
+`aud` .8759 -> .8844, `loud` .9048 -> .9312, and the corpus byte-hash with it
+forced moves Sanxion only. Confuzion carries a second spelling of the routine
+(version-5 orderlist) that this option does not read. Off by default and on for
+Sanxion only; `tests/test_master_fade.py` pins both.
 
 ## Per-song presets — `presets.json`
 

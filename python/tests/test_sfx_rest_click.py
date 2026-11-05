@@ -209,7 +209,7 @@ def test_mega_apocalypse_ships_the_envelope_click_in_a_full_wavetable():
     from h2g.goatwriter import sfx_rest_click as S
     doc = json.load(open(PRESETS))
     opts = _preset_opts(doc, "Mega_Apocalypse.sid")
-    assert opts.get("sfx_drum") and not opts.get("rest_envelope_silence")
+    assert opts.get("sfx_drum") and opts.get("rest_envelope_silence")
     song = songview.parse_sng(convert(os.path.join(CORPUS, "Mega_Apocalypse.sid"),
                                       log=lambda m: None, **opts))
     clones = [i for i in song.instruments

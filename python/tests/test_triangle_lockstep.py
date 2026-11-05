@@ -278,7 +278,7 @@ _LIFTED = [
     ("Human_Race.sid", 180, 0, 0, {0: (457, 457), 1: (120, 120)}),
     ("Chimera.sid", 180, 0, 0, {0: (132, 132), 1: (135, 135)}),
     ("Devils_Galop.sid", 180, None, 0, {0: (551, 551), 1: (60, 60), 2: (32, 33)}),
-    ("Monty_on_the_Run.sid", 180, 0, 0, {0: (405, 405), 1: (60, 60), 2: (33, 33)}),
+    ("Monty_on_the_Run.sid", 180, 0, 0, {0: (405, 405), 1: (61, 61), 2: (33, 33)}),
     ("Ninja.sid", 180, None, 0, {0: (93, 93), 1: (28, 28), 2: (102, 102)}),
     # With the decoder's event starts; (144, 225) / (0, 25) by bytes alone.
     ("Thing_on_a_Spring.sid", 180, None, 0,

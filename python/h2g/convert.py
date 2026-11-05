@@ -220,6 +220,30 @@ def _drum_start_group(sid: SidFile, group_tempos, unit_tempos) -> Optional[int]:
     return g
 
 
+def _master_fade_positions(tracks: List[List[int]], fade: tuple,
+                           floor: int) -> List[dict]:
+    """One {position: level} map per track, from `Detection.master_fade`.
+
+    The play routine writes volume = base - position while that is 0..14, on
+    the position array's element for voice `voice`; every subtune's list for
+    that voice shares the variable, so each carries the fade where it is long
+    enough to reach it. Positions are indexes into the flat Hubbard list
+    (version 0: no command bytes before the `$FF` end).
+    """
+    base, voice = fade
+    out: List[dict] = []
+    for ti, track in enumerate(tracks):
+        marks: dict = {}
+        if ti % 3 == voice:
+            for at, b in enumerate(track):
+                if b >= floor:
+                    break
+                if 0 <= base - at <= 14:
+                    marks[at] = base - at
+        out.append(marks)
+    return out
+
+
 def convert(sid_path: str, log: Logger = print,
             max_rows: int = GT_DEFAULT_ROWS,
             terminate_patterns: bool = False,
@@ -276,6 +300,8 @@ def convert(sid_path: str, log: Logger = print,
             regrid_per_play: bool = False,
             regrid_prepay: int = 0,
             regrid_park: bool = False,
+            regrid_unshare_rest: bool = False,
+            regrid_park_shift: int = 0,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
@@ -289,6 +315,7 @@ def convert(sid_path: str, log: Logger = print,
             unison_vibrato_phase: bool = False,
             vibrato_hold: bool = False,
             master_volume: bool = False,
+            master_fade: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
             release_held_stored_wave: bool = False) -> bytes:
@@ -633,6 +660,15 @@ def convert(sid_path: str, log: Logger = print,
     (`patterns.apply_master_volume`). Off by default: it moves the bytes of
     the files whose original holds a lower level, and nothing adopts it yet.
 
+    master_fade reproduces a volume the play routine derives from a voice's
+    orderlist POSITION (`LDA #base / SEC / SBC pos / ... STA $D418`,
+    `Detection.master_fade`; Sanxion's fade to silence over its last 15
+    positions): each of those positions' pattern is copied with its own
+    `D0v` on row 0 (`patterns._apply_orderlist_master_fades`, called from
+    `reindex_tracks` before `pack_repeats`, which would fold the unrolled
+    repeats back). Only for the version-0 orderlist, where the position is
+    the flat index. Off by default: it moves the bytes of the files it reaches.
+
     drum_sustain_gate_off gives a drum-flagged record whose envelope
     sustains the drum shape after all -- the gate-off after the tick and the
     pitch fall -- where v0.5.164's sustaining-record rule held the gate and
@@ -707,6 +743,23 @@ def convert(sid_path: str, log: Logger = print,
     Star_Paws' -12/+1 frame trough goes to -1/+1. Needs `regrid`; inert on a
     song with no such voice (it reaches Star_Paws among the 21 files regrid
     reaches, plus Ricochet). Off by default, per song.
+
+    regrid_park_shift rotates where those pairs sit in the looping voice's
+    pattern, by this many rows (`_regrid_park`). The original's extra frame is
+    a free-running counter, the pairs are pattern-fixed, and WHICH row they
+    take is the phase the long rows land at against the music: Star_Paws'
+    evenly spread rows put them 11 beats off the original's, which flipped a
+    near-tie in the `hold` column's modal note length. Per song, measured
+    (a sweep, not a derivation); 0 = the evenly spread rows. Needs
+    `regrid_park`.
+
+    regrid_unshare_rest gives voice 0 its own copy of every rest-only pattern
+    it shares with another voice, before the budget runs. The compensation is
+    written only into patterns voice 0 alone plays (`exclusive`), so a rest
+    pattern all three voices open on carries none, and a long rest in voice 0
+    accrues the original's fractional row with nothing to pay it (Nineteen:
+    pattern 0, 32 rows, a 21-second rest, the song runs 9 frames early, then a
+    24-call burst in pattern 24). Needs `regrid`. Off by default, per song.
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -963,10 +1016,13 @@ def convert(sid_path: str, log: Logger = print,
     if det.wave_eor is not None and step_clocks:
         det.gate_restarts = _gw_wave_eor.gate_restart_rows(
             tracks, track_index, new_patterns, step_clocks, floor)
+    fades = (_master_fade_positions(tracks, det.master_fade, floor)
+             if master_fade and det.master_fade is not None
+             and det.read_track_version == 0 else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows,
                             tempos=step_tempos, tempo_calls=step_calls,
-                            tempo_clocks=step_clocks)
+                            tempo_clocks=step_clocks, fades=fades)
     if step_tempos:
         n = sum(len(m) for m in step_tempos)
         log(f"Orderlist tempo.........: {n} mid-song tempo change(s) from the "
@@ -1117,7 +1173,9 @@ def convert(sid_path: str, log: Logger = print,
                               multiplier, log, full_debt=regrid_full_debt,
                               per_play=regrid_per_play,
                               prepay=regrid_prepay,
-                              park=regrid_park)
+                              park=regrid_park,
+                              unshare_rest=regrid_unshare_rest,
+                              park_shift=regrid_park_shift)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "

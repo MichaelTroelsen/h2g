@@ -1165,7 +1165,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # and the other two engines have no gate to express (_vibrato_delay).
     if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
         vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log,
-                                         tracks=tracks)
+                                         tracks=tracks, table=table)
+    _gw_note_passes.strip_depth_marks(patterns)
     # The classic engine's age-growing variant, five files: the instrument
     # entry stays the shallow first-frames level and the hold rows carry the
     # swell as `4xy` commands. Behind `vibrato_command` because commands are

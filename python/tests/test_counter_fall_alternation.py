@@ -328,7 +328,7 @@ def test_with_the_alternation_off_mega_converts_as_it_did(monkeypatch):
     # Re-pinned (e6e990305c3b) by the drop of the pulse and filter rows only a
     # dropped record reaches (instrument_drop._drop_dead_blocks).
     # Re-pinned (e7abae0b9f05): the zero-page pulse program (PULSE_PROG_ZP_SHAPE).
-    assert hashlib.sha1(sng).hexdigest()[:12] == "e7abae0b9f05"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "d9a92210717f"
     assert any("not emitted" in m for m in lines), lines
 
 

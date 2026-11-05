@@ -1992,7 +1992,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "master_volume": true
+      "master_volume": true,
+      "rest_envelope_silence": true
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 128,
@@ -2185,6 +2186,7 @@
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true,
+      "regrid_unshare_rest": true,
       "regrid_full_debt": true,
       "regrid_per_play": true,
       "rest_envelope_silence": true
@@ -2621,6 +2623,7 @@
       "rows": 17663,
       "multiplier": 1,
       "two_stage": true,
+      "master_fade": true,
       "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -2885,7 +2888,9 @@
       ],
       "regrid": true,
       "regrid_full_debt": true,
-      "regrid_per_play": true
+      "regrid_per_play": true,
+      "regrid_park": true,
+      "regrid_park_shift": 16
     },
     "Sun_Never_Shines.sid": {
       "max_rows": 94,

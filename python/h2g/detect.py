@@ -512,6 +512,13 @@ class Detection:
     # shape is absent or the level is $F (GoatTracker's own default).
     # `find_master_volume`. Consulted by `master_volume` only.
     master_volume: Optional[int] = None
+    # (base, voice): the play routine derives the $D418 volume from a voice's
+    # orderlist POSITION, `LDA #base / SEC / SBC pos / CMP #$0F / BCS / ORA #$10
+    # / STA $D418`, so volume = base - position for the fifteen positions
+    # base-14..base (a fade to silence). `voice` is `pos`'s index into the
+    # position array the orderlist reader increments. `find_master_fade`.
+    # Consulted by `master_fade` only.
+    master_fade: Optional[Tuple[int, int]] = None
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -2611,6 +2618,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             + (", never reset (free-running)" if f.free_running else ""))
 
     det.master_volume = find_master_volume(sid)
+    det.master_fade = find_master_fade(sid)
     return det
 
 
@@ -2914,6 +2922,38 @@ def find_master_volume(sid: SidFile) -> Optional[int]:
         return None
     level = sid.data[e + 7] & 0x0F
     return None if level == 0x0F else level
+
+
+# The position-driven volume write: `LDA #base; SEC; SBC pos; CMP #$0F; BCS +5;
+# ORA #$10; STA $D418`. Sanxion's `$B0E6` (base $84, pos $B514). Corpus census
+# (2026-11-04): this exact spelling occurs in Sanxion.sid and no other file.
+MASTER_FADE_SHAPE = "A9 ?? 38 ED ?? ?? C9 0F B0 05 09 10 8D 18 D4"
+
+
+def find_master_fade(sid: SidFile) -> Optional[Tuple[int, int]]:
+    """`(base, voice)` of a volume derived from an orderlist position, or None.
+
+    The shape's `SBC abs` names one element of the per-voice position array
+    the orderlist reader steps (`INC array,X`); `voice` is the distance from
+    that array's base. Refused (None) unless exactly one `INC abs,X` names an
+    address within two below the operand, so a variable that is not a
+    position array is not read as one.
+    """
+    data = sid.data
+    e = search_file(data, MASTER_FADE_SHAPE)
+    if e <= -1:
+        return None
+    base = data[e + 1]
+    pos = data[e + 4] | data[e + 5] << 8
+    bases = set()
+    for i in range(len(data) - 2):
+        if data[i] == 0xFE:                       # INC abs,X
+            a = data[i + 1] | data[i + 2] << 8
+            if 0 <= pos - a <= 2:
+                bases.add(a)
+    if len(bases) != 1:
+        return None
+    return base, pos - bases.pop()
 
 
 def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":

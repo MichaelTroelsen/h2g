@@ -101,7 +101,8 @@ def _corpus_ledger(monkeypatch, name):
     import h2g.convert as C
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
-    opts.update(regrid=True, regrid_per_play=True, regrid_prepay=0)
+    opts.update(regrid=True, regrid_per_play=True, regrid_prepay=0,
+                regrid_park=False)      # Star_Paws ships the park; this walk is without it
     seen = {}
     real = C.regrid_tempos
 

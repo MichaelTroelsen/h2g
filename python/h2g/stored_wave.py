@@ -77,6 +77,21 @@ POINTER_STEP = "FE %02X %02X"
 # `landings` value for a pointer cell: (voice k, POINTER_CELL). A wave landing
 # carries a record offset (>= 0) there instead.
 POINTER_CELL = -1
+# The classic note fetch stores the raw note byte with `LDA (zp),Y / STA
+# arr,X / ASL A / TAY`; `NOTE_STORE_SHAPE` is that with `arr` filled in.
+NOTE_STORE_SHAPE = "B1 ?? 9D %02X %02X 0A A8"
+# Files whose `$68` sweep depth has been traced on both sides (an emulated
+# run of the player and a siddump of it): the vibrato step is `(voice 0's
+# note byte << 8 | voice 2's waveform) - (voice 1's waveform << 8 | voice
+# 0's)` shifted, see `sweep_depths`. Commando, Crazy_Comets and Gerry_the_Germ
+# match the same shapes and have NOT been traced; carried there, Gerry_the_Germ's
+# `bend` went 0.44 -> 0.23 and Crazy_Comets' 0.75 -> 0.72 (2026-11-03). Keyed
+# by name like `HELD`, so no other file's bytes move.
+SWEEP_DEPTH_TRACED = frozenset({"Devils Galop", "Monty on the Run"})
+# Quarter-octave steps of extra vibrato depth a $68 sweep may ask for
+# (`sweep_depths`): at most 3 octaves, and at least half an octave.
+MAX_DEPTH_QUARTERS = 12
+MIN_DEPTH_QUARTERS = 2
 
 # The walk runs every subtune for this many times its longest voice's first
 # pass, so every loop phase of the voices against each other is sampled at
@@ -153,6 +168,26 @@ def pointer_landings(sid: SidFile, det: Detection) -> Dict[int, Tuple[int, int]]
     return out
 
 
+def sweep_note_array(sid: SidFile, det: Detection, entry: int,
+                     landings: Dict[int, Tuple[int, int]]) -> Optional[int]:
+    """Address of the note-byte array `entry`'s vibrato depth reads, or None.
+
+    The vibrato depth is `(freq(n + 1) - freq(n)) >> shift` read off the same
+    table with the same unbounded index, so for a byte past the table the
+    NEXT entry is the two bytes after the landing. With the landing on voice
+    0's cell (k = 0) that is voice 2's waveform cell and the byte right after
+    the three cells, which in Devils_Galop/Monty_on_the_Run is the per-voice
+    array `LDA (zp),Y / STA arr,X` stores the raw note byte into. Returns
+    that array's base, only where the store is found; None otherwise.
+    """
+    ft = det.freq_table
+    if ft is None or entry not in landings or landings[entry][0] != 0:
+        return None
+    arr = ft.addr + 2 * entry + 3
+    at = search_file(sid.data, NOTE_STORE_SHAPE % (arr & 0xFF, arr >> 8))
+    return arr if at >= 0 else None
+
+
 def _nearest_entry(table: List[int], freq: int) -> int:
     return min(range(len(table)),
                key=lambda i: abs(log2(max(table[i], 1) / max(freq, 1))))
@@ -173,11 +208,19 @@ def _applicable(sid: SidFile, det: Detection, log=None
 
 def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
           landings: Dict[int, Tuple[int, int]], slides: bool,
-          status_bit6: bool) -> List[tuple]:
+          status_bit6: bool, depth_out: Optional[dict] = None
+          ) -> List[tuple]:
     """Every vote the walk casts, in walk order, as `(group, voice, tick,
     position, entry, ordinal, freq, derived)` -- `position` being the index
     in `tracks[3 * group + voice]` of the orderlist byte that named `entry`.
-    See `stored_wave_notes` for what is walked and how."""
+    See `stored_wave_notes` for what is walked and how.
+
+    `depth_out`, when given a dict, receives `(group, voice, tick) -> mean
+    sweep interval` for every vote whose landing has a note array
+    (`sweep_note_array`): the time-weighted mean over the note's span of
+    `(next entry) - (this entry)`, the 16-bit interval the player's vibrato
+    shifts, with the next entry's bytes being voice 2's waveform cell and
+    voice 0's current note byte."""
     ft = det.freq_table
     data = sid.data
     base = sid.to_offset(ft.addr)
@@ -267,10 +310,22 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
         ptr = [0, 0, 0]
         ended = False
         t = 0
+        # Voice 0's raw note byte as the player's note array holds it, None
+        # until voice 0 has fetched a note; and, per voice sounding a landing
+        # note whose interval is wanted, [key, entry, sum, span].
+        last_note: List[Optional[int]] = [None, None, None]
+        sweeping: Dict[int, list] = {}
         while t < horizon and not ended:
+            # Fetches whose cells were still unknown when they ran: the
+            # player re-reads the note table on every call (the re-assert
+            # and vibrato paths), so they sound what the cells hold once
+            # this tick's stores have run. Resolved after the voice loop.
+            pending: List[tuple] = []
+            landed: List[tuple] = []
             for v in (2, 1, 0):
                 if nxt[v] != t:
                     continue
+                swept = sweeping.get(v)
                 # Skip empty patterns: the player steps the orderlist past
                 # them within the same fetch.
                 guard = 0
@@ -305,12 +360,52 @@ def _walk(sid: SidFile, det: Detection, tracks: List[List[int]],
                         votes.append((g, v, t, places[v][pos[v]], entry,
                                       evi[v], freq,
                                       _nearest_entry(table, freq)))
+                        landed.append((v, k, off, note))
+                    else:
+                        pending.append((v, k, off, places[v][pos[v]], entry,
+                                        evi[v], note))
+                if note is not None:
+                    last_note[v] = note
+                    if swept is not None:
+                        sweeping.pop(v)
+                        if swept[3] and depth_out is not None:
+                            depth_out[swept[0]] = swept[2] / swept[3]
                 if rec is not None:
                     held[v] = rec
                 evi[v] += 1
                 ptr[v] = after if evi[v] < len(events(entry)) else 0
                 nxt[v] = t + wait + 1
-            t = min(nxt)
+            for (v, k, off, place, entry, ordinal, note) in pending:
+                lo = record_byte(held[k], off)
+                hi = record_byte(held[k + 1], off)
+                if lo is not None and hi is not None:
+                    freq = (hi << 8) | lo
+                    votes.append((g, v, t, place, entry, ordinal, freq,
+                                  _nearest_entry(table, freq)))
+                    landed.append((v, k, off, note))
+            if depth_out is not None:
+                for (v, k, off, note) in landed:
+                    if k == 0 and sweep_note_array(sid, det, note,
+                                                   landings) is not None:
+                        sweeping[v] = [(g, v, t), note, 0.0, 0]
+            t_next = min(nxt)
+            for v, rec_s in sweeping.items():
+                k_off = landings[rec_s[1]][1]
+                lo = record_byte(held[0], k_off)
+                hi = record_byte(held[1], k_off)
+                lo2 = record_byte(held[2], k_off)
+                if None in (lo, hi, lo2) or last_note[0] is None:
+                    continue
+                gap = (((last_note[0] << 8) | lo2) - ((hi << 8) | lo)) & 0xFFFF
+                if gap < 0x8000:
+                    dt = min(t_next, horizon) - t
+                    rec_s[2] += gap * dt
+                    rec_s[3] += dt
+            t = t_next
+        if depth_out is not None:
+            for key, _e, acc, span in sweeping.values():
+                if span:
+                    depth_out[key] = acc / span
     return votes
 
 
@@ -379,6 +474,49 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
     return out
 
 
+def sweep_depths(sid: SidFile, det: Detection, votes: List[tuple],
+                 wide: Dict[int, Dict[int, int]], depth_means: dict
+                 ) -> Dict[int, Dict[int, int]]:
+    """{entry: {ordinal: quarter-octaves}}: how much deeper a `$68` note sweeps.
+
+    The player's vibrato depth is `(freq(n + 1) - freq(n)) >> shift`. For a
+    byte past the table `freq(n + 1)` is not the next semitone but
+    `(voice 0's note byte << 8) | voice 2's waveform` against `(voice 1's
+    waveform << 8) | voice 0's`, so the sweep is a multiple of the ordinary
+    interval -- Devils_Galop's opening note sweeps `$4111 + 3 * $02A6` where
+    the table interval at B-5 would give `3 * $007D` (5.4 times). The emitted
+    vibrato is note-relative (`interval(derived note) >> rshift`), so the
+    multiple is carried as `round(4 * log2(mean sweep / table interval))`,
+    between `MIN_DEPTH_QUARTERS` and `MAX_DEPTH_QUARTERS`
+    (`note_passes._wide_entry` turns it into a speed-table entry). The vote
+    taken for the pattern's note (the first one that agrees with `wide`)
+    supplies the mean.
+    """
+    if sid.name not in SWEEP_DEPTH_TRACED:
+        return {}
+    ft = det.freq_table
+    data = sid.data
+    base = sid.to_offset(ft.addr)
+    table = [data[base + 2 * i] | (data[base + 2 * i + 1] << 8)
+             for i in range(ft.length)]
+    out: Dict[int, Dict[int, int]] = {}
+    seen = set()
+    for (g, v, t, _p, e, o, _f, d) in votes:
+        if (e, o) in seen or wide.get(e, {}).get(o) != d:
+            continue
+        mean = depth_means.get((g, v, t))
+        if mean is None or d + 1 >= len(table):
+            continue
+        seen.add((e, o))
+        ordinary = table[d + 1] - table[d]
+        if ordinary <= 0 or mean <= 0:
+            continue
+        quarters = round(4 * log2(mean / ordinary))
+        if quarters >= MIN_DEPTH_QUARTERS:
+            out.setdefault(e, {})[o] = min(quarters, MAX_DEPTH_QUARTERS)
+    return out
+
+
 def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
                        first: int, limit: int, log=None,
                        slides: bool = False, status_bit6: bool = False,
@@ -422,10 +560,13 @@ def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
     (for the patterns' own numbers), `copies` the `(source entry, map)`
     list in copy-number order. `trace` as `stored_wave_notes`.
     """
+    det.stored_wave_depth = {}
     landings = _applicable(sid, det, log)
     if not landings:
         return {}, []
-    votes = _walk(sid, det, tracks, landings, slides, status_bit6)
+    depth_means: dict = {}
+    votes = _walk(sid, det, tracks, landings, slides, status_bit6,
+                  depth_out=depth_means)
     if trace is not None:
         trace.extend((g, v, t, e, o, f, d)
                      for (g, v, t, _p, e, o, f, d) in votes)
@@ -443,6 +584,7 @@ def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
     wide: Dict[int, Dict[int, int]] = {}
     for (e, o), picks in wide_plays.items():
         wide.setdefault(e, {})[o] = _majority(picks)
+    det.stored_wave_depth = sweep_depths(sid, det, votes, wide, depth_means)
 
     # Per entry: each distinct position map, in first-seen order, with its
     # play count and the positions voting for it.

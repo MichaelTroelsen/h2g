@@ -162,6 +162,7 @@ def _star_paws_ledger(monkeypatch, **force):
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, "Star_Paws.sid")
     opts["regrid"] = True
+    opts["regrid_park"] = False         # Star_Paws ships the park; the ledger is measured without it
     opts.update(force)
     seen = {}
     real = C.regrid_tempos

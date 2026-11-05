@@ -132,6 +132,11 @@ def main(argv=None) -> int:
              "partly paid in the patterns before it. The pass as a whole "
              "never over-delivers. 0 = never ahead. Per song")
     parser.add_argument(
+        "--regrid-park-shift", type=int, default=0, metavar="ROWS",
+        help="with --regrid-park, rotate the rows its pairs take by ROWS, "
+             "which moves the phase the lengthened rows land at against the "
+             "music. Measured per song. 0 = the evenly spread rows")
+    parser.add_argument(
         "--regrid-park", action="store_true",
         help="with --regrid, pay the whole calls of the debt through a voice "
              "that loops one pattern forever (compensating pairs in a clone "
@@ -139,11 +144,23 @@ def main(argv=None) -> int:
              "Paws' voice 1 does; a song with no such voice is unchanged. "
              "Per song. Off by default")
     parser.add_argument(
+        "--regrid-unshare-rest", action="store_true",
+        help="with --regrid, give voice 0 its own copy of each rest-only "
+             "pattern it shares with another voice, so the fractional "
+             "row's debt can be paid during a long voice-0 rest. Per song. "
+             "Off by default")
+    parser.add_argument(
         "--master-volume", action="store_true",
         help="write one CMD_SETMASTERVOL (D0v) per subtune for an original "
              "whose player holds $D418's volume below $F, on row 0 of a "
              "voice >= 1 entry pattern. A song whose player sets $F or has "
              "no such shape is unchanged. Per song. Off by default")
+    parser.add_argument(
+        "--master-fade", action="store_true",
+        help="reproduce a $D418 volume the player derives from a voice's "
+             "orderlist position (Sanxion's fade to silence): one pattern "
+             "copy with its own D0v per fading position. A song without "
+             "that shape is unchanged. Per song. Off by default")
     parser.add_argument(
         "--keep-hard-restart", action="store_true",
         help="keep Goattracker's hard restart on every instrument even "
@@ -785,7 +802,9 @@ def main(argv=None) -> int:
                           ("--regrid-full-debt", "regrid_full_debt"),
                           ("--regrid-per-play", "regrid_per_play"),
                           ("--regrid-park", "regrid_park"),
+                          ("--regrid-unshare-rest", "regrid_unshare_rest"),
                           ("--master-volume", "master_volume"),
+                          ("--master-fade", "master_fade"),
                           ("--keep-hard-restart", "keep_hard_restart"),
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
                           ("--release-held-stored-wave",
@@ -845,6 +864,11 @@ def main(argv=None) -> int:
                    else always.get("regrid_prepay"))
             if raw is not None:
                 args.regrid_prepay = int(raw)
+        if not _given("--regrid-park-shift"):
+            raw = (entry["regrid_park_shift"] if "regrid_park_shift" in entry
+                   else always.get("regrid_park_shift"))
+            if raw is not None:
+                args.regrid_park_shift = int(raw)
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
             # always beats the stored preset.
@@ -900,7 +924,10 @@ def main(argv=None) -> int:
                       regrid_per_play=args.regrid_per_play,
                       regrid_prepay=args.regrid_prepay,
                       regrid_park=args.regrid_park,
+                      regrid_unshare_rest=args.regrid_unshare_rest,
+                      regrid_park_shift=args.regrid_park_shift,
                       master_volume=args.master_volume,
+                      master_fade=args.master_fade,
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
                       release_held_stored_wave=args.release_held_stored_wave,

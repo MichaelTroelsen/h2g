@@ -273,7 +273,10 @@ def test_nineteen_every_rest_is_parked_by_pointer_under_the_option():
             else:
                 kinds["other"].append((pn, r // 4))
     assert kinds["other"] == []
-    assert kinds["pointer"] == 41 and kinds["tempo+hold"] == 1
+    # regrid_unshare_rest (on for Nineteen since v0.5.650) pays the regrid
+    # debt inside voice 0's private rest copies, so six more KEYOFF rows
+    # carry a CMD_SETTEMPO ahead of the park pointer.
+    assert kinds["pointer"] == 41 and kinds["tempo+hold"] == 7
 
 
 def test_the_option_off_appends_nothing_and_writes_no_pointer():

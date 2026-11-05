@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.650 — 2026-11-05
+
+- Devils_Galop's $68 sweep depth; five adoptions (Kentilla open cut, Mega_Apocalypse, Nineteen, Sanxion, Star_Paws)
+
 ## 0.5.649 — 2026-11-04
 
 - Thrust's opening vibrato keeps its phase across the KEYOFF (untie_instruments)

@@ -203,4 +203,4 @@ def test_mega_apocalypse_merges_fewer_loops_and_keeps_every_row(monkeypatch):
     # phasers and the rows held for a re-speed included); still no row lost
     # to a full table.
     assert "(29 swing(s) merged" in swell[0], swell
-    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1974", swell
+    assert swell[0].split(":")[1].split(" row(s)")[0].strip() == "1867", swell

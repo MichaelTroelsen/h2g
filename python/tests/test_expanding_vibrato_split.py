@@ -203,7 +203,8 @@ def test_mega_apocalypse_pattern_0f_is_copied_and_commanded():
                 and all(n[i] == 0xBE for i in diff))
     holders = [p for p in song.patterns[16:] if _copy(p)]
     assert holders, "no copy of pattern 15 in the finished song"
-    assert not any(cmds(song.patterns[15]))
+    # rest_envelope_silence puts CMD_SETSR $00 on its KEYOFF rows
+    assert CMD_SETWAVEPTR not in cmds(song.patterns[15])
     assert max(cmds(p).count(CMD_SETWAVEPTR) for p in holders) >= 20
 
 
@@ -374,4 +375,4 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     # Re-pinned (c909ffb6b436) by the drop of the pulse and filter rows only a
     # dropped record reaches (instrument_drop._drop_dead_blocks).
     # Re-pinned (744d1772f0c7): the zero-page pulse program (PULSE_PROG_ZP_SHAPE).
-    assert hashlib.sha1(sng).hexdigest()[:12] == "744d1772f0c7"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "2cd88b291cc9"

@@ -1327,9 +1327,50 @@ def _free_note_variants(patterns: List[List[int]], rows: set,
     return out, variants, declined
 
 
+def _wide_entry(entry: tuple, quarters: int) -> tuple:
+    """`entry` (a note-relative `(0x80 | cmp, rshift)`) made `quarters`
+    quarter-octaves deeper: the whole octaves come off the shift, and the
+    remainder scales the swing `(cmp + 2) * speed` through `cmp`.
+
+    The swing of a note-relative vibrato is `(cmp + 2) * (interval >> rshift)`
+    and Goattracker can only halve the interval, so a factor between two
+    powers of two is split: shift for the octaves, and `cmp + 2` for the rest
+    of the factor (in `[1, 2)`). That costs the period the same factor
+    -- `2 * cmp + 4` calls -- which the instrument entry had matched to the
+    original's, and is the price of the amplitude; the other split, up to the
+    next octave and a shorter `cmp`, would cost the period the same in the
+    other direction.
+    """
+    left, right = entry
+    cmp_value = left & 0x7F
+    scaled = round((cmp_value + 2) * 2 ** ((quarters % 4) / 4)) - 2
+    return ((left & 0x80) | min(0x7F, max(0, scaled)),
+            max(0, right - quarters // 4))
+
+
+def _depth_mark() -> int:
+    from ..patterns import STORED_DEPTH_MARK
+    return STORED_DEPTH_MARK
+
+
+def strip_depth_marks(patterns: List[List[int]]) -> int:
+    """Clear every `patterns.STORED_DEPTH_MARK` row `_vibrato_command_pass`
+    did not consume: the decoder marks a `$68` note's rows whatever the
+    options, and the mark is no command Goattracker can run."""
+    from ..patterns import STORED_DEPTH_MARK
+    n = 0
+    for pat in patterns:
+        for i in range(0, len(pat) - 3, 4):
+            if pat[i + 2] == CMD_VIBRATO and pat[i + 3] >= STORED_DEPTH_MARK:
+                pat[i + 2] = pat[i + 3] = 0
+                n += 1
+    return n
+
+
 def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                           vib_ptrs: dict, lead: int, log=None,
-                          tracks: Optional[List[List[int]]] = None) -> dict:
+                          tracks: Optional[List[List[int]]] = None,
+                          table: Optional[List[tuple]] = None) -> dict:
     """Move the global-triangle dialect's vibrato from the instrument to the
     pattern rows, which is the only way to express its per-note length gate.
 
@@ -1458,6 +1499,9 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
     by_slot = {rec + 1 + lead: idx for rec, (idx, _delay) in vib_ptrs.items()}
     placed = damped = busy = unknown = plain = plain_short = 0
     entry = _entry_instruments(tracks, patterns) if tracks else {}
+    # Pattern number -> the wide-vibrato index its last block hands on
+    # (see the stale-note extension below).
+    carry: dict = {}
     for pn, pat in enumerate(patterns):
         held = entry.get(pn, set())
         live = next(iter(held)) if len(held) == 1 else 0
@@ -1480,9 +1524,23 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                         or (pat[end + 1] == live
                             and pat[end + 2] == CMD_SETSR))):
                 end += 4
+            # A `$68` note's mark (`stored_wave.sweep_depths`): the
+            # quarter-octaves its sweep is wider than the table interval.
+            # Taken off the note's first hold row here; the entry is
+            # derived below.
+            extra = 0
+            if (end > i + 4 and pat[i + 6] == CMD_VIBRATO
+                    and pat[i + 7] >= _depth_mark()):
+                extra = pat[i + 7] - _depth_mark()
+                pat[i + 6] = pat[i + 7] = 0
             index = 0
             if (end - i) // 4 > gate:
                 index = by_slot.get(live, -1)
+                if extra and index > 0 and table is not None:
+                    wide = _wide_entry(table[index - 1], extra)
+                    if wide not in table:
+                        table.append(wide)
+                    index = table.index(wide) + 1
             elif live and live not in by_slot:
                 # A short note on a KNOWN instrument with no vibrato record:
                 # the instrument's own pointer is 0, so the player's
@@ -1515,7 +1573,44 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                     placed += 1
                 else:
                     damped += 1
+                if extra and index > 0:
+                    # The player keeps the note byte the sweep reads
+                    # (`$1767,X`) through the bit-6 events that follow, so
+                    # the wide vibrato runs on until the next note.
+                    while (end + 3 < len(pat)
+                           and not GT_FIRST_NOTE <= pat[end] <= GT_LAST_NOTE):
+                        if pat[end + 2] == 0:
+                            pat[end + 2] = CMD_VIBRATO
+                            pat[end + 3] = index
+                        end += 4
+                    if end + 3 >= len(pat):
+                        carry[pn] = index
             i = end
+    if carry and tracks:
+        # A pattern split at the row limit continues the stale-note
+        # sweep: its leading rows up to the first note take the index when
+        # EVERY pattern that can precede it hands the same one on.
+        succ = _pattern_successors(tracks, len(patterns))
+        pred: dict = {}
+        for a, bs in succ.items():
+            for b in bs:
+                pred.setdefault(b, set()).add(a)
+        work = list(carry)
+        while work:
+            pn = work.pop()
+            for nx in succ.get(pn, ()):
+                if nx in carry or {carry.get(p) for p in pred[nx]} !=                         {carry[pn]}:
+                    continue
+                pat, r = patterns[nx], 0
+                while (r + 3 < len(pat)
+                       and not GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE):
+                    if pat[r + 2] == 0:
+                        pat[r + 2] = CMD_VIBRATO
+                        pat[r + 3] = carry[pn]
+                    r += 4
+                if r + 3 >= len(pat):
+                    carry[nx] = carry[pn]
+                    work.append(nx)
     if log and (placed or damped):
         log(f"Vibrato command.........: {placed} note(s) vibrated, "
             f"{damped} damped by length"

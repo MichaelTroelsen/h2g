@@ -43,6 +43,7 @@ GT_MAX_PATTERN_LEN = GT_DEFAULT_ROWS * 4  # 376 bytes
 # Silencing a voice is $BE, which clears cptr->gate.
 GT_NO_NOTE = 0xBD
 GT_KEYOFF = 0xBE
+GT_REST = 0xBD
 
 # **Which commands survive into a hold row.** An event with wait W occupies
 # W+1 rows, and a Goattracker command byte is executed on the row it appears
@@ -80,6 +81,12 @@ REST_SILENT_WAVE = 0x08
 # the right spelling for a rest that hard-silences: see
 # detect._find_rest_silence_envelope.
 CMD_SETSR = 6
+# A `$68` note past the table sweeps wider than the table's own interval
+# (`stored_wave.sweep_depths`). The decoder marks its rows with
+# `CMD_VIBRATO, STORED_DEPTH_MARK + quarter-octaves` on the note's own row;
+# `_vibrato_command_pass` turns the mark into a speed-table index and
+# `strip_depth_marks` removes what it left. A real index never reaches it.
+STORED_DEPTH_MARK = 0xE0
 # gcommon.h:9, the other half of the pair. Emitted only on a bit-6 rest's
 # first hold row -- see decode_entry for why the delay is inaudible.
 CMD_SETAD = 5
@@ -725,7 +732,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        gate_clear_records: frozenset = frozenset(),
                        legato_bit7: bool = False,
                        top_rows: Optional[Dict[int, int]] = None,
-                       event_span: Optional[List[tuple]] = None
+                       event_span: Optional[List[tuple]] = None,
+                       wave_depth: Optional[Dict[int, int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -1676,6 +1684,13 @@ def _build_raw_pattern(data: bytes, addr: int,
             free_rows.append(len(events) // 4)
         if event_rows is not None:
             event_rows.append(len(events) // 4)
+        # The mark sits on the note's FIRST HOLD row alone: row 0 is where
+        # the pulse-phase and tempo passes look for a free command column,
+        # and the later hold rows are where the envelope passes write.
+        if (wave_depth and ordinal in wave_depth and cmd1 == 0 and wait
+                and not hold_cmds and not past_rest
+                and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
+            hold_cmds = [(4, STORED_DEPTH_MARK + wave_depth[ordinal])]
         events += [g_note, g_instrument, *(row0_cmd or (cmd1, cmd2))]
         if event_log is not None:
             event_log.append((wait, log_record, log_entry))
@@ -2791,7 +2806,10 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                                                   if tie else frozenset()),
                               legato_bit7=det.counter_fall is not None,
                               top_rows=top_rows,
-                              event_span=event_span)
+                              event_span=event_span,
+                              wave_depth=((getattr(det, "stored_wave_depth",
+                                                   None) or {}).get(i)
+                                          if wave_notes else None))
 
 
 def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
@@ -4178,8 +4196,42 @@ def _loop_pattern(track: List[int]) -> int | None:
     return body[i]
 
 
+def _rotate_park_spots(pattern: List[int], spots, shift: int, rows: int):
+    """`_regrid_spots`' rows moved `shift` rows on, round the usable rows.
+
+    **WHICH ROW A PARKED PAIR TAKES IS A PHASE, NOT A DETAIL.** The pairs of a
+    looping voice fire once per loop at fixed rows; the original's extra frame
+    comes off a free-running counter. Evenly spread rows put Star_Paws' long
+    rows 11 beats from the original's (`star-paws-regrid-park-hold`), so the
+    64/65-frame split of its voice-0 lead notes fell the wrong way round and
+    the modal length `hold` reads flipped to the 32-frame notes. Rotating the
+    spread rows is the one free parameter; it is measured per song.
+
+    The usable rows are 1..rows-3 (row 0 is the clock, the restore may not be
+    the end marker). A rotated row that cannot take a pair goes to the nearest
+    that can (`_shifted_regrid_spot`), and one that would crowd another pair
+    is dropped, so the written count never exceeds `spots`'. Same shape as
+    `_regrid_spots`' `placed`: `(row, shifted)`.
+    """
+    span = rows - 3
+    out: List[int] = []
+    for r, _moved in spots:
+        want = (r - 1 + shift) % span + 1
+        if not (pattern[want * 4 + 2] == 0
+                and pattern[(want + 1) * 4 + 2] == 0
+                and not _inherits_continuous_effect(pattern, want)):
+            want = _shifted_regrid_spot(pattern, want, rows)
+            if want is None:
+                continue
+        if any(abs(want - o) < 2 for o in out):
+            continue
+        out.append(want)
+    return [(r, True) for r in out]
+
+
 def _regrid_park(patterns: List[List[int]], tracks: List[List[int]], k: int,
-                 base: int, d: float, multiplier: int) -> tuple:
+                 base: int, d: float, multiplier: int,
+                 shift: int = 0) -> tuple:
     """Pay the whole-call part of subtune `k`'s debt through ANOTHER VOICE.
 
     `CMD_SETTEMPO` under `$80` lengthens a row for all three channels, so a
@@ -4212,6 +4264,8 @@ def _regrid_park(patterns: List[List[int]], tracks: List[List[int]], k: int,
         if n < 1:
             continue
         spots = _regrid_spots(patterns[p], n, rows)[0]
+        if shift and spots:
+            spots = _rotate_park_spots(patterns[p], spots, shift, rows)
         if spots and (best is None or len(spots) > len(best[3])):
             best = (ti, p, rows, spots)
     if best is None or len(patterns) >= MAX_PATTERNS:
@@ -4228,11 +4282,78 @@ def _regrid_park(patterns: List[List[int]], tracks: List[List[int]], k: int,
     return d - len(spots) / rows / multiplier, len(spots)
 
 
+def _is_rest_only(pattern: List[int]) -> bool:
+    """Every row before the end marker is a rest or key-off with no
+    instrument: the pattern a voice plays while it is silent."""
+    for r in range(len(pattern) // 4):
+        note, instr = pattern[r * 4], pattern[r * 4 + 1]
+        if note == GT_END_PATTERN:
+            return r > 0
+        if note not in (GT_REST, GT_KEYOFF) or instr:
+            return False
+    return False
+
+
+def _regrid_unshare_rest(patterns: List[List[int]], tracks: List[List[int]],
+                         groups: int) -> int:
+    """Give voice 0 of each subtune a private copy of a REST-ONLY pattern it
+    shares with another voice (or subtune), so `regrid_tempos` can pay into it.
+
+    `exclusive` admits only patterns voice 0 alone plays, because a pair
+    written into a shared pattern fires once per voice. A rest pattern the
+    three voices all open on is therefore never exclusive, and a long rest in
+    voice 0 raises the fractional row's debt with nothing allowed to pay it
+    (Nineteen's pattern 0: 32 rows played 31 times by voice 0, also by voices
+    1 and 2). The copy is made only for the rest-only case, where it can add
+    no sound; a note-bearing shared pattern is left to the budget's carry.
+    A copy that nothing then writes into is identical to its original, so it
+    is not made when the pattern budget is spent. Returns copies made.
+    """
+    made = 0
+    for k in range(groups):
+        ti = 3 * k
+        if ti >= len(tracks):
+            continue
+        users: dict = {}
+        for tj, track in enumerate(tracks):
+            operand = False
+            for entry in track:
+                if operand:
+                    operand = False
+                elif entry == GT_ORDER_RESTART:
+                    operand = True
+                elif entry < GT_COMMAND_FLOOR:
+                    users.setdefault(entry, set()).add(tj)
+        track = tracks[ti]
+        operand = False
+        for i, entry in enumerate(track):
+            if operand:
+                operand = False
+            elif entry == GT_ORDER_RESTART:
+                operand = True
+            elif (entry < GT_COMMAND_FLOOR and entry < len(patterns)
+                  and users.get(entry) != {ti}
+                  and _is_rest_only(patterns[entry])):
+                if len(patterns) >= MAX_PATTERNS:
+                    continue
+                # ONE COPY PER ORDERLIST ENTRY, not per pattern: the per-play
+                # ledger lets a pattern's count rise only to what the ledger
+                # affords at EVERY play from its first, so a copy played at
+                # the start of the song (no debt yet) and again 100 s later
+                # could buy nothing at all.
+                patterns.append(list(patterns[entry]))
+                track[i] = len(patterns) - 1
+                made += 1
+    return made
+
+
 def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                   bases: List[int], deficits: List[float],
                   multiplier: int = 1, log=None,
                   full_debt: bool = False, per_play: bool = False,
-                  prepay: int = 0, park: bool = False) -> int:
+                  prepay: int = 0, park: bool = False,
+                  unshare_rest: bool = False,
+                  park_shift: int = 0) -> int:
     """Spend the fractional part of a row the tempo cannot express.
 
     A Goattracker row is a whole number of play calls, so a player whose row
@@ -4463,7 +4584,8 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     trace-free proxy exists.
 
     **`park` PAYS THE WHOLE CALLS THROUGH A LOOPING VOICE** (convert's
-    `regrid_park`; off, every byte above is unchanged). A voice whose orderlist
+    `regrid_park`; off, every byte above is unchanged; `park_shift` rotates the
+    rows its pairs take, see `_rotate_park_spots`). A voice whose orderlist
     is one pattern looped forever fires a pair in it once per loop, so it pays
     a steady `n / L` calls a row whatever voice 0 is playing; `_regrid_park`
     clones the pattern for that track and the budget above sees only what is
@@ -4519,6 +4641,8 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     # `regrid-over-supplies-a-subtune-whose-exclusive-patterns-replay`.
     # `tests/test_regrid.py` carries an xfail(strict=True) for the correct
     # behaviour, so whoever fixes it is told to drop the marker.
+    if unshare_rest:
+        _regrid_unshare_rest(patterns, tracks, groups)
     reach: dict = {}
     where: dict = {}
     plays: dict = {}
@@ -4556,7 +4680,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
             # The whole calls a looping voice can carry, before voice 0 is
             # asked for any; see `_regrid_park`.
             d, n_parked = _regrid_park(patterns, tracks, k, base, d,
-                                       multiplier)
+                                       multiplier, park_shift)
             parked += n_parked
             if d <= 0:
                 continue
@@ -5835,6 +5959,59 @@ def _apply_orderlist_tempos(new_track: List[int], moved: dict,
                 break
             copy = list(pattern)
             copy[2], copy[3] = CMD_SETTEMPO, value
+            copies[key] = len(patterns)
+            patterns.append(copy)
+        new_track[i] = copies[key]
+        written += 1
+    return written
+
+
+def _apply_orderlist_master_fades(new_track: List[int], moved: dict,
+                                  fades: dict, patterns: List[List[int]],
+                                  copies: dict, log=None) -> int:
+    """Write each position's master volume into a copy of the pattern it lands on.
+
+    The same trick as `_apply_orderlist_tempos`, for a player whose `$D418`
+    volume is a function of the voice's orderlist POSITION (`detect.
+    find_master_fade`; Sanxion's fade to silence): `fades` maps a position to
+    the level (0-14) the original holds while that position plays. A repeat
+    of one pattern is several positions, so each is a copy of its own, and
+    `pack_repeats` cannot fold them back (the copies are distinct numbers).
+    Copies are shared between steps asking for the same (pattern, level).
+
+    Row 0's command column, or the step is skipped and logged: a command this
+    converter emitted keeps its column. Returns how many were written.
+    """
+    written = 0
+    for at in sorted(fades):
+        level = fades[at]
+        i = moved.get(at)
+        if i is None or i >= len(new_track):
+            continue
+        entry = new_track[i]
+        if entry >= MAX_PATTERNS or entry >= len(patterns):
+            continue
+        pattern = patterns[entry]
+        if len(pattern) < 4:
+            continue
+        if pattern[2] == CMD_SETMASTERVOL and pattern[3] == level:
+            written += 1
+            continue
+        if pattern[2] != 0:
+            if log:
+                log(f"*** MASTER FADE D0{level:X} AT STEP {at} FALLS ON "
+                    f"PATTERN ${entry:X} ROW 0, WHOSE COMMAND COLUMN IS "
+                    "TAKEN -- NOT WRITTEN ***")
+            continue
+        key = (entry, level)
+        if key not in copies:
+            if len(patterns) >= MAX_PATTERNS:
+                if log:
+                    log("*** NO ROOM FOR A MASTER-FADE PATTERN COPY (AT "
+                        f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                break
+            copy = list(pattern)
+            copy[2], copy[3] = CMD_SETMASTERVOL, level
             copies[key] = len(patterns)
             patterns.append(copy)
         new_track[i] = copies[key]
@@ -7345,7 +7522,8 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    max_rows: int = GT_DEFAULT_ROWS,
                    tempos: Optional[List[dict]] = None,
                    tempo_calls: Optional[List[dict]] = None,
-                   tempo_clocks: Optional[List[dict]] = None
+                   tempo_clocks: Optional[List[dict]] = None,
+                   fades: Optional[List[dict]] = None
                    ) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
@@ -7379,6 +7557,7 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     tempo_copies: dict = {}     # (pattern, value) -> the copy carrying it
     fraction_copies: dict = {}  # see _compensate_fractional_rows
     tie_copies: dict = {}       # pattern -> the copy whose row 0 is tied
+    fade_copies: dict = {}      # (pattern, level) -> the copy carrying D0level
     # Present only on a TrackIndex, which is what convert_patterns returns; a
     # hand-built list simply gets no boundary ties.
     exits_tied = getattr(track_index, "exits_tied", None)
@@ -7463,6 +7642,16 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 and prev_ref is not None and prev_ref < len(exits_tied)):
             _apply_wrap_tie(new_track, patterns, tie_copies,
                             bool(exits_tied[prev_ref]), ti % 3 == 0, log)
+        # A position-driven master volume (`fades`, one {position: level} map
+        # per track): after the passes whose copies own row 0 for their own
+        # reasons (a step that is also a tempo keeps the tempo), before
+        # `pack_repeats`, which would fold the unrolled steps into one repeat.
+        if fades and ti < len(fades) and fades[ti] and patterns is not None:
+            n = _apply_orderlist_master_fades(new_track, moved, fades[ti],
+                                              patterns, fade_copies, log)
+            if log:
+                log(f"Master fade.............: track {ti}: {n} of "
+                    f"{len(fades[ti])} position(s) carry D0v")
         packed = pack_repeats(new_track) if pack else new_track
         # Merging is attempted only for a track that would otherwise cost its
         # subtune, so no track that already fits is rewritten and the fixture

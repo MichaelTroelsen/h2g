@@ -332,7 +332,7 @@ def test_the_last_v8s_skydive_fits_compact_without_sharing_any_tail(name,
     # 2 merged before the swell's phase plan (`goatwriter.swell_phase`),
     # whose phasers and prefixes take blocks of their own: 19 since.
     ("Mega_Apocalypse", "4 record(s)", "20 of 117 rows freed",
-     ("Expanding vibrato loops", "(19 swing(s) merged")),
+     ("Expanding vibrato loops", "(18 swing(s) merged")),
 ])
 def test_the_rows_it_frees_are_spent_by_the_passes_that_were_short(
         name, dead, freed, then):

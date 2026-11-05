@@ -469,7 +469,7 @@ def test_the_640_row_notes_first_hold_needs_its_repeats_unrolled(monkeypatch):
     said = [m for m in lines if m.startswith("Counter fall (bit $02)..:")
             and "row(s)" in m][0]
     # (28 before the 1920-frame note's final hold, which points 255 more rows)
-    assert "31 rows the visits disagree on" in said, said
+    assert "29 rows the visits disagree on" in said, said
     assert "1 lap-end hold program(s)" in said      # the two shorter notes'
 
 

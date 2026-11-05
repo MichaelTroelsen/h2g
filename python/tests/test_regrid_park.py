@@ -18,7 +18,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from corpus import CORPUS, needs_corpus                      # noqa: E402
 from h2g.goatwriter import CMD_SETTEMPO                      # noqa: E402
 from h2g.patterns import (GT_END_PATTERN, MAX_PATTERNS,      # noqa: E402
-                          _loop_pattern, _regrid_park, regrid_tempos)
+                          _loop_pattern, _regrid_park, _rotate_park_spots,
+                          regrid_tempos)
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -190,17 +191,23 @@ def test_preset_opts_hands_the_toggle_through_and_no_song_adopts_it():
                                  "X.sid")["regrid_park"] is False
     shipped = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     assert not shipped["always"].get("regrid_park")
-    assert not any(e.get("regrid_park") for e in shipped["songs"].values())
+    # Star_Paws adopts it (star-paws-aud-dip-103: its tempo drift of 85-165 s
+    # is the unpaid trough); Ricochet, the other file it reaches, is held.
+    assert [n for n, e in shipped["songs"].items()
+            if e.get("regrid_park")] == ["Star_Paws.sid"]
 
 
 # --- Star_Paws: the file that found it -------------------------------------
 
-def _star_paws(monkeypatch, **force):
+def _star_paws(monkeypatch, shipped=False, **force):
     import fidelity
     import h2g.convert as C
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, "Star_Paws.sid")
     opts.update(regrid=True, regrid_per_play=True)
+    if not shipped:             # the park is shipped on Star_Paws now; these
+        opts["regrid_park"] = False     # tests measure it against its absence,
+        opts["regrid_park_shift"] = 0   # at the evenly spread rows
     opts.update(force)
     seen = {}
     real = regrid_tempos        # not C's: an earlier call's spy is in its place
@@ -266,3 +273,119 @@ def test_star_paws_voice_0_owes_the_remainder_only(monkeypatch):
 
     assert delivered(plain) > 140            # 147.28 calls a pass owed
     assert delivered(parked) < 10            # 3.4 left after voice 1's 2 pairs
+
+
+@needs_corpus
+def test_star_paws_ships_the_park_and_it_is_what_closes_the_trough(monkeypatch):
+    """The shipped entry, nothing forced. star-paws-aud-dip-103: with the park
+    off, voice 0 alone owes a trough below -20 calls, the converted clock runs
+    1 frame per 129 early over 85-123 s and `aud` dips to .89 for 80 s; with it
+    on the ledger stays within 4 calls of zero. Short-circuit the preset key
+    (or `regrid_park`'s effect in `regrid_tempos`) and both asserts fail."""
+    shipped = _star_paws(monkeypatch, shipped=True)
+    off = _star_paws(monkeypatch)
+    assert len(shipped["out"]) == len(off["out"]) + 1
+    assert min(_ledger(off)) < -20
+    led = _ledger(shipped)
+    assert min(led) > -4 and max(led) < 4, (min(led), max(led))
+
+
+# --- regrid_park_shift: WHICH row the pairs take is a phase -------------------
+
+def _ups_rows(pat, base):
+    return [r for r in range(len(pat) // 4)
+            if pat[r * 4 + 2] == CMD_SETTEMPO and pat[r * 4 + 3] == base + 1]
+
+
+def test_a_rotation_moves_every_spot_round_the_usable_rows():
+    pat = _pattern(64)                       # 65 rows with the end row; usable 1..62
+    spots = [(22, False), (43, False)]
+    assert _rotate_park_spots(pat, spots, 0 + 62, 65) == [(22, True), (43, True)]
+    assert _rotate_park_spots(pat, spots, 10, 65) == [(32, True), (53, True)]
+    assert _rotate_park_spots(pat, spots, 46, 65) == [(6, True), (27, True)]
+
+
+def test_a_rotated_spot_on_a_command_goes_to_the_nearest_free_pair():
+    pat = _pattern(64)
+    pat[6 * 4 + 2] = 0x01                    # a slide on row 6
+    got = _rotate_park_spots(pat, [(22, False), (43, False)], 46, 65)
+    assert got[1] == (27, True)
+    assert got[0][0] in (4, 5, 8)            # not 6, and not the pair 5->6
+    assert got[0][0] != 6 and pat[got[0][0] * 4 + 2] == 0
+    assert pat[(got[0][0] + 1) * 4 + 2] == 0
+
+
+def test_a_rotation_that_crowds_two_pairs_keeps_one():
+    pat = _pattern(64)
+    got = _rotate_park_spots(pat, [(10, False), (11, False)], 5, 65)
+    assert len(got) == 1
+
+
+def test_the_shift_reaches_the_pattern_the_loop_clone_carries():
+    pats, tracks = _case()
+    plain, shifted = copy.deepcopy(pats), copy.deepcopy(pats)
+    for p, shift in ((plain, 0), (shifted, 10)):
+        _regrid_park(p, copy.deepcopy(tracks), 0, 4, 0.0625, 1, shift)
+    a, b = plain[-1], shifted[-1]
+    assert _ups(a, 4) == _ups(b, 4) >= 1
+    assert _ups_rows(a, 4) != _ups_rows(b, 4)
+    assert [(r + 10 - 1) % 62 + 1 for r in _ups_rows(a, 4)] == _ups_rows(b, 4)
+
+
+def test_the_command_line_and_a_preset_entry_both_carry_the_shift(tmp_path,
+                                                                  monkeypatch):
+    import h2g.cli as cli
+    seen = {}
+
+    def fake(path, log=None, **kw):
+        seen.clear()
+        seen.update(kw)
+        return b"x"
+
+    monkeypatch.setattr(cli, "convert", fake)
+    out = tmp_path / "o.sng"
+    sid = str(ROOT / "Commando.sid")
+    cli.main([sid, "-o", str(out), "-q", "--regrid", "--regrid-park",
+              "--regrid-park-shift", "7"])
+    assert seen["regrid_park_shift"] == 7
+    cli.main([sid, "-o", str(out), "-q"])
+    assert seen["regrid_park_shift"] == 0
+    presets = tmp_path / "p.json"
+    presets.write_text(json.dumps({"always": {}, "songs": {
+        "Commando.sid": {"regrid": True, "regrid_park": True,
+                         "regrid_park_shift": 9}}}))
+    cli.main([sid, "-o", str(out), "-q", "--presets", str(presets)])
+    assert seen["regrid_park_shift"] == 9
+    import fidelity
+    doc = json.loads(presets.read_text())
+    assert fidelity._preset_opts(doc, "Commando.sid")["regrid_park_shift"] == 9
+
+
+def test_it_is_inert_without_the_park():
+    from h2g.convert import convert
+    assert (convert(str(ROOT / "Commando.sid"), log=lambda m: None,
+                    regrid=True, regrid_park_shift=17)
+            == convert(str(ROOT / "Commando.sid"), log=lambda m: None,
+                       regrid=True))
+
+
+@needs_corpus
+def test_star_paws_ships_a_shifted_park_and_the_pairs_sit_on_the_rotated_rows(
+        monkeypatch):
+    """star-paws-regrid-park-hold: the evenly spread rows (22, 43) put the
+    lengthened rows off the original's phase, so the 64/65-frame split of its
+    voice-0 lead ($0AA9) fell the wrong way round, its modal length flipped
+    64 -> 32 frames and `hold` lost an instrument (10 -> 9 of 11). Rows
+    (38, 59) -- shift 16 -- reproduce the original's slot sequence
+    [65 64 33 32 64] note for note over 85-165 s: `hold` 10 -> 11 of 11 at
+    `aud` .9388 (park alone .9404). Short-circuit the rotation
+    (`_rotate_park_spots` returning its input) or drop the preset key and the
+    first assert fails."""
+    shipped = _star_paws(monkeypatch, shipped=True)
+    plain = _star_paws(monkeypatch, regrid_park=True)
+    new = len(shipped["out"]) - 1
+    assert _ups_rows(plain["out"][new], plain["base"]) == [22, 43]
+    assert _ups_rows(shipped["out"][new], shipped["base"]) == [38, 59]
+    assert shipped["tracks"][1][1] == new
+    doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
+    assert doc["songs"]["Star_Paws.sid"]["regrid_park_shift"] == 16

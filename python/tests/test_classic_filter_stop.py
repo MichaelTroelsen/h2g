@@ -205,7 +205,9 @@ def test_sanxions_stops_are_all_placed_and_none_dropped():
     lines = []
     _convert("Sanxion", lines.append)
     said = [m for m in lines if m.startswith("Classic filter stop")]
-    assert any("223 placed" in m for m in said), said
+    # master_fade (on for Sanxion since v0.5.650) copies a fading pattern,
+    # and the copy carries one more stop: 224 wanted, 224 placed.
+    assert any("224 placed" in m for m in said), said
     assert not any("DROPPED" in m for m in said), said
 
 
