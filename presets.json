@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.650 presets.py",
+  "generator": "h2g 0.5.651 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -556,7 +556,6 @@
       "rows": 15886,
       "multiplier": 1,
       "force_park": true,
-      "master_fade": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -621,6 +620,7 @@
         61,
         62
       ],
+      "master_fade": true,
       "pulse_phase": true
     },
     "Crazy_Comets.sid": {
