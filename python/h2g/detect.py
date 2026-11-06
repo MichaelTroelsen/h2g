@@ -519,6 +519,15 @@ class Detection:
     # position array the orderlist reader increments. `find_master_fade`.
     # Consulted by `master_fade` only.
     master_fade: Optional[Tuple[int, int]] = None
+    # True when the volume write sits inside the row fetch (the second
+    # spelling, `MASTER_FADE_SHAPE_FETCH`): it runs only on a row carrying an
+    # instrument byte, so a position whose rows carry none never writes.
+    master_fade_fetch: bool = False
+    # True when the tune's END routine writes `$D418` = 0 (`LDA #0; STA flag;
+    # STA $D418; CLI`, Confuzion `$08B9`, reached when the track reader meets
+    # the end of the orderlists): the original goes silent by that write, not
+    # by any note. `TUNE_END_VOLUME_SHAPE`. Consulted by `master_fade` only.
+    tune_end_volume: bool = False
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -2619,6 +2628,9 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     det.master_volume = find_master_volume(sid)
     det.master_fade = find_master_fade(sid)
+    det.master_fade_fetch = (det.master_fade is not None
+                             and master_fade_is_fetch(sid))
+    det.tune_end_volume = search_file(sid.data, TUNE_END_VOLUME_SHAPE) > -1
     return det
 
 
@@ -2928,6 +2940,25 @@ def find_master_volume(sid: SidFile) -> Optional[int]:
 # ORA #$10; STA $D418`. Sanxion's `$B0E6` (base $84, pos $B514). Corpus census
 # (2026-11-04): this exact spelling occurs in Sanxion.sid and no other file.
 MASTER_FADE_SHAPE = "A9 ?? 38 ED ?? ?? C9 0F B0 05 09 10 8D 18 D4"
+# The second spelling: the clamp is `BCC +2 / LDA #$0F` and the write sits inside
+# the row fetch (Confuzion `$0956`, base $A0, pos $0BC2), so it fires only on a
+# row carrying an instrument byte (bit 7), not every frame.
+MASTER_FADE_SHAPE_FETCH = "A9 ?? 38 ED ?? ?? C9 0F 90 02 A9 0F 8D 18 D4"
+# The tune-end volume write: `LDA #$00 / STA flag / STA $D418 / CLI`. Dynamic
+# census (siddump with a PC hook on every `$D418` store, all 95 files, every
+# subtune, 600 s; 2026-11-06): a `$D418` low nibble of 0 written after the
+# first frames by an explicit-zero routine occurs in Confuzion.sid (`$08BF`,
+# once, call 15650) and Up_up_and_Away.sid (`$C79D`, a different spelling:
+# it ends in RTS, and that file is refused as no Hubbard player). The fade
+# files (Chain_Reaction, Master_of_Magic, Spellbound, Thing_on_a_Spring, Zoids,
+# Zoolook, Sanxion) reach 0 through the position/level formula, not here.
+TUNE_END_VOLUME_SHAPE = "A9 00 8D ?? ?? 8D 18 D4 58"
+
+
+def master_fade_is_fetch(sid: SidFile) -> bool:
+    """True when `find_master_fade` matched the row-fetch spelling."""
+    return (search_file(sid.data, MASTER_FADE_SHAPE) <= -1
+            and search_file(sid.data, MASTER_FADE_SHAPE_FETCH) > -1)
 
 
 def find_master_fade(sid: SidFile) -> Optional[Tuple[int, int]]:
@@ -2941,6 +2972,8 @@ def find_master_fade(sid: SidFile) -> Optional[Tuple[int, int]]:
     """
     data = sid.data
     e = search_file(data, MASTER_FADE_SHAPE)
+    if e <= -1:
+        e = search_file(data, MASTER_FADE_SHAPE_FETCH)
     if e <= -1:
         return None
     base = data[e + 1]

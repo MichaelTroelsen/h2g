@@ -17,7 +17,7 @@ import fidelity as F
 from corpus import CORPUS, needs_corpus
 from h2g import patterns as P
 from h2g.convert import _master_fade_positions, convert
-from h2g.detect import detect, find_master_fade
+from h2g.detect import detect, find_master_fade, master_fade_is_fetch
 from h2g.sidfile import load_sid
 
 REPO = Path(__file__).resolve().parents[2]
@@ -58,11 +58,22 @@ def test_the_shape_reads_base_and_voice_from_the_player():
 
 
 @needs_corpus
-def test_no_other_corpus_file_has_the_shape():
-    got = {p.stem: find_master_fade(load_sid(str(p)))
+def test_the_corpus_census_of_the_two_spellings():
+    """The every-frame write is Sanxion's alone; the row-fetch spelling
+    (`MASTER_FADE_SHAPE_FETCH`) is in ten more files, of which only the
+    version-5 ones are read (`convert`), and only Confuzion fades inside a
+    version-5 orderlist the walk can follow (tests/test_master_fade_fetch.py)."""
+    got = {p.stem: (find_master_fade(load_sid(str(p))),
+                    master_fade_is_fetch(load_sid(str(p))))
            for p in sorted(CORPUS.glob("*.sid"))}
-    assert {k: v for k, v in got.items() if v is not None} == {
-        "Sanxion": (0x84, 1)}
+    assert {k: v for k, v in got.items() if v[0] is not None} == {
+        "Chain_Reaction": ((0x4F, 2), True), "Confuzion": ((0xA0, 1), True),
+        "Devils_Galop": ((0x47, 2), True),
+        "Formula_1_Simulator": ((0xFF, 2), True),
+        "Master_of_Magic": ((0x75, 2), True), "Proteus": ((0xFF, 2), True),
+        "Sanxion": ((0x84, 1), False), "Spellbound": ((0x77, 2), True),
+        "Thing_on_a_Spring": ((0x47, 2), True), "Zoids": ((0x4C, 2), True),
+        "Zoolook": ((0x4F, 2), True)}
 
 
 @needs_corpus
@@ -124,7 +135,7 @@ def test_copies_survive_pack_repeats_and_skip_a_taken_command_column():
     assert P.pack_repeats(new[:3]) == new[:3]      # distinct: never folded
 
 
-def test_only_sanxion_ships_the_option():
+def test_only_sanxion_and_confuzion_ship_the_option():
     import json                                             # noqa: PLC0415
     from pathlib import Path                                # noqa: PLC0415
     import fidelity                                         # noqa: PLC0415
@@ -132,4 +143,5 @@ def test_only_sanxion_ships_the_option():
                      .read_text(encoding="utf-8"))
     on = sorted(name for name in doc["songs"]
                 if fidelity._preset_opts(doc, name).get("master_fade"))
-    assert on == ["Sanxion.sid"]
+    assert on == ["Confuzion.sid", "Sanxion.sid"]   # Confuzion: the row-fetch
+    # spelling plus its tune-end V=0 (master_fade.park_end_volume)

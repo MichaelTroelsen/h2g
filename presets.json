@@ -556,6 +556,7 @@
       "rows": 15886,
       "multiplier": 1,
       "force_park": true,
+      "master_fade": true,
       "gate_off_firstwave_instruments": [
         1,
         2,

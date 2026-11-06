@@ -3630,9 +3630,35 @@ each fading position its own pattern copy carrying its own `CMD_SETMASTERVOL`
 write lags the position change by 0-13 frames. A song without the shape is
 unchanged. Sanxion ships it, measured at aa7614c (`-t 180 --presets --sound`):
 `aud` .8759 -> .8844, `loud` .9048 -> .9312, and the corpus byte-hash with it
-forced moves Sanxion only. Confuzion carries a second spelling of the routine
-(version-5 orderlist) that this option does not read. Off by default and on for
-Sanxion only; `tests/test_master_fade.py` pins both.
+forced moves Sanxion only.
+
+Confuzion carries a second spelling, `detect.MASTER_FADE_SHAPE_FETCH`: the
+level is computed only when a row is fetched, from a version-5 orderlist. The
+option reads it there too, and keeps only the positions some fetch actually
+sees (`master_fade.written_positions`), because the formula's value for any
+other position never reaches `$D418`. The spelling is in ten more corpus files,
+but only Confuzion fades inside a version-5 orderlist the walk can follow
+(`tests/test_master_fade_fetch.py`).
+
+**Tune-end silence.** Confuzion's end routine (`detect.TUNE_END_VOLUME_SHAPE`,
+`LDA #$00 / STA flag / STA $D418 / CLI`) zeroes the volume when the tune ends.
+Under `--master-fade` with `--legal-restart` and `--silent-park`, the first
+voice of each parked subtune is pointed at a copy of the silent pattern with
+`D00` on row 0 (`master_fade.park_end_volume`). The copy is appended after
+every other pattern, last of every pass that adds one, because patterns are
+stored in index order: editing the silent pattern in place moves every later
+pattern by a byte. sidplayfp renders such a layout change as a whole-tune shift
+after about 97 s with the registers unchanged. This is its frontend's 32-bit
+`getBufSize` overflow (`(remainingMs*frequency)/1000` wraps above 97391 ms at
+44.1 kHz), not the program.
+
+A census over all 95 files (siddump with a PC hook on every `$D418` store,
+600 s a subtune) finds the explicit tune-end zero only in Confuzion and in
+Up_up_and_Away, which `convert` refuses. Confuzion ships the option, measured
+at 0e0167e (`-t 180 --presets --sound`): `aud` .9569 -> .9602, `loud` .9628 ->
+.9772, `vol` .9119 -> .9780. The corpus byte-hash moves Confuzion only. Off by
+default; on for Sanxion and Confuzion only. `tests/test_master_fade.py`
+pins the list, and `tests/test_master_fade_tune_end.py` pins the park write.
 
 ## Per-song presets — `presets.json`
 

@@ -1,133 +1,41 @@
 {
- "generated_from": {
-  "head": "aa7614c",
-  "plan_head": "aa7614c"
- },
+ "generated_from": {"head": "0e0167e", "plan_head": "0e0167e"},
  "blockers": [
-  {
-   "id": "kentilla-open-cut-adoption",
-   "kind": "decision",
-   "title_at_research": "Kentilla open cut, rebased after the Thrust untie: Kentilla aud .9002 -> .9026 and Spellbound .9222 -> .9224 rise but Thrust slips .9213 -> .9211 (loud .9751 -> .9750)",
-   "blocked_on_at_research": "The decision said land it only if Kentilla, Spellbound and Thrust all still rise after the rebase; Thrust slips .0002 aud / .0001 loud against the Thrust-only state (still above HEAD .9136). Land C:/t/kentilla-open-cut-adoption/fix.rebased2.patch accepting the slip, or drop it?",
-   "current_behaviour": "_CARRY_OPEN_CUT absent from python/h2g (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside). Thrust -.0002 aud is inside the +-.002-.007 band identical-register controls produce (samantha-fox, confuzion-keyoff-untie-scope).",
-   "sources": [
-    "runs.jsonl kentilla-open-cut-adoption",
-    "C:/t/kentilla-open-cut-adoption/fix.rebased2.patch"
-   ],
-   "options": [
-    {
-     "label": "Land it",
-     "consequence": "Kentilla +.0024, Spellbound +.0002, Thrust -.0002 vs Thrust-only (all up vs HEAD)"
-    },
-    {
-     "label": "Drop it",
-     "consequence": "Kentilla keeps its uncut tail; task closes"
-    }
-   ],
-   "recommendation": "Land it",
-   "why": "The Thrust slip is within measurement noise while Kentilla gains ten times as much.",
-   "question": "Kentilla: land the rebased open cut although Thrust slips .9213 -> .9211?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "mega-apocalypse-rest-envelope-silence-adoption-2",
-   "kind": "decision",
-   "title_at_research": "Adopt rest_envelope_silence in Mega_Apocalypse's preset (aud .9076 -> .9134, adsr 86% -> 96%); the body fall is a 59-124 sample render shift",
-   "blocked_on_at_research": "Adopt C:/t/mega-apocalypse-aud-dip-17/fix.patch (rest_envelope_silence on Mega_Apocalypse's presets.json entry)? aud .9076 -> .9134, adsr 86% -> 96%; the s60-174 per-second fall is a render shift with identical registers (C:/t/mega-apocalypse-body-fall-under-rest-envelope-silence/finding.md). Moves Mega_Apocalypse only.",
-   "current_behaviour": "Mega_Apocalypse preset has no rest_envelope_silence; git apply --check passes on the working tree (Thrust untie applied, Devils set aside). Body fall: identical registers, render shift 59-124 samples.",
-   "sources": [
-    "C:/t/mega-apocalypse-body-fall-under-rest-envelope-silence/finding.md"
-   ],
-   "options": [
-    {
-     "label": "Adopt",
-     "consequence": "aud .9076 -> .9134, adsr 86 -> 96%, Mega only"
-    },
-    {
-     "label": "Reject",
-     "consequence": "closes"
-    }
-   ],
-   "recommendation": "Adopt",
-   "why": "The fall you asked to explain turned out to be a render-alignment artefact, not a change in what plays.",
-   "question": "Mega_Apocalypse: adopt rest_envelope_silence now that the body fall is shown to be a render shift?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "nineteen-regrid-unshare-rest-adoption",
-   "kind": "decision",
-   "title_at_research": "Adopt regrid_unshare_rest in Nineteen's preset (aud .8885 -> .8996; the slides/bend/sync falls are a corrected note length and a removed spurious bend)",
-   "blocked_on_at_research": "Turn regrid_unshare_rest on for Nineteen only? aud .8885 -> .8996, real bend .633 -> .636; the printed falls are one over-long note now matching the original and one spurious bend removed (C:/t/nineteen-regrid-unshare-rest-columns/finding.md). The option is off by default and moves no other file.",
-   "current_behaviour": "regrid_unshare_rest absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside).",
-   "sources": [
-    "C:/t/nineteen-regrid-unshare-rest-columns/finding.md"
-   ],
-   "options": [
-    {
-     "label": "Adopt",
-     "consequence": "aud .8885 -> .8996, Nineteen only"
-    },
-    {
-     "label": "Reject",
-     "consequence": "closes"
-    }
-   ],
-   "recommendation": "Adopt",
-   "why": "The three falling columns were explained as corrections toward the original.",
-   "question": "Nineteen: adopt regrid_unshare_rest for Nineteen only?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "sanxion-master-fade-adoption",
-   "kind": "decision",
-   "title_at_research": "Adopt the position-driven master fade for Sanxion (aud .8759 -> .8844, loud .9048 -> .9312)",
-   "blocked_on_at_research": "Adopt C:/t/sanxion-position-driven-master-fade/fix.patch (master_fade option, off by default, on in Sanxion's preset)? aud .8759 -> .8844, loud .9048 -> .9312, moves Sanxion only; Confuzion's second spelling is a separate open task.",
-   "current_behaviour": "master_fade absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside); adds a convert option (may need a rebase if Star_Paws lands first).",
-   "sources": [
-    "C:/t/sanxion-position-driven-master-fade/fix.patch"
-   ],
-   "options": [
-    {
-     "label": "Adopt",
-     "consequence": "aud .8759 -> .8844, loud .9048 -> .9312, Sanxion only"
-    },
-    {
-     "label": "Reject",
-     "consequence": "Sanxion keeps no end fade; closes"
-    }
-   ],
-   "recommendation": "Adopt",
-   "why": "Largest loud gain on the list, one file, derived from the player.",
-   "question": "Sanxion: adopt the position-driven master fade?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "star-paws-regrid-park-adoption",
-   "kind": "decision",
-   "title_at_research": "Adopt regrid_park with regrid_park_shift 16 for Star_Paws (aud .9238 -> .9388, hold 91% -> 100%; pspan .9895 -> .9803)",
-   "blocked_on_at_research": "Adopt C:/t/star-paws-regrid-park-hold/fix.patch (regrid_park_shift option; the patch carries Star_Paws's presets.json entry)? aud .9238 -> .9388, hold 91% -> 100%, moves Star_Paws only; pspan .9895 -> .9803 and travel .4512 -> .4382 still fall (open task star-paws-regrid-park-pulse-travel).",
-   "current_behaviour": "regrid_park_shift absent (grep 0); git apply --check passes on the working tree (Thrust untie applied, Devils set aside).",
-   "sources": [
-    "C:/t/star-paws-regrid-park-hold/finding.md"
-   ],
-   "options": [
-    {
-     "label": "Adopt shift 16",
-     "consequence": "aud .9238 -> .9388, hold 100%; pspan/travel fall"
-    },
-    {
-     "label": "Wait for pulse-travel task",
-     "consequence": "adoption after star-paws-regrid-park-pulse-travel"
-    },
-    {
-     "label": "Reject",
-     "consequence": "closes"
-    }
-   ],
-   "recommendation": "Adopt shift 16",
-   "why": "The pspan fall belongs to regrid_park at any shift, so waiting buys nothing for this patch; the follow-up can still improve it.",
-   "question": "Star_Paws: adopt regrid_park with shift 16 now?",
-   "unblocked_by_research": false
-  }
+  {"id": "devils-galop-sweep-centre-adoption", "kind": "decision",
+   "title_at_research": "Adopt SWEEP_CENTRE +1 for Devils_Galop's $68 sweep (aud .93309 -> .93344, melody .99957 -> 1.000, bend .772 -> .784; moves Devils_Galop only)",
+   "blocked_on_at_research": "Adopt C:/t/gerry-the-germ-one-sided-68-vibrato/fix.patch (stored_wave.SWEEP_CENTRE = {'Devils Galop': 1}, a keyed table, not derived)? ...",
+   "current_behaviour": "SWEEP_CENTRE absent from python/h2g (grep 0); git apply --check of the patch passes at 0e0167e.",
+   "sources": ["C:/t/gerry-the-germ-one-sided-68-vibrato/finding.md", "runs.jsonl gerry-the-germ-one-sided-68-vibrato"],
+   "options": [{"label": "Adopt", "consequence": "Devils aud +.0004, melody to 1.000, bend and travel up; keyed data, Devils only"},
+               {"label": "Drop", "consequence": "closes; the wide-entry task then also has no base"}],
+   "recommendation": "Adopt", "why": "Every reported column rises and only Devils_Galop moves; the keying is a measured centre the walk cannot derive.",
+   "question": "Devils_Galop: adopt SWEEP_CENTRE +1?", "unblocked_by_research": false},
+  {"id": "devils-galop-68-wide-entry-swing", "kind": "decision",
+   "title_at_research": "Devils_Galop _wide_entry keeps cmp 4 and takes the swing from the shift, giving (0x84,1): ...",
+   "blocked_on_at_research": "Adopt it accepting those falls, or drop it?",
+   "current_behaviour": "Patch is cut on top of SWEEP_CENTRE (fails --check at HEAD alone on tests/test_stored_wave_sweep_depth.py:60).",
+   "sources": ["C:/t/devils-galop-68-wide-entry-swing/finding.md"],
+   "options": [{"label": "Drop", "consequence": "keeps bend .784 and Monty .93495; Devils aud stays .93344"},
+               {"label": "Adopt", "consequence": "Devils aud +.0013 and octave error .069 -> .045, but bend .784 -> .717, tie .862 -> .855, Monty aud -.0009"}],
+   "recommendation": "Drop", "why": "The aud gain is inside the ~+-.003 layout band while the bend fall is register-level and Monty also falls.",
+   "question": "Devils_Galop wide vibrato entry: adopt despite the bend, tie and Monty falls?", "unblocked_by_research": false},
+  {"id": "confuzion-master-fade-aud-fall", "kind": "decision",
+   "title_at_research": "Confuzion's fade plus tune-end V=0 (fix_full.patch): aud .9569 -> .9602, loud .9628 -> .9772, vol .9119 -> .9780, moving Confuzion only; adopt or drop",
+   "blocked_on_at_research": "Adopt C:/t/confuzion-tune-end-volume-and-layout-sensitivity/fix_full.patch ... with master_fade on in Confuzion's preset?",
+   "current_behaviour": "written_positions and TUNE_END_VOLUME_SHAPE absent from python/h2g; fix_full.patch passes git apply --check at 0e0167e; Confuzion's preset has master_fade off.",
+   "sources": ["C:/t/confuzion-tune-end-volume-and-layout-sensitivity/finding.md", "ab_confuzion.json"],
+   "options": [{"label": "Adopt", "consequence": "loud +.014, vol +.066, tail silent like the original; Confuzion only"},
+               {"label": "Drop", "consequence": "Confuzion keeps no fade; closes"}],
+   "recommendation": "Adopt", "why": "The loud and vol gains are measured against a same-layout control and the end now matches the original's silence.",
+   "question": "Confuzion: adopt the fade plus tune-end silence?", "unblocked_by_research": false},
+  {"id": "star-paws-regrid-park-pulse-travel", "kind": "decision",
+   "title_at_research": "Star_Paws regrid_park_merge: pspan .9803 -> .9895 and aud .9388 -> .9390, but hold 100% -> 91% ($0A98 flips back); a 62-shift sweep found no placement meeting all three",
+   "blocked_on_at_research": "Adopt ... regrid_park_merge ... or keep the shipped shift-16 park?",
+   "current_behaviour": "regrid_park_merge absent; patch needs a rebase at 0e0167e (presets.json and cli.py hunks fail).",
+   "sources": ["C:/t/star-paws-regrid-park-pulse-travel/finding.md"],
+   "options": [{"label": "Keep shift-16 park", "consequence": "hold stays 100%, pspan stays .9803; closes"},
+               {"label": "Adopt merge", "consequence": "pspan +.009, gate/otime/wave up, aud flat, hold back to 91%"}],
+   "recommendation": "Keep shift-16 park", "why": "hold 100% was the reason shift 16 was adopted two days ago and aud is flat either way.",
+   "question": "Star_Paws: trade hold 100% -> 91% for pulse span .9803 -> .9895?", "unblocked_by_research": false}
  ]
 }

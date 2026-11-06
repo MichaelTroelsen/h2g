@@ -35,6 +35,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        collect_pulse_phases, apply_pulse_phase,
                        inherit_free_rows, inherit_event_rows, IlvArps)
 from .ilv_arp_default import ilv_default_arps
+from .master_fade import (park_end_volume as _mf_park_end,
+                          written_positions as _mf_written)
 from .cmd_chord import find_cmd_chord, chord_note_cycles, record_intro
 from .instrument_drop import (
     add_startup_tempo,
@@ -221,8 +223,12 @@ def _drum_start_group(sid: SidFile, group_tempos, unit_tempos) -> Optional[int]:
 
 
 def _master_fade_positions(tracks: List[List[int]], fade: tuple,
-                           floor: int) -> List[dict]:
+                           floor: int, written=None) -> List[dict]:
     """One {position: level} map per track, from `Detection.master_fade`.
+
+    `written`, for the row-fetch spelling, is `group -> {position: tick}`
+    (`master_fade.written_positions`): only a position some fetch sees is
+    kept, because the formula's value for any other never reaches `$D418`.
 
     The play routine writes volume = base - position while that is 0..14, on
     the position array's element for voice `voice`; every subtune's list for
@@ -235,10 +241,11 @@ def _master_fade_positions(tracks: List[List[int]], fade: tuple,
     for ti, track in enumerate(tracks):
         marks: dict = {}
         if ti % 3 == voice:
+            seen = written(ti // 3) if written else None
             for at, b in enumerate(track):
                 if b >= floor:
                     break
-                if 0 <= base - at <= 14:
+                if 0 <= base - at <= 14 and (seen is None or at in seen):
                     marks[at] = base - at
         out.append(marks)
     return out
@@ -1016,9 +1023,19 @@ def convert(sid_path: str, log: Logger = print,
     if det.wave_eor is not None and step_clocks:
         det.gate_restarts = _gw_wave_eor.gate_restart_rows(
             tracks, track_index, new_patterns, step_clocks, floor)
-    fades = (_master_fade_positions(tracks, det.master_fade, floor)
-             if master_fade and det.master_fade is not None
-             and det.read_track_version == 0 else None)
+    # Two spellings (`detect.MASTER_FADE_SHAPE*`): the every-frame write reads
+    # the version-0 orderlist, the row-fetch one the version-5 orderlist
+    # (pattern bytes only, so a position is the flat index) through the walk
+    # that says which positions a fetch ever sees.
+    fades = None
+    if master_fade and det.master_fade is not None:
+        if det.master_fade_fetch and det.read_track_version == 5:
+            fades = _master_fade_positions(
+                tracks, det.master_fade, floor,
+                lambda g: _mf_written(sid, det, tracks, g, det.master_fade[1],
+                                      floor, slides, status_bit6))
+        elif not det.master_fade_fetch and det.read_track_version == 0:
+            fades = _master_fade_positions(tracks, det.master_fade, floor)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows,
                             tempos=step_tempos, tempo_calls=step_calls,
@@ -1485,6 +1502,13 @@ def convert(sid_path: str, log: Logger = print,
         if dropped:
             log(f"Pruned {len(dropped)} more pattern(s) the later passes' "
                 "copies left unplayed")
+    # The original's end routine zeroes `$D418`; the silent park is where that
+    # write belongs (`master_fade.park_end_volume`). LAST of every pass that
+    # adds or renumbers a pattern -- after the prune above -- because patterns
+    # are stored in index order and anything stored after the new pattern
+    # moves a byte, which moves sidplayfp's render of the whole tune.
+    if master_fade and legal_restart and silent_park and det.tune_end_volume:
+        _mf_park_end(tracks, new_patterns, log)
     # `build_sng` changes the tracks and patterns it is given; a phased
     # song is built a second time (below) from these copies.
     pristine = (copy.deepcopy(tracks), copy.deepcopy(new_patterns))

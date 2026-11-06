@@ -88,6 +88,18 @@ NOTE_STORE_SHAPE = "B1 ?? 9D %02X %02X 0A A8"
 # `bend` went 0.44 -> 0.23 and Crazy_Comets' 0.75 -> 0.72 (2026-11-03). Keyed
 # by name like `HELD`, so no other file's bytes move.
 SWEEP_DEPTH_TRACED = frozenset({"Devils Galop", "Monty on the Run"})
+# Semitones a traced file's `$68` note is raised so that Goattracker's SYMMETRIC
+# vibrato swings over the original's ONE-SIDED sweep. The original's sweep is
+# `base + k * step`, k = 0 1 2 3 3 2 1 0 (the player's global triangle, never
+# below the note), so its centre is `1.5 * step` above the note it prints;
+# a Goattracker vibrato (gplay.c:795-801) oscillates around the note it is
+# given, so the note has to be the centre. Devils_Galop: step `$02A6` is
+# 0.67 of B-5's `$03E8` interval, centre 1.0 semitone (2026-11-04,
+# `C:/t/gerry-the-germ-one-sided-68-vibrato/finding.md`). Keyed data, not
+# derived: the step needs the player's shift byte, which the walk does not
+# model (`_walk`). Gerry_the_Germ (centre 3.8 semitones) is measured and NOT
+# listed: raising it lowers `melody` and moves `aud` by +-0.0002 (noise).
+SWEEP_CENTRE = {"Devils Galop": 1}
 # Quarter-octave steps of extra vibrato depth a $68 sweep may ask for
 # (`sweep_depths`): at most 3 octaves, and at least half an octave.
 MAX_DEPTH_QUARTERS = 12
@@ -626,6 +638,16 @@ def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
             for (tn, p) in s[2]:
                 tracks[tn][p] = number
                 moved += 1
+    up = SWEEP_CENTRE.get(sid.name, 0)
+    if up:
+        # Only the notes carrying a sweep depth (`sweep_depths`), in the
+        # pattern's own map and in every waveform-state copy of it.
+        for e, offsets in det.stored_wave_depth.items():
+            for o in offsets:
+                for m in [out.get(e, {})] + [c for ce, c in copies
+                                              if ce == e]:
+                    if o in m:
+                        m[o] += up
     if log and out:
         n = sum(len(m) for m in out.values())
         log(f"Stored-wave pitch.......: {n} past-table note(s) in "

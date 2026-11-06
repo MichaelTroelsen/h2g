@@ -23,7 +23,7 @@ on note names, runs of 8 or more):
 |---|---|---|---|
 | Human_Race | 0/0 | v0 422/457, v1 declined | v0 457/457, v1 120/120 |
 | Chimera | 0/0 | declined | v0 132/132, v1 135/135 (96/135 before record 8's regates) |
-| Devils_Galop | auto/0 | declined | v0 551/551, v1 60/60, v2 32/33 |
+| Devils_Galop | auto/0 | declined | v0 551/551, v1 61/61, v2 32/33 |
 | Monty_on_the_Run | 0/0 | declined | v0 405/405, v1 60/60, v2 33/33 |
 | Ninja | auto/0 | declined | v0 93/93, v1 28/28, v2 102/102 |
 | Thing_on_a_Spring | auto/0 | declined | v0 225/225, v1 25/25, v2 871/871 |
@@ -277,7 +277,7 @@ _LIFTED = [
     # (file, seconds, subtune traced, group walked, {voice: (exact, paired)})
     ("Human_Race.sid", 180, 0, 0, {0: (457, 457), 1: (120, 120)}),
     ("Chimera.sid", 180, 0, 0, {0: (132, 132), 1: (135, 135)}),
-    ("Devils_Galop.sid", 180, None, 0, {0: (551, 551), 1: (60, 60), 2: (32, 33)}),
+    ("Devils_Galop.sid", 180, None, 0, {0: (551, 551), 1: (61, 61), 2: (32, 33)}),
     ("Monty_on_the_Run.sid", 180, 0, 0, {0: (405, 405), 1: (61, 61), 2: (33, 33)}),
     ("Ninja.sid", 180, None, 0, {0: (93, 93), 1: (28, 28), 2: (102, 102)}),
     # With the decoder's event starts; (144, 225) / (0, 25) by bytes alone.
