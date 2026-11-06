@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.652 — 2026-11-06
+
+- record the four-task drain (sidplayfp 2.16.2 render fix, Sanxion, Zoolook, Monty dips)
+
 ## 0.5.651 — 2026-11-06
 
 - Devils_Galop's $68 sweep centred; Confuzion's fade and tune-end silence
