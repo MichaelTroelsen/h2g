@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.653 presets.py",
+  "generator": "h2g 0.5.654 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -875,10 +875,10 @@
       "prune": true,
       "dedup": true,
       "bytes": 23833,
-      "drum_long": true,
       "subtunes": 1,
       "rows": 16023,
       "multiplier": 2,
+      "drum_long": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2003,12 +2003,11 @@
       "prune": true,
       "dedup": true,
       "bytes": 44283,
-      "drum_long": true,
-      "wobble_copy_depth": true,
       "subtunes": 3,
       "rows": 32320,
       "multiplier": 2,
       "drum_gate_off": true,
+      "drum_long": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2072,7 +2071,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "wobble_copy_depth": true
     },
     "Mozart.sid": {
       "max_rows": 94,
