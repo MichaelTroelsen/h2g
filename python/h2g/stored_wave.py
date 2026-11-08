@@ -103,6 +103,12 @@ SWEEP_CENTRE = {"Devils Galop": 1}
 # Quarter-octave steps of extra vibrato depth a $68 sweep may ask for
 # (`sweep_depths`): at most 3 octaves, and at least half an octave.
 MAX_DEPTH_QUARTERS = 12
+# `wobble_copy_depth`: quarter-octaves added to a waveform-state copy's
+# own-pitch depth. Monty's B-5 copy (record 13, sweep 5376 against B-5's
+# interval 1000) is 10 on its own pitch and prints 46244 voice-2 bend over
+# 0-10 s against the original's 11712; 11 is 45744, 12 (the clamp) is 0 with
+# aud/vib/depth/travel not lower than the unsized copy's. Measured, not derived.
+COPY_DEPTH_EXTRA = 2
 MIN_DEPTH_QUARTERS = 2
 
 # The walk runs every subtune for this many times its longest voice's first
@@ -486,6 +492,23 @@ def stored_wave_notes(sid: SidFile, det: Detection, tracks: List[List[int]],
     return out
 
 
+def depth_quarters(sid: SidFile, det: Detection, d: int,
+                   mean: float) -> int:
+    """`sweep_depths`' quarter-octaves for one note `d` and sweep `mean`
+    (0 when below `MIN_DEPTH_QUARTERS`)."""
+    ft = det.freq_table
+    base = sid.to_offset(ft.addr)
+    if d + 1 >= ft.length:
+        return 0
+    lo = sid.data[base + 2 * d] | (sid.data[base + 2 * d + 1] << 8)
+    hi = sid.data[base + 2 * d + 2] | (sid.data[base + 2 * d + 3] << 8)
+    ordinary = hi - lo
+    if ordinary <= 0 or mean <= 0:
+        return 0
+    quarters = round(4 * log2(mean / ordinary))
+    return min(quarters, MAX_DEPTH_QUARTERS) if quarters >= MIN_DEPTH_QUARTERS else 0
+
+
 def sweep_depths(sid: SidFile, det: Detection, votes: List[tuple],
                  wide: Dict[int, Dict[int, int]], depth_means: dict
                  ) -> Dict[int, Dict[int, int]]:
@@ -597,6 +620,15 @@ def stored_wave_copies(sid: SidFile, det: Detection, tracks: List[List[int]],
     for (e, o), picks in wide_plays.items():
         wide.setdefault(e, {})[o] = _majority(picks)
     det.stored_wave_depth = sweep_depths(sid, det, votes, wide, depth_means)
+    # For `wobble_copy_depth`: the mean sweep of every vote, per (entry,
+    # event, note), so a waveform-state copy whose pitch differs from the
+    # pattern-wide majority is sized against ITS note's interval.
+    det.stored_wave_sized = wide
+    det.stored_wave_mean = {}
+    for (g, v, t, _p, e, o, _f, d) in votes:
+        mean = depth_means.get((g, v, t))
+        if mean is not None:
+            det.stored_wave_mean.setdefault((e, o, d), mean)
 
     # Per entry: each distinct position map, in first-seen order, with its
     # play count and the positions voting for it.

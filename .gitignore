@@ -61,3 +61,7 @@ arkiv/Zoids.sid
 # staged path list once.
 __pycache__/
 *.pyc
+
+# Playwright MCP scratch (screenshots, traces). Untracked, it stamps every
+# generated report `-dirty` (fidelity.py reads `git status --porcelain -- .`).
+.playwright-mcp/

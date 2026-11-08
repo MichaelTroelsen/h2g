@@ -174,6 +174,18 @@ def main(argv=None) -> int:
              "player's drum block does whatever the sustain. Per song. Off "
              "by default")
     parser.add_argument(
+        "--drum-long", action="store_true",
+        help="carry the bit-$01 drum's high-byte fall on the drum notes longer "
+             "than their record's median, which the record's one wavetable "
+             "program cannot (Monty_on_the_Run's G-5). -S2 and above. Per "
+             "song. Off by default")
+    parser.add_argument(
+        "--wobble-copy-depth", action="store_true",
+        help="size a $68 waveform-state copy's vibrato depth on its own pitch "
+             "instead of the pattern-wide majority, and clone the note-free "
+             "pattern after it per carried index (Monty_on_the_Run's B-5). "
+             "Per song. Off by default")
+    parser.add_argument(
         "--release-held-stored-wave", action="store_true",
         help="lift Commando's by-name hold on the $68 stored-waveform pitch, "
              "so those notes read the cells as the other players' do "
@@ -809,6 +821,8 @@ def main(argv=None) -> int:
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
                           ("--release-held-stored-wave",
                            "release_held_stored_wave"),
+                          ("--drum-long", "drum_long"),
+                          ("--wobble-copy-depth", "wobble_copy_depth"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -931,6 +945,8 @@ def main(argv=None) -> int:
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
                       release_held_stored_wave=args.release_held_stored_wave,
+                      drum_long=args.drum_long,
+                      wobble_copy_depth=args.wobble_copy_depth,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

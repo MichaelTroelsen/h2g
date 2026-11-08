@@ -417,6 +417,17 @@ EXCLUDED_FROM_ALWAYS = {
     # derives from a voice's orderlist position (`detect.find_master_fade`),
     # one pattern copy per fading position. Reaches Sanxion.sid alone.
     "master_fade",
+    # Per song and never a default: the bit-$01 drum sweep on the notes
+    # longer than their record's median (`goatwriter/drum_long.py`). Reaches
+    # Monty_on_the_Run, Devils_Galop and International_Karate; the first two
+    # ship it (A/B at v0.5.653: Monty bend .88 -> 1.09 alone, Devils .78 ->
+    # .97), International_Karate moved within noise and stays off.
+    "drum_long",
+    # Per song and never a default: a `$68` waveform-state copy's vibrato
+    # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
+    # constant). Reaches Monty_on_the_Run alone, which ships it with
+    # `drum_long` (bend 1.09 -> .92, 0-10 s voice-2 bend 70000 -> 0).
+    "wobble_copy_depth",
     # Per song and never a default: overrides the `always` block's
     # no_hard_restart for a song whose drum otherwise loses beats to the
     # SID's ADSR delay (Crazy_Comets, heard 2026-10-25). Turning it on for

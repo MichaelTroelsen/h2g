@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.654 — 2026-11-08
+
+- Nineteen's rest-repeat unroll; Monty's drum_long and wobble_copy_depth options; land.py and the cycle policy
+
 ## 0.5.653 — 2026-11-08
 
 - sidplayfp 2.16.2 renderer; Sanxion free-running first wave; Zoolook master fade; Monty note-rise skydive

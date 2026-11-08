@@ -1509,6 +1509,19 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if dfall is not None:
             patterns = dfall.patterns
             wave_entries = wave_entries + dfall.entries
+    # `drum_long` (convert option): the bit-$01 sweep on the drum notes longer
+    # than their record's median, which `_drum_entries`' one depth per record
+    # cannot carry (`goatwriter/drum_long.py`).
+    if (effects and det.effect_drum and not det.drum_fall_step
+            and getattr(det, "drum_long", False)):
+        from . import drum_long as _gw_drum_long
+        dlong = _gw_drum_long.drum_long_plan(
+            sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
+            gate_skip, table, len(wave_entries), row_calls, note_rows,
+            log=log)
+        if dlong is not None:
+            patterns = dlong.patterns
+            wave_entries = wave_entries + dlong.entries
     # The same block without its window (`note_rise_plan`): a store on every
     # other tick of the whole note, one or two a row of two or three ticks,
     # each row pointed at a short program appended past every block whose

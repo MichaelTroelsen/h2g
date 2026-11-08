@@ -68,12 +68,34 @@ def test_voice_zero_gets_a_private_rest_copy_that_pays():
     orig_rest = list(pats[0])
     regrid_tempos(pats, tracks, [3], [D], 1, per_play=True, full_debt=True,
                   unshare_rest=True)
-    assert len(pats) == 5
-    assert tracks[0] == [1, 0xD5, 4, 2, 0xFF, 0]      # only voice 0 repointed
+    # `$D5` is SIX plays, so six copies, the repeat byte gone
+    assert len(pats) == 10
+    assert tracks[0] == [1, 4, 5, 6, 7, 8, 9, 2, 0xFF, 0]
     assert tracks[1] == [0, 3, 0xFF, 0] and tracks[2] == [0, 3, 0xFF, 0]
     assert pats[0] == orig_rest                       # the shared one untouched
-    assert _sets(pats[4]) >= 1                        # the copy carries a pair
-    assert pats[4][0:4] == orig_rest[0:4]             # row 0 clock kept
+    assert sum(_sets(pats[q]) for q in range(4, 10)) >= 3   # the copies pay
+    assert all(pats[q][0:4] == orig_rest[0:4] for q in range(4, 10))  # row 0 kept
+
+
+def test_a_repeated_opening_rest_is_unrolled_so_each_play_can_pay():
+    """Nineteen opens voice 0 on `$D5 <rest>`: six plays of one pattern whose
+    first play has no debt, so one copy affords nothing at any of them."""
+    pats = [_rest(32), _notes(64)]
+    tracks = [[0xD5, 0, 1, 0xFF, 2], [0, 1, 0xFF, 0], [0, 1, 0xFF, 0]]
+    regrid_tempos(pats, tracks, [3], [D], 1, per_play=True, full_debt=True,
+                  unshare_rest=True)
+    assert tracks[0] == [2, 3, 4, 5, 6, 7, 1, 0xFF, 6]   # restart follows pattern 1
+    assert tracks[1] == [0, 1, 0xFF, 0]
+    assert sum(_sets(pats[q]) for q in range(2, 8)) >= 3
+    assert _sets(pats[2]) == 0                        # play 1 has no debt
+
+
+def test_a_single_rest_entry_without_repeat_keeps_the_orderlist_shape():
+    pats = [_rest(32), _notes(64)]
+    tracks = [[1, 0, 1, 0xFF, 0], [0, 1, 0xFF, 0], [0, 1, 0xFF, 0]]
+    regrid_tempos(pats, tracks, [3], [D], 1, per_play=True, full_debt=True,
+                  unshare_rest=True)
+    assert tracks[0] == [1, 2, 1, 0xFF, 0]
 
 
 def test_a_note_bearing_shared_pattern_is_not_copied():
@@ -106,7 +128,7 @@ def test_nineteen_pays_into_its_voice_zero_rest():
     base = convert(str(CORPUS / "Nineteen.sid"), log=lambda m: None, **opts)
     assert got != base
     line = next(m for m in logs if m.startswith("Re-grid"))
-    assert " in 21 pattern(s)" in line, line
+    assert " in 47 pattern(s)" in line, line
 
 
 def test_only_nineteen_ships_the_option():

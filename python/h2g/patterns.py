@@ -2807,9 +2807,36 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               legato_bit7=det.counter_fall is not None,
                               top_rows=top_rows,
                               event_span=event_span,
-                              wave_depth=((getattr(det, "stored_wave_depth",
-                                                   None) or {}).get(i)
-                                          if wave_notes else None))
+                              wave_depth=_note_wave_depth(
+                                  sid, det, i, wave_notes))
+
+
+def _note_wave_depth(sid: SidFile, det: Detection, i: int,
+                     wave_notes: Optional[Dict[int, int]]
+                     ) -> Optional[Dict[int, int]]:
+    """`det.stored_wave_depth[i]`, with a waveform-state copy that sounds
+    another pitch than the one the depth was sized on (the pattern-wide
+    majority) re-sized against ITS note's interval, plus
+    `stored_wave.COPY_DEPTH_EXTRA` quarter-octaves (measured, see there).
+    Under the `wobble_copy_depth` option; off, the entry's dict as before."""
+    if not wave_notes:
+        return None
+    depth = (getattr(det, "stored_wave_depth", None) or {}).get(i)
+    if not depth or not getattr(det, "wobble_copy_depth", False):
+        return depth
+    from .stored_wave import COPY_DEPTH_EXTRA, MAX_DEPTH_QUARTERS, depth_quarters
+    means = getattr(det, "stored_wave_mean", None) or {}
+    sized = (getattr(det, "stored_wave_sized", None) or {}).get(i, {})
+    out = {}
+    for o, q in depth.items():
+        d = wave_notes.get(o)
+        mean = means.get((i, o, d)) if d is not None else None
+        if mean is not None and d != sized.get(o):
+            own = depth_quarters(sid, det, d, mean)
+            if own:
+                q = min(own + COPY_DEPTH_EXTRA, MAX_DEPTH_QUARTERS)
+        out[o] = q
+    return out
 
 
 def record_gate_clear(sid: SidFile, det: Detection) -> frozenset:
@@ -4325,25 +4352,72 @@ def _regrid_unshare_rest(patterns: List[List[int]], tracks: List[List[int]],
                 elif entry < GT_COMMAND_FLOOR:
                     users.setdefault(entry, set()).add(tj)
         track = tracks[ti]
+        out: List[int] = []
+        newpos: List[int] = []          # old orderlist index -> new index
+        fixups: List[tuple] = []        # (index in out, old restart target)
         operand = False
+        times = 1
+        rep_at = None                   # old index of a pending repeat byte
         for i, entry in enumerate(track):
+            newpos.append(len(out))
             if operand:
                 operand = False
+                fixups.append((len(out), entry))
+                out.append(entry)
             elif entry == GT_ORDER_RESTART:
                 operand = True
+                out.append(entry)
+            elif GT_REPEAT <= entry < GT_TRANSPOSE_DOWN:
+                times = entry - GT_REPEAT + 1
+                rep_at = i
+                out.append(entry)
             elif (entry < GT_COMMAND_FLOOR and entry < len(patterns)
                   and users.get(entry) != {ti}
                   and _is_rest_only(patterns[entry])):
+                n = times if rep_at == i - 1 else 1
                 if len(patterns) >= MAX_PATTERNS:
-                    continue
-                # ONE COPY PER ORDERLIST ENTRY, not per pattern: the per-play
-                # ledger lets a pattern's count rise only to what the ledger
-                # affords at EVERY play from its first, so a copy played at
-                # the start of the song (no debt yet) and again 100 s later
-                # could buy nothing at all.
-                patterns.append(list(patterns[entry]))
-                track[i] = len(patterns) - 1
-                made += 1
+                    n = 0
+                elif len(patterns) + n > MAX_PATTERNS:
+                    n = 1
+                if n > 1:
+                    # A REPEAT IS PLAYS, NOT ONE ENTRY. `$D5 P` plays P six
+                    # times, and one copy of P is one pattern the per-play
+                    # ledger prices at its FIRST play: a rest the voice opens
+                    # the song on (Nineteen: `$D5` x pattern 0, 576 frames)
+                    # affords nothing at any of the six, because the first
+                    # has no debt. Unrolled, each play is its own copy priced
+                    # at its own debt. The repeat byte is dropped and the old
+                    # index it occupied now names the first copy.
+                    del out[-1]
+                    newpos[rep_at] = newpos[i] = len(out)
+                    for _ in range(n):
+                        patterns.append(list(patterns[entry]))
+                        out.append(len(patterns) - 1)
+                        made += 1
+                elif n == 1:
+                    # ONE COPY PER ORDERLIST ENTRY, not per pattern: the
+                    # per-play ledger lets a pattern's count rise only to
+                    # what the ledger affords at EVERY play from its first,
+                    # so a copy played at the start of the song (no debt yet)
+                    # and again 100 s later could buy nothing at all.
+                    patterns.append(list(patterns[entry]))
+                    out.append(len(patterns) - 1)
+                    made += 1
+                else:
+                    out.append(entry)
+                times, rep_at = 1, None
+            else:
+                if entry < GT_COMMAND_FLOOR:
+                    times, rep_at = 1, None
+                out.append(entry)
+        if out != track:
+            # `$FF x` names an orderlist POSITION, and every byte this
+            # inserted or dropped before x moved it.
+            newpos.append(len(out))
+            for at, old in fixups:
+                if old < len(newpos):
+                    out[at] = newpos[old]
+            track[:] = out
     return made
 
 

@@ -3182,6 +3182,69 @@ against travel 0.31x -> 0.83x and bend 0.29x -> 0.54x (historical).
 `--pitch-lead-tie` cannot lead a two-row note's successor: the row before it
 carries the fall's pointer. Adopting it waits on the user's A/B.
 
+## `--drum-long` (the bit-$01 drum's fall on its longer notes)
+
+The bit-$01 drum block (Monty `$82DE`, Warhawk `$1366`) subtracts one from the
+frequency high byte every call while the note's remaining-unit counter sits in
+`1 .. W-1`, so a note of `W + 1` units sweeps for `W - 1` units after its first
+unit of noise, and a two-unit note not at all. A Goattracker wavetable program
+is per instrument, and `_drum_entries` sizes its one sweep from the record's
+MEDIAN played length. Monty_on_the_Run's record 1 is played at four rows (G-5,
+440 plays) and two (G-6 / G-7, 880 plays): the median is two, the program
+carries no sweep, and the original's G-5 fall `3426 -> 3326 -> 3226 -> 3126`
+on frames +3..+5 never reached the chip. That was the whole of Monty's voice-2
+bend deficit over 40-60, 70-100, 110-120 and 150-180 s (91136 of 445006 bend
+lines; `C:/t/monty-voice-2-bend-deficit-mid-tune/finding.md`).
+
+The option puts a `CMD_SETWAVEPTR` on the row after each drum note of three or
+more rows whose record's median is shorter than three, into a head holding the
+record's gate-off waveform for `multiplier + 1` calls and then a jump into one
+shared chain of `CMD_PORTADOWN` steps, entered `(L - 2) * row_calls -
+multiplier` entries before its stop (`goatwriter/drum_long.py`). Monty's
+frames 2051-2053 then read `3329 / 3229 / 3129`, the original's values. It is
+calibrated at `-S2` and above only: the one-call hold is a whole frame at
+`-S1`, where Crazy_Comets lost 12 noise frames to a head entered early.
+
+**Per song, off by default.** Measured at 1ee1557 (`-t 180 --presets --sound`,
+historical): Monty_on_the_Run bend .88 -> 1.09 (an overshoot, see
+`--wobble-copy-depth`), slides 5958 -> 6312, travel .55 -> .69, tie .92 ->
+.95, gate 92% -> 94%, aud -.0001 and loud -.0006, both inside noise;
+Devils_Galop bend .78 -> .97, travel .65 -> .82, gate .920 -> .937;
+International_Karate within noise on every column, so it stays off. Monty and
+Devils_Galop ship it (`tests/test_drum_long.py`).
+
+## `--wobble-copy-depth` (a `$68` copy's vibrato sized on its own pitch)
+
+`stored_wave.sweep_depths` sizes a `$68` pattern's extra vibrato depth once
+per (pattern, event), on the pattern-wide MAJORITY pitch, and `decode_entry`
+hands that depth to every waveform-state copy of the pattern. Monty's opening
+B-5 (record 13, `$4141`) shares its pattern with three B-6 plays, so its copy
+took the B-6 depth (6 quarter-octaves against an interval of 2000) on B-5's
+interval of 1000: half the swing, printed by siddump as 208 small bend lines
+(70000 of voice-2 bend over 0-10 s) where the original's `$0540`-a-frame
+sweep prints as notes and one bend line. HEAD's file bend of .88 was that
+over-bend cancelling the missing drum fall above; with `--drum-long` alone it
+reads 1.09.
+
+The option re-sizes a copy that sounds another pitch than the one the depth
+was sized on against ITS note's interval (`stored_wave.depth_quarters`) plus
+`COPY_DEPTH_EXTRA` quarter-octaves, clamped at `MAX_DEPTH_QUARTERS`, and
+clones the note-free pattern after it per carried vibrato index
+(`note_passes._wobble_clone`) so each side keeps its own sweep.
+
+**`COPY_DEPTH_EXTRA = 2` is a measured constant, not a derived one** (user,
+2026-11-08, with the ladder in view). The B-5 copy's own-pitch depth is 10
+quarters; the ladder at 1ee1557, 0-10 s voice-2 bend / file aud: 6 (HEAD +
+drum_long) 70000 / .93481; 10 without the clone 38244 / .93480; 10 with it
+46244 / .93460; 11 45744 / .93467; 12 (the clamp) 0 / .93480. The player's
+own step is a semitone and more, so siddump names each of its steps a note;
+only the clamp reproduces that. Per song, off by default: it moves
+Monty_on_the_Run alone (bend 1.09 -> .92 on top of `--drum-long`, travel .69
+-> 1.05, tie .95 -> .98, no printed column lower by more than its noise), and
+Monty ships it (`tests/test_wobble_copy_depth.py`). The original's one-sided
+upward sweep (ours is symmetric about B-5) and its 13 `+-0380` lines at frames
+451-499 are not reproduced.
+
 ## `--regrid` (a row that is not a whole number of play calls)
 
 A Goattracker row is a whole number of play calls, so a player whose row is

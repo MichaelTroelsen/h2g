@@ -1367,6 +1367,54 @@ def strip_depth_marks(patterns: List[List[int]]) -> int:
     return n
 
 
+def _wobble_clone(det: Detection, patterns, tracks, nx, pred, carry) -> None:
+    """Under `wobble_copy_depth`: a note-free pattern `nx` that follows notes
+    handing on DIFFERENT wide-vibrato indices (a waveform-state copy sized on
+    its own pitch, `stored_wave.depth_quarters`) is cloned per index: the
+    first-seen index keeps `nx`, each other gets an appended copy that the
+    orderlist positions after that predecessor are rewritten to name. Without
+    this the disagreement drops the carry and the stale note's sweep ends at
+    the pattern boundary."""
+    if not getattr(det, "wobble_copy_depth", False):
+        return
+    vals = {carry.get(p) for p in pred[nx]}
+    if None in vals or len(vals) < 2:
+        return
+    pat = patterns[nx]
+    if any(GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE
+           for r in range(0, len(pat) - 3, 4)):
+        return
+    clones: dict = {}
+    first = None
+    for track in tracks:
+        prev = None
+        for k, b in enumerate(track):
+            if b == 0xFF:
+                break
+            if 0xD0 <= b < 0xFF or b >= len(patterns):
+                continue
+            if b == nx and prev is not None and carry.get(prev) is not None:
+                c = carry[prev]
+                if first is None:
+                    first = c
+                if c != first:
+                    if c not in clones:
+                        copy = list(patterns[nx])
+                        patterns.append(copy)
+                        clones[c] = len(patterns) - 1
+                    track[k] = clones[c]
+            prev = b
+    if first is None:
+        return
+    for c, n in list(clones.items()) + [(first, nx)]:
+        pt = patterns[n]
+        for r in range(0, len(pt) - 3, 4):
+            if pt[r + 2] == 0:
+                pt[r + 2] = CMD_VIBRATO
+                pt[r + 3] = c
+    carry[nx] = first
+
+
 def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                           vib_ptrs: dict, lead: int, log=None,
                           tracks: Optional[List[List[int]]] = None,
@@ -1599,7 +1647,10 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
         while work:
             pn = work.pop()
             for nx in succ.get(pn, ()):
-                if nx in carry or {carry.get(p) for p in pred[nx]} !=                         {carry[pn]}:
+                if nx in carry:
+                    continue
+                if {carry.get(p) for p in pred[nx]} != {carry[pn]}:
+                    _wobble_clone(det, patterns, tracks, nx, pred, carry)
                     continue
                 pat, r = patterns[nx], 0
                 while (r + 3 < len(pat)

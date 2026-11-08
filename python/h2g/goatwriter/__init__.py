@@ -253,6 +253,7 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _respell_on_clones, _successor_heads,
                           _successor_relatch,
                           _tied_instrument_envelopes, _vibrato_command_pass,
+                          _wobble_clone,
                           _wide_entry, _depth_mark, strip_depth_marks,
                           _swell_gate_plan, _swell_row_plan,
                           _swell_zero_boundaries, _swell_prefix_steps,
@@ -369,6 +370,9 @@ from .stored_fall import (STORED_FALL_MAX_DOWN, STORED_FALL_MODAL_SHARE,
 from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
                         DRUM_FALL_ROW_FRAMES, DrumFallPlan, drum_fall_plan,
                         drum_fall_records, fall_steps)  # noqa: F401
+from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
+                        MIN_UNITS, DrumLongPlan, drum_long_plan,
+                        drum_long_records)
 from .lfo_wave import (LFO_END, LFO_HOLD, LFO_MAX_READS, LFO_SIGN,  # noqa: F401
                        LFO_SPEED_RELATIVE, LfoPhase, _byte, _note_walk,
                        _program, _spell, _step, _walk_reads, cycle_row,

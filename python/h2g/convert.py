@@ -337,7 +337,9 @@ def convert(sid_path: str, log: Logger = print,
             master_fade: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
-            release_held_stored_wave: bool = False) -> bytes:
+            release_held_stored_wave: bool = False,
+            drum_long: bool = False,
+            wobble_copy_depth: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -688,6 +690,23 @@ def convert(sid_path: str, log: Logger = print,
     repeats back). Only for the version-0 orderlist, where the position is
     the flat index. Off by default: it moves the bytes of the files it reaches.
 
+    drum_long carries the bit-$01 drum's high-byte fall on the drum notes
+    LONGER than their record's median length. `_drum_entries` writes one
+    sweep depth per record from `median_played_durations`; Monty_on_the_Run's
+    record 1 is played at four rows (G-5) and two (G-6, G-7), its median is
+    two, and the four-row note's `3426 -> 3126` fall never reached the chip.
+    The option puts a `CMD_SETWAVEPTR` on the row after each such note into a
+    gate-off head and a shared `CMD_PORTADOWN` chain (`goatwriter/drum_long.py`,
+    -S2 and above only). Off by default: it moves the bytes of every file with
+    such a record (Monty_on_the_Run, Devils_Galop, International_Karate).
+
+    wobble_copy_depth sizes a `$68` waveform-state copy's vibrato depth on
+    ITS OWN pitch instead of the pattern-wide majority (`patterns.
+    _note_wave_depth`, `stored_wave.COPY_DEPTH_EXTRA`), and clones the
+    note-free pattern after it per carried index (`note_passes._wobble_clone`).
+    Off by default: it moves Monty_on_the_Run alone, and its extra depth is a
+    measured constant, not a derived one (see `stored_wave.COPY_DEPTH_EXTRA`).
+
     drum_sustain_gate_off gives a drum-flagged record whose envelope
     sustains the drum shape after all -- the gate-off after the tick and the
     pitch fall -- where v0.5.164's sustaining-record rule held the gate and
@@ -819,6 +838,8 @@ def convert(sid_path: str, log: Logger = print,
     det.drum_gate_off = drum_gate_off
     det.drum_sustain_gate_off = drum_sustain_gate_off
     det.release_held_stored_wave = release_held_stored_wave
+    det.drum_long = drum_long
+    det.wobble_copy_depth = wobble_copy_depth
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1
