@@ -172,7 +172,14 @@ def main() -> int:
          "-o", "../docs/FIDELITY.md"], cwd=PY)
     run([sys.executable, "fidelity_queue.py", "--from-json", "../build/fidelity.json",
          "-o", "../docs/QUEUE.md", "--json", "../build/queue.json"], cwd=PY)
-    run([sys.executable, "-m", "pytest", "tests/test_output_sha.py", "-q", "-p", "no:cacheprovider"], cwd=PY)
+    # output_sha must now agree, and so must every live figure the docs quote
+    # from the artefact (tests/test_claude_md_figures.py reads build/fidelity.json
+    # against CLAUDE.md and docs/LESSONS.md): a figure that moved with the
+    # refresh is corrected BEFORE the refresh commit, not found by suite-3 after
+    # it (measured at v0.5.654: the drift split 80/9 -> 81/8 stopped the landing
+    # one commit too late).
+    run([sys.executable, "-m", "pytest", "tests/test_output_sha.py",
+         "tests/test_claude_md_figures.py", "-q", "-p", "no:cacheprovider"], cwd=PY)
     git("add", "docs/FIDELITY.md", "docs/QUEUE.md")
     c3 = commit(f"Refresh FIDELITY/QUEUE at v{ver} (-t 180 --presets --sound, censuses)"
                 + (f"\n\n{trailer}" if trailer else ""), "c3")
