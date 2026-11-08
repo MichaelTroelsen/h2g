@@ -143,5 +143,10 @@ def test_only_sanxion_and_confuzion_ship_the_option():
                      .read_text(encoding="utf-8"))
     on = sorted(name for name in doc["songs"]
                 if fidelity._preset_opts(doc, name).get("master_fade"))
-    assert on == ["Confuzion.sid", "Sanxion.sid"]   # Confuzion: the row-fetch
-    # spelling plus its tune-end V=0 (master_fade.park_end_volume)
+    assert on == ["Confuzion.sid", "Sanxion.sid", "Zoolook.sid"]
+    # Confuzion: the row-fetch spelling plus its tune-end V=0
+    # (master_fade.park_end_volume). Zoolook: the same spelling under a
+    # version-0 orderlist, on since zoolook-master-fade-adoption (2026-11-07);
+    # the other version-0 files the shape matches (Master_of_Magic,
+    # Spellbound, Thing_on_a_Spring, Zoids) move when forced but were never
+    # A/B'd, so they stay off.

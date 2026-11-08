@@ -36,7 +36,7 @@ import fidelity                                              # noqa: E402
 import songview                                              # noqa: E402
 from corpus import CORPUS, needs_corpus                      # noqa: E402
 from h2g.convert import convert                              # noqa: E402
-from h2g.goatwriter import FIRSTWAVE_TESTBIT                 # noqa: E402
+from h2g.goatwriter import FIRSTWAVE_FREERUN, FIRSTWAVE_TESTBIT  # noqa: E402
 from h2g.goatwriter.instruments import gate_off_firstwave    # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -82,9 +82,13 @@ def _diff(a: bytes, b: bytes) -> list[int]:
 @pytest.mark.parametrize("waveform, want", [
     (0x41, 0x40), (0x81, 0x80), (0x11, 0x10), (0x15, 0x14), (0x43, 0x42),
     (0x40, 0x40), (0x89, 0x88),
-    # No waveform selected: $00 would read as "no firstwave" (gplay.c:357)
-    # and $08 is a different, test-bit byte -- both keep the testbit.
-    (0x00, FIRSTWAVE_TESTBIT), (0x01, FIRSTWAVE_TESTBIT),
+    # No waveform selected: $00 would read as "no firstwave" (gplay.c:357).
+    # Since sanxion-free-running-first-wave-adoption (2026-11-07) a record with
+    # no select bit gets $01, gate on and no test bit, so its oscillator runs
+    # free as the original's ctrl $00 does; Sanxion's ring/sync neighbour
+    # modulates off it (81-88 s .749 -> .889). $08 is a different, test-bit
+    # byte and keeps the testbit.
+    (0x00, FIRSTWAVE_FREERUN), (0x01, FIRSTWAVE_FREERUN),
     (0x09, FIRSTWAVE_TESTBIT),
     # $FE is Goattracker's gate COMMAND, which writes no waveform.
     (0xFE, FIRSTWAVE_TESTBIT), (0xFF, FIRSTWAVE_TESTBIT),
@@ -96,7 +100,8 @@ def test_the_byte_is_the_waveform_with_the_gate_cleared(waveform, want):
 def test_every_byte_it_returns_is_a_gate_clear_waveform_or_the_testbit():
     for w in range(256):
         fw = gate_off_firstwave(w)
-        assert fw == FIRSTWAVE_TESTBIT or (
+        # $01 for a record with no select bit (see the parametrize above).
+        assert fw in (FIRSTWAVE_TESTBIT, FIRSTWAVE_FREERUN) or (
             fw == w & 0xFE and fw & 0xF0 and fw < 0xFE), (hex(w), hex(fw))
 
 
@@ -144,7 +149,9 @@ def test_forced_on_every_instrument_moves_only_firstwave_bytes(name):
     assert moved, f"{name}: forcing the option moved nothing"
     assert set(moved) <= set(offs), sorted(set(moved) - set(offs))[:10]
     for o in moved:
-        assert off[o] == FIRSTWAVE_TESTBIT and not on[o] & 0x01, (
+        # A no-waveform record now writes the free-running $01 both ways.
+        assert off[o] in (FIRSTWAVE_TESTBIT, FIRSTWAVE_FREERUN) and (
+            on[o] == FIRSTWAVE_FREERUN or not on[o] & 0x01), (
             name, o, hex(off[o]), hex(on[o]))
 
 

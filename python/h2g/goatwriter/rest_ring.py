@@ -102,7 +102,7 @@ from .pulse import packed_pattern_size, pattern_rows
 # the chains off the instrument's zeroed release cuts all of it (aud 0.9315 ->
 # 0.9387, loud 0.936 -> 0.975, v0.5.647). Keyed on the header name, as
 # `stored_wave.HELD` is.
-CHAINS_WITH_NOTE_RISE = frozenset({"Battle of Britain"})
+CHAINS_WITH_NOTE_RISE = frozenset({"Battle of Britain", "Monty on the Run"})
 
 # Test seam: False reads an open chain the way the pass did before the cut
 # was carried into the next pattern (tests/test_rest_ring_open_cut.py).

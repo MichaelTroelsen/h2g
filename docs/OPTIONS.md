@@ -3636,9 +3636,16 @@ Confuzion carries a second spelling, `detect.MASTER_FADE_SHAPE_FETCH`: the
 level is computed only when a row is fetched, from a version-5 orderlist. The
 option reads it there too, and keeps only the positions some fetch actually
 sees (`master_fade.written_positions`), because the formula's value for any
-other position never reaches `$D418`. The spelling is in ten more corpus files,
-but only Confuzion fades inside a version-5 orderlist the walk can follow
-(`tests/test_master_fade_fetch.py`).
+other position never reaches `$D418`. The spelling is in ten more corpus files.
+Zoolook carries it under a version-0 orderlist (`V = $4F - pos`, F to 0 over
+positions 65-79 of voice 2), which the option reads too since 2026-11-07; its
+tune ends on `V=0` a position before the last, so the option also writes `D00`
+on the last event row of the previous position's copy
+(`MASTER_FADE_TUNE_END`). Zoolook ships it, measured at 080a3ce (`-t 180
+--presets --sound`): `aud` .9179 -> .9231, `loud` .9613 -> .9755, `vol` .9092
+-> .9942, its last two seconds .36/.44 -> .58/.96. Forced on every file, the
+option also moves Master_of_Magic, Spellbound, Thing_on_a_Spring and Zoids,
+which were not measured and stay off (`tests/test_master_fade_fetch.py`).
 
 **Tune-end silence.** Confuzion's end routine (`detect.TUNE_END_VOLUME_SHAPE`,
 `LDA #$00 / STA flag / STA $D418 / CLI`) zeroes the volume when the tune ends.
@@ -3647,10 +3654,19 @@ voice of each parked subtune is pointed at a copy of the silent pattern with
 `D00` on row 0 (`master_fade.park_end_volume`). The copy is appended after
 every other pattern, last of every pass that adds one, because patterns are
 stored in index order: editing the silent pattern in place moves every later
-pattern by a byte. sidplayfp renders such a layout change as a whole-tune shift
-after about 97 s with the registers unchanged. This is its frontend's 32-bit
-`getBufSize` overflow (`(remainingMs*frequency)/1000` wraps above 97391 ms at
-44.1 kHz), not the program.
+pattern by a byte. sidplayfp 2.15.2 renders such a layout change as a
+whole-tune shift with the registers unchanged: its `Mixer::begin`/`doMix`
+(`src/mixer.cpp`) resizes its buffer only when a remainder exists, so a buffer
+boundary that leaves none copies the never-cleared store again and the render
+repeats 61-78 samples (one engine call) and stays that late. Which boundaries
+do so depends on the cycle phase, so a one-byte layout change moves them.
+libsidplayfp 2.16.2 fixes it. This retracts the earlier explanation, the
+frontend's 32-bit `getBufSize` overflow (`(remainingMs*frequency)/1000` wraps
+above 97391 ms at 44.1 kHz): that wrap is real and still in 2.16.2, but it only
+makes one short buffer per 97.39 s and is harmless once the mixer is fixed
+(measured 2026-11-06, `sidplayfp-getbufsize-overflow-render-fix`). The harness
+renders with 2.16.2 since 2026-11-07 (`listen.SIDPLAYFP`, folded into the
+render cache key as `listen.SIDPLAYFP_BUILD`; `tests/test_sidplayfp_build.py`).
 
 A census over all 95 files (siddump with a PC hook on every `$D418` store,
 600 s a subtune) finds the explicit tune-end zero only in Confuzion and in

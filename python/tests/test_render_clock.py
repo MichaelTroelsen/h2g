@@ -61,6 +61,7 @@ def test_cache_key_changes_only_for_the_pinned_files(tmp_path):
     def old_key(path):
         h = hashlib.sha1(path.read_bytes())
         h.update(b"\0sidplayfp-delay=%d" % L.SIDPLAYFP_POWER_ON_DELAY)
+        h.update(b"\0sidplayfp-build=" + L.SIDPLAYFP_BUILD.encode())
         return h.hexdigest()[:12]
     ntsc, pal = tmp_path / "n.sid", tmp_path / "p.sid"
     ntsc.write_bytes(_hdr(flags=0x0018))

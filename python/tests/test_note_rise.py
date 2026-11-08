@@ -52,6 +52,9 @@ BLOCKS = {
     "Commando": (0x5525, 0x03, 2),
     "Geoff_Capes_Strongman_Challenge": (0x152A, 0x03, 2),
     "Gerry_the_Germ": (0xE52A, 0x03, 2),
+    # NOTE_RISE_NODUR_SHAPE: no duration test at all, so MIN is 0. Monty's
+    # record 12 (GT 13, effect $02) opens the song on it.
+    "Monty_on_the_Run": (0x84FA, 0x00, -1),
 }
 
 
@@ -71,7 +74,7 @@ def _converted(name, **extra):
 
 
 @needs_corpus
-def test_the_block_is_read_in_exactly_the_eight_files_that_carry_it():
+def test_the_block_is_read_in_exactly_the_nine_files_that_carry_it():
     found = {}
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))
@@ -84,6 +87,18 @@ def test_the_block_is_read_in_exactly_the_eight_files_that_carry_it():
             nr = det.note_rise
             found[path.stem] = (nr.counter, nr.min_length, nr.step)
     assert found == BLOCKS
+
+
+@needs_corpus
+def test_monty_reads_the_dur_less_block_and_falls_from_the_first_tick():
+    """Monty_on_the_Run $831A: `AND #$02 / BEQ / LDA $84FA / AND #$01 / BEQ
+    / LDA $84EF,X / BEQ / DEC $84EF,X / LDY / STA $D401,Y` -- no `LDA dur /
+    CMP #min` ahead of the counter. siddump of the original, voice 2 from
+    frame 0: the high byte reads `41 40 3F ...` on the odd frames down to
+    `01` at frame 129, over the $68 sweep's low byte
+    (C:/t/monty-on-the-run-aud-dip-0/finding.md)."""
+    _sid, det = _det("Monty_on_the_Run")
+    assert det.note_rise == NoteRise(counter=0x84FA, min_length=0, step=-1)
 
 
 @needs_corpus

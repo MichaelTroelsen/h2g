@@ -185,10 +185,35 @@ def test_the_five_rise_players_carry_the_byte_through_a_bit6_event():
 
 
 @needs_corpus
-def test_a_player_without_the_block_carries_nothing():
-    # Not Commando any more: it carries the two-INC spelling
-    # (NOTE_RISE_DOUBLE_SHAPE), with no record that sets the bit.
+def test_monty_carries_the_byte_through_a_bit6_event_without_a_dur_array():
+    """NOTE_RISE_NODUR_SHAPE reads no duration byte, so there is no array the
+    status byte has to be stored into (`dur`); the branch target $8118 writes
+    `savehi` ($84EF) nowhere. siddump of the original, voice 2: the high byte
+    falls `41 .. 01` over frames 0-129 although the gate drops at frame 64."""
     sid = load_sid(str(CORPUS / "Monty_on_the_Run.sid"))
+    det = D.detect(sid, lambda *a, **k: None)
+    assert det.note_rise is not None
+    assert D.note_rise_rest_carries_on(sid, det)
+
+
+@needs_corpus
+def test_monty_plan_carries_its_notes_on_through_the_rest(monkeypatch):
+    _sng, lines, _ = _converted("Monty_on_the_Run")
+    rise = [m for m in lines if m.startswith("Note rise")]
+    assert len(rise) == 1 and "carried on through the rest after them" in rise[0]
+    # the step short-circuited: the plan is the 30-store one of fix.patch
+    monkeypatch.setattr(R, "note_rise_rest_carries_on", lambda *a, **k: False)
+    _sng, lines, _ = _converted("Monty_on_the_Run")
+    rise = [m for m in lines if m.startswith("Note rise")]
+    assert len(rise) == 1 and "carried on" not in rise[0]
+
+
+@needs_corpus
+def test_a_player_without_the_block_carries_nothing():
+    # Not Commando (it carries the two-INC spelling, NOTE_RISE_DOUBLE_SHAPE,
+    # with no record that sets the bit) and not Monty_on_the_Run (the dur-less
+    # NOTE_RISE_NODUR_SHAPE): Warhawk reads bit $02 as the rise.
+    sid = load_sid(str(CORPUS / "Warhawk.sid"))
     det = D.detect(sid, lambda *a, **k: None)
     assert det.note_rise is None
     assert not D.note_rise_rest_carries_on(sid, det)

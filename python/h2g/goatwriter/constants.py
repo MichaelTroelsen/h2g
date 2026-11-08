@@ -198,6 +198,7 @@ HARD_RESTART_FRAMES = 2
 
 FIRSTWAVE_TESTBIT = 0x09
 FIRSTWAVE_GATE_ONLY = 0xFF
+FIRSTWAVE_FREERUN = 0x01
 
 
 # A wavetable left side of $01-$0F is a delay: the entry holds whatever

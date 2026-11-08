@@ -6,7 +6,8 @@ from typing import (List, Optional)
 from ..detect import (Detection)
 from ..sidfile import (SidFile)
 from .constants import (DEFAULT_FORMAT, EFFECT_PER_FRAME, FIELD_LEN,
-                        FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT, FORMAT_GTS2,
+                        FIRSTWAVE_FREERUN, FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT,
+                        FORMAT_GTS2,
                         HEADER_LEN, MAX_INSTRUMENTS, WAVE_ENTRIES_PER_INSTR)
 from . import constants as _gw_constants
 from . import hard_restart as _gw_hard_restart
@@ -168,6 +169,13 @@ def gate_off_firstwave(waveform: int) -> int:
     unwritten.
     """
     fw = waveform & 0xFE
+    if fw == 0:
+        # A record with NO waveform leaves the oscillator FREE-RUNNING in the
+        # original (ctrl $00), and a neighbouring voice may sync/ring off it;
+        # $09's test bit would freeze it (Sanxion 81-88 s, voice 2 under the
+        # ring/sync leads: aud .749 -> .889; moves 11 files, none falling more
+        # than .0001 -- C:/t/sanxion-aud-dip-81/finding.md).
+        return FIRSTWAVE_FREERUN
     return fw if fw & 0xF0 and fw < 0xFE else FIRSTWAVE_TESTBIT
 
 
@@ -474,7 +482,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # byte, so the frame is nameable and still resets the oscillator.
             firstwave = (named_testbit_firstwave if named_firstwave
                          else gate_off_firstwave)(data[base + 2])
-            if gatetimer_trim and firstwave != FIRSTWAVE_TESTBIT:
+            if gatetimer_trim and firstwave not in (FIRSTWAVE_TESTBIT,
+                                                    FIRSTWAVE_FREERUN):
                 # `aligned_firstwave`: the init call is now one of the gate's
                 # off calls (it writes the record's waveform with the gate
                 # clear and the pitch follows on call 1), so the counter

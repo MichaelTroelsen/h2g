@@ -5966,6 +5966,9 @@ def _apply_orderlist_tempos(new_track: List[int], moved: dict,
     return written
 
 
+MASTER_FADE_TUNE_END = 0x100   # fades level: D00 on the previous step's last event
+
+
 def _apply_orderlist_master_fades(new_track: List[int], moved: dict,
                                   fades: dict, patterns: List[List[int]],
                                   copies: dict, log=None) -> int:
@@ -5993,6 +5996,36 @@ def _apply_orderlist_master_fades(new_track: List[int], moved: dict,
             continue
         pattern = patterns[entry]
         if len(pattern) < 4:
+            continue
+        if level == MASTER_FADE_TUNE_END:
+            if at - 1 not in moved or at - 1 not in fades:
+                continue
+            # The last position: the original steps the position array on the
+            # FETCH of the previous pattern's last event (and the write of the
+            # next fetch sees the new level), so the zero lands on that row,
+            # not on row 0 of the final pattern (Zoolook: 32 ticks earlier).
+            j = moved[at - 1]
+            prev = new_track[j] if j < len(new_track) else None
+            if prev is None or prev >= len(patterns):
+                continue
+            pp = patterns[prev]
+            ev = [r for r in range(0, len(pp) - 3, 4)
+                  if pp[r] != GT_NO_NOTE and pp[r] != GT_END_PATTERN]
+            if not ev:
+                continue
+            row = ev[-1]
+            if pp[row + 2] != 0:
+                continue
+            key = (prev, 'end')
+            if key not in copies:
+                if len(patterns) >= MAX_PATTERNS:
+                    break
+                copy = list(pp)
+                copy[row + 2], copy[row + 3] = CMD_SETMASTERVOL, 0
+                copies[key] = len(patterns)
+                patterns.append(copy)
+            new_track[j] = copies[key]
+            written += 1
             continue
         if pattern[2] == CMD_SETMASTERVOL and pattern[3] == level:
             written += 1

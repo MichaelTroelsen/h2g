@@ -102,9 +102,15 @@ def test_the_option_writes_levels_e_to_1_and_never_0():
 
 
 @needs_corpus
-def test_a_version_0_file_with_the_second_spelling_is_left_alone():
-    """Zoids has the shape under a version-0 orderlist, whose positions are
-    not the flat index (repeat commands): reading it is not done."""
-    a = convert(str(ZOIDS), log=lambda m: None, **_opts("Zoids.sid", True))
-    b = convert(str(ZOIDS), log=lambda m: None, **_opts("Zoids.sid", False))
-    assert a == b
+@pytest.mark.parametrize("name", ["Zoolook.sid", "Zoids.sid"])
+def test_a_version_0_file_with_the_second_spelling_is_read(name):
+    """Version-0 orderlists are read too since zoolook-master-fade-adoption
+    (2026-11-07). This test used to pin Zoids as LEFT ALONE, on the ground that
+    a version-0 orderlist's positions are not the flat index (repeat
+    commands); Zoids' and Zoolook's tracks are flat (no command below floor
+    255), so the walk follows them. Zoolook ships the option; Zoids moves only
+    when it is forced."""
+    path = CORPUS / name
+    a = convert(str(path), log=lambda m: None, **_opts(name, True))
+    b = convert(str(path), log=lambda m: None, **_opts(name, False))
+    assert a != b

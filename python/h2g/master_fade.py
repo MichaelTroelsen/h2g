@@ -64,10 +64,16 @@ def written_positions(sid: SidFile, det: Detection, tracks: List[List[int]],
             if nxt[v] != t:
                 continue
             if pos[v] >= len(bodies[v]):
-                return seen
+                if v == voice:
+                    return seen
+                nxt[v] = MAX_TICKS      # a voice past its end writes nothing
+                continue
             evs = events(bodies[v][pos[v]])
             if not evs:
-                return seen
+                if v == voice:
+                    return seen
+                nxt[v] = MAX_TICKS
+                continue
             wait, rec, _note = evs[evi[v]]
             if rec is not None:
                 seen.setdefault(pos[voice], t)

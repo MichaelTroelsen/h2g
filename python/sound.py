@@ -655,6 +655,10 @@ def content_key(path: Path, delay: int | None = None,
         delay = listen.SIDPLAYFP_POWER_ON_DELAY
     h = hashlib.sha1(Path(path).read_bytes())
     h.update(b"\0sidplayfp-delay=%d" % delay)
+    # The build is part of what the WAV is a render OF: 2.15.2 repeats the
+    # head of some buffers (see `listen.SIDPLAYFP_BUILD`), so a WAV it made
+    # is not 2.16.2's under the same bytes.
+    h.update(b"\0sidplayfp-build=" + listen.SIDPLAYFP_BUILD.encode())
     if mute:
         h.update(b"\0mute=" + ",".join(str(v) for v in sorted(mute)).encode())
     if listen.forced_pal_flags(path):

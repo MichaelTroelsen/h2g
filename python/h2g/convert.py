@@ -222,6 +222,11 @@ def _drum_start_group(sid: SidFile, group_tempos, unit_tempos) -> Optional[int]:
     return g
 
 
+# `Detection.master_fade` level meaning "D00 on the previous position's last
+# event row" (the tune-end zero of the row-fetch spelling).
+from .patterns import MASTER_FADE_TUNE_END  # noqa: E402
+
+
 def _master_fade_positions(tracks: List[List[int]], fade: tuple,
                            floor: int, written=None) -> List[dict]:
     """One {position: level} map per track, from `Detection.master_fade`.
@@ -247,6 +252,13 @@ def _master_fade_positions(tracks: List[List[int]], fade: tuple,
                     break
                 if 0 <= base - at <= 14 and (seen is None or at in seen):
                     marks[at] = base - at
+            # The level-0 write on the LAST pattern: the walk cannot see it
+            # (the original fetches there from rows our decode calls silent),
+            # but the formula's zero is the tune's end, written once.
+            last = next((k for k, b in enumerate(track) if b >= floor), len(track)) - 1
+            if (seen is not None and last >= 1 and base - last == 0
+                    and (last - 1) in marks):
+                marks[last] = MASTER_FADE_TUNE_END
         out.append(marks)
     return out
 
@@ -1029,7 +1041,7 @@ def convert(sid_path: str, log: Logger = print,
     # that says which positions a fetch ever sees.
     fades = None
     if master_fade and det.master_fade is not None:
-        if det.master_fade_fetch and det.read_track_version == 5:
+        if det.master_fade_fetch and det.read_track_version in (0, 5):
             fades = _master_fade_positions(
                 tracks, det.master_fade, floor,
                 lambda g: _mf_written(sid, det, tracks, g, det.master_fade[1],

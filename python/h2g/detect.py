@@ -5990,6 +5990,17 @@ NOTE_RISE_DOUBLE_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? AD ?? ?? "
                           "?? ?? 99 01 D4")
 
 
+# Monty_on_the_Run $831A: the same block with NO duration test at all -- `AND
+# #$02 / BEQ / LDA counter / AND #$01 / BEQ / LDA savehi,X / BEQ / DEC
+# savehi,X / LDY / STA $D401,Y` -- so every note of a record setting bit $02
+# falls from its first effect tick (`min_length` 0).
+NOTE_RISE_NODUR_SHAPE = ("29 02 F0 ?? AD ?? ?? 29 01 F0 ?? BD ?? ?? F0 ?? "
+                         "?? ?? ?? AC ?? ?? 99 01 D4")
+NODUR_AT_COUNTER = 5
+NODUR_AT_SAVE = 12
+NODUR_AT_STEP = 16
+
+
 def _note_rise_block(data: bytes, load: str) -> Tuple[int, int]:
     """(file offset of the block's `AND #$02`, its step instructions), or
     (-1, 0): NOTE_RISE_SHAPE, else NOTE_RISE_DOUBLE_SHAPE."""
@@ -6087,7 +6098,19 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
     data = sid.data
     at, count = _note_rise_block(data, load)
     if at < 1:
-        return None
+        # Fallback, consulted only where the dialects above matched nothing.
+        nd = search_file(data, f"{load} {NOTE_RISE_NODUR_SHAPE}")
+        if nd < 1:
+            return None
+        b = nd + lead
+        step = NOTE_RISE_STEPS.get(data[b + NODUR_AT_STEP])
+        if (step is None or data[b + NODUR_AT_STEP + 1:b + NODUR_AT_STEP + 3]
+                != data[b + NODUR_AT_SAVE:b + NODUR_AT_SAVE + 2]):
+            return None
+        return NoteRise(
+            counter=data[b + NODUR_AT_COUNTER]
+            | data[b + NODUR_AT_COUNTER + 1] << 8,
+            min_length=0, step=step)
     b = at + lead
     step = NOTE_RISE_STEPS.get(data[b + NOTE_RISE_AT_STEP])
     if step is None:
@@ -6139,12 +6162,20 @@ def note_rise_rest_carries_on(sid: SidFile, det: Detection) -> bool:
     data = sid.data
     at, _count = _note_rise_block(data, load)
     if at < 1:
-        return False
-    b = at + (2 if zp else 3)
-    dur = data[b + NOTE_RISE_AT_DUR:b + NOTE_RISE_AT_DUR + 2]
-    save = data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2]
+        # The dur-less block (NOTE_RISE_NODUR_SHAPE) reads no duration byte,
+        # so there is no array for the status byte to be stored into.
+        nd = search_file(data, f"{load} {NOTE_RISE_NODUR_SHAPE}")
+        if nd < 1:
+            return False
+        b = nd + (2 if zp else 3)
+        dur = None
+        save = data[b + NODUR_AT_SAVE:b + NODUR_AT_SAVE + 2]
+    else:
+        b = at + (2 if zp else 3)
+        dur = data[b + NOTE_RISE_AT_DUR:b + NOTE_RISE_AT_DUR + 2]
+        save = data[b + NOTE_RISE_AT_SAVE:b + NOTE_RISE_AT_SAVE + 2]
     i = search_file(data, STATUS_BIT6_SHAPE)
-    if i < 1 or data[i + 3:i + 5] != dur:
+    if i < 1 or (dur is not None and data[i + 3:i + 5] != dur):
         return False                 # the status byte is not what the rise reads
     bvs = i + len(STATUS_BIT6_SHAPE.split())      # the BVS's own operand
     rel = data[bvs] - 256 if data[bvs] > 127 else data[bvs]

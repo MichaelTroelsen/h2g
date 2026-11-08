@@ -1097,6 +1097,15 @@ no chip model — Hubbard is 6581-era and the difference is audible. `sidplayfp`
 renders the whole corpus with one engine, at exactly the length asked for, with
 `-fo0` for no fade.
 
+**The build is libsidplayfp 2.16.2** (v0.5.653; `listen.SIDPLAYFP`, the
+SIDM2 `tools/sidplayfp` copy). 2.15.2's `Mixer::begin` re-copies a stale
+remainder at some buffer boundaries, a 61-78-sample step that moved
+layout-sensitive A/Bs by about +-.003 (`docs/OPTIONS.md` § `--master-fade`).
+`listen.SIDPLAYFP_BUILD` is folded into the render cache key, so no 2.15.2
+render is reused, and `tests/test_sidplayfp_build.py` fails if the constant
+points back at 2.15.2. Every `aud` row moved by at most .0126 at the switch:
+scores across it are not comparable.
+
 **Every render is PAL** (v0.5.636). sidplayfp's clock default is "defined by
 song", so a PSID v2 whose clock bits read NTSC (`(flags >> 2) & 3 == 2`) was
 rendered at 60 Hz while our packed `.sid` -- always PAL -- rendered at 50 Hz,

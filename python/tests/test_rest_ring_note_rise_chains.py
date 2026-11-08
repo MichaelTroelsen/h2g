@@ -27,8 +27,9 @@ def _ring_line(name, **extra):
     return [m for m in lines if m.startswith("Rest ring-out")]
 
 
-def test_the_keyed_set_names_exactly_battle_of_britain():
-    assert RR.CHAINS_WITH_NOTE_RISE == frozenset({"Battle of Britain"})
+def test_the_keyed_set_names_exactly_battle_of_britain_and_monty():
+    assert RR.CHAINS_WITH_NOTE_RISE == frozenset(
+        {"Battle of Britain", "Monty on the Run"})
 
 
 @needs_corpus
@@ -49,3 +50,22 @@ def test_the_chain_ring_is_what_the_keyed_set_switches(monkeypatch):
                                   "Human_Race"])
 def test_the_other_note_rise_files_keep_the_chains_off(name):
     assert not any(CHAIN_LINE in m for m in _ring_line(name)), name
+
+
+@needs_corpus
+def test_montys_tied_rests_ring_uncut_to_the_next_note():
+    """Monty voice 2's note ends on `CMD_SETSR $FF` the row before its KEYOFF
+    (pattern $1F row 31): the original's R=$F ring sounds on after the gate
+    drops at frame 64. With the chains off (what the note rise's detection
+    did to it) that write goes, the instrument's zeroed release cuts the
+    voice at once, and `_bend_tail` reads every later bend as a released-out
+    tail (bend .93 -> .72, C:/t/monty-sweep-through-note-rise-bend/finding.md)."""
+    got = _ring_line("Monty_on_the_Run")
+    assert len(got) == 1 and CHAIN_LINE in got[0], got
+
+
+@needs_corpus
+def test_montys_chain_ring_is_what_the_keyed_set_switches(monkeypatch):
+    monkeypatch.setattr(RR, "CHAINS_WITH_NOTE_RISE", frozenset())
+    got = _ring_line("Monty_on_the_Run")
+    assert not any(CHAIN_LINE in m for m in got), got

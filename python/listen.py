@@ -53,7 +53,31 @@ SID2WAV = r"C:\Users\mit\claude\c64server\SIDM2\tools\SID2WAV.EXE"
 # libsidplayfp's own frontend. sid2wav is a 1997 build of the same lineage;
 # this is the current one, and the only renderer here that reads the whole
 # corpus with one engine. Needs the C64 ROMs in sidplayfp.ini for RSIDs.
-SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
+#
+# **The build matters, not just the engine.** sidplayfp 2.15.2 (the 32-bit
+# release in Downloads, `SIDPLAYFP_2_15_2`) has a frontend bug that moves a
+# render by one engine call (61-78 samples, ~1.4-1.75 ms) at some of its
+# one-second buffer boundaries, FOR GOOD: `Mixer::begin` (src/mixer.cpp)
+# copies the samples its last `doMix` could not fit to the head of the next
+# buffer but never empties that store, so a later boundary that leaves no
+# remainder copies the SAME samples again and the first R samples of that
+# second repeat the head of the one before. Whether a boundary does it
+# depends on the machine's cycle phase against the buffer grid, so a ONE-CYCLE
+# difference between two packed layouts of the same music makes one render
+# step and the other not, and `aud`/`loud` score the difference as music.
+# 2.16.2 fixed it (`else m_buffer.clear();` in `Mixer::doMix`) and renders
+# the same audio otherwise (60 s of F3: 5 LSB apart once the repeats are cut
+# out of the 2.15.2 render, which is the re-render dither floor of both).
+# `ConsolePlayer::getBufSize`'s 32-bit `remainingMs * frequency`, which wraps
+# past 97.39 s of remaining time and makes one short buffer per 97.39 s, is
+# still in 2.16.2 and was NOT the cause: with the mixer fixed it is harmless
+# (F3 vs F3Z at `-t307`: lag 0 or -1 over 304 checked seconds).
+# Evidence: C:/t/sidplayfp-getbufsize-overflow-render-fix/finding.md.
+SIDPLAYFP_2_15_2 = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
+SIDPLAYFP = r"C:\Users\mit\claude\c64server\SIDM2\tools\sidplayfp\sidplayfp.exe"
+# folded into `sound.content_key`: a WAV cached from the buggy build is a
+# different render of the same .sid bytes
+SIDPLAYFP_BUILD = "2.16.2"
 # sidplayfp's power-on delay -- `--delay=<num> simulate c64 power on delay
 # (default: random)` in its --help-debug -- is the number of cycles the C64
 # waits before the tune starts, and a RANDOM one made every render of the

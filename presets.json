@@ -3327,7 +3327,8 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "master_fade": true
     }
   }
 }

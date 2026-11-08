@@ -94,7 +94,11 @@ def test_a_clone_whose_wavetable_opens_on_a_delay_keeps_the_waveform_byte():
     delays = [(c, b) for c, b in pairs if not _opens_on_a_waveform(song, c)]
     assert len(delays) == 1
     clone, base = delays[0]
-    assert base.firstwave == G.FIRSTWAVE_TESTBIT
+    # The base is record 08, waveform $00: since
+    # sanxion-free-running-first-wave-adoption (2026-11-07) a record with no
+    # select bit gets the free-running $01, not the testbit, so its oscillator
+    # runs for the ring/sync neighbour as the original's ctrl $00 does.
+    assert base.firstwave == G.FIRSTWAVE_FREERUN
     assert clone.firstwave == 0x01
     waves = [(c, b) for c, b in pairs if _opens_on_a_waveform(song, c)]
     assert len(waves) == 1 and waves[0][0].firstwave == 0
