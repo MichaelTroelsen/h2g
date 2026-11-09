@@ -9,6 +9,20 @@ Keep items actionable: what to run, and what makes it done.
 
 ## Open
 
+- **PRIORITY (user, 2026-11-09): IK_plus first among the sub-99% songs.** It
+  reads gate 58%, wave 65%, instr 35%, onset 75%, adsr 76% and aud .8718 at
+  v0.5.654, with melody and hold at 100%. Three of the "Sub-99% mechanisms"
+  entries below name it. The largest is "Instr: IK_plus (35.3%) never sounds
+  the original's noise tick": 1333 of its 1888 unmatched notes. The others are
+  the attack scatter (gate M5, wave onset jitter) and the `$08` test-bit
+  parking (wave/hold deselect, 2320 frames). Work the noise tick first, then
+  re-measure the other two on top of it. Earlier IK_plus attempts are closed
+  in `.claude/tasks/closed.jsonl` (`explain-why-parking-08-on-ik-plus`,
+  `ik-plus-rest-toggle-search`, `ik-plus-record2-program-stop`), so read those
+  before re-trying the parking. Plan task: `ik-plus-sub99-priority`.
+
+  added: 2026-11-09
+
 - **Rebuild `build/instrmap`.** The dumps on disk are stale against HEAD:
   `build/instrmap/*.md` has mtime `2026-08-23 14:03`, while `428ca07` — which
   enables `--rest-envelope-silence` for ACE_II, Thundercats, Shockway_Rider,
@@ -381,6 +395,1039 @@ Keep items actionable: what to run, and what makes it done.
   touches: rw:python/abpage.py, rw:python/tests/test_abpage.py, rw:build/listen
 
   added: 2026-10-30
+
+- **Nineteen: emit the hi-hat's per-frame band-pass toggle.** The original
+  player's hat code at `$94DD` writes cutoff `$60` and mode `$2F` (band-pass)
+  on each hat frame, then low-pass on the next. That makes 66 band/low pairs
+  per 400 frames. Our conversion never leaves low-pass. Over 119-125 s, with
+  every voice muted, the original still renders RMS .0354 from the filter
+  alone, while ours renders .0002. Removing the toggle from the original, as an
+  oracle edit, raises aud from .9082 to .9157 over the whole song and from
+  .851 to .864 over 117-124 s. That is the ceiling an emitter could reach. No
+  emitter has been tried. A Goattracker filter-table row firing in phase with
+  the hat is the obvious route, and whether it can fire in phase is the open
+  question. Evidence: `C:/t/nineteen-aud-dip-117/finding.md` (diagnosis of
+  QUEUE `dip-nineteen-117`, v0.5.654). Done when a patch that applies to a
+  fresh worktree of HEAD lifts Nineteen's aud over 117-124 s in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B, with no printed
+  column falling more than its noise. The corpus byte-hash must also name
+  every file the patch moves. A finding that the toggle cannot be emitted in
+  phase also counts as done. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Corpus: lift the listening index's sub-99% columns.** The user pointed at
+  `build/listen/index.html` (2026-11-08): plenty of its melody, gate, wave,
+  hold and instr cells sit below 99%. The page was staged on 2026-10-31, and
+  the same columns in `docs/FIDELITY.md` at v0.5.654 still read below 99% on
+  most of the 81 songs not on hold:
+
+  | column | songs below 99% | worst |
+  |---|---|---|
+  | melody | 6 | Sun_Never_Shines 91, Lion_Heart 92, Lakers_vs_Celtics 93 |
+  | gate | 62 | Wiz 18, Dragons_Lair_Part_II 33, Mozart 35, I_Ball 41 |
+  | wave | 55 | Bangkok_Knights 56, I_Ball 61, IK_plus 65, Nineteen 77 |
+  | hold | 33 | eight songs at 0%, Commando among them (fixture-held) |
+
+  The instr column comes from `build/heard.json`, dated 2026-10-30, where 77 of
+  93 songs sit below 99%. Restage before reading that column:
+  `listen.py --all -t 180`, then `heard.py`. Plan all five columns at once
+  (user, 2026-11-08), one grouping pass per column, worst song first. Then
+  merge the proposed entries into this file. For each song, name the mechanism from the trace pair
+  (`fidelity.py --diagnose` first, because a low score is a claim about the
+  harness until diagnose says otherwise). Then census that mechanism over the
+  corpus and fix it for every song that shares it. Done when every song not
+  on hold reads at least 99% in each of melody, gate, wave and hold in
+  `docs/FIDELITY.md`, or carries a named reason it cannot (a refuted or
+  measured-ceiling finding). A fixture-held song like Commando counts as
+  carrying a reason. One `[subagent]` per column to group its songs by
+  mechanism, `[main]` to merge the proposed entries into this file, then one
+  `[subagent]` per mechanism. The per-mechanism entries are under
+  "Sub-99% mechanisms" below (merged 2026-11-08).
+
+  added: 2026-11-08
+
+## Sub-99% mechanisms (from the five column passes, 2026-11-08)
+
+Each entry below came out of the five column passes the user asked for on 2026-11-08 (gate, wave, hold, melody, instr). The evidence lives under `C:/t/corpus-<column>-column-sub99-mechanisms/` (plan.md and the per-song files). A cause that more than one column found is merged into one entry, with each column's proposal kept beneath its title.
+
+- **Gate and wave: the first-wave `$09` test frame lands inside the original's gate-off gap.** Merged from the gate, wave column passes.
+
+  From the gate column:
+
+  **Gate M3: add `gate_off_firstwave_instruments` for the 14 songs whose gate
+  misses are the `$09` first-wave frame.** At v0.5.654 these read gate
+  Mozart 35, Lightforce 56, Pandora 62, Rasputin 74, Last_V8_C128_version 75,
+  Hunter_Patrol 81, Mega_Apocalypse 81, Chimera 82, Nineteen 82, Commando 84,
+  Commando_2 86, Gerry_the_Germ 86, Las_Vegas_Video_Poker 92, Zoids 94. In each
+  the dominant miss is ours `$09` (gate bit set) where the original is
+  gate-off, so our gate rises one frame before the original's (gate-off runs
+  `o3>u2 s+0 e-1`; Hunter_Patrol 84% of 1766 runs). A copy of `presets.json`
+  with `gate_off_firstwave_instruments` = 1..62 added to the song's entry,
+  `fidelity.py -t 180` (no `--sound`), moved gate Hunter_Patrol 81 -> 100,
+  Gerry 86 -> 100, Zoids 94 -> 100, Mega 81 -> 99, Commando 84 -> 99, Chimera
+  82 -> 97, Las_Vegas 92 -> 97, Last_V8_C128 75 -> 90, Rasputin 74 -> 89,
+  Nineteen 82 -> 88, Lightforce 56 -> 75, Pandora 62 -> 73, Mozart 35 -> 68, and
+  hold 0 -> 100 on eight of them; melody, seq and retrig did not move. The costs
+  seen: Mega onset 100 -> 90, Chimera tail 100 -> 88, Rasputin holdnf 100 -> 90,
+  Nineteen holdnf 86 -> 79, Gerry ctrl 91 -> 87; `aud` was not measured.
+  Mozart is a special case: its gate reads 100% one frame earlier (lag 6 of 7),
+  so no lever on the `$09` byte reaches it. First read why
+  `gate-off-firstwave-per-song-adoption` left these 14 out (`runs.jsonl`), and
+  note `gate-off-firstwave-gate-loss` (the loss on 20 files comes from the
+  note-init call's phase). Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M3, `ab/m3_*.out`,
+  `ab/hp_gofw.out`, `diag/Mozart.*`, `diag/Hunter_Patrol.*`. Done when each of
+  the 14 is either adopted in `presets.json` with `fidelity.py -t 180 --sound`
+  showing no printed column falling past its noise and gate >= 99% (or the
+  Mozart ceiling written down), or carries the named column that refuses it
+  (Commando counts as fixture-held). `[main]` (it writes `presets.json`).
+
+  added: 2026-11-08
+
+  From the wave column:
+
+  **Wave: adopt `gate_off_firstwave_instruments` per song on the firstwave-`$09` songs where it is clean.** 13 songs lose 1.9-12.6 pp of `wave` to one
+  frame per note: the init call before each attack writes `$09` (test bit,
+  class none) where the original keeps the previous note's waveform. Worst
+  Pandora 87.4%, then Last_V8_C128_version 89.3%, Rasputin 89.5%,
+  Mega_Apocalypse 89.8%, Gerry_the_Germ 89.9%, Lightforce 90.3%, Mozart 90.3%,
+  Hunter_Patrol 91.7%, Chimera 92.4%, Commando_2 93.4%, Zoids 95.6%,
+  Las_Vegas_Video_Poker 98.1%, Commando 90.9% (fixture-held, and Commando_2 is
+  a page of Commando.sid, so neither was forced). The other 11 were measured by forcing
+  `gate_off_firstwave_instruments` 1..62 on a private presets copy at `-t 180
+  --sound` (`C:/t/corpus-wave-column-sub99-mechanisms/abF/gof_vs_shipped.txt`):
+  Las_Vegas_Video_Poker .981 -> 1.000, Mozart .903 -> .998 (gate .353 -> .677,
+  no printed column falls), Lightforce .903 -> .990 (gate .564 -> .746, ctrl
+  .988 -> 1.000), Zoids .956 -> .987 but aud .942 -> .895, Gerry_the_Germ .899
+  -> .979 but ctrl .914 -> .870, Mega_Apocalypse .898 -> .973 but onset 1.00 ->
+  .90, Rasputin .895 -> .942 and Last_V8_C128_version .893 -> .934 (aud and ctrl
+  within .002), Hunter_Patrol .917 -> .971 (aud -.007), Chimera .924 -> .958
+  (aud -.006), Pandora .874 -> .909. `no_test_restart` is not the route: it
+  lifts wave on three of them and drops melody to .335-.871 on all 11
+  (`abF/ab_all.txt`). Nothing in closed.jsonl records an adoption verdict for
+  these 13. Done when `presets.json` carries `gate_off_firstwave_instruments`
+  for each of Mozart, Lightforce and Las_Vegas_Video_Poker (and for any other
+  of the 13 where `presets.py --fidelity` finds no printed column falling past
+  its noise), the `-t 180 --presets ../presets.json --sound` refresh shows the
+  wave rise, and the corpus byte-hash names exactly the files moved; each
+  refused song carries the column that refused it. The remaining wave on these
+  songs is the G mechanism below, not a failure of this entry. `[main]`
+  (preset search, `presets.json` and artefact regeneration); the verdict on
+  Zoids' aud drop and Gerry's ctrl drop is `[user]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Gate and instr: drum noise ticks are written gate-on where the original writes them gate-off.** Merged from the gate, instr column passes.
+
+  From the gate column:
+
+  **Gate M1: the drum noise tick is written gate-on (`$81`) where the
+  original's is gate-off (`$80`), on 16 multispeed songs.** Bump_Set_Spike 73,
+  One_Man_and_his_Droid 87, Thrust 87, Game_Killer 89, Thing_on_a_Spring 89,
+  International_Karate 90, Last_V8 90, Phantoms_of_the_Asteroid 90, Proteus 91,
+  Warhawk 91, Formula_1_Simulator 92, Spellbound 92, Devils_Galop 94,
+  Monty_on_the_Run 94, Master_of_Magic 95, Battle_of_Britain 98. On Game_Killer
+  98% of 1622 miss frames are `$80` vs `$81` at offset 1 (`orig 41 80 40 ...` /
+  `ours 41 81 40 ...`, 3461 gate-off runs, no `$09`); Phantoms and
+  One_Man_and_his_Droid are 100% that byte pair. Bump_Set_Spike's original
+  drum is 3 frames of `$80`, ours 2 frames of `$81`. Forcing `drum_gate_off` +
+  `drum_sustain_gate_off` on in a copy of its preset leaves gate at 73%, and
+  nine of the 16 already carry `drum_gate_off` and still miss, so the existing
+  drum options do not reach the tick. Related, not duplicates:
+  `thrust-drum-noise-gate` (pruned as a scoring choice) and
+  `heard-shapes-noise-frame-and-late-gate-attributed`. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M1, `diag/Bump_Set_Spike.*`,
+  `diag/Game_Killer.*`, `attr/<song>.misses.json`. Done when a patch that
+  applies to a fresh worktree of HEAD takes the tick to the original's gate
+  bit and length, lifts Bump_Set_Spike and Game_Killer gate in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B with no printed
+  column falling past its noise, and the corpus byte-hash names every file it
+  moves; or a measured finding that the first frame of a Goattracker note cannot
+  be written gate-off. Also decide whether the tick is audible (the original's
+  `$80` releases the voice; ours re-gates the envelope) -- a listening verdict
+  is `[user]`. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: two-frame drum ticks are written with the gate on where the
+  original has it off (7 songs, Thrust 36.3% worst).** The original's noise
+  tick is `ctl 80, 80` for two frames, ours the same frames `81, 81`, same
+  length and frequency: Thrust 921 of 1168 unmatched notes, Bump_Set_Spike
+  1095/1265, International_Karate 561/735, Zoolook 247/262, Thing_on_a_Spring
+  209/346, Deep_Strike 119/119, Commando 107/116 (fixture-held, cannot move).
+  `heard.py`'s `gated_tick` exempts only a difference on the tick's first frame,
+  and `wavetable._drum_tick_noise` keeps the gate on deliberately because a
+  gate-off tick above -S1 releases the voice before the ADSR delay lets the
+  attack start, so this is a trade-off to measure, not a plain bug. Related
+  closed: `drum-release-and-adparam` (0d4a2e5),
+  `the-drum-tick-leading-gate-count-is-per-file-and-nobody-knows-what-the-player-reads`
+  (f0fd20c). Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` H,
+  `pairs/Thrust.DRUM_OURS_GATE_LONGER.txt`. Done when a two-frame tick is
+  emitted gate-off on Thrust in an A/B and the audible envelope is compared
+  (`--sound`, no printed column falling more than its noise), with the
+  byte-hash naming every moved file, or a finding says the second frame cannot
+  be emitted gate-off without losing the attack. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Gate and instr: drum noise ticks are written gate-off where the original raises the gate.** Merged from the gate, instr column passes.
+
+  From the gate column:
+
+  **Gate M2: the drum noise tick is written gate-off (`$80`) where the
+  original gates it (`$81`) on Knucklebusters, Delta and Sun_Never_Shines.**
+  Delta's 225 miss frames are all one record (`AD$0F SR$09`, offset 2, `$81`
+  vs `$80`) and 92% of its 2937 gate-off runs are exact; Knucklebusters is 50%
+  that pair (one gated tick per cycle: `orig ... 11 11 81 10 80 10` / `ours
+  ... 11 11 80 10 80 10`) and 46% M4's shape; Sun_Never_Shines 51%. It is the
+  mirror of the M1 entry: an option that ungates every tick of a record whose
+  original gates some of them. Which option decides the tick is unproven.
+  Evidence: `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M2,
+  `diag/Knucklebusters.*`, `attr/Delta.misses.json`. Done when the option or
+  record that ungates the tick is named and Delta reads gate >= 99% in a
+  `-t 180` A/B with the corpus byte-hash naming what moves, or a measured
+  reason it cannot. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: drum ticks the original raises the gate on are written gate-off in
+  ours, so those notes are missing (9 songs, Knucklebusters_1 53.1% worst).**
+  The original's noise tick is `ctl 81`, ours `80`: the notes whose gate rise is
+  that tick have no counterpart. Sun_Never_Shines 150 of 151 missing notes,
+  Thundercats 111/112, Mega_Apocalypse 71/72, Bangkok_Knights 97/267 are
+  exactly that; gate-diff counts Knucklebusters 243 of 275, Delta 225/226,
+  Delta_13 150/151, W_A_R_Preview 96/164, Knucklebusters_1 93/159. Related
+  closed: `monty-v3-surplus-drum-ticks` (a5ea6d1), `mega-apocalypse-age-gated-second-effect`
+  (963d5c9). Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` I,
+  `pairs/Knucklebusters_1.DRUM_OURS_GATE_SHORTER.txt`,
+  `pairs/Sun_Never_Shines.MISSING.txt`, `pairs/missing_breakdown.txt`. Done
+  when the drum record or flag that makes ours write the tick gate-off is named
+  for Knucklebusters_1 and a patch gives Sun_Never_Shines' 150 notes their gate
+  rise, with the byte-hash naming every moved file; the census over the nine
+  songs must say how many of them share the record. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Gate and instr: the gate-off gap starts one frame late.** Merged from the gate, instr column passes.
+
+  From the gate column:
+
+  **Gate M4: the gate-off gap starts one frame late on 12 songs.** Ninja 75,
+  W_A_R 77, Kings_of_the_Beach_ingame 78, Radio_ACE 79,
+  Commodore_64_Music_Examples 80, Lion_Heart 83, Pygmies_Revenge 84,
+  Pacific_Coast 85, Saboteur_II 86, Kentilla 90, Human_Race 93, ACE_II 94. All
+  of Ninja's 2373 gate-off runs pair as `o4>u3 s+1 e+0`: the original's gap is
+  4 frames, ours 3, ending together; 2369 of its 2427 miss frames are that one
+  frame. Placement is right (`otime` >= 98% on all twelve). Setting
+  `hard_restart_frames` 4 on Ninja in a copy of the preset leaves gate at 75%,
+  so the lever `kotb-5tt-multirate-gate-diagnose` points at does not move this
+  cluster; the cause is unproven. Four of the twelve carry `no_test_restart`
+  (Ninja, Radio_ACE, Pacific_Coast, Pygmies_Revenge), where
+  `init-call-gate-early-under-ntr` already moved the gate envelope; the other
+  eight do not. Evidence: `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M4,
+  `diag/Ninja.*`, `attr/<song>.runs.json`. Done when a finding names what
+  starts the gate-off a frame late (the call, the counter or the option) with a
+  trace pair on Ninja and a second song from the list, and either a patch that
+  lifts Ninja gate over 99% with the corpus byte-hash naming every file moved,
+  or a measured ceiling. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: one-frame-late gate-off (6 songs, Ninja 22.3% worst).** On Ninja,
+  Pandora, Pygmies_Revenge, Commodore_64_Music_Examples, Human_Race and
+  Auf_Wiedersehen_Monty the original gates a note off at note frame 4 (3 on
+  Auf_Wiedersehen_Monty) and zeroes AD/SR the same frame, and ours gates off
+  exactly one frame later: +1 frame on 1710 of 1710 Ninja notes, 576/576,
+  318/318, 455/455, 10/10, and 220 of 225 for Pandora. Ninja has 1710 of its
+  1854 unmatched notes here. It is not `hard_restart_frames`: 3 -> 4 on Ninja,
+  Human_Race, Pygmies_Revenge and 5_Title_Tunes (all `max_hard_restart`)
+  changes no instr and no gate count. This is the "one frame of surplus
+  ringing per release" the 5 Title Tunes entry already records, found on five
+  more files. Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` A,
+  `pairs/Ninja.TONAL_OURS_GATE_LONGER.txt`, `pairs/gate_off_frame_orig_vs_ours.txt`.
+  Done when the emitter that writes the gate-off row and the loop that
+  consumes it are named with the frame count each side lands on, and a patch
+  that applies to a fresh worktree of HEAD moves Ninja's gate-off to frame 4
+  with instr up in a `heard.py` re-score of the restaged pair, no printed
+  `fidelity.py` column falling more than its noise, and the corpus byte-hash
+  naming every file it moves. A finding that the packed player cannot gate off
+  a call earlier at this row length also counts as done. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **5 Title Tunes: amend the open entry with the gate and instr findings.** Merged from the gate, instr column passes.
+
+  From the gate column:
+
+  **Gate M9: amend "5 Title Tunes fidelity" -- its gate 75% is one uniform
+  gate-rise-one-frame-early, and `hard_restart_frames` 4 does not move it.**
+  Not a new defect: the open entry already says "one frame of surplus ringing
+  per release, and `max_hard_restart` has SATURATED it". Measured now at
+  v0.5.655: all 2807 gate-off runs pair as `o4>u3 s+0 e-1` (the original's gap
+  is 4 frames, ours 3, starting together, ours rising a frame early), 86% of
+  the miss frames are tone-waveform ring (`40>41` 73%, `10>11` 14%), only 14% is
+  the `$09` byte (so this is not M3), and `hard_restart_frames` 4 in a copy of
+  the preset leaves gate at 75%. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M9, `diag/5_Title_Tunes.*`,
+  `ab/5tt_hr4.out`. Done when that entry carries these three figures and the
+  `gplay.c:334` arithmetic for this song's rows, or states the measured
+  ceiling in one line. `[main]` (a docs edit).
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: the attack frame carries the previous note's pitch on 5 Title
+  Tunes (13.6% instr).** At the gate-rise frame ours still holds the old
+  note's frequency (`2714` where the original has `49b8`) and the new
+  frequency lands one frame later: 2370 of the 2370 pitch-different notes,
+  and 95 of 199 on Trans-Atlantic_Balloon_Challenge, whose other 123 notes
+  open with an empty frame (`ctl 01 fr 0000`) and put waveform and pitch at
+  f+1. No other song reaches 10% on the one-frame test. 5 Title Tunes also
+  carries the one-frame-late gate-off on the same notes (gate+pitch 1806,
+  pitch only 564, gate only 64), so this alone lifts it to about 34%; the
+  gate-off entry must land beside it. Related closed: `monty-v3-plus-one-lag`
+  (87b4cf5). Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` C,
+  `pairs/5_Title_Tunes.PITCH_ATTACK_FRAME.txt`,
+  `pairs/pitch_lands_1_frame_late.txt`. Done when the writer of the frame-0
+  frequency is named and a patch makes ours' f+0 pitch equal the original's on
+  5 Title Tunes in a re-score, with the byte-hash naming every moved file; a
+  finding that the first wavetable step cannot carry the note's pitch also
+  counts. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Gate and instr: attack placement scatters and drifts in phase (Wiz worst).** Merged from the gate, instr column passes.
+
+  From the gate column:
+
+  **Gate M5: attack-placement scatter on 10 songs; split regrid's
+  quantisation from the rest.** Wiz 18, I_Ball 41, Sanxion 42, Sigma_Seven 54,
+  IK_plus 58, Star_Paws 65, Trans-Atlantic_Balloon_Challenge 73,
+  Auf_Wiedersehen_Monty 77, Bangkok_Knights 77, Knucklebusters_1 82. `otime`
+  reads 0-50% on all ten and nine carry `regrid`. On Wiz the nearest-attack
+  offset of ours against the original is spread over -4..+3 frames on all three
+  voices (voice 0: +1 x127, 0 x121, +2 x86, -1 x77, -2 x67 of 673) and gate at
+  lag -4..+4 never exceeds 23%; no neighbouring lag of any of the ten reaches
+  99%, so it is scatter and not a shift (best: Star_Paws .798 at lag -1,
+  Knucklebusters_1 .866 at +1). Knucklebusters_1 is the odd member: not
+  `regrid`, 334 of 335 paired attacks late, none early. Much of this is on
+  record piecemeal (`aligned-firstwave-nonuniform-ntr-files`,
+  `wiz-pattern-1-is-shared-by-voices`, `bangkok-knights-drift-wander`,
+  `regrid-per-play-per-song-adoption`, and the open "Auf Wiedersehen Monty:
+  voice 2 enters 15 frames early" entry); this entry exists to say what the
+  gate column costs and to stop the ten being chased one by one. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M5, `diag/Wiz.*`,
+  `attr/*.lags.json`. Done when, for each of the ten, the attack-offset
+  histogram is written down with the cause that places each attack
+  (row length not a whole number of frames, shared pattern, or other), and
+  the share of the gate miss that a perfect placement would remove is
+  measured on at least Wiz and Star_Paws. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: Wiz and Sanxion drift in and out of phase by up to 4 frames with
+  exact rows.** `--pace` reads row 3.00 frames, ratio 1.000 and drift
+  +0.00 / -0.33 per 1000 on both, yet the nearest-note offset per 500 frames
+  moves together on all three voices: Wiz -3, -2, -1, **-4** (frames 1500-2000,
+  0 of 75 notes pair), -1, 0, 0, 0, +1, +2, +1, -1, 0, **-4**: a ramp of
+  about +1 frame per 500 that resets by 3-4. 488 Wiz and 867 Sanxion notes
+  fall outside the 2-frame pairing slack, so Wiz reads 63.0% and Sanxion
+  71.7%. A skew at pattern or section boundaries is the candidate, not shown.
+  Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` F,
+  `pairs/phase_offsets_by_500frames.txt`. Done when the frames where the
+  original gains or loses a call against ours are located (a boundary, a
+  tempo record, a `$FE`) and a patch removes the sawtooth in a `heard.py`
+  re-score, byte-hash named, or a finding that Goattracker rows cannot hold
+  it. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Knucklebusters_3: its subtune clock runs about 6% off, so no edge lines up.** Merged from the gate, hold, instr column passes.
+
+  From the gate column:
+
+  **Gate M10: Knucklebusters_3's clock runs fast, so no gate edge lines up.**
+  Gate 49: `drift` -58.8 per 1000 (160 frames across 2720, the corpus worst
+  in `FIDELITY.md`'s Summary); attack counts are equal (481 / 481) but the
+  nearest-attack offsets spread over -12..+8 on all three voices; gate by lag
+  -4..+4 is flat at .490-.499; 166 of its 478 gate-off runs (35%) have no
+  counterpart within 4 frames; `-S3`, 56 s window. Closed
+  `dragons-lair-part-ii-tempo-remap-decision` (DL2 plays 6.25% fast, landed)
+  is a sibling by size only (-5.9% here); no record names the cause. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M10,
+  `diag/Knucklebusters_3.*`. Done when a finding names the call-rate or
+  tempo source of the -58.8/1000 for subtune 2 (`fidelity.py --pace` on
+  Knucklebusters_3 read at its median, per CLAUDE.md) and a fix brings
+  `drift` inside the corpus norm with gate re-measured in a `-t 180` A/B, or a
+  measured reason it cannot. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the hold column:
+
+  **Knucklebusters_3 ticks 1/17 early: can its row be packed corrected?**
+  Subtune 2 of Knucklebusters.sid reads `hold` 29% at -S3 with melody 100%,
+  retrig 1.00, `drift_per_1000` -58.8235 (exactly -1/17, the outer gate's
+  skipped call with skip 16), `len -3.1 s`, 160 frames across the 56 s window.
+  Its census is five `slot` and two `match`: $DCAD one 204-frame note, ours 192;
+  $2A7B 16 of 32 notes and $48C9 25 of 45 unpaired within 12 frames; $0C09 -18 on 10
+  notes and -26 on 8. $00F8 (240 notes) agrees 100% on sorted slot, an M2 flip,
+  so the hold loss is the clock and not the notes. `FIDELITY.md` states the cause
+  for 8 files: `effective_frames` declines to correct when the corrected row
+  cannot be packed. Prior art: `sanxion-and-knucklebusters-end-2-4-s-early-under-presets`
+  (done 760f401), `multiplier-does-not-explain-slot` (the later-subtune-clock
+  exception in `pack_subtune`), `rasputin-clock-drift`. Find, for this subtune,
+  the row value `effective_frames` would need and the exact packing limit that
+  refuses it (a CMD_SETTEMPO range, a 256-byte pattern, the multiplier's
+  divisibility), by running `convert` on subtune 2 with the correction forced
+  and reading the refusal. Done when that refusal is named with its line, and
+  either Knucklebusters_3 reads `drift` 0.0 and `len` within 5 s with `melody`,
+  `retrig` and `wave` not falling more than their noise and a corpus byte-hash
+  naming every file the patch moves (the other seven `-1/(skip+1)` files are
+  expected movers), or the correction is recorded as impossible at the packed
+  player with the bound. `[subagent]` for the refusal, `[main]` for any change.
+  touches: r:python/h2g, r:python/fidelity.py, r:presets.json, r:build/fidelity.json
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: Knucklebusters subtune 2 runs 6% slow.** The listening page
+  Knucklebusters_3 (`Knucklebusters.sid` subtune 2, 56 s) has equal note
+  counts (79/161/241) but 301 of 481 notes unpaired: `--pace` at -m3 reads
+  ours/theirs 0.941, drift -58.82 frames/1000, 160 frames early over 2720.
+  `FIDELITY.md` has no row for this subtune (its Knucklebusters row is
+  subtune 1); the closed `knucklebusters-subtune0-underplay` (862f703) is the
+  same file's other subtune. Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` E,
+  `diag/Knucklebusters_3.pace.txt`. Done when the row-length error (2.12 frames
+  against 2.26) is traced to the tempo or gatetimer record that produces it and
+  a patch brings `--pace` to within its noise on subtune 2 with the byte-hash
+  naming every moved file. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Wave and hold: the original deselects the waveform at a note end and ours keeps it selected.** Merged from the wave, hold column passes.
+
+  From the wave column:
+
+  **Wave: the original deselects the waveform and ours keeps ringing on 3 songs
+  (9 more carry it).** Kings_of_the_Beach_ingame 96.6% (the 36 frames after the
+  original writes `$00` on every voice at frame 345; already diagnosed in
+  closed `silent-park-final-waveform-zero` and `fbs-kotb-ingame-rest-wave-silence`),
+  Tarzan 97.6% (original `$01` gate-only for 326 frames and `$00` for 147 where
+  ours holds `$19/$18`), ACE_II 98.2% (original `$08` test bit from frame 1709
+  for about 362 frames, ours `$40`). The same original bytes sit under the
+  second mechanism of Bangkok_Knights (`08` 2559 frames), IK_plus (`08` 2320),
+  Trans-Atlantic_Balloon_Challenge (`00` 1150, `08` 552), I_Ball (`01` 566, `08`
+  345), Nemesis_the_Warlock, Nineteen, Chain_Reaction, Star_Paws and Pandora.
+  This can be audible, because ours rings through its release. The option that
+  targets it, `rest_wave_silence`, is adopted on zero songs, refused on Pandora
+  ($0C99), does not reach Kings_of_the_Beach_ingame's lead and is defeated by a
+  looping wavetable (closed `rest-wave-silence-is-adopted-on-zero-songs-and-the-shared-schedule-makes-it-worth-re-searching`,
+  `pandora-0c99-rest-wave-silence-alone-cuts`, `looping-wavetable-defeats-rest-wave-park`).
+  Evidence: `C:/t/corpus-wave-column-sub99-mechanisms/plan.md` section L,
+  `diag/ACE_II.diag.txt`, `traces/ACE_II.*`. Done when a patch that applies to a
+  fresh worktree of HEAD makes ACE_II and Tarzan select no waveform on the
+  frames where the original does, lifting their `wave` over .99 in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B with no printed
+  column falling more than its noise and the corpus byte-hash naming every file
+  moved, or a finding shows which of the two cannot be reached and why.
+  `[subagent]`.
+
+  added: 2026-11-08
+
+  From the hold column:
+
+  **Hold column: the original ends five songs' notes with `$00`/TEST, ours leaves
+  a waveform selected.** Mega_Apocalypse $0CFC (voice 2, two notes): `$D404` goes
+  `$14` at frame 382 and `$00` at 385 in the original, so it sounds `held 192`
+  of a 768-frame slot; ours writes `$14` and nothing more, `held 767`
+  (`delta +575`, `thin`). Auf_Wiedersehen_Monty $0ADF: orig `held 581`, tail
+  `8 8 8`; ours `held 968`, tail `10 10 40`. Thundercats $07B7: the 16-frame
+  slots end `40 40 8 8 8 8 8` in the original and `40 40 40 40 40 40 40` in ours
+  (note-level held +5 on 47 and +6 on 22 of 251). Trans-Atlantic $0AF8 (140
+  notes, `rest_program_stop` already on): orig `11 11 11 11 11 0 0 ...`, ours
+  `11 11 11 11 11 18 18 ...` and `$18` is triangle plus TEST, silent, which
+  `wf & 0xF0` counts as sounding. Chain_Reaction $09F9: the last slot frame is
+  `0` against ours `18`/`10`, `long +1` on 132 of 197 at -S3. Songs:
+  Mega_Apocalypse 10, Trans-Atlantic_Balloon_Challenge 89, Auf_Wiedersehen_Monty
+  90, Chain_Reaction 90, Thundercats 91. The gate is off on every one of these
+  frames, so the difference is a release tail; `wave` already exempts it
+  (`wave_tail_frames`, `wave-column-charges-a-latched-waveform-after-the-tune-ends`)
+  and `hold` does not. Two steps. First make `sound_note_runs` treat a frame with
+  the TEST bit set, or with the gate off after its release has run out, as not
+  sounding (the same predicate `wave_tail_frames` uses), and re-read the five.
+  Then, only for what still reads below 99%, A/B `rest_wave_silence` /
+  `rest_program_stop` per song; `pandora-0c99-rest-wave-silence-alone-cuts` and
+  `add-rest-program-stop-true-to-the` (refused for IK_plus, Bangkok_Knights,
+  I_Ball) say the emitter side has cost before. Done when the five rows are
+  re-read under the new predicate with before and after beside each, a test pins
+  a `$18` frame and a gate-off tail past release as not sounding, `hold`'s own
+  figure for every other file is byte-identical or each mover is named, and any
+  emitter A/B is recorded as adopted or refused with the column that falls.
+  `[subagent]` for the predicate and the re-read, `[main]` for regenerating
+  `FIDELITY.md` and any preset change.
+  touches: rw:python/fidelity.py, rw:python/tests/test_fidelity.py, r:python/h2g, r:presets.json, r:build/fidelity.json
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Wave and instr: noise runs and noise ticks are one frame short or early.** Merged from the wave, instr column passes.
+
+  From the wave column:
+
+  **Wave: our noise runs are one frame shorter than the original's on Thrust
+  and Spellbound.** Thrust 97.6%: of 869 matched noise runs ours starts on the
+  same frame in all and is one frame shorter on 31% (3-4 frames shorter on
+  5%); Spellbound 98.4%: 1597 runs, 20% one frame short. Only 36 and 22
+  original noise runs have no counterpart, so it is length, not missing
+  drums. This is the known next-note fetch -1 (closed
+  `fetch-minus-one-shows-up-in-three-columns`,
+  `the-fetch-deficit-eats-the-last-frame-of-every-note-at-s1-and-nothing-has-tried-to-close-it`),
+  now measured on the wave column for these two. Commando_2 shows it on 702 of
+  702 runs but is a Commando.sid page and fixture-held. Done when the shorter
+  runs are traced to the instrument records that produce them (`--hold-census`
+  on both songs), and a patch that applies to a fresh worktree of HEAD lifts
+  Thrust's `wave` over .99 and Spellbound's over .99 in a `fidelity.py -t 180
+  --presets ../presets.json --sound` A/B, with no printed column falling more
+  than its noise and the corpus byte-hash naming every file moved; or the
+  fetch -1 is recorded as a measured ceiling for these records. `[subagent]`.
+
+  added: 2026-11-08
+
+  From the instr column:
+
+  **Instr: the noise tick is one frame short or early in ours (6 songs,
+  Commando_2 54.2% worst).** Commando_2 original `80,80,80` then sawtooth,
+  ours `80,80` then `20` (564 of 564 unmatched, all voice 1); Proteus and
+  Warhawk (-S7) and Spellbound (-S5) original `80,80`, ours `81,40`, i.e. a
+  missing second noise frame once the exempt first-frame gate difference is
+  set aside (204/442, 179/389, 270/330); Crazy_Comets 189 notes one frame too
+  long and 152 too short; Rasputin ours at f+1, original at f+2 (130 of 308).
+  Commando_2 is a subtune of the byte-exact fixture, so it cannot move.
+  Related closed: `nrun-outer-gate-skip-floor` (a6ccf89),
+  `spellbound-sweep-gap-hr-frame` (3512e76). Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` J1,
+  `pairs/Commando_2.WAVE_ORIG_NOISE_OURS_NOT.txt`,
+  `pairs/Spellbound.WAVE_ORIG_NOISE_OURS_NOT.txt`. Done when the drum run
+  length is read off the player for Proteus (the worst non-fixture song) and a
+  patch gives the second noise frame, with `nrun` and the byte-hash named, or
+  a finding that the multispeed noise run cannot be that long. `[subagent]`.
+
+  added: 2026-11-08
+
+  added: 2026-11-08
+
+- **Gate M6: long rests are released at the hard-restart frame, not at the
+  original's.** Dragons_Lair_Part_II 33, Tarzan 82, Hollywood_or_Bust 97.
+  Tarzan: 92% of 2740 gate-off runs are exact, and the 8% that are not
+  (`o9>u3 s+6`, `o15>u3 s+12`, `o33>u3 s+30`) hold 1992 of its 2155 miss
+  frames -- ours releases in the last 3 frames before the next note, the
+  original at the start of the rest. Hollywood_or_Bust: 12 runs of 3251 carry
+  all 168 miss frames. Dragons_Lair_Part_II is the same shape at -S3 with the
+  original's 3-frame gap shortened to 1 (`o3>u1 s+2 e+0`, 648 of 1662 runs),
+  plus 24% `$01` over `$00`, and a one-sided lateness (556 late attacks, none
+  early; gate .459 at lag +1). This is the record
+  `the-conversion-emits-no-rest-for-the-players-release` ("every gate-off
+  stretch we emit is the hard restart, a constant, where the player rests 8 to
+  1069 frames"), which has no reason text. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M6, `diag/Dragons_Lair_Part_II.*`,
+  `attr/Tarzan.runs.json`. Done when the rest's start is emitted as a release
+  for Tarzan and Hollywood_or_Bust (gate >= 99% with no printed column falling
+  past its noise, corpus byte-hash naming every file moved), and Dragons_Lair
+  is either lifted or carries its measured reason. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Gate M7: Nemesis_the_Warlock holds `$01` where the original is parked at
+  `$00` -- decide whether to emit `$00`, or score it as inaudible.** Nemesis
+  gate 59: 61% of its 3356 miss frames are ours `$01` over the original's
+  `$00` (voice 0, frames 0..32 and 1362..1402: `orig 00 00 00 ...` / `ours 00
+  01 01 01 ...`), 66% of all its misses at offset 32+ or before the first
+  attack. A gate bit with waveform 0 makes no sound, so this costs the column
+  and not the ear. The bytes are the free-running `$01` first wave that
+  `sanxion-free-running-first-wave-adoption` gives every `gate_off_firstwave`
+  adopter (Nemesis carries it; Dragons_Lair_Part_II 24% and Sanxion 8% show the
+  same bytes) -- the attribution is a reading of the bytes and the flag, not a
+  measurement. Emitting `$00` risks undoing the gain that adoption
+  recorded (Sanxion 81-88 s .749 -> .889, from its closed title). Evidence: `C:/t/corpus-gate-column-sub99-mechanisms/plan.md`
+  M7, `diag/Nemesis_the_Warlock.*`. Done when a column rule (a `gatenf`-style
+  forgiveness for ours-`$01`/orig-`$00` frames, with its own blindness stated in
+  `Dimension`) or an emitter change is A/B-measured on Nemesis and Sanxion,
+  with no printed column falling past its noise. The choice between the two is
+  `[user]`; the measurement is `[subagent]`.
+
+  added: 2026-11-08
+
+- **Gate M8: Delta_13 releases the gate partway through a held note.**
+  Delta_13 gate 85: 1084 of 1234 miss frames are voice 0 (`AD$0C SR$99`) at
+  offset 32+, in 17 runs of 32, 62 or 122 frames (frames 1140, 1380, 1620,
+  2040, ...), where the original's voice stays `$41` and ours falls to `$40`
+  about 12-29 frames into the note while its frequency and pulse keep moving
+  (`diag/Delta_13.orig.dump` / `.ours.dump`, frames 1128..1190). The other 150
+  frames are M2's `$81`/`$80` byte pair on voice 2. Probably audible (a note
+  that should sustain falls into its release); not listened to. The cause is
+  unproven and no record names it. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M8,
+  `diag/Delta_13.diagnose.txt` (`Delta.sid --diagnose -a 12`). Done when a
+  finding names what ends the gate (a pattern row, a rest, a counter) in
+  `songview` terms for the first run at frame 1140 and the fix lifts Delta_13
+  gate over 99% in a `-t 180` A/B with the corpus byte-hash naming what moves,
+  or a measured ceiling. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Wave: the gate-off firstwave frame writes the next note's class one frame
+  early, on 16 songs.** With `gate_off_firstwave_instruments` or
+  `aligned_firstwave` already adopted, the init call before an attack shows the
+  next record's waveform while the original still shows the previous one (O
+  `80 80 80 41*`, U `80 80 40 41*` on Phantoms_of_the_Asteroid voice 2, frames
+  369-376). Share of each song's disagreeing frames: Hollywood_or_Bust,
+  One_Man_and_his_Droid 100%, Lakers_vs_Celtics 99%, Delta 99%, Shockway_Rider
+  95%, Pacific_Coast 93%, Formula_1_Simulator 76%, Radio_ACE 72%, Gremlins 71%,
+  Last_V8 70%, Phantoms_of_the_Asteroid 62% (worst: 92.5%), Zoolook 57%,
+  Crazy_Comets 54%, Chain_Reaction 52%, Chicken_Song 39%, Thundercats 35%. The
+  other available spelling, the `$FF` firstwave that keeps the previous
+  waveform (`no_test_restart`, gate-off off), was forced on eight of them
+  (`C:/t/corpus-wave-column-sub99-mechanisms/abG/ntr.json`): wave rises on
+  Phantoms .925 -> .972, Last_V8 .934 -> .980, One_Man .979 -> 1.000 but melody
+  falls to .989, .759 and .202, and wave falls on Delta .983 -> .750,
+  Formula_1 .952 -> .867, Lakers .975 -> .853, Shockway .969 -> .899, because
+  the init call then sounds the previous note's last frequency and siddump names
+  the attack by it (`docs/OPTIONS.md` `--aligned-firstwave`). So at present this
+  is a measured ceiling of the two firstwave spellings. Done when either a
+  patch that applies to a fresh worktree of HEAD gives the init frame the
+  previous waveform without the stale-pitch attack (Phantoms_of_the_Asteroid
+  and One_Man_and_his_Droid wave up, melody and gate flat, corpus byte-hash
+  naming every file moved), or a finding shows Goattracker's note-init call
+  cannot do it and the 16 songs are recorded as carrying that ceiling.
+  `[subagent]`.
+
+  added: 2026-11-08
+
+- **Wave: our attacks sit 1-4 frames off the original's on 11 songs.** Worst
+  Bangkok_Knights 56.4%, I_Ball 60.9%, IK_plus 65.4%, Nineteen 77.1%, Sanxion
+  79.0%, Trans-Atlantic_Balloon_Challenge 83.3%, Knucklebusters_3 83.3%,
+  Nemesis_the_Warlock 87.3%, Auf_Wiedersehen_Monty 90.4%, Sigma_Seven 91.6%,
+  Dragons_Lair_Part_II 94.7%. Matched-attack delta against the original (nearest
+  attack, all voices): Bangkok +1 53% / +2 19% / 0 12%; I_Ball -2 30% / -1 24% /
+  -3 23%; IK_plus 0 24% / -1 23% / -2 18%; Sanxion spread over -3..+2; Nemesis
+  -1 on about 52%; Dragons_Lair +1 on 33%. A 4-12 frame drum waveform program
+  turns that into a class swap on every frame of the note (Nemesis and
+  Dragons_Lair swaps sit under a displaced attack 2260 of 2260 and 945 of
+  1048). No single lag shift fixes any of them (Bangkok's best per-voice shift
+  gives .564 -> .685). Known sub-cause, Monty only: the fractional row
+  (3.0236 frames, see "Auf Wiedersehen Monty: voice 2 enters 15 frames early").
+  The causes elsewhere are not named; the first step is to name them per song
+  from the offset histogram (`C:/t/corpus-wave-column-sub99-mechanisms/offs.py`
+  and `plan.md`), checking against closed `rasputin-fractional-row-tempo-drift`,
+  `skip-gate-song-call-phase` and `aligned-firstwave-nonuniform-ntr-files`
+  before measuring again. Done when each of the 11 carries a named cause with a
+  `--diagnose` and trace pair, and for each cause a patch that applies to a
+  fresh worktree of HEAD moves the matched-attack delta on that song toward
+  0 and lifts its `wave`, with no printed column falling more than its noise
+  and the corpus byte-hash naming every file moved; or the cause is recorded
+  as unrepresentable at that song's rate. `[subagent]`, one per cause.
+
+  added: 2026-11-08
+
+- **Wave: Star_Paws and Knucklebusters_1 sit one frame off the original after
+  the first row.** Star_Paws voice 1 attacks at orig 1,10,18,26 and ours
+  1,9,17,25: the first attack lines up, the original's first row is 9 frames
+  and ours 8, and every later attack is one frame early (delta -1 on 80%,
+  n=2803). The harness lag shifted 6 -> 5 lifts wave .768 -> .933.
+  Knucklebusters_1 is the same shape the other way: delta +1 on 100% of 335
+  attacks, voice 0 matches at frame 1 and voices 1 and 2 start one frame later,
+  and lag +1 lifts wave .847 -> .997 (the per-frame `$80/$15` toggle runs
+  anti-phase because the note starts one frame late). Whether it is the first
+  row's length, a per-voice start phase, or the harness lag for these two is
+  not proven. Evidence: `C:/t/corpus-wave-column-sub99-mechanisms/plan.md`
+  sections P1, `diag/Star_Paws.diag.txt`, `traces/Star_Paws.*`. Done when the
+  cause is named from both traces, a patch that applies to a fresh worktree of
+  HEAD (or a harness change, if the lag is what is wrong) lifts Star_Paws wave
+  over .93 and Knucklebusters_1 over .99 in a `fidelity.py -t 180 --presets
+  ../presets.json --sound` A/B, with no printed column falling more than its
+  noise and the corpus byte-hash naming every file moved. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Wave: the original latches a waveform on a voice before its first note and
+  we stay `$00` (12 songs, 4 of them the whole loss).** Pygmies_Revenge voice 0
+  selects `$40` from frame 2 with the gate off and sounds first at frame 1026;
+  ours is `$00` until then. Over the frames before each voice's first original
+  attack the original's gate is on in 0 of them for all 12 songs, so none of it
+  is audible. Frames: Pygmies_Revenge 1535, Chimera 868, Phantoms_of_the_Asteroid
+  766, Master_of_Magic 766, Kentilla 634, Crazy_Comets 574, Last_V8 542,
+  Last_V8_C128_version 542, Hunter_Patrol 469, Samantha_Fox_Strip_Poker 209,
+  Formula_1_Simulator 159, Gremlins 143. Not charging them gives Pygmies .930 ->
+  .986, Master_of_Magic .967 -> .995, Kentilla .971 -> .994, Samantha_Fox .985
+  -> .9999, and lifts eight more by 0.5-2.5 pp. Two ways to close it: have the
+  conversion write the init waveform, or have `wave_compare` not charge
+  gate-never-risen frames and say so in the column's `Dimension` (CLAUDE.md:
+  a column that documents what it ignores is a list of things you cannot ship
+  on evidence, so the exclusion has to be counted in the row, as
+  `wave_tail_frames` is). Evidence:
+  `C:/t/corpus-wave-column-sub99-mechanisms/plan.md` section S,
+  `diag/Pygmies_Revenge.diag.txt`, `traces/Pygmies_Revenge.*`. Done when the
+  choice is made and, for the chosen route, the 12 songs' `wave` values in a
+  `-t 180 --presets ../presets.json --sound` refresh match the figures above
+  (harness route: with the excluded count printed per row), with every other
+  column unchanged. The harness route touches `fidelity.py` and regenerates
+  `FIDELITY.md`, so `[main]`; whether an inaudible latch is worth emitting at
+  all is `[user]`.
+
+  added: 2026-11-08
+
+- **Wave: a per-frame noise/triangle toggle runs in anti-phase on 3 songs.**
+  Knucklebusters 96.5%, W_A_R 98.0%, W_A_R_Preview 98.3% (Zoolook carries 173
+  more frames under G). Knucklebusters voice 1 alternates `$80/$10` every
+  frame; the original's alternation slips a phase now and then (`10 10`), ours
+  never does, so every frame up to the next attack disagrees. Onsets are
+  identical (matched-attack delta 0 on 99-100%) and all 784 anti-phase swap
+  frames sit under the same attack on both sides. W_A_R voice 2 is the clearest:
+  a free-running toggle with no attack for more than 50 frames and ours exactly
+  opposite (O `10 80 10 80`, U `80 10 80 10`; 280 of 280 swap frames under a
+  same-frame attack, 280 of 280 on W_A_R_Preview). Why the original slips and
+  what sets its phase is not proven; a call-counter parity is the hypothesis
+  (closed `the-seven-file-adc-0c-family-is-per-frame-octave-alternation-and-commando-is-in-it`,
+  `rasputin-eor-toggle-emit`). Evidence:
+  `C:/t/corpus-wave-column-sub99-mechanisms/plan.md` section A,
+  `diag/Knucklebusters.diag.txt`, `traces/Knucklebusters.*`. Done when the
+  original's toggle code is read to name what sets the phase and where it slips,
+  and a patch that applies to a fresh worktree of HEAD lifts Knucklebusters'
+  `wave` over .99 in a `fidelity.py -t 180 --presets ../presets.json --sound`
+  A/B, with the three songs' other printed columns not falling more than their
+  noise and the corpus byte-hash naming every file moved; or a finding shows the
+  phase cannot be emitted. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Hold column, fetch-only songs: name the ceiling where the column is read.**
+  Eleven songs read `hold` below 99% and every instrument of each is the
+  next-note fetch frame: Chimera 0 (9 of 9 `fetch`), Commando_2 0 (4), Gerry_the_Germ
+  0 (10), Hunter_Patrol 0 (14), Last_V8_C128_version 0 (13), Lightforce 0 (10),
+  Mozart 0 (13), Zoids 0 (11), Rasputin 10 (9 of 10), Bangkok_Knights 25 (6 of 8),
+  5_Title_Tunes 86 (1 of 7); `holdnf` reads 100% on all eleven. Commando is the
+  twelfth and is fixture-held. On Chimera's $0C00 (voice 0, 35 notes) the
+  original holds 36 frames of a 36-frame slot and ours 35: the last frame is
+  `$09`, which `wf & 0xF0` reads as not sounding. The deficit is bounded by the
+  target player (`gatetimer & $3f` calls early, `player.s:1090-1098`; at -S1 a
+  call is a frame; `_hard_restart_ticks` never returns 0, 3840 calls swept) and
+  is priced in `closed.jsonl`: `the-fetch-deficit-eats-the-last-frame-of-every-note-at-s1`,
+  `hold-at-s1-is-bounded-by-the-target-player-and-the-open-question-is-whether-it-can-move-at-all`.
+  The only lever is `--no-test-restart` per song, which the preset search
+  already prices. Nothing here is a converter defect; what is missing is that
+  the 99% goal still reads `hold` for these songs. Make the generated report
+  carry `holdnf` as the graded figure and `hold` as the ceiling for a song whose
+  every non-matching instrument is `fetch`, with the song list and the reason in
+  the `hold` Dimension text. Done when `docs/FIDELITY.md` marks these eleven as
+  "fetch-only: graded on holdnf" and a test in `tests/test_fidelity.py` pins the
+  marker on a synthetic census (all `fetch` -> marked, one `slot` -> not marked),
+  fails with the change reverted, and Chimera's row reads `hold 0% (ceiling) /
+  holdnf 100%`. Evidence: `C:/t/corpus-hold-column-sub99-mechanisms/plan.md` M1,
+  `Chimera/hold_census.md`, `Chimera/trace_{orig,ours}.txt`. `[main]` (edits
+  `fidelity.py`, regenerates `FIDELITY.md`).
+  touches: rw:python/fidelity.py, rw:python/tests/test_fidelity.py, rw:docs/FIDELITY.md, rw:build/fidelity.json
+
+  added: 2026-11-08
+
+- **Hold column: the modal reduction mislabels nine songs whose notes agree.**
+  `hold` takes the mode of each side's per-note held length and calls the
+  instrument matched only if the two modes are equal. On a key with two or
+  three near-equal bins, sub-frame jitter picks different winners: Wiz $0909
+  (144 notes, 12/36 alternation) is {12: 65, 36: 52, 37: 20, 13: 7} in the
+  original and {36: 72, 12: 54, 13: 18} in ours, mode 12 against 36, `slot +24`.
+  Sorted-slot agreement within one frame is 100% on every instrument of Sigma_Seven,
+  Wiz, Knucklebusters, Knucklebusters_1, Nemesis_the_Warlock, Sanxion and I_Ball,
+  and 94-96% held on Pandora; the note-level held delta is within +-1 on 98%
+  (Wiz), 97-100% (Knucklebusters), 100% (Sigma_Seven, Nemesis, Sanxion).
+  Two more reduction limits sit in the same nine: `classify_hold` lets `slot`
+  outrank `fetch` (I_Ball $09F7 and both Pandora instruments are note-level -1,
+  labelled `slot`), and `held` stops at the first hole (I_Ball $0909, `gap`, slot
+  multiset 100%, held 26%). Songs: I_Ball 9, Pandora 12, Nineteen 21, Sigma_Seven
+  50, Knucklebusters 78, Wiz 83, Nemesis_the_Warlock 88, Knucklebusters_1 89,
+  Sanxion 92. Prior art, not a fix: `sigma-seven-and-wiz-lose-half-their-hold-agreement-under-the-regrid-fix`
+  (done 7969d85), `multiplier-does-not-explain-slot` (done eae8d8d). Build the
+  column the note says is missing, not another census: add `holdn`, the share of
+  an instrument's notes whose held length is within one frame of the paired
+  note's, paired by sorted slot (n equal) or nearest attack, next to `hold`, and
+  leave `hold` alone (it is an acceptance term of `fidelity_better`). Done when
+  `holdn` is in the report with a Dimension text, reads at least 94% on every
+  instrument named above (I_Ball $0909 stays low and is named `gap`), a test pins
+  it on a bimodal synthetic key where `hold` is 0 and `holdn` is 100%, and
+  `docs/FIDELITY.md` shows it. A finding that a Wiz-class flip also hides a real
+  defect on any of the nine counts as done once named. `[main]`.
+  touches: rw:python/fidelity.py, rw:python/tests/test_fidelity.py, rw:docs/FIDELITY.md, rw:build/fidelity.json
+
+  added: 2026-11-08
+
+- **Hold column: `--cut-release` splits the pairing key on Human_Race, Thrust and
+  Las_Vegas_Video_Poker.** `hold` pairs instruments by ADSR key, exact first.
+  Human_Race $0A09: the original has 509 notes under it; ours keeps $0A09 on 92
+  and carries $0A00 (release zeroed) on 417, so the exact pair compares 509 with
+  92 (note-level held is within one frame on 370 of 509 at delta 0, 139 at -8
+  from the other half). Thrust $0FFF: 165 original notes, ours $0FFF on 20 and
+  $0FF0 on 101; note-level delta is 0 on 127 and -1 on 38 of 165. Las Vegas
+  $0A0C: ours has no note under that key at all; the release-masked fallback maps
+  it to $0A00 and merges the whole $0A0x family (426 vs 426 notes, sorted slot
+  within one frame on 17%, held on 0%). Songs: Las_Vegas_Video_Poker 83,
+  Human_Race 86, Thrust 94. Prior art: `paired_keys` (v0.5.292), the instrmap fix in
+  `cut-release-splits-the-adsr-key-so-instrument-matched-columns-lose-the-instrument`
+  (done 89df05e) and `adsr-column-cannot-credit-a-fix-under-cut-release`: the
+  hold reduction was not given the same treatment. Pair `sound_note_runs` notes
+  across the two sides by attack (same voice, within 12 frames) and key each
+  instrument on the original's key, so a key that `cut_release` splits is read
+  whole. Done when Human_Race, Thrust and Las_Vegas_Video_Poker each read at
+  least 94% on `hold` under the new pairing, or the remainder is named per
+  instrument; a test pins a synthetic split key (orig 10 notes under K, ours 4
+  under K and 6 under K & 0xFFF0 -> matched, where the exact pairing reads 0);
+  and a corpus A/B names every file whose `hold` moves (expected: only files
+  with `cut_release` and a split key). `[subagent]` for the reduction and the A/B,
+  `[main]` for regenerating `FIDELITY.md`.
+  touches: rw:python/fidelity.py, rw:python/tests/test_fidelity.py, r:build/fidelity.json, r:docs/FIDELITY.md
+
+  added: 2026-11-08
+
+- **Sun_Never_Shines, Pacific_Coast and Lion_Heart re-strike a long held note
+  mid-note.** The cause is not found. Sun_Never_Shines $606A (voice 1): the
+  original has 20 notes of {120: 8, 90: 3, 60: 3, 150: 2, 30: 2}, ours 31 notes
+  of {30: 8, 90: 6, 60: 6, 120: 4, 40: 1, 15: 1}; a 120-frame note at f1412
+  becomes 30 + 40 + 15 + 35 from f1418. The same file's $00C8 goes the other
+  way: 300 original attacks at slot 5 (`11 81 41 41 80 | 81 40 80 80 80`)
+  against 150 of ours at slot 10, so the second gate rise is missing. Pacific_Coast
+  $0AA9 (voice 2): 12 notes against 14; the original's 156-frame note at f4418
+  keeps bending at frame 4490 (`1148 1167 1186 ... (+ 001F)`, no attack) where
+  ours strikes C-4 at f4496 and resets the pulse; 192 becomes 96 + 96 at the end.
+  Lion_Heart $0AF9 (voice 0): 165 notes against 173, a 27-frame note is 16 + 11
+  and a 21-frame note 16 + 5. Melody reads 91, 95 and 92 on the same three, so
+  this overlaps the melody grouping. Songs: Sun_Never_Shines hold 67 (retrig
+  0.93), Pacific_Coast 91, Lion_Heart 92. Prior art, symptom only:
+  `sun-never-shines-and-lion-heart-voice-0-undershoot-by-fifty-and-forty-four-attacks`,
+  `lion-heart-call-phase-note-row-aware`. A tie or legato spelling lost at a row
+  boundary fits the Pacific_Coast frames but is a guess: read the row bytes
+  of the first split on each file (`songview.py`, the three `.sng` in a private
+  `--workdir`), name what the original has at the split (tie, legato, or a
+  duration extension) and what we emit there, then census the same row shape
+  over the corpus. Done when each of the three has the split row named with its
+  record bytes, and either an emitter change shows all three `hold` rows at or
+  above 99% with no printed column falling more than its noise and a corpus
+  byte-hash naming every mover, or the cause is recorded as refuted. `[subagent]`
+  for the reading, `[main]` for any emitter change and the refresh.
+  touches: r:python/h2g, r:python/songview.py, r:python/fidelity.py, r:presets.json, r:build/fidelity.json
+
+  added: 2026-11-08
+
+- **Melody: the hard-restart window swallows Sun_Never_Shines' drum strike.**
+  Sun_Never_Shines reads melody 91.13% at v0.5.654. Voice 0 loses 150 of its
+  921 attacks, all `F-6` every 60 frames, and nothing else (difflib: 150
+  deletes). The original strikes the drum as `5F0B (F-6 CD) 80` then
+  `5F0B F-6 CD 81` (the gate rise is the attack). Ours writes `80` and the next
+  write is the following note's `40`: the `81` row of the drum's wavetable
+  (`80 CD / 81 CD / 40 77`) runs and its gate bit never reaches the chip. With
+  `hard_restart_frames: 4` removed from Sun's preset (a copy, no patch) ours
+  makes 1921 attacks against the original's 1898, voice 0 matches 921 of 921,
+  and melody goes 91 -> 99%, seq 95 -> 99%; the price is gate 97 -> 68%. So a
+  2-frame strike inside a 4-frame window loses its rise. Closed
+  `hard-restart-floor-swallows-short-notes` (1e534e0) fixed the default window,
+  not this preset. Evidence: `C:/t/corpus-melody-column-sub99-mechanisms/plan.md`
+  M1 and `work/sns/`. Done when a patch that applies to a fresh worktree of
+  HEAD keeps the window but lets a fixed-note strike shorter than it rise, and
+  Sun_Never_Shines reads at least 99% melody in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B with gate not
+  falling more than its noise; the corpus byte-hash names every file the patch
+  moves, and every song sharing the mechanism is censused first. A finding that
+  the window cannot be kept and the strike restored also counts as done.
+  `[subagent]`.
+
+  added: 2026-11-08
+
+- **Melody: the sfx drum has no gate edge on I_Ball and Bangkok_Knights.**
+  I_Ball (96.50%) loses exactly 54 voice-2 attacks and Bangkok_Knights (96.79%)
+  exactly 99, every one a `C#6`; their other voices match to within one attack.
+  The original's strike is a test-bit frame (`08`) and then `C#6 C9 81`, a
+  rising gate. Ours is either an ungated tick (I_Ball frame 1458,
+  `(C#6 C9) 80` then `40`) or an `81` written while the gate is already high
+  (I_Ball 1470, Bangkok 1293, printed as a tie), so no gate edge exists and no
+  attack is counted. `drum_gate_off`, `drum_sustain_gate_off` and `drum_long`
+  change no printed column on either song; `sfx_drum` off is worse (I_Ball
+  melody 94%, retrig 0.70). Earlier closed diagnoses: `i-ball-melody-shortfall`
+  and `bangkok-knights-melody-shortfall` (2026-11-01, findings under
+  `C:/t/<id>/`, not re-read here). I_Ball's gate (41%) and wave (61%) and
+  Bangkok_Knights' wave (56%) are the worst cells of those columns, so the same
+  tick is the first thing to check there. Evidence:
+  `C:/t/corpus-melody-column-sub99-mechanisms/plan.md` M2, `work/ib/`,
+  `work/bk/`. Done when a patch that applies to a fresh worktree of HEAD gives
+  the sfx drum a falling and a rising gate edge (or the original's test-bit
+  frame), both songs read at least 99% melody, and no printed column of the
+  other sfx_drum files falls more than its noise in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B; the corpus
+  byte-hash names every file the patch moves. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Melody: Lion_Heart's noise drum is one fixed note, the original's moves.**
+  Lion_Heart reads melody 91.53% (`-S3`). 123 of its mismatching tokens are the
+  noise drum, `F#6` in the original and `F-6` in ours (92 on voice 0, 30 on
+  voice 1, 1 on voice 2; every delta -1 semitone). Original frames 38-39:
+  `5FBB (F#6 CE) 80`, `5FBB F#6 CE 81`; ours 42-43: `5CF1 (F-6 CD) 80`,
+  `5CF1 F-6 CD 81`, from the constant `CD` in our wavetable. The original's
+  frequency varies (5FBB x265, 5F67 x140, 5FA0 x73 over 180 s), so the drum
+  follows the row note and ours is pinned; Sun_Never_Shines has the same shape
+  (orig 5F0B, ours 5CF1) but both label F-6, so only Lion_Heart's melody
+  sees it. About 30 more tokens are extra attacks (orig prints a tie at frame
+  594, ours re-gates at 598); fix the drum first, then re-read that remainder.
+  This overlaps the open entry "Drums on fixed notes versus drums that move
+  with the note", which asks only for findings; do that one first or fold this
+  in. Evidence: `C:/t/corpus-melody-column-sub99-mechanisms/plan.md` M3 and
+  `work/lh/`. Done when a patch that applies to a fresh worktree of HEAD makes
+  the Lion_Heart drum follow the original's pitch rule, Lion_Heart reads at
+  least 99% melody in a `fidelity.py -t 180 --presets ../presets.json --sound`
+  A/B (or the residual attacks are named as a separate measured ceiling), and
+  the corpus byte-hash names every file the patch moves. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Melody: transposed phrases sit a fixed interval off on Lakers_vs_Celtics
+  and Pacific_Coast.** Lakers (93.24%) voice 0 has 24 tokens +2 semitones
+  from the original and voice 1 has 52 at -2 and 5 at -5; Pacific_Coast
+  (95.47%) voice 1 plays the phrase `G-3 C#4` as `C-4 F#4` (+5) from frame
+  4226 and as `A#3 E-4` (+3) from 4490. In both, the offset equals a transpose
+  our final orderlist carries (Lakers voice 0 `F2` at positions 17, 22, 37,
+  voice 1 `EE` and `EB`; Pacific_Coast voice 1 +5, +3, -2 at positions 23, 25,
+  27 after an initial +9 that matches for 4,200 frames). So the original
+  plays these phrases without the transpose we apply, or applies it under a
+  rule we do not model; which, is not proven (the early transposes of both
+  songs do match). `fold_transpose` off is not the cause: Pacific_Coast melody
+  95 -> 93, Lakers unchanged. About 19 further Lakers voice-2 tokens (`A#5`
+  pairs rendered as `C-4`/`D#4`) are unexplained. Evidence:
+  `C:/t/corpus-melody-column-sub99-mechanisms/plan.md` M4, `work/lk/`,
+  `work/pc/`. Done when the original player's orderlist transpose handling is
+  read from its disassembly and written down per instrument kind (arpeggio
+  base, plain note, fixed drum), a patch that applies to a fresh worktree of
+  HEAD follows it, both songs read at least 99% melody in a
+  `fidelity.py -t 180 --presets ../presets.json --sound` A/B, and the other
+  ILV files carrying `FD` transposes (the six listed in
+  `tests/test_ilv_grammar.py`) are censused and byte-hashed first. A finding
+  that our transposes are right and a different step is wrong also counts as
+  done. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Instr: gate-off lost for a whole row on Lightforce and Tarzan.** The
+  original gates a note off at frame 3; ours has no gate-off there and keeps
+  the gate on until a later row's own: Lightforce (-S2, row 7) off at frame 10
+  on 193 notes and 17 on 97, Tarzan (-S1, row 6) at 9 on 136, 15 on 76 and 33
+  on 12. That is 291 of Lightforce's 321 and 224 of Tarzan's 297 unmatched
+  notes (instr 87.4% and 89.5%). A closed entry names a candidate not shown
+  for these two: `gate-clear-untied-landing`, the $40 legato bit on a
+  gate-clear record being exact only for tied landings. Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` B,
+  `pairs/Lightforce.TONAL_OURS_GATE_LONGER.txt`. Done when the record or row
+  that drops the gate-off is named for both songs and a patch lifts
+  Lightforce's and Tarzan's instr in a `heard.py` re-score with the corpus
+  byte-hash naming every moved file, or a finding says why the gate-off cannot
+  be kept. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Instr: Las_Vegas_Video_Poker (6.4%) and Phantoms_of_the_Asteroid (17.4%)
+  re-gate their arpeggio block every 4 rows, the original every 4.8.**
+  `fidelity.py --pace` reads both pitch streams as exact (row 3.75 and 2.00
+  frames, ours/theirs 1.000) and attacks as equal (1051/1051, 2592/2592), yet
+  the gate-rise gaps differ by 6/5: Phantoms voice 2 original 9,10,10,9,10
+  against ours 8,8,8; Las_Vegas original 27,27,18,27,27,18,9 against ours
+  23,22,15,23,22,15,8. Ours therefore has 17% and 24% more gate rises than the
+  original (1051 against 896; 2598 against 2089), and 629 and 991 original
+  notes find no partner. Phantoms has a second shape on top (paired notes'
+  AD/SR/wave differ at frame 0), not diagnosed. Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` D,
+  `pairs/gate_rise_period_Phantoms_LasVegas.txt`, `diag/*.pace.txt`. Done when
+  the player's re-gate counter is read for both songs and a patch puts ours'
+  gate rises on the original's schedule in a `heard.py` re-score, byte-hash
+  named, or a finding that the schedule cannot be a Goattracker row count.
+  `[subagent]`.
+
+  added: 2026-11-08
+
+- **Instr (harness): `heard.restruck` merges ours but not the original on a
+  re-strike, so Game_Killer reads 98.0% and Master_of_Magic 98.8%.** Rule 3
+  merges a gate rise into the previous note only when AD/SR are unchanged
+  across the gate-off; the original clears them on its gate-off frames (the
+  envelope cut `sr_rel`/`tail_env` already call known-equivalent), ours keeps
+  them. So the same re-strike is two notes on the original and one on ours:
+  63 of Game_Killer's 65 missing notes and 16 of Master_of_Magic's 17 are
+  ours-has-a-gate-rise-but-unpaired. Measured by ignoring AD/SR in `restruck`
+  in a private script: Game_Killer 98.0% -> 99.8% (missing 65 -> 2),
+  Master_of_Magic 98.8% -> 99.9% (17 -> 1); Star_Paws and Rasputin do not move,
+  Spellbound .819 -> .828. The converter is not at fault. Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` G,
+  `pairs/restrike_envelope_experiment.txt`, `pairs/Game_Killer.MISSING.txt`.
+  Done when `heard.py` treats the known-equivalent envelope cut the same on
+  both sides in `restruck`, a test in `tests/test_heard.py` fails with the
+  change removed, and the full `build/heard.json` is re-taken with every moved
+  song named and no song's instr falling by more than 2 points without a named
+  reason. `[subagent]`.
+
+  added: 2026-11-08
+
+- **Instr: IK_plus (35.3%) never sounds the original's noise tick.** Voice 2
+  of the original strikes `ctl 81` (frequency `485a`) at f+1 and f+7 of every
+  6-frame row; ours has `ctl 01` (gate, no waveform) there. 1333 of 1888
+  unmatched notes are the missing noise, with pitch+wave on 1450 of 2919.
+  `--diagnose` also reads ours travelling 130,326 on voice 1 and 4,186 on voice
+  2 where the original travels 0 (pitches 93% on voice 2); whether that is the
+  same defect is not shown. Closed, same song:
+  `ik-plus-voice-2-strikes-222-attacks-against-the-originals-481` (7969d85).
+  Evidence: `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` J2,
+  `pairs/IK_plus.WAVE_ORIG_NOISE_OURS_NOT.txt`, `diag/IK_plus.diagnose.txt`.
+  Done when the record that carries the tick is named and a patch emits the
+  noise frame at f+1 in a re-score with the byte-hash naming every moved file.
+  `[subagent]`.
+
+  added: 2026-11-08
+
+- **Instr: the original's octave arpeggio inside the note is missing or out of
+  phase in ours (7 songs, Radio_ACE 38.3% worst).** Radio_ACE voice 2 original
+  `173a, 173a, 2e75, 173a, 2e75, 173a` (ring-modulated), ours flat: 782 of 1320
+  unmatched notes. Pacific_Coast the same (202/323); Lakers_vs_Celtics toggles
+  from f+2 in the original and from f+5 in ours (157/270); Saboteur_II and
+  Last_V8 toggle one step off (174/366 and 150/164); Samantha_Fox_Strip_Poker
+  19/19; Nineteen is mixed (29 of 81) and has its own entries. Related closed:
+  `rasputin-eor-toggle-emit` (c402e79). Evidence:
+  `C:/t/corpus-instr-column-sub99-mechanisms/plan.md` K,
+  `pairs/Radio_ACE.PITCH_OCTAVE.txt`, `pairs/Lakers_vs_Celtics.PITCH_OCTAVE.txt`.
+  Done when the Radio_ACE octave toggle's source (a player counter or a
+  table) is named and a patch emits it, with the toggle's phase compared on
+  Lakers_vs_Celtics as the second file and the byte-hash naming every moved
+  file. `[subagent]`.
+
+  added: 2026-11-08
 
 ## Auf Wiedersehen Monty to 99%
 

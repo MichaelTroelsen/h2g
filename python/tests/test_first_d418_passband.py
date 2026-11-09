@@ -139,12 +139,17 @@ def test_the_held_drum_only_files_keep_their_reading(stem):
 @pytest.mark.parametrize("stem", SEVEN)
 def test_the_conversion_sets_lowpass(stem):
     """At the seam: under the shipped presets every routed SET_PARAMS row of
-    the converted FTBL selects lowpass, and none selects bandpass."""
+    the converted FTBL selects lowpass, and none selects bandpass.
+
+    `sfx_drum_bandpass` is pinned OFF: Nineteen's preset turns it on, and its
+    deliberate one-frame band-pass blip rows are not the passband CHOICE this
+    test is about (`tests/test_nineteen_hat_toggle.py` owns them)."""
     import fidelity as F
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     blob = convert(str(CORPUS / f"{stem}.sid"), log=lambda m: None,
-                   **F._preset_opts(doc, f"{stem}.sid"))
+                   **{**F._preset_opts(doc, f"{stem}.sid"),
+                      "sfx_drum_bandpass": False})
     ftbl = parse_sng(blob).tables["FTBL"]
     params = [left for left, right in ftbl
               if FILT_SET_PARAMS <= left < FILT_STOP and right & 0x07]

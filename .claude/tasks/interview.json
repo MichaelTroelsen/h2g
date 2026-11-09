@@ -1,24 +1,16 @@
 {
- "generated_from": {"head": "1ee1557", "plan_head": "1ee1557"},
+ "generated_from": {"head": "fa646bb", "plan_head": "fa646bb"},
  "blockers": [
-  {"id": "nineteen-regrid-unshare-rest-unroll-adoption", "kind": "decision",
-   "title_at_research": "Adopt the $Dn rest-repeat unroll inside regrid_unshare_rest for Nineteen (aud .8998 -> .9082, 3-11 s .839 -> .899; moves Nineteen only)",
-   "blocked_on_at_research": "Adopt C:/t/nineteen-aud-dip-3/fix.patch? ...",
-   "current_behaviour": "python/h2g/patterns.py:4297 _regrid_unshare_rest makes one copy per orderlist entry and keeps a $D1-$DF repeat byte, so Nineteen's opening $D5 x rest pattern 0 is one copy priced at its debt-free first play; the patch is not in the tree and passes git apply --check at 1ee1557.",
-   "sources": ["C:/t/nineteen-aud-dip-3/finding.md", "C:/t/nineteen-aud-dip-3/fix.patch", "python/h2g/patterns.py:4297", "runs.jsonl nineteen-aud-dip-3"],
-   "options": [{"label": "Adopt", "consequence": "Nineteen aud .8998 -> .9082, gate .74 -> .82, wave .72 -> .77; noise/pul/filt counts -5..-10 (window-edge, checked at -t 170); 2 test pins updated; Nineteen only"},
-               {"label": "Drop", "consequence": "the opening dip stays; diagnosis remains a finding"}],
-   "recommendation": "Adopt", "why": "One file, +.008 aud above the .0077 floor, the only falls are a measured window-edge artefact, and the change lives inside an option only Nineteen ships.",
-   "question": "Adopt Nineteen's rest-repeat unroll?", "unblocked_by_research": false},
-  {"id": "monty-drum-long-sweep-adoption", "kind": "decision",
-   "title_at_research": "Carry the drum pitch fall on drum notes longer than the record's median as a real convert() option (Monty bend .88 -> 1.09; moves Monty, Devils_Galop, International_Karate)",
-   "blocked_on_at_research": "Turn C:/t/monty-voice-2-bend-deficit-mid-tune/drum_long_scratch.patch (env-gated H2G_EXP_DRUM_LONG) into a convert() option ...",
-   "current_behaviour": "wavetable._drum_entries writes one sweep depth per drum record sized from its median played duration; Monty record 1's median is 2 rows, so its 4-row G-5 notes never sweep. python/h2g/goatwriter/drum_long.py does not exist and no H2G_EXP_DRUM_LONG reference is in python/h2g.",
-   "sources": ["C:/t/monty-voice-2-bend-deficit-mid-tune/finding.md", "C:/t/monty-voice-2-bend-deficit-mid-tune/drum_long_scratch.patch", "runs.jsonl monty-voice-2-bend-deficit-mid-tune"],
-   "options": [{"label": "Wait for the wobble task", "consequence": "nothing ships now; adopt after monty-voice-2-wobble-over-bend-0-10s so Monty's bend is not shipped overshooting at 1.09"},
-               {"label": "Adopt for Monty + Devils_Galop now", "consequence": "Monty drum fall frame-exact, bend .88 -> 1.09 (overshoot), Devils_Galop bend .78 -> .97; aud/loud within noise; needs option wiring"},
-               {"label": "Drop", "consequence": "the drum fall stays missing"}],
-   "recommendation": "Wait for the wobble task", "why": "The patch is right on its own notes, but shipping it alone trades an under-bend for an over-bend on Monty; the wobble task is already ready to run.",
-   "question": "Monty drum fall: adopt now or after the wobble fix?", "unblocked_by_research": false}
+  {"id": "nineteen-hat-bandpass-adoption", "kind": "decision",
+   "title_at_research": "Adopt sfx_drum_bandpass for Nineteen (the hi-hat band-pass toggle; aud .9082 -> .9168, moves Nineteen only)",
+   "blocked_on_at_research": "adopt C:/t/nineteen-hat-bandpass-toggle-emit/fix.patch? ...",
+   "current_behaviour": "presets.json songs['Nineteen.sid'] has no sfx_drum_bandpass key, so the existing goatwriter.sfx_bandpass_plan emitter is off and Nineteen never leaves low-pass (original 1367 band-pass frames in 180 s, ours 0). fix.patch passes git apply --check at fa646bb.",
+   "sources": ["C:/t/nineteen-hat-bandpass-toggle-emit/finding.md", "C:/t/nineteen-hat-bandpass-toggle-emit/fix.patch", "presets.json songs['Nineteen.sid']", "docs/SOUND-CALIBRATION.md noise floor 0.0095", "runs.jsonl nineteen-hat-bandpass-toggle-emit"],
+   "options": [{"label": "Adopt", "consequence": "Nineteen aud .9082 -> .9168 (+.0086, under the 0.0095 corpus floor), band 84 -> 86%, bnote 0 -> 99%, 98.7% of the original's band-pass frames matched in phase; one preset key and three test files; Nineteen only"},
+               {"label": "Drop", "consequence": "Nineteen stays low-pass on every hat frame; the finding stays a finding"}],
+   "recommendation": "Adopt",
+   "why": "The aud gain alone sits under the noise floor, but the register columns show the conversion now does what the player does (bnote 0 -> 99%, band-pass frames in phase), nothing falls, and presets.py --fidelity chose the same key independently.",
+   "auto_adopt_failed_on": "aud rise .0086 is below the 0.0095 noise floor (docs/SOUND-CALIBRATION.md); Nineteen has no per-file calibration",
+   "question": "Adopt the hi-hat band-pass toggle for Nineteen?", "unblocked_by_research": false}
  ]
 }

@@ -10,7 +10,14 @@
     "fbs-queue-holds-and-new-keys",
     "hand-adopt-named-firstwave-on-the-s2",
     "land-four-adoptions-v0-5-653",
-    "monty-voice-2-bend-deficit-mid-tune"
+    "monty-voice-2-bend-deficit-mid-tune",
+    "corpus-gate-column-sub99-mechanisms",
+    "corpus-wave-column-sub99-mechanisms",
+    "corpus-hold-column-sub99-mechanisms",
+    "corpus-melody-column-sub99-mechanisms",
+    "corpus-instr-column-sub99-mechanisms",
+    "corpus-sub99-merge-mechanisms-into-todo",
+    "ik-plus-sub99-priority"
   ],
   "cycle": {
     "auto_adopt": {

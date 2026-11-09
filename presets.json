@@ -2187,6 +2187,7 @@
       "multiplier": 1,
       "two_stage": true,
       "sfx_drum": true,
+      "sfx_drum_bandpass": true,
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true,

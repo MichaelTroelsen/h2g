@@ -307,21 +307,32 @@ def test_the_drum_blocks_that_set_a_passband_are_these_files():
             if k != "Trans-Atlantic_Balloon_Challenge"} == {0x60}, found
 
 
-def _opts(stem):
+# Songs whose shipped preset turns the option on (`tests/test_nineteen_hat_toggle.py`
+# holds the measurement). Every other test here compares ON against the
+# option's own OFF, so `_opts` pins the flag off whatever the preset says.
+ADOPTED = {"Nineteen"}
+
+
+def _shipped(stem):
     doc = json.loads(PRESETS.read_text("utf-8"))
     return fidelity._preset_opts(doc, f"{stem}.sid")
+
+
+def _opts(stem):
+    return {**_shipped(stem), "sfx_drum_bandpass": False}
 
 
 @needs_corpus
 @needs_presets
 @pytest.mark.parametrize("stem", SFX_FILES)
 def test_the_option_is_inert_unless_asked_for(stem):
-    opts = _opts(stem)
+    opts = _shipped(stem)
     assert "sfx_drum_bandpass" in opts
-    assert not opts["sfx_drum_bandpass"]
+    assert bool(opts["sfx_drum_bandpass"]) == (stem in ADOPTED)
     path = str(CORPUS / f"{stem}.sid")
-    assert convert(path, log=lambda m: None, **opts) == convert(
-        path, log=lambda m: None, **{**opts, "sfx_drum_bandpass": False})
+    shipped = convert(path, log=lambda m: None, **opts)
+    off = convert(path, log=lambda m: None, **{**opts, "sfx_drum_bandpass": False})
+    assert (shipped != off) == (stem in ADOPTED)
 
 
 @needs_corpus

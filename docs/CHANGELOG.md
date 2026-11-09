@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.656 — 2026-11-09
+
+- Nineteen's hi-hat band-pass toggle; sub-99% mechanisms into todo.md; IK_plus priority
+
 ## 0.5.655 — 2026-11-08
 
 - LESSONS.md drift split follows the v0.5.654 artefact (81 zero / 8 drifting); land.py checks doc figures before the refresh commit
