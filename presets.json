@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.654 presets.py",
+  "generator": "h2g 0.5.656 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2187,14 +2187,14 @@
       "multiplier": 1,
       "two_stage": true,
       "sfx_drum": true,
-      "sfx_drum_bandpass": true,
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true,
       "regrid_full_debt": true,
       "regrid_per_play": true,
       "regrid_unshare_rest": true,
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "sfx_drum_bandpass": true
     },
     "Ninja.sid": {
       "max_rows": 128,
