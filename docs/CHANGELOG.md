@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.657 — 2026-11-10
+
+- todo.md "No legato" sub-99% entry; IK_plus fix2.patch finding recorded
+
 ## 0.5.656 — 2026-11-09
 
 - Nineteen's hi-hat band-pass toggle; sub-99% mechanisms into todo.md; IK_plus priority

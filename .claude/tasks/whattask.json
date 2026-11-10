@@ -1,16 +1,16 @@
 {
  "generated_from": {
-  "head": "fa646bb",
+  "head": "5b64289",
   "focus": null,
   "sources": [
-   ".claude/tasks/whattask.json (previous plan at fa646bb: 4 tasks, all done since)",
-   ".claude/tasks/runs.jsonl (restage, instr column, merge, Nineteen adoption done)",
-   ".claude/tasks/decisions.jsonl (Nineteen hi-hat: Adopt)",
-   "todo.md (PRIORITY IK_plus entry, user 2026-11-09; Sub-99% mechanisms section)",
+   ".claude/tasks/whattask.json (previous plan at 5b64289: 1 task, ik-plus-sub99-priority, now done)",
+   ".claude/tasks/runs.jsonl (ik-plus-sub99-priority done: fix2.patch; opened the adoption)",
+   "todo.md (31 Sub-99% mechanism entries, deferred until the IK_plus adoption lands; Open section unchanged)",
+   "docs/QUEUE.md at v0.5.656 (no new work)",
    "gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work.",
-  "date": "2026-11-09"
+  "date": "2026-11-10"
  },
  "hazards": [
   "presets.json",
@@ -33,50 +33,47 @@
   ".claude/tasks/serial.lock.d"
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1717,
+ "closed_count": 1718,
  "tasks": [
   {
    "offload": null,
    "why_offload": null,
-   "mcp": [],
    "fork": null,
    "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "depends_on": [],
-   "needs_main": false,
    "needs_main_reason": null,
-   "lane": "parallel",
-   "why_lane": "the only open task",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "why_model": "trace-level diagnosis and a converter patch on one song, not the critical class",
-   "why_effort": "IK_plus has several closed attempts behind it, so a plausible patch that fixes the score but not the mechanism is the failure mode",
-   "why_mode": "self-contained in its own worktree, returns a patch or a measured negative; adoption stays a separate decision",
-   "id": "ik-plus-sub99-priority",
-   "title": "IK_plus first (user priority): emit the voice-2 noise tick the original strikes at f+1 and f+7 of each 6-frame row, then re-measure the attack scatter and the $08 parking on top of it",
-   "source": "todo.md PRIORITY IK_plus entry (user, 2026-11-09); \"Instr: IK_plus (35.3%) never sounds the original's noise tick\" (C:/t/corpus-instr-column-sub99-mechanisms/plan.md J2)",
+   "mcp": [],
+   "depends_on": [],
+   "needs_main": true,
+   "lane": "serial",
+   "why_lane": "writes presets.json and python/h2g on the main tree",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
+   "why_model": "applying a verified patch and re-gating it",
+   "why_effort": "mechanical apply + suite + hash",
+   "why_mode": "the clean bar refuses it: travel falls -0.0085 on IK_plus with a deterministic trace (no noise to forgive), and the patch adds ~410 lines of shared goatwriter/patterns code",
+   "blocked_on": null,
+   "decision": "Adopt: git apply C:/t/ik-plus-sub99-priority/fix2.patch on the main tree, add \"sfx_drum\": true, \"sfx_drum_stage\": true, \"regrid_phase\": true to presets.json songs['IK_plus.sid'], then run the verify's hash and tests; travel -0.0085 on IK_plus is accepted by the user.",
+   "id": "ik-plus-fix2-adoption",
+   "title": "IK_plus: apply C:/t/ik-plus-sub99-priority/fix2.patch and turn sfx_drum, sfx_drum_stage, regrid_phase on in its presets.json entry",
+   "source": "runs.jsonl ik-plus-sub99-priority (done, opened this); C:/t/ik-plus-sub99-priority/finding2.md",
    "touches": [
-    "rw:host:C:/t/ik-plus-sub99-priority",
-    "r:host:C:/t/corpus-instr-column-sub99-mechanisms",
-    "r:host:C:/t/corpus-gate-column-sub99-mechanisms",
-    "r:host:C:/t/corpus-wave-column-sub99-mechanisms",
+    "rw:python/h2g",
+    "rw:python/presets.py",
+    "rw:python/tests",
+    "rw:presets.json",
+    "rw:docs/OPTIONS.md",
+    "r:host:C:/t/ik-plus-sub99-priority",
     "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/h2g",
-    "r:python/fidelity.py",
-    "r:python/heard.py",
-    "r:python/listen.py",
-    "r:presets.json",
-    "r:build/fidelity.json",
-    "r:build/heard.json",
-    "r:.claude/tasks/closed.jsonl",
-    "r:python/tests",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:python/tools/magplay-rt/bin"
+    "r:build/fidelity.json"
    ],
-   "verify": "DONE when C:/t/ik-plus-sub99-priority/finding.md names the player record that carries IK_plus's voice-2 noise tick and ends in exactly one of: (a) a fix.patch that applies to a fresh worktree of HEAD and makes our voice 2 sound noise on the frames the original does, where a fidelity.py -t 180 --presets --sound A/B on IK_plus (private --workdir under C:/t/ik-plus-sub99-priority, never build/audio) raises instr (heard.py on a private --listen dir) and gate or wave with no printed column falling more than its noise, the corpus byte-hash names every file it moves, and the patch's new test fails with the change short-circuited and passes restored (name the test file it adds); or (b) a measured statement of why the tick cannot be emitted, naming the mechanism. Either way, re-measure IK_plus's attack scatter and $08 parking on the result and say which of them remains, citing the closed ik-plus-* records rather than re-deriving them. Nothing is adopted or committed. Copy python/tools/siddump-rt/siddump.exe into the worktree first."
+   "verify": "DONE when fix2.patch is applied to the main tree (git apply --check first), IK_plus.sid's presets.json entry carries sfx_drum, sfx_drum_stage and regrid_phase true, a corpus byte-hash against build/fidelity.json moves IK_plus.sid only, tests/test_regrid_phase.py, test_sfx_drum_stage.py, test_drum_init_firstwave.py, test_commando.py and test_preset_passthrough.py pass, and the full suite fails at most test_output_sha (the pre-refresh state). Left uncommitted for python/land.py."
   }
  ],
- "closed": []
+ "closed": [
+  {
+   "id": "ik-plus-sub99-priority",
+   "reason": "done 2026-11-09 (runs.jsonl): fix2.patch at C:/t/ik-plus-sub99-priority, ending (a)"
+  }
+ ]
 }

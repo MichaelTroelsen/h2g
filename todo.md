@@ -1429,6 +1429,10 @@ Each entry below came out of the five column passes the user asked for on 2026-1
 
   added: 2026-11-08
 
+- **Test column: "No legato" on 10 songs -- the original changes notes without a re-trigger and ours re-attacks them.** Not a percentage column, so no column pass covered it. The listening index's `test` cell reads "No legato" on ACE_II, Chain_Reaction, Dragons_Lair_Part_II, Flash_Gordon, Food_Feud, Knucklebusters, Mozart, Saboteur_II, Tarzan and Zoolook (index rebuilt at v0.5.656, 2026-11-09; held DIGI files excluded). The flag is `listen.py`'s slow-tie check: it fires when the original has at least 20 slow ties (more than `RAPID_TIE_FRAMES` frames after the voice's previous note event) and ours has under a quarter of that, and names the voices. Flash_Gordon and Food_Feud are in no other entry; the other eight are, for other causes. Every other sub-99% cell on the index (melody, gate, wave, hold, instr) is already under an entry above, and the five `length` mismatches (Geoff_Capes, Kings_of_the_Beach_ingame, Knucklebusters, Knucklebusters_3, Sanxion) are all within the ±5 s rule. Done when the 10 songs are grouped by the mechanism that drops each one's slow ties (which voice, which instrument, what the original writes at the tie and what we emit), each group with an emitter change named, or the flag shown to fire on a shape that is not legato. `[subagent]` for the grouping pass.
+
+  added: 2026-11-09
+
 ## Auf Wiedersehen Monty to 99%
 
 Requested by the listener after the note-flag fix landed. Where it stands at

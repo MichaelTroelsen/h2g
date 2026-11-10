@@ -1,16 +1,17 @@
 {
- "generated_from": {"head": "fa646bb", "plan_head": "fa646bb"},
+ "generated_from": {"head": "5b64289", "plan_head": "5b64289"},
  "blockers": [
-  {"id": "nineteen-hat-bandpass-adoption", "kind": "decision",
-   "title_at_research": "Adopt sfx_drum_bandpass for Nineteen (the hi-hat band-pass toggle; aud .9082 -> .9168, moves Nineteen only)",
-   "blocked_on_at_research": "adopt C:/t/nineteen-hat-bandpass-toggle-emit/fix.patch? ...",
-   "current_behaviour": "presets.json songs['Nineteen.sid'] has no sfx_drum_bandpass key, so the existing goatwriter.sfx_bandpass_plan emitter is off and Nineteen never leaves low-pass (original 1367 band-pass frames in 180 s, ours 0). fix.patch passes git apply --check at fa646bb.",
-   "sources": ["C:/t/nineteen-hat-bandpass-toggle-emit/finding.md", "C:/t/nineteen-hat-bandpass-toggle-emit/fix.patch", "presets.json songs['Nineteen.sid']", "docs/SOUND-CALIBRATION.md noise floor 0.0095", "runs.jsonl nineteen-hat-bandpass-toggle-emit"],
-   "options": [{"label": "Adopt", "consequence": "Nineteen aud .9082 -> .9168 (+.0086, under the 0.0095 corpus floor), band 84 -> 86%, bnote 0 -> 99%, 98.7% of the original's band-pass frames matched in phase; one preset key and three test files; Nineteen only"},
-               {"label": "Drop", "consequence": "Nineteen stays low-pass on every hat frame; the finding stays a finding"}],
+  {"id": "ik-plus-fix2-adoption", "kind": "decision",
+   "title_at_research": "IK_plus: apply C:/t/ik-plus-sub99-priority/fix2.patch and turn sfx_drum, sfx_drum_stage, regrid_phase on in its presets.json entry",
+   "blocked_on_at_research": "user decision: adopt fix2.patch for IK_plus despite travel .9920 -> .9834 (cut -0.0012, pul -4) and ~410 shared lines?",
+   "current_behaviour": "presets.json IK_plus.sid has no sfx_drum/sfx_drum_stage/regrid_phase; the options do not exist at HEAD. fix2.patch applies on a fresh HEAD worktree (wt4), 12 files +412/-9; moves 0 of 89 files under shipped presets.",
+   "sources": ["C:/t/ik-plus-sub99-priority/finding2.md", "C:/t/ik-plus-sub99-priority/fix2.patch", "C:/t/ik-plus-sub99-priority/ab_final_vs_head.txt", "runs.jsonl ik-plus-sub99-priority"],
+   "options": [{"label": "Adopt", "consequence": "IK_plus wave .654->.839, gate .577->.998, instr .353->.849, aud .872->.907; travel -.0085, cut -.0012, pul -4; .sng 12->33 KB, 133 of 208 patterns; ~410 shared lines"},
+               {"label": "Investigate travel first", "consequence": "one more agent run before adoption; the gain waits"},
+               {"label": "Reject", "consequence": "IK_plus stays at wave .654 / instr .353; patch stays under C:/t"}],
    "recommendation": "Adopt",
-   "why": "The aud gain alone sits under the noise floor, but the register columns show the conversion now does what the player does (bnote 0 -> 99%, band-pass frames in phase), nothing falls, and presets.py --fidelity chose the same key independently.",
-   "auto_adopt_failed_on": "aud rise .0086 is below the 0.0095 noise floor (docs/SOUND-CALIBRATION.md); Nineteen has no per-file calibration",
-   "question": "Adopt the hi-hat band-pass toggle for Nineteen?", "unblocked_by_research": false}
+   "why": "Every register column the drum touches moves toward the original by large margins and no other song's bytes move; the falls are small and travel already fell with fix.patch alone.",
+   "auto_adopt_failed_on": "travel fell .9920 -> .9834 on the moved file with a deterministic trace (no noise floor to forgive it)",
+   "question": "Adopt IK_plus's fix2.patch despite travel .992 -> .983?", "unblocked_by_research": false}
  ]
 }
