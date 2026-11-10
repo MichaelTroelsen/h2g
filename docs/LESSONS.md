@@ -1598,7 +1598,7 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **81 zero / 8 drifting of 89 rows** (v0.5.654; 80 / 9 before Nineteen's opening rest unroll took its drift 0.24 -> 0.00 per 1000) (95
+  * **The drift split at 180 s is **82 zero / 7 drifting of 89 rows** (v0.5.658; 81 / 8 before IK_plus' regrid_phase took its drift 0.21 -> 0.00 per 1000; 80 / 9 before Nineteen's opening rest unroll took its drift 0.24 -> 0.00 per 1000) (95
     traced, 89 measured, all 89 with a fit; re-graded at v0.5.644 against
     that refresh's `build/fidelity.json`, where Bangkok_Knights' drift went
     .62 -> 0/1000 (the v0.5.644 `regrid_prepay` adoption); 79 / 10 at

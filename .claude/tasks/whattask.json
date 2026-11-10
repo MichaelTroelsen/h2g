@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "5b64289",
+  "head": "738c380",
   "focus": null,
   "sources": [
    ".claude/tasks/whattask.json (previous plan at 5b64289: 1 task, ik-plus-sub99-priority, now done)",
@@ -34,46 +34,11 @@
  ],
  "closed_archive": "closed.jsonl",
  "closed_count": 1718,
- "tasks": [
-  {
-   "offload": null,
-   "why_offload": null,
-   "fork": null,
-   "branch": null,
-   "needs_main_reason": null,
-   "mcp": [],
-   "depends_on": [],
-   "needs_main": true,
-   "lane": "serial",
-   "why_lane": "writes presets.json and python/h2g on the main tree",
-   "model": "session",
-   "effort": "medium",
-   "mode": "main",
-   "why_model": "applying a verified patch and re-gating it",
-   "why_effort": "mechanical apply + suite + hash",
-   "why_mode": "the clean bar refuses it: travel falls -0.0085 on IK_plus with a deterministic trace (no noise to forgive), and the patch adds ~410 lines of shared goatwriter/patterns code",
-   "blocked_on": null,
-   "decision": "Adopt: git apply C:/t/ik-plus-sub99-priority/fix2.patch on the main tree, add \"sfx_drum\": true, \"sfx_drum_stage\": true, \"regrid_phase\": true to presets.json songs['IK_plus.sid'], then run the verify's hash and tests; travel -0.0085 on IK_plus is accepted by the user.",
-   "id": "ik-plus-fix2-adoption",
-   "title": "IK_plus: apply C:/t/ik-plus-sub99-priority/fix2.patch and turn sfx_drum, sfx_drum_stage, regrid_phase on in its presets.json entry",
-   "source": "runs.jsonl ik-plus-sub99-priority (done, opened this); C:/t/ik-plus-sub99-priority/finding2.md",
-   "touches": [
-    "rw:python/h2g",
-    "rw:python/presets.py",
-    "rw:python/tests",
-    "rw:presets.json",
-    "rw:docs/OPTIONS.md",
-    "r:host:C:/t/ik-plus-sub99-priority",
-    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:build/fidelity.json"
-   ],
-   "verify": "DONE when fix2.patch is applied to the main tree (git apply --check first), IK_plus.sid's presets.json entry carries sfx_drum, sfx_drum_stage and regrid_phase true, a corpus byte-hash against build/fidelity.json moves IK_plus.sid only, tests/test_regrid_phase.py, test_sfx_drum_stage.py, test_drum_init_firstwave.py, test_commando.py and test_preset_passthrough.py pass, and the full suite fails at most test_output_sha (the pre-refresh state). Left uncommitted for python/land.py."
-  }
- ],
+ "tasks": [],
  "closed": [
   {
-   "id": "ik-plus-sub99-priority",
-   "reason": "done 2026-11-09 (runs.jsonl): fix2.patch at C:/t/ik-plus-sub99-priority, ending (a)"
+   "id": "ik-plus-fix2-adoption",
+   "reason": "done 2026-11-10 (runs.jsonl), landed in d832928 v0.5.658"
   }
  ]
 }

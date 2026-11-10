@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.659 — 2026-11-10
+
+- LESSONS.md drift split follows the v0.5.658 artefact (82 zero / 7 drifting)
+
 ## 0.5.658 — 2026-11-10
 
 - IK_plus: voice-2 drum hits on the original's row clock (regrid_phase, sfx_drum, sfx_drum_stage)
