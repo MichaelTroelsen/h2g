@@ -12,7 +12,7 @@ from .constants import (DEFAULT_FORMAT, DRUM_DEEPEN_MARGIN,
                         DRUM_MAX_SWEEP_STEPS, _drum_speed,
                         EFFECT_PITCH_SEQ_MASK, EFFECT_SFX_DRUM_MASK,
                         FIXED_ARP_PARITY_MASK, FORMAT_GTS5, NOISE_TICK_FRAMES,
-                        RISE_SHIFT, SPEED_NOTE_RELATIVE,
+                        RISE_SHIFT, SFX_DRUM_STAGED, SPEED_NOTE_RELATIVE,
                         WAVE_ENTRIES_PER_INSTR, WAVE_JUMP, WAVE_MAX_DELAY,
                         WAVE_NOISE_GATEOFF, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .instruments import (_table_length_byte)
@@ -280,8 +280,19 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # happen to line up, and 281 frames against the original's 35 on
         # Pandora. See H2G-CONVERSION-METHOD.md section 7.rrr.
         second = _fixed_attack_note(sid, det, i)
+        # The attack waveform bit $04 holds after the hit, where the record
+        # sets it; see `_sfx_drum_entries`.
+        stage_wave, stage_frames = None, 0
+        if (sfx_drum == SFX_DRUM_STAGED and det.effect_two_stage
+                and (arp_style & 0x04) and det.two_stage_wave >= 0):
+            at = det.two_stage_wave + i * det.instr_stride
+            fr = det.two_stage_frames + i * det.instr_stride
+            if max(at, fr) < len(data) and data[at]:
+                stage_wave = data[at]
+                stage_frames = _two_stage_frames(data[fr], arp_style)
         hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier,
-                                second_note=second)
+                                second_note=second, stage_wave=stage_wave,
+                                stage_frames=stage_frames)
         # A record setting bit $10 as well plays the arpeggio on the frames
         # the drum does not fire; only where the phase cell is carried
         # (`pitch_phase`) and the hit has no $40 prologue.

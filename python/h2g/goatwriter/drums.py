@@ -211,7 +211,9 @@ def _chord_block(source: List[tuple], chord, multiplier: int,
 
 def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
                       multiplier: int = 1,
-                      second_note: Optional[int] = None) -> tuple:
+                      second_note: Optional[int] = None,
+                      stage_wave: Optional[int] = None,
+                      stage_frames: int = 0) -> tuple:
     """Entries for the bit-$80 drum: a noise hit every `period` frames.
 
     `detect._find_sfx_drum` reads what this plays -- noise at a fixed frequency
@@ -370,6 +372,30 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
         elif rest > 1:
             left.append(min(rest - 1, WAVE_MAX_DELAY))
             right.append(WAVE_NOTE_KEEP)
+
+    if (second_note is None and stage_wave is not None and stage_frames >= 2
+            and m == 1 and period > stage_frames):
+        # **A record that also sets bit $04 holds its attack waveform for
+        # `stage_frames` frames, and the hit is the first of them.** IK+'s
+        # pulse+drum records (`+2 = $41`, `+7 = $A4`, stage waveform `$81`,
+        # 2 frames) read `41 81 81 40` in the trace -- the hit on frame 1 and
+        # the stage's second frame on frame 2, at the played note, before the
+        # record's own waveform returns -- where this function wrote
+        # `41 81 41 40`: 1273 of the original's 1486 noise runs are 2 frames
+        # long and ours were all 1, so `nrun` fell 100% -> 75%. The stage
+        # counter runs out once per NOTE, so it goes in the prologue the
+        # loop's jump skips, as the `$40` pitch does below.
+        left = [held, noise]
+        right = [0x00, note]
+        for _ in range(stage_frames - 1):
+            left.append(stage_wave)
+            right.append(0x00)
+        hold(left, right, period - stage_frames)
+        loop = len(left)
+        left.append(noise)
+        right.append(note)
+        hold(left, right, period - 1)
+        return left, right, loop
 
     if second_note is None:
         # **The hit is on the note's second frame, and every `period` after.**

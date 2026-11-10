@@ -399,6 +399,12 @@ EXCLUDED_FROM_ALWAYS = {
     # with another voice so `regrid`'s compensation can land during a long
     # voice-0 rest (convert's `regrid_unshare_rest`). Inert without `regrid`.
     "regrid_unshare_rest",
+    # Per song: puts `regrid`'s compensating rows on the rows the original's
+    # free-running gate lengthens, one cloned pattern per distinct phase
+    # (convert's `regrid_phase`). Only a player whose gate counters can be read
+    # from its file (`goatwriter.step_durations`; verified on IK_plus alone);
+    # inert without `regrid`.
+    "regrid_phase",
     # An INTEGER (rows), not a toggle: where in the looping voice's pattern
     # `regrid_park`'s pairs sit, as a rotation of the evenly spread rows. The
     # original's extra frame is a free-running counter and the pairs are
@@ -633,6 +639,11 @@ EXCLUDED_FROM_ALWAYS = {
     # column is bnote: 0.95-1.00 with the option on, four of the five; 0.000
     # with it off).
     "sfx_drum_bandpass",
+    # Per song: holds the attack waveform a bit-$04 record sets for its stage
+    # frames after the sfx drum's hit (convert's `sfx_drum_stage`), the second
+    # noise frame of IK_plus' pulse+drum records. Moves Pandora's bytes too
+    # when forced (measured, improves it); inert without `sfx_drum`.
+    "sfx_drum_stage",
     # The byte-code wave program: 29 files carry the interpreter, and it is what
     # carries Trans-Atlantic's snare -- all 43 notes now sound noise in their
     # first frames, at $31xx against the original's $30xx. Per song because it

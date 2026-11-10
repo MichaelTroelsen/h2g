@@ -144,6 +144,15 @@ def main(argv=None) -> int:
              "Paws' voice 1 does; a song with no such voice is unchanged. "
              "Per song. Off by default")
     parser.add_argument(
+        "--regrid-phase", action="store_true",
+        help="with --regrid, put the compensating rows on the rows the "
+             "original's free-running gate lengthens (cloned patterns, one "
+             "per distinct phase) instead of spreading them evenly. Only a "
+             "player whose two gate counters and staged play entry can be "
+             "read from the file (goatwriter.step_durations; verified "
+             "against a trace on IK_plus only); anything else is unchanged. "
+             "Per song. Off by default")
+    parser.add_argument(
         "--regrid-unshare-rest", action="store_true",
         help="with --regrid, give voice 0 its own copy of each rest-only "
              "pattern it shares with another voice, so the fractional "
@@ -680,6 +689,11 @@ def main(argv=None) -> int:
              "record that also filters, as a loop on the drum's period. Needs "
              "--sfx-drum, --filter and --format gts5. Off by default")
     parser.add_argument(
+        "--sfx-drum-stage", action="store_true",
+        help="with --sfx-drum, hold the attack waveform a bit-$04 record sets "
+             "for its stage frames after the drum's hit (IK_plus' pulse+drum "
+             "records: noise two frames, not one). Per song. Off by default")
+    parser.add_argument(
         "--two-stage", action="store_true",
         help="write the attack waveform this player's effect bit $04 selects. "
              "In 44 corpus files bit $04 is not an arpeggio but a second "
@@ -815,6 +829,7 @@ def main(argv=None) -> int:
                           ("--regrid-per-play", "regrid_per_play"),
                           ("--regrid-park", "regrid_park"),
                           ("--regrid-unshare-rest", "regrid_unshare_rest"),
+                          ("--regrid-phase", "regrid_phase"),
                           ("--master-volume", "master_volume"),
                           ("--master-fade", "master_fade"),
                           ("--keep-hard-restart", "keep_hard_restart"),
@@ -839,6 +854,7 @@ def main(argv=None) -> int:
                           ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
                           ("--sfx-drum-bandpass", "sfx_drum_bandpass"),
+                          ("--sfx-drum-stage", "sfx_drum_stage"),
                           ("--wave-program", "wave_program"),
                           ("--vibrato-command", "vibrato_command"),
                           ("--cut-release", "cut_release"),
@@ -939,6 +955,7 @@ def main(argv=None) -> int:
                       regrid_prepay=args.regrid_prepay,
                       regrid_park=args.regrid_park,
                       regrid_unshare_rest=args.regrid_unshare_rest,
+                      regrid_phase=args.regrid_phase,
                       regrid_park_shift=args.regrid_park_shift,
                       master_volume=args.master_volume,
                       master_fade=args.master_fade,
@@ -977,6 +994,7 @@ def main(argv=None) -> int:
                       voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,
                       sfx_drum_bandpass=args.sfx_drum_bandpass,
+                      sfx_drum_stage=args.sfx_drum_stage,
                       wave_program=args.wave_program,
                       vibrato_command=args.vibrato_command,
                       cut_release=args.cut_release,

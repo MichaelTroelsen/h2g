@@ -199,6 +199,7 @@ HARD_RESTART_FRAMES = 2
 FIRSTWAVE_TESTBIT = 0x09
 FIRSTWAVE_GATE_ONLY = 0xFF
 FIRSTWAVE_FREERUN = 0x01
+FIRSTWAVE_DRUM_INIT = 0x08
 
 
 # A wavetable left side of $01-$0F is a delay: the entry holds whatever
@@ -223,6 +224,12 @@ NOISE_TICK_FRAMES = 2
 
 
 SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
+# `build_sng`'s `sfx_drum` is a flag everywhere but one place: this value, in
+# place of True, also asks `_wavetable_entries` for the stage frames a bit-$04
+# record holds after the hit (convert's `sfx_drum_stage`). Every other reader
+# only tests it for truth, which is why it rides in that argument rather than
+# a new one threaded through the sixteen call sites that pass it.
+SFX_DRUM_STAGED = 2
 WAVE_JUMP = 0xFF             # left side: jump, the right side naming the row
 WAVE_NOTE_BASE = 0x00        # right side: **writes the pattern's own note**. This is a
 #                              `.sng` byte and `gt2reloc` inverts bit 7 of every

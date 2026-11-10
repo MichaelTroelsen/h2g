@@ -902,3 +902,88 @@ def write_funktempo(patterns: List[List[int]], speed_table: List[tuple],
         log(f"Funktempo...............: {len(rows)} 2-call row tempo(s) as "
             f"CMD_FUNKTEMPO -> speed table row {index} (02 02)")
     return len(rows)
+
+
+def step_durations(sid: SidFile, rows: int) -> Optional[List[int]]:
+    """Frames each of the song's first `rows` rows lasts in the ORIGINAL, or None.
+
+    **THE ORIGINAL'S EXTRA FRAME IS A FREE-RUNNING COUNTER, so WHICH row takes
+    it is known exactly -- and a pattern-global schedule cannot reproduce it.**
+    IK+'s play routine (`$E056`) runs two counters per call:
+
+        DEC $E696 / BPL +  / LDA #$70 / STA $E696 / JMP $E071   ; outer, 113 calls
+        DEC $E694 / BPL $E071 / LDA $E695 / STA $E694           ; inner, reload 2
+        $E071: ... LDA $E696 / BEQ nostep / LDA $E694 / CMP $E695 / BNE nostep
+
+    the inner counter is skipped on the outer's underflow call and a row steps
+    only on a call where the inner counter sits at its reload AND the outer is
+    not 0. That is a row of 3 calls that lasts 4 whenever an outer underflow
+    falls inside it: 80 such rows in the first 9000 frames, at frames fixed by
+    the two counters' power-on values.
+
+    Emulated from the file image's counters (both 0) after the first play call,
+    which is the player's own set-up stage (`BIT $E699`, left at `$40` by the
+    init), the steps land on **539 of 539 voice-0 attacks, 975 of 975 voice-1
+    attacks and 1474 of 1487 voice-2 drum ticks** of a 180 s siddump of the
+    original (`C:/t/ik-plus-sub99-priority/model7.py`), frame for frame.
+
+    Returned only for exactly that shape: the `OUTER_GATE` jump spelling whose
+    target is the inner gate's fall-through, the step test above reading both
+    counters, and the staged play entry. Anything else is None -- a schedule
+    for a player this was not read from would be a guess dressed as a reading.
+
+    **44 of the 89 corpus files read this shape and ONE (IK_plus) has been
+    checked against a trace.** The other 43 take the file's FIRST outer and
+    inner gate (`find_song_speeds` chooses between several; this does not), a
+    song 0 start, and a single set-up call; a file where any of those is
+    wrong gets a schedule that is wrong by a constant phase, and
+    `regrid_phase` is per song and measured for exactly that reason.
+    """
+    outer = OUTER_GATE.search(sid.data)
+    inner = next(iter(SPEED_GATE.finditer(sid.data)), None)
+    if outer is None or inner is None or rows <= 0:
+        return None
+    o_ctr, o_top, o_ctr2, o_jmp = (outer.group(1), outer.group(2)[0],
+                                   outer.group(3), outer.group(4))
+    i_ctr, i_rel, i_ctr2 = inner.group(1), inner.group(2), inner.group(3)
+    if o_ctr != o_ctr2 or i_ctr != i_ctr2:
+        return None
+    # The outer gate hands over to the inner gate's fall-through.
+    after_inner = sid.to_address(inner.end())
+    if (o_jmp[0] | o_jmp[1] << 8) != after_inner:
+        return None
+    # The step test names both counters and the inner's reload.
+    at = sid.to_offset(after_inner)
+    window = sid.data[at:at + 24]
+    test = re.search(b"\xad" + re.escape(o_ctr) + b"\xf0.\xad" + re.escape(i_ctr)
+                     + b"\xcd" + re.escape(i_rel) + b"\xd0", window, re.DOTALL)
+    if test is None:
+        return None
+    # The staged play routine: `BIT stage / BMI / BVC`, with the init leaving
+    # `$40` in `stage` (V set), so the first call only sets the voices up.
+    if not any((b"\xa9\x40\x8d" + m.group(1)) in sid.data
+               for m in re.finditer(b"\x2c(..)\x30.\x50.", sid.data, re.DOTALL)):
+        return None
+    out_at = sid.to_offset(o_ctr[0] | o_ctr[1] << 8)
+    in_at = sid.to_offset(i_ctr[0] | i_ctr[1] << 8)
+    rel_at = sid.to_offset(i_rel[0] | i_rel[1] << 8)
+    if not all(0 <= x < len(sid.data) for x in (out_at, in_at, rel_at)):
+        return None
+    reload_ = sid.data[rel_at]
+    outer_n, inner_n = sid.data[out_at], sid.data[in_at]
+    steps: List[int] = []
+    frame = 1                       # call 0 is the set-up stage
+    while len(steps) <= rows:
+        outer_n -= 1
+        if outer_n < 0:
+            outer_n = o_top
+        else:
+            inner_n -= 1
+            if inner_n < 0:
+                inner_n = reload_
+        if outer_n != 0 and inner_n == reload_:
+            steps.append(frame)
+        frame += 1
+        if frame > 64 * (rows + 8):
+            return None             # a gate that never steps
+    return [steps[i + 1] - steps[i] for i in range(rows)]

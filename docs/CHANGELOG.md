@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.658 — 2026-11-10
+
+- IK_plus: voice-2 drum hits on the original's row clock (regrid_phase, sfx_drum, sfx_drum_stage)
+
 ## 0.5.657 — 2026-11-10
 
 - todo.md "No legato" sub-99% entry; IK_plus fix2.patch finding recorded

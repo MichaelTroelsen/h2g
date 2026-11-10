@@ -12,6 +12,7 @@ from .goatwriter import pulse as _gw_pulse_stair
 from .goatwriter import wave_eor as _gw_wave_eor
 from .goatwriter import skydive as _gw_skydive
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
+                         SFX_DRUM_STAGED,
                          TEMPO_FASTEST_STEADY,
                          append_song, build_sng, derived_group_tempos,
                          file_multiplier, orderlist_tempo_calls,
@@ -21,12 +22,14 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
                          build_pulse_phase_table, pulse_usage, _instruments_used, find_song_speeds, effective_frames,
+                         step_durations,
                          HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT,
                          _parse_song, GT_MAX_TABLELEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
+                       regrid_phase_tempos,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations, played_note_weights,
                        played_duration_histograms,
@@ -315,12 +318,14 @@ def convert(sid_path: str, log: Logger = print,
             gate_off_firstwave_instruments: tuple = (),
             tie_restart: bool = False,
             sfx_drum_bandpass: bool = False,
+            sfx_drum_stage: bool = False,
             regrid_full_debt: bool = False,
             regrid_per_play: bool = False,
             regrid_prepay: int = 0,
             regrid_park: bool = False,
             regrid_unshare_rest: bool = False,
             regrid_park_shift: int = 0,
+            regrid_phase: bool = False,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
@@ -1218,6 +1223,16 @@ def convert(sid_path: str, log: Logger = print,
             # would double-count. See patterns.regrid_tempos.
             deficits = regrid_deficits(find_song_speeds(sid, det), values,
                                        skip_gate, multiplier)
+            if regrid_phase and any(deficits) and multiplier == 1:
+                # The extra frames on the ROWS the original puts them on,
+                # not spread evenly; see patterns.regrid_phase_tempos.
+                _, phased = regrid_phase_tempos(
+                    new_patterns, tracks, values,
+                    lambda k, rows: (step_durations(sid, rows)
+                                     if k == 0 and len(values) == 1 else None),
+                    log)
+                for k in phased:
+                    deficits[k] = 0.0
             if any(deficits):
                 regrid_tempos(new_patterns, tracks, values, deficits,
                               multiplier, log, full_debt=regrid_full_debt,
@@ -1580,7 +1595,8 @@ def convert(sid_path: str, log: Logger = print,
                              start_group=_drum_start_group(
                                  sid, group_tempos, unit_tempos)),
                          gate_skip=gate_skip,
-                         sfx_drum=sfx_drum,
+                         sfx_drum=(SFX_DRUM_STAGED if sfx_drum and sfx_drum_stage
+                                   else sfx_drum),
                          wave_program=wave_program,
                          vibrato_command=vibrato_command,
                          cut_release=cut_release,

@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.656 presets.py",
+  "generator": "h2g 0.5.657 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1510,7 +1510,10 @@
         62
       ],
       "regrid": true,
-      "regrid_full_debt": true
+      "regrid_full_debt": true,
+      "regrid_phase": true,
+      "sfx_drum": true,
+      "sfx_drum_stage": true
     },
     "International_Karate.sid": {
       "max_rows": 94,

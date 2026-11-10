@@ -3612,6 +3612,37 @@ the other voices are untouched, a pattern carrying a note is never copied, and
 over-long note now matching the original and one spurious bend removed. Off by
 default and on for Nineteen only; `tests/test_regrid_unshare_rest.py` pins both.
 
+**`--regrid-phase` (`regrid_phase`) puts the extra frame on the rows the original
+puts it on.** `--regrid` keeps the RATE of a fractional row and gives up its
+PHASE: the pairs are spread evenly per pattern, and a pattern played at four
+different phases needs four different pairs. IK_plus' extra frame comes off a
+free-running outer counter (113 calls; `$E056`), so which row takes it is
+fixed by the two counters' power-on values. `goatwriter.step_durations`
+emulates the pair from the file image -- it lands on 539 of 539 voice-0 and
+975 of 975 voice-1 attacks of a 180 s siddump of the original, frame for
+frame -- and `patterns.regrid_phase_tempos` walks voice 0's orderlist play by
+play, giving every play that has a lengthened row its own CLONE of the pattern
+with the pair on that row (or on the nearest clean pair), sharing a clone
+between plays that agree and unrolling a `$Dn` repeat only where its plays
+differ. Needs `regrid`. Measured on IK_plus at 5b64289 (`-t 180 --sound`, with
+`sfx_drum` and `sfx_drum_stage` on beside it): the first pass's rows start on
+the original's frame 21.2% -> 99.4% of the time (drift up to 30 frames -> 1),
+every attack of all three voices lands at one lag, and `gate` 58% -> 100%,
+`onset` 75% -> 88%, `wave` 65% -> 84%, `tiefr` 18% -> 40%, `aud` .872 -> .907,
+at 50 -> 133 patterns. **44 of the 89 corpus files read a schedule and one
+(IK_plus) has been checked against a trace**; `--regrid-phase` forced moves 14
+of them, none of which has been measured. Off by default, per song.
+
+**`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
+record sets after the drum's hit.** IK_plus' pulse+drum records read
+`41 81 81 40` in the original (the hit on frame 1, the stage's second frame on
+frame 2 at the played note), where the sfx drum wrote `41 81 41 40`: 1274 of
+1487 voice-2 noise runs are two frames and every one of ours was one, so `nrun`
+fell 100% -> 75% with the drum on. The stage frames go in the prologue the loop
+skips (once per note, as the `$40` pitch does). Needs `sfx_drum`; off by
+default and per song, because forced it also moves Pandora (wave +0.3pp,
+`aud` -0.0001, measured). `tests/test_sfx_drum_stage.py` pins both.
+
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
 perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is

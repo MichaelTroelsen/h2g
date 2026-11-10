@@ -1654,7 +1654,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                            gate_off_firstwave_instruments),
                        gatetimer_trim=gatetimer_trim,
                        gate_clear_firstwave=effects,
-                       named_firstwave=named_firstwave)
+                       named_firstwave=named_firstwave,
+                       sfx_drum=sfx_drum)
     written_instr = instr_used
     if duty_split is not None:
         # Each clone is its record's finished bytes with its own wavetable

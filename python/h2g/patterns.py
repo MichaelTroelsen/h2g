@@ -4875,6 +4875,184 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     return written
 
 
+def _first_pass_rows(patterns: List[List[int]], track: List[int]) -> int:
+    """Musical rows one pass of an orderlist plays, repeats expanded, up to
+    its restart marker."""
+    total = 0
+    operand = False
+    times = 1
+    for entry in track:
+        if operand:
+            break
+        if entry == GT_ORDER_RESTART:
+            break
+        if GT_REPEAT <= entry < GT_TRANSPOSE_DOWN:
+            times = entry - GT_REPEAT + 1
+        elif entry < GT_COMMAND_FLOOR and entry < len(patterns):
+            rows = 0
+            for r in range(len(patterns[entry]) // 4):
+                if patterns[entry][r * 4] == GT_END_PATTERN:
+                    break
+                rows += 1
+            total += rows * times
+            times = 1
+    return total
+
+
+def regrid_phase_tempos(patterns: List[List[int]], tracks: List[List[int]],
+                        bases: List[int], schedule_of, log=None) -> tuple:
+    """`regrid` with the extra frames on the ROWS THE ORIGINAL PUT THEM ON.
+
+    `regrid_tempos` spends a fractional row's debt as `n` evenly spread pairs
+    in every pattern, which keeps the RATE and gives up the PHASE: the
+    original's extra frame comes off a free-running counter (IK+: an outer
+    gate of 113 calls, `goatwriter.step_durations`), so the row that takes it
+    depends on where in the song a pattern is played, and a pattern played at
+    four different phases needs four different pairs. Measured on IK_plus
+    over 180 s, voice 0's 60 plays of 15 patterns have 2-4 distinct sets of
+    lengthened rows per pattern (pattern 0: 7 sets in 23 plays), so any
+    pattern-global schedule leaves voice 0 and voice 1 attacks scattered
+    -5..+1 frames from the original's (voice 1: 274 of 975 exact) and with
+    them every voice-2 SFX drum tick riding a row start.
+
+    `schedule_of(k, rows)` is subtune `k`'s frames per row for its first
+    `rows` rows (or None to leave the subtune to `regrid_tempos`). Voice 0's
+    orderlist is
+    walked play by play; the plays whose rows include a lengthened one get
+    their own CLONE of the pattern with the pair on that row (or on the
+    nearest clean pair, `_shifted_regrid_spot`, when the command column there
+    is in use), identical plays share a clone, and a `$Dn P` repeat is
+    unrolled only where its plays differ. Tempo is global, so one voice's
+    column pays for all three, and a private clone cannot double-deliver the
+    way a shared pattern would. The walk stops at the restart marker: the
+    second pass of a looping song starts at another phase and is left as
+    the first pass wrote it. Returns `(pairs written, subtunes handled)`.
+    """
+    written = shifted = skipped = made = 0
+    done = []
+    for k in range(len(bases)):
+        ti = 3 * k
+        if ti >= len(tracks):
+            continue
+        need = _first_pass_rows(patterns, tracks[ti])
+        sched = schedule_of(k, need) if need else None
+        if not sched:
+            continue
+        base = bases[k]
+        track = tracks[ti]
+        out: List[int] = []
+        newpos: List[int] = []
+        fixups: List[tuple] = []
+        clones: dict = {}
+        operand = False
+        times = 1
+        rep_at = None
+        row = 0
+        stop = False
+        extra_patterns = 0
+        for i, entry in enumerate(track):
+            newpos.append(len(out))
+            if operand:
+                operand = False
+                fixups.append((len(out), entry))
+                out.append(entry)
+            elif stop:
+                out.append(entry)
+            elif entry == GT_ORDER_RESTART:
+                operand = True
+                stop = True
+                out.append(entry)
+            elif GT_REPEAT <= entry < GT_TRANSPOSE_DOWN:
+                times = entry - GT_REPEAT + 1
+                rep_at = i
+            elif entry < GT_COMMAND_FLOOR and entry < len(patterns):
+                n = times if rep_at == i - 1 else 1
+                total_rows = len(patterns[entry]) // 4
+                musical = 0
+                for r in range(total_rows):
+                    if patterns[entry][r * 4] == GT_END_PATTERN:
+                        break
+                    musical += 1
+                chosen: List[int] = []
+                for _ in range(n):
+                    req = [r for r in range(musical)
+                           if row + r < len(sched) and sched[row + r] > base]
+                    row += musical
+                    placed = []
+                    if req and musical >= 4:
+                        work = list(patterns[entry])
+                        for r in req:
+                            r0 = r
+                            if not (1 <= r <= total_rows - 3
+                                    and work[r * 4 + 2] == 0
+                                    and work[(r + 1) * 4 + 2] == 0
+                                    and not _inherits_continuous_effect(work, r)):
+                                r = _shifted_regrid_spot(work, r, total_rows)
+                                if r is None:
+                                    r = _slide_covered_regrid_spot(
+                                        work, r0, total_rows)
+                                if r is None:
+                                    skipped += 1
+                                    continue
+                            shifted += r != r0
+                            work[r * 4 + 2], work[r * 4 + 3] = CMD_SETTEMPO, 1
+                            work[(r + 1) * 4 + 2], work[(r + 1) * 4 + 3] = (
+                                CMD_SETTEMPO, 1)
+                            placed.append(r)
+                    key = (entry, tuple(sorted(placed)))
+                    if not placed:
+                        chosen.append(entry)
+                    elif key in clones:
+                        chosen.append(clones[key])
+                    elif len(patterns) < MAX_PATTERNS:
+                        clone = list(patterns[entry])
+                        for r in key[1]:
+                            clone[r * 4 + 2], clone[r * 4 + 3] = (
+                                CMD_SETTEMPO, base + 1)
+                            clone[(r + 1) * 4 + 2], clone[(r + 1) * 4 + 3] = (
+                                CMD_SETTEMPO, base)
+                        patterns.append(clone)
+                        clones[key] = len(patterns) - 1
+                        chosen.append(clones[key])
+                        written += len(key[1])
+                        made += 1
+                    else:
+                        chosen.append(entry)
+                        extra_patterns += 1
+                if rep_at == i - 1:
+                    newpos[rep_at] = len(out)
+                    newpos[i] = len(out)
+                if n > 1 and len(set(chosen)) == 1:
+                    out.append(GT_REPEAT + n - 1)
+                    out.append(chosen[0])
+                else:
+                    out.extend(chosen)
+                times, rep_at = 1, None
+            else:
+                out.append(entry)
+        if len(out) >= MAX_TRACK_LEN:
+            if log:
+                log(f"Re-grid (phase).........: subtune {k} orderlist would be "
+                    f"{len(out)} bytes -- left to the pattern-global schedule")
+            continue
+        newpos.append(len(out))
+        for at, old in fixups:
+            if old < len(newpos):
+                out[at] = newpos[old]
+        track[:] = out
+        done.append(k)
+        if log and extra_patterns:
+            log(f"Re-grid (phase).........: {extra_patterns} play(s) past the "
+                f"pattern budget left without their pair")
+    if log:
+        log(f"Re-grid (phase).........: {written} compensating row(s) in "
+            f"{made} cloned pattern(s) at the original's own rows"
+            + (f", {shifted} shifted off an occupied command column"
+               if shifted else "")
+            + (f", {skipped} skipped (command column in use)" if skipped else ""))
+    return written, done
+
+
 # Moves `_regrid_per_play`'s repair may apply before it stops: each one lowers a
 # pattern and re-spends the room, and the Star_Paws case needs 12 of them.
 _REPAIR_ITERATIONS = 64

@@ -6,7 +6,8 @@ from typing import (List, Optional)
 from ..detect import (Detection)
 from ..sidfile import (SidFile)
 from .constants import (DEFAULT_FORMAT, EFFECT_PER_FRAME, FIELD_LEN,
-                        FIRSTWAVE_FREERUN, FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT,
+                        FIRSTWAVE_DRUM_INIT, FIRSTWAVE_FREERUN,
+                        FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT,
                         FORMAT_GTS2,
                         HEADER_LEN, MAX_INSTRUMENTS, WAVE_ENTRIES_PER_INSTR)
 from . import constants as _gw_constants
@@ -223,7 +224,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        gate_off_firstwave_instruments: tuple = (),
                        gatetimer_trim: int = 0,
                        gate_clear_firstwave: bool = False,
-                       named_firstwave: bool = False) -> int:
+                       named_firstwave: bool = False,
+                       sfx_drum: bool = False) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -482,6 +484,21 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # byte, so the frame is nameable and still resets the oscillator.
             firstwave = (named_testbit_firstwave if named_firstwave
                          else gate_off_firstwave)(data[base + 2])
+            if (sfx_drum and firstwave == FIRSTWAVE_FREERUN
+                    and det.effect_bit80 == "sfx" and data[base + 7] & 0x80):
+                # **The drum-alone record's init call keeps the gate CLEAR
+                # too.** `gate_off_firstwave` returns `$01` for a record
+                # selecting no waveform (the free-running oscillator a
+                # neighbour may sync off), and `$01` is gate ON: the gate
+                # rises on the init call, a frame before the wavetable's
+                # lead entry writes the pitch, while the original opens gate
+                # and pitch on ONE frame and sounds the drum on the next
+                # (IK+ voice 2, ctl `01 81 01 00`, frames f..f+3). With the
+                # `$01` the drum lands at f+2, a frame late on every row.
+                # `$08` is gate clear and test bit set -- silent exactly as
+                # the original's `$00` is, and the oscillator is restarted,
+                # which matters only when a neighbour syncs or rings off it.
+                firstwave = FIRSTWAVE_DRUM_INIT
             if gatetimer_trim and firstwave not in (FIRSTWAVE_TESTBIT,
                                                     FIRSTWAVE_FREERUN):
                 # `aligned_firstwave`: the init call is now one of the gate's
