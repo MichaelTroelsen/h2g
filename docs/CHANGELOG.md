@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.660 — 2026-11-10
+
+- cycle.jsonl records the v0.5.659 hand-finished landing
+
 ## 0.5.659 — 2026-11-10
 
 - LESSONS.md drift split follows the v0.5.658 artefact (82 zero / 7 drifting)
