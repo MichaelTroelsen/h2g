@@ -105,7 +105,12 @@ def test_minus_s1_bytes_are_untouched_by_the_padding():
     for src in SOURCES.values():
         left, right = G._arp_block(src, [0, 4], 1, START)
         body = [w for w, _ in src]
-        assert len(left) == len(body) + 2 + 1
+        calls = sum(w + 1 if w < 0x10 else 1 for w in body)
+        # the tail is 2 offsets x 1 call + the jump; the body is the source's
+        # entries, a delay written out a call at a time (up to `calls`) where
+        # the cycle steps inside it (`test_a_delay_the_cycle_steps_inside_..`)
+        # -- and nothing else: padding adds none at -S1
+        assert len(body) <= len(left) - (2 + 1) <= calls, (len(left), calls)
 
 
 def _pair_record(pair, frames_per_step):

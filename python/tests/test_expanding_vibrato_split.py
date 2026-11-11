@@ -375,4 +375,4 @@ def test_with_the_split_and_the_alternation_off_mega_converts_as_it_did(
     # Re-pinned (c909ffb6b436) by the drop of the pulse and filter rows only a
     # dropped record reaches (instrument_drop._drop_dead_blocks).
     # Re-pinned (744d1772f0c7): the zero-page pulse program (PULSE_PROG_ZP_SHAPE).
-    assert hashlib.sha1(sng).hexdigest()[:12] == "2cd88b291cc9"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "d4e9d0bccb0c"  # was 2cd88b291cc9 before _wave_set_note_byte

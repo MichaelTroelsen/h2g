@@ -85,7 +85,8 @@ from .constants import (_ABS_X_LOAD, _ADJACENT_TABLE_WINDOW, ARP_HEAD_FRAMES,
                         _WAVE_SPEED_COMMANDS, WAVE_TEST_BIT, WAVECMD_BASE,
                         WAVECMD_PORTADOWN, WAVECMD_PORTAUP, _X_RELOADERS)  # noqa: F401
 from .hard_restart import (SINGLE_ROW_HARD_RESTART_TICKS,  # noqa: F401
-                           _hard_restart_ticks)
+                           STRIKE_ROWS, _hard_restart_ticks,
+                           strike_safe_ticks)
 from .instruments import (_build_header, _field_bytes, _instruments_used,
                           _padded_name_bytes, gate_off_firstwave,
                           named_testbit_firstwave, record_envelope,
@@ -313,7 +314,8 @@ from .wave_program import (SLIDE_CUT_SHARE, SLIDE_SEMITONE_MAX_CENTS,
                            _slide_semitones, _wave_program_entries,
                            _wave_program_hold_travels,
                            _wave_program_record_vibrates,
-                           _wave_program_travel_entry, _wave_program_travels)  # noqa: F401
+                           _wave_program_travel_entry, _wave_program_travels,
+                           _wave_set_note_byte)  # noqa: F401
 from .wavetable import (_drum_duration_steps, _drum_entries, _drum_max_steps,
                         _drum_speed_index, _drum_sweep_hold, _drum_tick_noise,
                         _entered_record_block, _loop_of,
@@ -372,8 +374,9 @@ from .counter_fall import (_pattern_positions, _Segment, _setup, _visits,
 from .stored_fall import (STORED_FALL_MAX_DOWN, STORED_FALL_MODAL_SHARE,
                           stored_fall_offsets)  # noqa: F401
 from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
-                        DRUM_FALL_ROW_FRAMES, DrumFallPlan, drum_fall_plan,
-                        drum_fall_records, fall_steps)  # noqa: F401
+                        DRUM_FALL_ROW_FRAMES, DRUM_GATE_ONLY_BITS,
+                        DrumFallPlan, drum_fall_plan, drum_fall_records,
+                        drum_gate_records, fall_steps)  # noqa: F401
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
                         MIN_UNITS, DrumLongPlan, drum_long_plan,
                         drum_long_records)

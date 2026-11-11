@@ -122,6 +122,9 @@ def _delta_song():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         opts = fidelity._preset_opts(doc, "Delta.sid")
+        # prev_class_firstwave (shipped since v0.5.662) clones Delta's records;
+        # this test reads the drum record's own first unit.
+        opts["prev_class_firstwave"] = False
     return songview.parse_sng(convert(str(CORPUS / "Delta.sid"),
                                       log=lambda *a, **k: None, **opts))
 
@@ -202,6 +205,7 @@ def test_the_converter_reads_the_same_unit_off_the_orderlists(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         opts = fidelity._preset_opts(doc, name + ".sid")
+        opts["prev_class_firstwave"] = False   # see _delta_song (v0.5.662)
     song = songview.parse_sng(convert(str(CORPUS / f"{name}.sid"),
                                       log=lambda *a, **k: None, **opts))
     sid = load_sid(str(CORPUS / f"{name}.sid"))

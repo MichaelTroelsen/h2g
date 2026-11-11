@@ -278,7 +278,10 @@ def test_nineteen_every_rest_is_parked_by_pointer_under_the_option():
     # carry a CMD_SETTEMPO ahead of the park pointer. It also unrolls a `$Dn`
     # repeat of such a rest into one copy per play (each copy has the tempo's
     # row 0 and a KEYOFF there): tempo+hold 7 -> 35.
-    assert kinds["pointer"] == 41 and kinds["tempo+hold"] == 35
+    # sfx_rest_click's bare key-off arm (v0.5.662, `silenced=True`) spells six
+    # rests that follow an sfx drum as the drum record's click clone, the
+    # player's unmasked $81 one frame into the rest, so they carry no park.
+    assert kinds["pointer"] == 35 and kinds["tempo+hold"] == 35
 
 
 def test_the_option_off_appends_nothing_and_writes_no_pointer():

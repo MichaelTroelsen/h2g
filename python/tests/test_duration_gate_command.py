@@ -168,6 +168,9 @@ def _convert(name):
     from h2g.convert import convert
     doc = json.loads((ROOT / "presets.json").read_text())
     opts = fidelity._preset_opts(doc, name + ".sid")
+    # The pinned counts were taken without regrid_phase, whose cloned patterns
+    # each repeat the events (Sanxion 68 -> 212).
+    opts["regrid_phase"] = False
     lines: list = []
     blob = convert(str(CORPUS / (name + ".sid")), lines.append, **opts)
     return blob, lines

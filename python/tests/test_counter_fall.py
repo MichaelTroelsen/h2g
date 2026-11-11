@@ -342,7 +342,7 @@ def test_the_plumbing_alone_moves_no_byte(monkeypatch):
     # fewer table rows.
     # Re-pinned (5ef3ca90ef49): Mega_Apocalypse reads its zero-page pulse
     # program (PULSE_PROG_ZP_SHAPE), so the pulse table is no longer static.
-    assert hashlib.sha1(sng).hexdigest()[:12] == "3b15ab78d57a"
+    assert hashlib.sha1(sng).hexdigest()[:12] == "a4ccf2051d91"  # was 3b15ab78d57a before _wave_set_note_byte
 
 
 @needs_corpus

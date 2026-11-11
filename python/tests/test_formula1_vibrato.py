@@ -55,6 +55,9 @@ LEAD_ADSR = "$2C80"          # record 5's $2C8F, release nibble taken off
 
 def _song(path, **over):
     opts = fidelity._preset_opts(PRESETS, path.name)
+    # prev_class_firstwave (shipped since v0.5.662) clones records per
+    # predecessor waveform; this test reads the vibrato record itself.
+    opts["prev_class_firstwave"] = False
     sig = inspect.signature(convert).parameters
     kw = {k: v for k, v in opts.items() if k in sig}
     kw.update(over)

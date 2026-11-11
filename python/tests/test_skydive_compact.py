@@ -205,8 +205,12 @@ def without_dead_blocks(monkeypatch):
 
 
 @needs_corpus
+# Last_V8_C128_version: 98 through v0.5.660, 93 since its two plain
+# fixed-octave records took the residue-1 shape (`wavetable.py`, +2 rows each:
+# 237 -> 241 rows in the SHIPPED layout, where the skydive still keeps 98 --
+# this fixture drops the dead blocks, so it has 4 fewer rows to spend).
 @pytest.mark.parametrize("name,steps", [("Last_V8", 95),
-                                        ("Last_V8_C128_version", 98)])
+                                        ("Last_V8_C128_version", 93)])
 def test_both_last_v8s_fit_in_compact_form_in_a_shared_table(
         name, steps, without_dead_blocks):
     sng, lines = M._converted(name)

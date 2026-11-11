@@ -135,6 +135,7 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     kind is outside the range of this function for every input it can be given,
     and the refutation does not depend on having read the branches correctly.
 
+
     **AND THE PACKED PLAYER'S OWN BYTES SAY SO (2026-10-03).** The bound is
     `player.s:1090-1098`: on the call where `mt_chncounter` equals the
     channel's gatetimer the player branches to `mt_getnewnote` -- the gate-off
@@ -179,3 +180,69 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     ticks = min(want, max(1, bound))
     ticks = max(ticks, min(2, row_calls - 1))
     return min(ticks, row_calls - 1)
+
+
+def strike_safe_ticks(entries, ptr: int, row_calls: int, ticks: int) -> int:
+    """`ticks`, lowered so a wavetable gate PULSE (a strike) is not masked.
+
+    **The hard restart masks the gate of the last `ticks` calls of a note**
+    (gplay.c:905-940: at `tick == gatetimer` the fetch of the next NOTE sets
+    `gate = $FE`, and every register write after it is `wave & gate`), so a
+    wavetable row that raises the gate on call `c` of a note `L` calls long
+    reaches the chip only when `c < L - ticks`. A note is a whole number of
+    rows -- a rest row after it does not fetch a note and does not mask --
+    so `L` is a multiple of `row_calls`. A drum record's strike is exactly
+    such a row: Sun_Never_Shines' `80 CD / 81 CD / 40 77` runs calls 5-7 of
+    a ten-call note (two 5-call rows), so under `hard_restart_frames` 4 the
+    `81` on call 6 is written `80` and siddump counts no attack (150 of 921
+    on voice 0, all `F-6` every 60 frames: melody 91%). The original gates
+    that row.
+
+    Walks the program from `ptr` (1-based, as the table is stored) the way
+    `vibrato._effect_call_list` does -- one row per call after the init call,
+    a delay row holding `value + 1` calls, `$FF` jumping -- over the first
+    `STRIKE_ROWS` rows' worth of calls, and takes each row that selects a
+    waveform with the gate set directly after one with it clear and directly
+    before one with it clear again (a pulse: a strike, not a held gate). For
+    each, the shortest note that would mask it is the first multiple of
+    `row_calls` past `c`; the window must be at most that length minus `c` minus
+    1. The result is the smallest such bound, or `ticks` unchanged where no
+    pulse is masked or where keeping one would take the window below the
+    floor of 2 (that pulse is left masked, as before).
+    """
+    if not entries or not 0 < ptr <= len(entries) or row_calls < 2:
+        return ticks
+    reach = STRIKE_ROWS * row_calls
+    seq = []                    # (call, waveform) of each waveform-selecting row
+    wavetime = 0
+    for c in range(1, reach):
+        if not 0 < ptr <= len(entries):
+            break
+        wave, _note = entries[ptr - 1]
+        if wave <= _gw_constants.GT_WAVE_LAST_DELAY and wavetime != wave:
+            wavetime += 1
+            continue
+        wavetime = 0
+        if 0x10 <= wave < 0xE0:
+            seq.append((c, wave))
+        ptr += 1
+        if ptr <= len(entries) and entries[ptr - 1][0] == _gw_constants.GT_WAVE_JUMP:
+            ptr = entries[ptr - 1][1]
+    best = ticks
+    for k in range(1, len(seq) - 1):
+        c, wave = seq[k]
+        if not (wave & 1 and not seq[k - 1][1] & 1 and not seq[k + 1][1] & 1):
+            continue
+        if c < 2:
+            continue
+        note = (c // row_calls + 1) * row_calls
+        if c < note - ticks:
+            continue                    # not masked at the shortest note
+        safe = note - c - 1
+        if safe >= 2:
+            best = min(best, safe)
+    return best
+
+
+# How many rows' worth of calls `strike_safe_ticks` looks into a program.
+STRIKE_ROWS = 3

@@ -273,7 +273,8 @@ def sfx_only_patterns(tracks: List[List[int]], patterns: List[List[int]],
 def click_rests(patterns: List[List[int]], entry: Dict[int, set],
                 clone_of: Dict[int, int], envelope_kind: bool = False,
                 entry_note: Optional[Dict[int, set]] = None,
-                sfx_patterns: Optional[set] = None
+                sfx_patterns: Optional[set] = None,
+                silenced: bool = False
                 ) -> Tuple[List[List[int]], int, set]:
     """(patterns, rests rewritten, drum instruments used). Changed patterns
     are COPIES; see the module docstring for what qualifies. `envelope_kind`
@@ -281,7 +282,10 @@ def click_rests(patterns: List[List[int]], entry: Dict[int, set],
     of rows after the pattern's last note. `entry_note` (`entry_notes`) lets a
     rest at pattern row 0 follow the previous pattern's last note; without it
     such a rest is left alone. `sfx_patterns` (`sfx_only_patterns`), where
-    given, restricts the rewrite to the patterns it names."""
+    given, restricts the rewrite to the patterns it names. `silenced` takes a
+    testbit-kind rest without the `CMD_SETSR $00` row: the player zeroes the
+    pair in the rest branch (`det.rest_silence_envelope`) and the clone's own
+    `$0000` spells that, so the row is not what qualifies the rest."""
     out: List[List[int]] = []
     placed = 0
     used: set = set()
@@ -321,8 +325,9 @@ def click_rests(patterns: List[List[int]], entry: Dict[int, set],
             while h < rows and pat[4 * h] == GT_REST and not pat[4 * h + 1]:
                 h += 1
             nxt = pat[4 * h:4 * h + 4] if h < rows else []
-            envelope = any(pat[4 * k + 2] == CMD_SETSR and pat[4 * k + 3] == 0
-                           for k in (r, r + 1) if k < h)
+            envelope = silenced or any(
+                pat[4 * k + 2] == CMD_SETSR and pat[4 * k + 3] == 0
+                for k in (r, r + 1) if k < h)
             if envelope_kind:
                 envelope = (last_row >= 0 and
                             (r - last_row) * ENVELOPE_ROW_FRAMES % 6 == 0)
@@ -459,7 +464,7 @@ def sfx_rest_click_plan(det, tracks: List[List[int]],
     carried = entry_notes(tracks, patterns)
     only = sfx_only_patterns(tracks, patterns, det.sfx_voice)
     new, placed, used = click_rests(patterns, entry, clone_of, envelope_kind,
-                                    carried, only)
+                                    carried, only, silenced=True)
     if not placed:
         return unplaced
     if used != set(clone_of):
@@ -467,7 +472,8 @@ def sfx_rest_click_plan(det, tracks: List[List[int]],
         clone_of = {g: written + 1 + k
                     for k, g in enumerate(g for g in drums if g in used)}
         new, placed, used = click_rests(patterns, entry, clone_of,
-                                        envelope_kind, carried, only)
+                                        envelope_kind, carried, only,
+                                        silenced=True)
     written_before = written
     for g in sorted(clone_of, key=clone_of.get):
         rec = bytearray(out[instr_at + 1 + (g - 1) * INSTR_BYTES:

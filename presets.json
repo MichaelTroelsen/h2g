@@ -433,7 +433,8 @@
       "wave_program": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "prev_class_firstwave": true
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -446,7 +447,8 @@
       "multiplier": 1,
       "no_test_restart": true,
       "aligned_firstwave": true,
-      "wave_alternate": true
+      "wave_alternate": true,
+      "prev_class_firstwave": true
     },
     "Chimera.sid": {
       "max_rows": 94,
@@ -698,7 +700,8 @@
         61,
         62
       ],
-      "keep_hard_restart": true
+      "keep_hard_restart": true,
+      "prev_class_firstwave": true
     },
     "Deep_Strike.sid": {
       "max_rows": 94,
@@ -789,7 +792,8 @@
         61,
         62
       ],
-      "regrid": true
+      "regrid": true,
+      "prev_class_firstwave": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -1123,7 +1127,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "prev_class_firstwave": true
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -1315,7 +1320,8 @@
         61,
         62
       ],
-      "initial_instrument": true
+      "initial_instrument": true,
+      "prev_class_firstwave": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -1328,7 +1334,8 @@
       "multiplier": 1,
       "no_test_restart": true,
       "aligned_firstwave": true,
-      "wave_alternate": true
+      "wave_alternate": true,
+      "prev_class_firstwave": true
     },
     "Human_Race.sid": {
       "max_rows": 128,
@@ -1703,7 +1710,9 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true,
+      "regrid_floored": true
     },
     "Lakers_vs_Celtics.sid": {
       "max_rows": 94,
@@ -1716,7 +1725,7 @@
       "multiplier": 1,
       "two_stage": true,
       "wave_program": true,
-      "arpeggio": false,
+      "arpeggio": true,
       "arpeggio_default": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -1781,7 +1790,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "prev_class_firstwave": true
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -1868,7 +1878,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "prev_class_firstwave": true
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
@@ -1893,7 +1904,8 @@
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "drum_gate_off": true
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2301,7 +2313,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "prev_class_firstwave": true
     },
     "One_on_One_Jordan_vs_Bird.sid": {
       "max_rows": 128,
@@ -2330,7 +2343,10 @@
       "no_test_restart": true,
       "two_stage": true,
       "wave_program": true,
-      "aligned_firstwave": true
+      "aligned_firstwave": true,
+      "prev_class_firstwave": true,
+      "arpeggio": true,
+      "arpeggio_default": true
     },
     "Pandora.sid": {
       "max_rows": 128,
@@ -2423,7 +2439,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "prev_class_firstwave": true
     },
     "Powerplay_Hockey_USA_vs_USSR.sid": {
       "max_rows": 94,
@@ -2482,7 +2499,9 @@
       "two_stage": true,
       "wave_program": true,
       "aligned_firstwave": true,
-      "arpeggio": false
+      "arpeggio": true,
+      "prev_class_firstwave": true,
+      "arpeggio_default": true
     },
     "Rasputin.sid": {
       "max_rows": 94,
@@ -2697,7 +2716,8 @@
         62
       ],
       "master_fade": true,
-      "regrid": true
+      "regrid": true,
+      "regrid_phase": true
     },
     "Shockway_Rider.sid": {
       "max_rows": 94,
@@ -2777,7 +2797,8 @@
         61,
         62
       ],
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "prev_class_firstwave": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -3054,7 +3075,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "drum_fall": true
     },
     "Thanatos.sid": {
       "max_rows": 128,
@@ -3171,7 +3193,8 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3,
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "prev_class_firstwave": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -3307,7 +3330,8 @@
       "no_test_restart": true,
       "two_stage": true,
       "aligned_firstwave": true,
-      "regrid": true
+      "regrid": true,
+      "regrid_phase": true
     },
     "Zoids.sid": {
       "max_rows": 128,
@@ -3335,7 +3359,8 @@
       "max_hard_restart": true,
       "drum_gate_off": true,
       "hard_restart_frames": 3,
-      "master_fade": true
+      "master_fade": true,
+      "prev_class_firstwave": true
     }
   }
 }

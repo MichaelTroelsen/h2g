@@ -2462,8 +2462,19 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 arps: Optional[List[tuple]] = None,
                                 chords: Optional[Dict[int, tuple]] = None,
                                 top_rows: Optional[Dict[int, int]] = None,
+                                rest_keyoff: bool = False,
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
+
+    With `rest_keyoff`, the first row of a rest event (bit 6) after a note
+    that releases is a `GT_KEYOFF`. Hollywood or Bust `$0599 LDA $0974,X /
+    BMI / LDA $0971,X / CMP #$02 / ... AND #$FE / STA $D404`: EVERY event
+    clears the gate when its duration counter reaches 2, unless it is a note
+    whose bit 7 (legato) is set -- so a note followed by a rest releases two
+    frames before the REST begins, and the rows holding the rest must not
+    hold the gate. Until then a rest was a plain hold: the gate rode to the
+    next note's hard restart (12 notes of 3251 on voice 1 of subtune 2, the
+    original `o14>u2 s+12` runs, all of the song's gate misses).
 
     With `arps` and `chords` (`{event ordinal: (offsets, voice, record, intro, frames)}`,
     from `cmd_chord.chord_note_cycles` via `det.cmd_chord_notes`), a chorded
@@ -2492,6 +2503,7 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
     record: Optional[int] = None
     pending: Optional[tuple] = None
     ordinal = 0                 # events in fetch order, cmd_chord's key
+    legato = False              # the last note's bit 7: no release at its end
 
     for _ in range(20000):
         if addr <= 1 or addr >= len(data):
@@ -2535,11 +2547,13 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
         chord = (chords or {}).get(ordinal) if arps is not None else None
         ordinal += 1
         if b & 0x40:
-            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+            events += [GT_KEYOFF if rest_keyoff and not legato
+                       else GT_NO_NOTE, 0x00, 0x00, 0x00]
             addr += 1
         else:
             if addr + 1 >= len(data):
                 return None
+            legato = bool(data[addr + 1] & 0x80)
             # Checked for the classic path's `_wrap_note`: ALREADY APPLIED,
             # in the mask spelling. This player's bit 7 is a legato flag it
             # strips with `AND #$7F` before the lookup (the grammar block
@@ -2787,7 +2801,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             slide_cmd=det.cmd_slide, slide_mask=det.cmd_slide_mask or 0x3F,
             steps=steps, instr_base=instr_base,
             arps=arps, chords=det.cmd_chord_notes.get(i),
-            top_rows=top_rows)
+            top_rows=top_rows, rest_keyoff=rest_keyoff)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               status_continue=(status_bit6 and det.status_bit6

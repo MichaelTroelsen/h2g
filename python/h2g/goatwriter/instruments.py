@@ -310,7 +310,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        gatetimer_trim: int = 0,
                        gate_clear_firstwave: bool = False,
                        named_firstwave: bool = False,
-                       sfx_drum: bool = False) -> int:
+                       sfx_drum: bool = False,
+                       strike_entries: Optional[List[tuple]] = None) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -448,6 +449,9 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         hr_ticks = _gw_hard_restart._hard_restart_ticks(
             multiplier, own_row_calls, wide_hard_restart, max_hard_restart,
             hard_restart_frames) & 0x3F
+        if strike_entries:
+            hr_ticks = _gw_hard_restart.strike_safe_ticks(
+                strike_entries, wave_ptr, own_row_calls, hr_ticks)
         # An instrument whose every note is ONE row long (tracks.
         # single_row_note_instruments) is followed by a gate event on the
         # very next row, and that row is fetched `gatetimer` calls early: a

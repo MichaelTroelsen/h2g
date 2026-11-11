@@ -55,6 +55,9 @@ def _opts(name: str) -> dict:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         opts = fidelity._preset_opts(doc, name)
+        # prev_class_firstwave (shipped since v0.5.662) clones records and
+        # rewrites their firstwave; this test measures gate_off_firstwave alone.
+        opts["prev_class_firstwave"] = False
     # The song's preset WITHOUT this option: since v0.5.588's adoption the
     # preset names 1..62 for Delta, Star_Paws, Knucklebusters and Monty, so a
     # test reading it would compare the option against itself. Absent is the

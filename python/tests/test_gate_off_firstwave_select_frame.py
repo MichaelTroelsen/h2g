@@ -74,7 +74,10 @@ def _measure(firstwave_byte=None):
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = dict(fidelity._preset_opts(doc, NAME), no_test_restart=False,
                 real_firstwave_instruments=(),
-                gate_off_firstwave_instruments=EVERY)
+                gate_off_firstwave_instruments=EVERY,
+                # Tarzan ships drum_fall since v0.5.662; this measures the
+                # firstwave latch on the unfallen drum, as it was pinned.
+                drum_fall=False)
     assert doc["songs"][NAME].get("multiplier", 1) == 1
     real = instruments.gate_off_firstwave
     if firstwave_byte is not None:

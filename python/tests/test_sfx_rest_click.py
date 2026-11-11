@@ -335,3 +335,42 @@ def test_nineteen_clones_its_bass_record_for_the_rests_that_open_a_pattern():
     assert bass, [i.name for i in clones]
     assert sum(1 for p in song.patterns for k in range(1, len(p), 4)
                if p[k] in bass) >= 3
+
+
+# --- a testbit-kind rest the conversion has not given a CMD_SETSR $00 ----------
+# (I_Ball, Bangkok_Knights: the player zeroes the envelope pair in the rest
+# branch, `det.rest_silence_envelope`, but their presets do not carry
+# --rest-envelope-silence, so no rest row says so.)
+
+def test_silenced_takes_a_bare_key_off_rest():
+    pat = _pattern(_row(D2, DRUM), _row(GT_REST), _row(GT_KEYOFF),
+                   _row(GT_REST), _row(E2), _row(GT_REST))
+    (same,), placed, _ = click_rests([pat], {}, {DRUM: CLONE})
+    assert placed == 0 and same is pat, "default: the SETSR row is required"
+    (new,), placed, used = click_rests([pat], {}, {DRUM: CLONE},
+                                       silenced=True)
+    assert (placed, used) == (1, {DRUM})
+    assert new[8:12] == [D2, CLONE, 0, 0]
+    assert new[16:20] == [E2, DRUM, 0, 0]
+
+
+@pytest.mark.parametrize("name", ["I_Ball", "Bangkok_Knights"])
+@pytest.mark.skipif(not os.path.exists(os.path.join(CORPUS, "I_Ball.sid"))
+                    or not os.path.exists(PRESETS),
+                    reason="corpus or presets.json absent")
+def test_a_preset_without_rest_envelope_silence_still_clicks(name):
+    import songview
+    from fidelity import _preset_opts
+    from h2g.convert import convert
+    opts = _preset_opts(json.load(open(PRESETS)), name + ".sid")
+    assert opts.get("sfx_drum") and not opts.get("rest_envelope_silence")
+    song = songview.parse_sng(convert(os.path.join(CORPUS, name + ".sid"),
+                                      log=lambda m: None, **opts))
+    clones = [i for i in song.instruments
+              if (i.ad, i.sr, i.firstwave) == (0, 0, 0x08)]
+    assert clones, "a drum-record clone with the rest's $0000 envelope"
+    w = song.tables["WTBL"]
+    for c in clones:
+        block = w[c.wave_ptr - 1:]
+        assert (0x81, 0xC9) in block[:block.index(
+            next(e for e in block if e[0] == 0xFF))]

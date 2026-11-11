@@ -1218,6 +1218,26 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             left[2], right[2] = tail, _arp_relative(arp_fixed, arp_note, arp_up)
             left[3], right[3] = hold, 0x80
             right[4] = first
+            # **The attack frame's residue places the first octave, here as in
+            # `ticked_arp_entries`.** A parity-mask record whose attack
+            # frame's counter reads odd gets its first octave on frame 2 (the
+            # init call does not run the effect, so the next odd counter is
+            # `a + 2`); the shape above raises on frame 1 whatever the
+            # residue was, a frame early on every such note. Last_V8's
+            # record 8 (AD $07, -S2): voice 0 raised on frames 1, 3, 5 on all
+            # 149 of its arpeggiated notes where the original raises on 2, 4,
+            # 6 -- PITCH_OCTAVE on 150 of 164 of the file's mismatched notes.
+            # The cycle is the same, one frame (m calls) of base ahead of it:
+            # the head, then the loop entered a frame later.
+            if (effects and arp_fixed and arp_phase is not None
+                    and (arp_mask is None
+                         or arp_mask[0] == FIXED_ARP_PARITY_MASK)
+                    and (arp_phase & 1) and not no_test_restart
+                    and budget >= 7):
+                left = [wave, hold, wave, hold, tail, hold, WAVE_JUMP]
+                right = [0x00, 0x00, 0x00, 0x00,
+                         _arp_relative(arp_fixed, arp_note, arp_up), 0x80,
+                         third]
     # **EMITTER LIMIT: a record setting the rise AND the arpeggio loses the
     # rise.** This is an `elif` on the arpeggio, so such a record takes the
     # arpeggio shape above and no rise at all. The player runs both blocks

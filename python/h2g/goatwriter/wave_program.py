@@ -17,7 +17,7 @@ from typing import (Dict, List, Optional)
 from ..detect import (decode_wave_program, Detection, wave_program_has_jump,
                       wave_program_set_stores_wave)
 from ..sidfile import (SidFile)
-from .constants import (FORMAT_GTS5, WAVE_NOTE_BASE,
+from .constants import (FORMAT_GTS5, WAVE_NOTE_ABS, WAVE_NOTE_BASE,
                         WAVE_NOTE_KEEP, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
 from .primitives import (_first_frame_lead, _note_freq, _sfx_note_byte,
                          _speed_index, _wave_byte, _wave_hold_byte)
@@ -247,6 +247,57 @@ def _slide_goals(pitches: Optional[Dict[int, int]],
             return []
         notes.append((n, plays, target))
     return notes
+
+
+def _wave_set_note_byte(arg: int, pitches: Optional[Dict[int, int]],
+                        running: int) -> int:
+    """Wavetable right-side byte for a `>= $80` opcode whose high byte is `arg`.
+
+    **The player writes `$D401` alone, so the pitch is `arg:lo` where `lo` is
+    whatever `$D400` already held** -- the previous frame's low byte, which is
+    the note's own on a program's first frame and `(note - sum of the slides
+    so far) & $FF` after a slide (the per-frame writer copies the accumulator
+    to both registers; a `set` skips it and exits by the other path, so a run
+    of `set` opcodes keeps one `lo`). Lion_Heart `$16C4-$16DA` against `$17B7`:
+    the drum on C-4 reads `5F67` on frame 1 (`lo` = the note's `$67`) and
+    `5FBB` on frames 4-5 (`lo` = `$BB` of `$1167 - $05AC`), the same
+    instruction with the same operand `$5F`.
+
+    `_sfx_note_byte` quantises `arg << 8`, which is `lo = 0`, and cannot tell
+    those two apart: `5F00` is nearer F-6 (`5CF1`) than F#6 (`6278`), so all
+    three frames wrote F-6 and the melody column, which names the pitch, read
+    the 5FBB frames a semitone low (123 tokens of Lion_Heart's 8.5 points).
+    Here every pitch the instrument is played at (`pitches`, `{note index:
+    plays}`) gives its own `arg:lo`, and the byte is the absolute note
+    minimising the play-weighted error in log-frequency over them -- the same
+    attribution `_slide_semitones` makes. It falls back to `_sfx_note_byte`
+    where no distribution is given or no played note leaves a positive
+    frequency. The player's note table differs from Goattracker's by a unit or
+    two, which moves `lo` by as much; the table used is Goattracker's.
+    """
+    from .skydive import GT_FREQ_TABLE
+    base = _sfx_note_byte(arg)
+    if not pitches or arg <= 0:
+        return base
+    s = running & 0xFFFF
+    delta = -s if s < 0x8000 else 0x10000 - s
+    goals = []
+    for n, plays in pitches.items():
+        if n < 0 or n > 95 or plays <= 0:
+            continue
+        freq = GT_FREQ_TABLE[n] + delta
+        if freq <= 0:
+            continue
+        goals.append((((arg & 0xFF) << 8) | (freq & 0xFF), plays))
+    if not goals:
+        return base
+    nearest = base - WAVE_NOTE_ABS
+
+    def cost(k: int) -> float:
+        return sum(w * abs(math.log2(GT_FREQ_TABLE[k] / max(g, 1)))
+                   for g, w in goals)
+    best = min(range(95), key=lambda k: (round(cost(k), 9), abs(k - nearest)))
+    return (WAVE_NOTE_ABS + best) & 0xFF
 
 
 def _wave_program_record_vibrates(sid: SidFile, det: Detection,
@@ -609,6 +660,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # in. Zero for a program of nothing but `>= $80` opcodes, which is what
     # makes those records byte-identical to before the travel was emitted.
     running = 0
+    # The slides' total as of the last frame the player's per-frame writer ran:
+    # the `$D400` a `>= $80` opcode inherits (`_wave_set_note_byte`).
+    lo_run = 0
     # Whether the frequency Goattracker is holding right now IS that
     # accumulator. False after a `>= $80` opcode, which writes an absolute
     # pitch over it, and false at `-S1`, where no portamento is emitted at all
@@ -660,7 +714,8 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                 cut = True
                 break
             left.append(_wave_byte(wave))
-            right.append(_sfx_note_byte(arg))
+            right.append(_wave_set_note_byte(arg, None if vibrates else pitches,
+                                             lo_run))
             _hold_wave_program_entry(left, right, wave, multiplier)
             carried = False     # an absolute pitch, not the accumulator
             quantised = False
@@ -780,6 +835,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                                                fmt, multiplier))
         _hold_wave_program_entry(left, right, wave, multiplier - moved)
         running = (running + arg) & 0xFFFF
+        lo_run = running
         # The frequency now matches the accumulator only if this entry actually
         # said so: a step it could not encode (a full speed table) leaves it a
         # step behind, and the next slide re-anchors instead of compounding the

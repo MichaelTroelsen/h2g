@@ -153,6 +153,12 @@ def main(argv=None) -> int:
              "against a trace on IK_plus only); anything else is unchanged. "
              "Per song. Off by default")
     parser.add_argument(
+        "--regrid-floored", action="store_true",
+        help="with --regrid, also pay an exact row (p/q frames) that the "
+             "file's multiplier does not carry and the tempo floored to whole "
+             "calls (Knucklebusters subtune 2: 17/8 frames = 6.375 calls at "
+             "-S3, emitted as 6). Per song. Off by default")
+    parser.add_argument(
         "--regrid-unshare-rest", action="store_true",
         help="with --regrid, give voice 0 its own copy of each rest-only "
              "pattern it shares with another voice, so the fractional "
@@ -397,6 +403,13 @@ def main(argv=None) -> int:
              "survives Goattracker's per-note restart. Needs --format gts5. "
              "In presets.json's always block; off leaves every conversion "
              "byte-identical.")
+    parser.add_argument(
+        "--prev-class-firstwave", action="store_true",
+        help="show the previous note's last waveform (gate clear) on a "
+             "note's init frame, as the original's chip does, instead of the "
+             "record's own: clones a record whose firstwave is a gate-off "
+             "real waveform per predecessor class. Off leaves every "
+             "conversion byte-identical.")
     parser.add_argument(
         "--vibrato-hold", action="store_true",
         help="at a multiplier above 1, play the classic vibrato as a "
@@ -830,6 +843,7 @@ def main(argv=None) -> int:
                           ("--regrid-park", "regrid_park"),
                           ("--regrid-unshare-rest", "regrid_unshare_rest"),
                           ("--regrid-phase", "regrid_phase"),
+                          ("--regrid-floored", "regrid_floored"),
                           ("--master-volume", "master_volume"),
                           ("--master-fade", "master_fade"),
                           ("--keep-hard-restart", "keep_hard_restart"),
@@ -872,6 +886,7 @@ def main(argv=None) -> int:
                           ("--voice-arp", "voice_arp"),
                           ("--unison-vibrato-phase", "unison_vibrato_phase"),
                           ("--vibrato-hold", "vibrato_hold"),
+                          ("--prev-class-firstwave", "prev_class_firstwave"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -956,6 +971,7 @@ def main(argv=None) -> int:
                       regrid_park=args.regrid_park,
                       regrid_unshare_rest=args.regrid_unshare_rest,
                       regrid_phase=args.regrid_phase,
+                      regrid_floored=args.regrid_floored,
                       regrid_park_shift=args.regrid_park_shift,
                       master_volume=args.master_volume,
                       master_fade=args.master_fade,
@@ -1012,6 +1028,7 @@ def main(argv=None) -> int:
                       voice_arp=args.voice_arp,
                       unison_vibrato_phase=args.unison_vibrato_phase,
                       vibrato_hold=args.vibrato_hold,
+                      prev_class_firstwave=args.prev_class_firstwave,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

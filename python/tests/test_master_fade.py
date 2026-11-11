@@ -40,7 +40,8 @@ def _flat(track):
 def _sanxion(fade):
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
-    opts = dict(F._preset_opts(doc, "Sanxion.sid"), master_fade=fade)
+    opts = dict(F._preset_opts(doc, "Sanxion.sid"), master_fade=fade,
+                regrid_phase=False)
     return parse_sng(convert(str(SANXION), log=lambda m: None, **opts))
 
 

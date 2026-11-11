@@ -2945,6 +2945,43 @@ against the original's 599 at -t 180; `aud` .8965 -> .8962, reversal .8692 ->
 reached: the tie's `CMD_TONEPORTA` zeroes `vibtime` and `vibdelay` is not
 reloaded (361 frames left).
 
+## `--prev-class-firstwave` (the init frame shows the previous note's waveform)
+
+A gate-off firstwave (`gate_off_firstwave_instruments`, `--aligned-firstwave`) spends
+the note-init call on the record's own waveform with the gate clear. The
+original's chip shows nothing new on that frame: it holds the previous note's
+last waveform, gate clear, and the new waveform, gate and pitch arrive
+together on the next frame (Phantoms_of_the_Asteroid voice 2, frames
+369-376: O `80 80 80 41*`, ours `80 80 40 41*`). That is one `wave` frame per
+class transition, and 52-100% of 16 songs' disagreeing frames.
+
+No single firstwave byte can be right, since it belongs to the record and the
+previous waveform belongs to the previous record: `$FF` (waveform latched, gate
+on) opens the gate on the stale pitch and names a ghost attack (melody
+Last_V8 1.000 -> .759, One_Man 1.000 -> .202), `$FE` never opens the gate.
+What the original shows IS a function of the two records, though: the
+wavetable program of the predecessor, run for as many play calls as the note
+lasted, leaves the chip on a waveform, and that equals the original's frame
+before the next attack on every attack of Phantoms (2589), One_Man (2632) and
+Lakers_vs_Celtics (1293). `h2g/prev_class_firstwave.py` therefore runs on the
+finished `.sng`: it walks every voice in play order, keeps the chip's waveform
+through each note's program (`subtune_row_calls` calls a row, `D` calls at
+`-S1` and `D - 1` above it), and gives a note whose record has a gate-off real
+firstwave a clone of that record whose firstwave is the chip's select nibble
+with the gate clear (the record's own ring, sync and test bits;
+`CONTROL_BITS_FROM_CHIP` trades them, see the module). A shared pattern row
+takes the majority of its visits and a row whose visits disagree on the
+instrument is left alone; a row that inherited its instrument and would now
+inherit a clone names it. Off leaves every conversion byte-identical; a song
+entry `"prev_class_firstwave": true`.
+
+Forced on the 16 songs of the finding (`-t 180 --presets --sound`, 64c8265 +
+the change, 2026-11-10): `wave` rises on all 16, Phantoms .9246 -> .9714,
+Last_V8 .9338 -> .9796, Hollywood_or_Bust .9445 -> .9861, One_Man .9789 ->
+.9998, Lakers .9746 -> .9994, Delta .9832 -> .9999; melody, seq, gate, adsr
+and every other printed column are unchanged, `noise` moves toward the
+original's count on 13, `aud` moves at most .0020.
+
 ## `--vibrato-hold` (the classic vibrato moves once a frame)
 
 At `-S2` and above Goattracker's instrument vibrato steps on every play call,
@@ -3180,7 +3217,11 @@ attack-named column reads that frame: at 03eb34f + the option, `-t 180`,
 presets, Tarzan's melody 99% -> 42%, sequence 99% -> 44%, pitch 100% -> 88%,
 against travel 0.31x -> 0.83x and bend 0.29x -> 0.54x (historical).
 `--pitch-lead-tie` cannot lead a two-row note's successor: the row before it
-carries the fall's pointer. Adopting it waits on the user's A/B.
+carries the fall's pointer. Re-measured at 64c8265 with the gate-off head
+re-timed to the original's +3 frames (`drum_gate_records`), Tarzan's melody
+stayed 100% and `gate` rose .8175 -> .9943 (aud .9331 -> .9311, loud .9675 ->
+.9708); the 42% above did not reproduce. Tarzan ships it since v0.5.662 (user
+decision 2026-11-11).
 
 ## `--drum-long` (the bit-$01 drum's fall on its longer notes)
 
@@ -3612,6 +3653,34 @@ the other voices are untouched, a pattern carrying a note is never copied, and
 over-long note now matching the original and one spurious bend removed. Off by
 default and on for Nineteen only; `tests/test_regrid_unshare_rest.py` pins both.
 
+**`--regrid-floored` (`regrid_floored`) pays an exact row the multiplier does not
+carry.** `regrid` pays a row `effective_frames` DECLINED (a denominator over
+`MAX_ROW_DENOMINATOR`). A row it ACCEPTED, p/q frames with q small, is p calls
+only at a multiplier q divides; the file has ONE `-S`, chosen by its start
+subtune, so another subtune's row is floored by `tempo_command_value`.
+Knucklebusters.sid packs at `-S3` (start subtune 1: 7/3 frames, tempo 7 exactly).
+Its subtune 2 runs the same player with an outer counter of 16, a row of
+2 * 17/16 = 17/8 frames = 6.375 calls at `-S3`, emitted as 6: a row of exactly
+2.0 frames against the original's 2.125, so 1360 rows in 2720 frames where the
+original has 1280 (a 6502 emulation of the file: gaps 2 x 1119, 3 x 160) --
+`drift` -58.82 per 1000 (exactly -1/17), `len` -3.1 s, every edge 160 frames
+early at the end. The flag makes `regrid_deficits` owe the dropped 0.375 call.
+Measured at 64c8265 + this change, `-a 2 -t 180 --sound`, shipped -> `regrid` +
+`regrid_floored`: `drift` -58.82 -> 0.00, `len` -3.10 -> +0.10 s, `gate` .490 ->
+.901, `wave` .833 -> .932, `adsr_exact` .809 -> .996, `aud` .895 -> .948,
+`loud` .938 -> .988, `otime` .277 -> .755, `hold` 29% -> 43%, `--pace` ours /
+theirs .941 -> 1.000; `heard.py` instr .301 -> .832 (301 missing and 301
+invented notes -> 0); `melody` 1.00 both. `depth` .553 -> .543 and `sync`
+.675 -> .673 fall (the first is the printed one).
+**Per song, off by default, and not adopted anywhere.** The same arithmetic reaches
+nine corpus files with `regrid` forced and moves, among the four that ship it,
+Auf_Wiedersehen_Monty (subtunes 5, 7, 11: `drift` -111 -> 0 on 5 and 7), Delta
+(2, 10), Star_Paws and Wiz -- and there it is not a gain across the board:
+Star_Paws subtune 1 melody .944 -> .909, Wiz subtune 2 `drift` -111.1 -> -110.8
+(nothing paid) with `otime` .57 -> .05. Shipped presets are byte-identical with
+the flag off (89 of 89 converted, 0 moved). `tests/test_regrid_floored_row.py` pins
+the arithmetic and the Knucklebusters bytes.
+
 **`--regrid-phase` (`regrid_phase`) puts the extra frame on the rows the original
 puts it on.** `--regrid` keeps the RATE of a fractional row and gives up its
 PHASE: the pairs are spread evenly per pattern, and a pattern played at four
@@ -3632,6 +3701,13 @@ every attack of all three voices lands at one lag, and `gate` 58% -> 100%,
 at 50 -> 133 patterns. **44 of the 89 corpus files read a schedule and one
 (IK_plus) has been checked against a trace**; `--regrid-phase` forced moves 14
 of them, none of which has been measured. Off by default, per song.
+**Wiz and Sanxion ship it** (measured at 64c8265, `-t 180 --presets --sound`): the
+schedule lands on 673/673, 559/559 and 420/420 Wiz attacks and 442/442, 827/827 and
+1238/1238 Sanxion attacks of a siddump of the original, rows start on its frame
+19.1% -> 99.9% (Wiz) and 0.9% -> 99.3% (Sanxion), `gate` 18% -> 56% and 42% -> 93%,
+`instr` .630 -> .854 and .717 -> .929. Wiz has three subtunes, so the gate in
+`convert` reads the schedule for subtune 0 whatever the subtune count
+(`tests/test_regrid_phase_wiz_sanxion.py`).
 
 **`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
 record sets after the drum's hit.** IK_plus' pulse+drum records read

@@ -111,6 +111,23 @@ def _arp_block(source: List[tuple], offsets: List[int],
     call = 0
     for w, keep in zip(body, fixed):
         last = call + (w if w < 0x10 else 0)   # a delay covers `w + 1` calls
+        # **A delay is one row that writes its note on its LAST call only
+        # (gplay.c:697-704), so a cycle that steps inside it is lost for the
+        # calls before that.** Lakers_vs_Celtics record 14 ($CC: base, +12,
+        # +12) holds a 3-call delay in its program (`11 / 41 / 02 / 11`): the
+        # original raises on frames 2 and 3 and ours stayed flat until the
+        # tail on frame 5 (PITCH_OCTAVE on 210 of its 1483 notes after the
+        # option was on). Where the steps across the delay's calls differ it
+        # is written out, one `00` row a call -- a delay of 0 is current for
+        # one call and sets its note, so the timing is unchanged.
+        if w < 0x10 and keep is None and w > 0:
+            steps = [step_note(call + j) for j in range(w + 1)]
+            if len(set(steps)) > 1:
+                for st in steps:
+                    left.append(0x00)
+                    right.append(st)
+                call = last + 1
+                continue
         left.append(w)
         right.append(step_note(last) if keep is None else keep)
         call = last + 1

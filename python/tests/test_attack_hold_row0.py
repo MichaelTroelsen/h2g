@@ -104,7 +104,8 @@ def _sanxion_hold(regrid):
 
     doc = json.loads((REPO_ROOT / "presets.json").read_text())
     opts = dict(fidelity._preset_opts(doc, "Sanxion.sid"),
-                drop_unnamed_instruments=False, regrid=regrid)
+                drop_unnamed_instruments=False, regrid=regrid,
+                regrid_phase=False)
     log = []
     blob = convert(str(CORPUS / "Sanxion.sid"), log=log.append, **opts)
     line = [m for m in log if m.startswith("Attack pitch held")]

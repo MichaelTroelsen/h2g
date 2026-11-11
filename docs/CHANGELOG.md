@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.662 — 2026-11-11
+
+- Adopt 9 user-approved sub-99% patches: Knucklebusters clock, Wiz/Sanxion phase, prev-class firstwave, Lion_Heart drum pitch, Sun drum, I_Ball/Bangkok click, gate M6, Lightforce drum gate-off, octave arpeggio
+
 ## 0.5.661 — 2026-11-11
 
 - Adopt 8 clean-bar sub-99% patches: transpose exemption, Nemesis park, Delta continue, drum first unit, hold/heard harness fixes, magplay PAL

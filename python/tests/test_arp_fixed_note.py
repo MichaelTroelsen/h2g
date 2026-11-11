@@ -34,4 +34,8 @@ def test_a_relative_source_frame_is_arpeggiated_as_before():
 def test_a_delay_entry_is_never_taken_for_a_fixed_note():
     left, right = _arp_block([(0x02, 0xD8), (0x41, 0x80), (0xFF, 0)],
                              OFFSETS, 1, 1)
-    assert left[0] == 0x02 and right[0] < 0x80
+    # The delay's own right byte ($D8) is a delay's note, not a fixed one. The
+    # cycle steps inside this 3-call delay, so it is written out a call at a
+    # time (`00` rows); either way no row of it is held at the $D8.
+    assert left[0] in (0x02, 0x00) and right[0] < 0x80
+    assert all(r < 0x80 for l, r in zip(left[:3], right[:3]) if l < 0x10)

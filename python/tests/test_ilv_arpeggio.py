@@ -74,6 +74,14 @@ def test_the_source_programs_waveforms_are_copied_verbatim():
     Go_Go_Dash's `02` and Lion_Heart's `01` attack delays -- two of the five.
     """
     left, _ = G._arp_block(SOURCE, [0, 5], 1, 10)
+    # The delay is written out as one `00` row a call where the cycle steps
+    # inside it (`test_a_delay_the_cycle_steps_inside_is_written_out_a_call`),
+    # so the waveforms are compared apart from the delay rows, and the
+    # source's five calls stay five: 1 + 3 + 1.
+    assert [w for w in left if 0x10 <= w < 0xE0][:2] == [0x41, 0x41]
+    assert left[:5] == [0x41, 0x00, 0x00, 0x00, 0x41]
+    # a delay the cycle does not step inside is the source's own, verbatim
+    left, _ = G._arp_block(SOURCE, [0, 5], 3, 10)
     assert left[:3] == [0x41, 0x02, 0x41]
 
 
@@ -118,8 +126,13 @@ def test_a_delay_entry_is_charged_to_the_frame_of_its_LAST_call():
     assert right[0] == G.WAVE_NOTE_BASE + 0
     # the delay spans calls 1..3; its LAST is frame 4, less the head -> step 2.
     # Charged to its FIRST call it would be frame 2 -> step 0, so this asserts
-    # the difference rather than the value.
-    assert right[1] == G.WAVE_NOTE_BASE + 7
+    # the difference rather than the value. The cycle steps inside this delay,
+    # so it is written out a call at a time and the LAST row carries step 2.
+    assert right[1:4] == [G.WAVE_NOTE_BASE + k for k in (0, 5, 7)]
+    # A delay the cycle does not step inside stays one row, charged to its
+    # last call: at -S3 calls 3..4 are both frame 2, less the head -> step 0.
+    _, right = G._arp_block([(0x41, 0), (0x01, 0), (0xFF, 0)], [0, 5, 7], 3, 10)
+    assert right[1] == G.WAVE_NOTE_BASE + 0
 
 
 def test_the_step_is_a_rate_and_is_scaled_by_the_multiplier():
@@ -129,7 +142,10 @@ def test_the_step_is_a_rate_and_is_scaled_by_the_multiplier():
     """
     for mult in (1, 2, 3, 4):
         left, _ = G._arp_block(SOURCE, [0, 5, 11], mult, 10)
-        body = 3            # the source's own entries, before the terminator
+        # the source's own entries, before the terminator -- its `02` delay
+        # written out a call at a time where the cycle steps inside it, which
+        # at -S1 it does (calls 1..3 are frames 2..4: steps 0, 1, 2)
+        body = 5 if mult == 1 else 3
         # ...and the entries that finish the frame the body ends in: the
         # source is 1 + 3 + 1 = 5 calls, so the tail starts on a frame
         # boundary (tests/test_arp_residue_audit.py)
@@ -301,3 +317,44 @@ def test_every_block_terminates_and_jumps_inside_itself():
                 seen += 1
             else:
                 pytest.fail(f"{name}: block at {t} never terminates")
+
+
+# ------------------------------------------- a delay the cycle steps inside
+
+def test_a_delay_the_cycle_steps_inside_is_written_out_a_call():
+    """**Lakers_vs_Celtics record 14 (`$CC`: base, +12, +12).** Its program is
+    `11 / 41 / 02 / 11`: a THREE-call delay holding frames 2..4. A delay
+    writes its note on its last call only (gplay.c:697-704), so the one row
+    carried frame 4's step (base) and frames 2 and 3, where the original
+    raises (`22ce 22ce 459c 459c 22ce`), stayed on the previous call's note;
+    the cycle only came right from the tail on frame 5. Measured at -t 180
+    (C:/t/instr-octave-arpeggio-in-note-missing, heard.py): PITCH_OCTAVE 157
+    of 1483 notes -> 0, instr .855 -> .961.
+
+    A delay of 0 is current for one call and sets its note, so one such row a
+    call keeps the timing and loses nothing.
+    """
+    offsets = [0, 12, 12]
+    left, right = G._arp_block([(0x11, 0), (0x41, 0), (0x02, 0), (0x11, 0),
+                                (0xFF, 0)], offsets, 1, 10)
+    # calls 0..4 are the body's 1 + 1 + 3 rows, call 5 the last `11`
+    assert left[:6] == [0x11, 0x41, 0x00, 0x00, 0x00, 0x11]
+    # frame f of the original raises where (f - 1) mod 3 is not 0 (its first
+    # arp step is frame 1: frames 0 and 1 are the head), and call c is
+    # frame c here -- c = 2 and 3 are the two the delay used to swallow
+    ups = [r - G.WAVE_NOTE_BASE for r in right[:6]]
+    assert ups == [0, 0, 12, 12, 0, 12], ups
+
+
+def test_the_expanded_delay_is_the_same_length_in_calls():
+    for mult in (1, 2, 3):
+        src = [(0x11, 0), (0x41, 0), (0x03, 0), (0x11, 0), (0xFF, 0)]
+        left, _ = G._arp_block(src, [0, 12, 12], mult, 10)
+        calls = 0
+        for w in left:
+            if w == G.WAVE_JUMP:
+                break
+            calls += (w + 1) if w < 0x10 else 1
+        # the body is 1 + 1 + 4 + 1 = 7 calls, padded to a whole frame, plus
+        # a tail of three frames (`len(offsets) * mult` calls)
+        assert calls == 7 + (-7 % mult) + 3 * mult, (mult, calls)

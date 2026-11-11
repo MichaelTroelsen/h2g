@@ -28,7 +28,7 @@ from h2g.detect import detect                                # noqa: E402
 from h2g.goatwriter.constants import (CMD_SETWAVEPTR,        # noqa: E402
                                       GT_WAVE_JUMP, WAVECMD_PORTADOWN)
 from h2g.goatwriter.drum_fall import (drum_fall_records,     # noqa: E402
-                                      fall_steps)
+                                      drum_gate_records, fall_steps)
 from h2g.sidfile import load_sid                              # noqa: E402
 from songview import parse_sng                                # noqa: E402
 
@@ -100,14 +100,19 @@ def test_kick_row_after_the_note_points_at_a_gate_off_head_and_chain():
             nxt = rows[r + 1]
             assert nxt[2] == CMD_SETWAVEPTR, (r, nxt)
             head = nxt[3] - 1
-            # The gate goes off with the frequency kept ...
-            assert wt[head] == (0x10, 0x80)
+            # The row's command lands one call before the original's
+            # gate-off (Tarzan voice 3: gate off on frame 3, the head's
+            # first call was frame 2 and measured the gate a frame early,
+            # gate 82% -> 79%): the head holds the gate for that call ...
+            assert wt[head] == (0x11, 0x80)
+            # ... then the gate goes off with the frequency kept ...
+            assert wt[head + 1] == (0x10, 0x80)
             # ... then two steps (the head's frame and its own) ...
-            assert wt[head + 1][0] == WAVECMD_PORTADOWN
-            assert st[wt[head + 1][1] - 1] == (0x01, 0x00)
+            assert wt[head + 2][0] == WAVECMD_PORTADOWN
+            assert st[wt[head + 2][1] - 1] == (0x01, 0x00)
             # ... then a jump into single $0080 steps ending in a stop.
-            assert wt[head + 2][0] == GT_WAVE_JUMP
-            at = wt[head + 2][1] - 1
+            assert wt[head + 3][0] == GT_WAVE_JUMP
+            at = wt[head + 3][1] - 1
             steps = 0
             while wt[at][0] == WAVECMD_PORTADOWN:
                 assert st[wt[at][1] - 1] == (0x00, 0x80)
@@ -145,7 +150,11 @@ def test_tarzan_kick_falls_and_gates_off_like_the_original(tmp_path):
 
     def agree(trace) -> tuple[int, int]:
         lag, _ = fidelity.startup_lag(orig, trace)
-        w = lag - 1        # our waveform's frame; the pitch is a frame late
+        # The head holds the gate for the call the row command lands on, so
+        # the fall and the gate-off sit on the original's own frames at the
+        # attack-aligned lag (the first emission started them a frame early
+        # and this read `lag - 1` to forgive it).
+        w = lag
         hfr = fidelity.register_timeline(trace[2].freq_events, n + 60)
         hwf = fidelity.register_timeline(trace[2].wf_events, n + 60)
         fell = gate = 0
@@ -161,3 +170,32 @@ def test_tarzan_kick_falls_and_gates_off_like_the_original(tmp_path):
     fall = agree(ours(True, tmp_path / "b"))
     assert plain == (0, 0), plain
     assert fall == (len(hits), len(hits)), (fall, len(hits))
+
+
+@needs_corpus
+def test_fixed_pitch_drum_records_get_the_gate_off_alone():
+    # Records 7, 9 and 10 (effect $45/$45/$65) carry bit $40, whose
+    # re-assert block rewrites the frequency every frame: the original's
+    # dump shows no fall on them, and the gate off on the note's second tick
+    # all the same (voice 1 / voice 3, `(3, 9)` and `(3, 15)` gate runs
+    # where ours held `(9, 3)` and `(15, 3)`: AD$05 SR$07 and SR$08 are
+    # 1178 of the 2155 gate-miss frames at v0.5.660).
+    sid, det = _det(TARZAN)
+    assert drum_gate_records(sid, det, det.instr_used) == {7, 9, 10}
+    assert not drum_gate_records(sid, det, det.instr_used) &         drum_fall_records(sid, det, det.instr_used)
+    sng = parse_sng(_quiet(CORPUS / TARZAN, **dict(_opts(), drum_fall=True)))
+    wt = sng.tables["WTBL"]
+    by_ad = {(i.ad << 8 | i.sr): i.number for i in sng.instruments}
+    gate_only = {by_ad[0x0507], by_ad[0x0508]}
+    heads = set()
+    for pat in sng.patterns:
+        rows = [pat[r:r + 4] for r in range(0, len(pat) - 3, 4)]
+        for r, (_n, ins, _c, _d) in enumerate(rows[:-1]):
+            if ins in gate_only and rows[r + 1][2] == CMD_SETWAVEPTR:
+                heads.add(rows[r + 1][3] - 1)
+    assert heads
+    for head in heads:
+        # held for the call the command lands on, gate off, stop: no fall
+        assert wt[head][1] == 0x80 and wt[head][0] & 1
+        assert wt[head + 1] == (wt[head][0] & 0xFE, 0x80)
+        assert wt[head + 2] == (GT_WAVE_JUMP, 0x00)

@@ -113,7 +113,10 @@ def test_the_option_reaches_only_the_heard_songs():
 def test_the_shipped_last_v8_c128_still_emits_its_skydive_with_the_option():
     """The skydive overflow seen with the option is test_skydive_compact's
     fixture (dead_blocks off), not the shipped path: forced on, the shipped
-    conversion keeps its 98 compact steps."""
+    conversion keeps its compact steps -- 98 through v0.5.660, 93 since the
+    plain fixed-octave records' residue-1 shape took 4 wavetable rows
+    (`test_skydive_compact.py`; the option is not shipped for this file, and
+    the shipped conversion's own skydive is still 98 steps)."""
     import fidelity as F
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     stem = "Last_V8_C128_version"
@@ -123,4 +126,4 @@ def test_the_shipped_last_v8_c128_still_emits_its_skydive_with_the_option():
                 **dict(F._preset_opts(doc, f"{stem}.sid"),
                        drum_sustain_gate_off=True))
     sky = [m for m in lines if m.startswith("Skydive")]
-    assert sky and "not emitted" not in sky[0] and "98 wavetable step(s)" in sky[0], sky
+    assert sky and "not emitted" not in sky[0] and "93 wavetable step(s)" in sky[0], sky

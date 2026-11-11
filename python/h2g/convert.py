@@ -49,6 +49,7 @@ from .funk_gatetimers import split_funk_gatetimers
 from .pitch_lead import lead_ties
 from .unison_vibrato import chorus_doubled_notes
 from .vibrato_hold import hold_classic_vibrato
+from .prev_class_firstwave import prev_class_firstwave as _prev_class_firstwave
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -174,7 +175,7 @@ def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
 
 
 def regrid_deficits(speeds, values: List[int], skip_gate: bool,
-                    multiplier: int) -> List[float]:
+                    multiplier: int, floored: bool = False) -> List[float]:
     """Per subtune, the FRAMES per row `regrid_tempos` must make up, or 0.0.
 
     Only where `effective_frames` DECLINED the exact row and the subtune's
@@ -198,11 +199,25 @@ def regrid_deficits(speeds, values: List[int], skip_gate: bool,
     for k in range(len(values)):
         exact = speeds.exact_row(k) if speeds is not None else None
         eff = effective_frames(speeds, k, skip_gate)
-        if (exact is None or eff is None
-                or float(eff) * multiplier != float(values[k])):
+        if exact is None or eff is None:
             deficits.append(0.0)
-        else:
+            continue
+        want = float(eff) * multiplier
+        if want == float(values[k]):
             deficits.append(max(0.0, float(exact) - float(eff)))
+        elif (floored and values[k] >= 3 and int(want) == values[k]
+                and getattr(eff, "denominator", 1) > 1):
+            # `regrid_floored`: an EXACT row whose denominator does not divide
+            # the file's multiplier. `tempo_command_value` floors it to whole
+            # calls (Knucklebusters_3: 17/8 frames = 6.375 calls at -S3,
+            # emitted as 6); the tempo carries the whole calls, the rest is
+            # the debt. Per song: measured on the four shipped `regrid` files
+            # it moves (Auf_Wiedersehen_Monty, Delta, Star_Paws, Wiz) it is
+            # not a uniform gain -- Star_Paws subtune 1 melody -3.5pp, Wiz
+            # subtune 2 drift unchanged -- so it is never the default.
+            deficits.append(max(0.0, (want - values[k]) / multiplier))
+        else:
+            deficits.append(0.0)
     return deficits
 
 
@@ -329,6 +344,7 @@ def convert(sid_path: str, log: Logger = print,
             regrid_unshare_rest: bool = False,
             regrid_park_shift: int = 0,
             regrid_phase: bool = False,
+            regrid_floored: bool = False,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
@@ -341,6 +357,7 @@ def convert(sid_path: str, log: Logger = print,
             voice_arp: bool = False,
             unison_vibrato_phase: bool = False,
             vibrato_hold: bool = False,
+            prev_class_firstwave: bool = False,
             master_volume: bool = False,
             master_fade: bool = False,
             keep_hard_restart: bool = False,
@@ -569,6 +586,11 @@ def convert(sid_path: str, log: Logger = print,
     clone of its record with `vibdelay` longer by the offset's share of the
     entry's period; its patterns are copied. Only the clamp-then-step-back
     update, all absolute,X (International_Karate's `$AFF7`), is read.
+
+    prev_class_firstwave gives a note whose record opens on a gate-off real
+    firstwave the PREVIOUS note's last waveform on its init frame, as the
+    original's chip holds it, by cloning the record per predecessor class
+    (`prev_class_firstwave`).
 
     vibrato_hold (multiplier > 1) replaces the classic vibrato's per-call
     speed-table entry with a frame-held wavetable program (`vibrato_hold`):
@@ -806,6 +828,13 @@ def convert(sid_path: str, log: Logger = print,
     accrues the original's fractional row with nothing to pay it (Nineteen:
     pattern 0, 32 rows, a 21-second rest, the song runs 9 frames early, then a
     24-call burst in pattern 24). Needs `regrid`. Off by default, per song.
+
+    regrid_floored also pays an EXACT row that the tempo had to floor. A row
+    of p/q frames is p calls at `-Sq` and nothing at a multiplier q does not
+    divide: Knucklebusters packs at `-S3` for its start subtune (7/3), and
+    subtune 2 (17/8 frames, an outer counter of 16) is 6.375 calls, emitted as
+    6 -- 1/17 fast, `drift` -58.8 per 1000. Without the flag `regrid` pays only
+    a row `effective_frames` DECLINED. Needs `regrid`. Off by default, per song.
 
     A COMPILATION -- several players behind an init/play dispatch
     (`detect.find_players`) -- converts subtune 0 from the first player as
@@ -1237,14 +1266,14 @@ def convert(sid_path: str, log: Logger = print,
             # encodable, the tempo already carries it and compensating again
             # would double-count. See patterns.regrid_tempos.
             deficits = regrid_deficits(find_song_speeds(sid, det), values,
-                                       skip_gate, multiplier)
+                                       skip_gate, multiplier, regrid_floored)
             if regrid_phase and any(deficits) and multiplier == 1:
                 # The extra frames on the ROWS the original puts them on,
                 # not spread evenly; see patterns.regrid_phase_tempos.
                 _, phased = regrid_phase_tempos(
                     new_patterns, tracks, values,
                     lambda k, rows: (step_durations(sid, rows)
-                                     if k == 0 and len(values) == 1 else None),
+                                     if k == 0 else None),
                     log)
                 for k in phased:
                     deficits[k] = 0.0
@@ -1719,6 +1748,10 @@ def convert(sid_path: str, log: Logger = print,
             # On the finished rows and records, after every pass that writes
             # or renumbers an instrument column; before the startup record.
             sng = hold_classic_vibrato(sng, sid, det, multiplier, log)
+        if prev_class_firstwave:
+            # Last of the record/row passes, before the startup record: the
+            # clones are made from the records as every other pass left them.
+            sng = _prev_class_firstwave(sng, group_tempos, multiplier, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

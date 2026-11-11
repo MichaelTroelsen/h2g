@@ -53,6 +53,12 @@ from .primitives import _note_freq
 # alternation $581F, $08 the note alternation $5857, $40 the fixed pitch /
 # re-assert $589D), or that this dialect does not read ($10, $80).
 DRUM_FALL_EXCLUDED = 0x02 | 0x08 | 0x10 | 0x40 | 0x80
+# Bit $40 alone (the fixed-pitch / re-assert block, `$589D`) rewrites the
+# frequency every frame, so the fall never reaches the chip on such a record;
+# the gate mask the same block of `$57EA` sets does (Tarzan instruments 8, 10
+# and 11, effect $45/$65: the original gates off on the note's second tick
+# with the pitch held, `(3, 9)` on voice 1 where ours held `(9, 3)`).
+DRUM_GATE_ONLY_BITS = 0x40
 # The block stops once the high byte is zero: it subtracts while hi != 0.
 DRUM_FALL_FLOOR = 0x100
 # Longest note a row is assumed to hold, in frames per row, for the chain
@@ -90,6 +96,25 @@ def drum_fall_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
     return out
 
 
+def drum_gate_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
+    """0-based records whose fall is overwritten by the fixed-pitch block but
+    whose gate-off is not: bit $01 and $40 set, none of the other excluded
+    bits."""
+    out: Set[int] = set()
+    if not det.drum_fall_step:
+        return out
+    data = sid.data
+    for i in range(records):
+        base = det.instr_start + i * det.instr_stride
+        if base + 7 >= len(data):
+            break
+        fx = data[base + 7]
+        if (fx & 0x01 and fx & DRUM_GATE_ONLY_BITS
+                and not fx & (DRUM_FALL_EXCLUDED & ~DRUM_GATE_ONLY_BITS)):
+            out.add(i)
+    return out
+
+
 def fall_steps(freq: int, step: int) -> int:
     """Frames the player falls from `freq` before its high byte is zero."""
     if freq < DRUM_FALL_FLOOR or step <= 0:
@@ -105,7 +130,8 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     if not det.drum_fall_step:
         return None
     records = drum_fall_records(sid, det, max(instr_used - lead, 0))
-    if not records:
+    gate_only = drum_gate_records(sid, det, max(instr_used - lead, 0))
+    if not records and not gate_only:
         return None
     # **No outer-gate divisor**, unlike `_drum_speed`'s Warhawk block: this
     # player's skip ($555B `DEC $59F6 / BPL`, reload `#$0B`) only holds the
@@ -117,7 +143,8 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             log("Drum fall...............: not emitted (GTS2 stores no "
                 "speed table)")
         return None
-    numbers = {i + lead + 1 for i in records}
+    numbers = {i + lead + 1 for i in records | gate_only}
+    gate_numbers = {i + lead + 1 for i in gate_only}
     m = max(1, multiplier)
     step = max(1, det.drum_fall_step // m)
 
@@ -134,7 +161,7 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
 
     data = sid.data
     gate_off = {i + lead + 1: data[det.instr_start + i * det.instr_stride + 2]
-                & 0xFE for i in records}
+                & 0xFE for i in records | gate_only}
     asks: List[Tuple[int, int, int, int]] = []   # (pattern, row, wave, calls)
     for p, pat in enumerate(patterns):
         if p not in low:
@@ -165,6 +192,13 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             while end < len(rows) and rows[end][0] in (GT_REST, GT_KEYOFF):
                 end += 1
             n = note - GT_FIRST_NOTE + low[p]
+            if cur in gate_numbers:
+                # the block's `LDA freqhi / BEQ out` guard still applies
+                if _note_freq(n) < DRUM_FALL_FLOOR:
+                    no("no fall at this pitch")
+                    continue
+                asks.append((p, r + 1, gate_off[cur], 0))
+                continue
             k = fall_steps(_note_freq(n), det.drum_fall_step) * m
             k = min(k, (end - r) * DRUM_FALL_ROW_FRAMES * m)
             if k < 2:
@@ -197,8 +231,8 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # the player holds it to frame 3); why the packed player applies it
     # there was not traced.
     heads = sorted({(w, k) for _p, _r, w, k in asks})
-    chain = max(k for _w, k in heads) - 2
-    room = GT_MAX_TABLELEN - wave_used - 3 * len(heads) - 1
+    chain = max([k for _w, k in heads] + [2]) - 2
+    room = GT_MAX_TABLELEN - wave_used - 4 * len(heads) - 1
     if room < 0:
         if log:
             log("Drum fall...............: no wavetable room")
@@ -211,7 +245,15 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     at_head: Dict[Tuple[int, int], int] = {}
     for w, k in heads:
         at_head[(w, k)] = first + len(entries)
-        entries += [(w, GT_WAVE_NO_NOTE), (WAVECMD_PORTADOWN, two),
+        if not k:
+            # gate-only (`drum_gate_records`): the gate off, then stop with
+            # the waveform latched -- the frequency belongs to the record's
+            # own fixed-pitch block, not to a fall
+            entries += [(w | 0x01, GT_WAVE_NO_NOTE), (w, GT_WAVE_NO_NOTE),
+                        (GT_WAVE_JUMP, 0x00)]
+            continue
+        entries += [(w | 0x01, GT_WAVE_NO_NOTE), (w, GT_WAVE_NO_NOTE),
+                    (WAVECMD_PORTADOWN, two),
                     (GT_WAVE_JUMP, stop - min(k - 2, chain))]
 
     out = [list(pat) for pat in patterns]

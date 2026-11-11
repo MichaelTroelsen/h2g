@@ -405,6 +405,10 @@ EXCLUDED_FROM_ALWAYS = {
     # from its file (`goatwriter.step_durations`; verified on IK_plus alone);
     # inert without `regrid`.
     "regrid_phase",
+    # Per song: also pays an exact row the multiplier does not carry and the
+    # tempo floored (convert's `regrid_floored`; Knucklebusters subtune 2).
+    # Inert without `regrid`.
+    "regrid_floored",
     # An INTEGER (rows), not a toggle: where in the looping voice's pattern
     # `regrid_park`'s pairs sit, as a rotation of the evenly spread rows. The
     # original's extra frame is a free-running counter and the pairs are
@@ -910,6 +914,11 @@ EXCLUDED_FROM_ALWAYS = {
     # `tiefr` 15% -> 72%, `tie` 0.31x -> 0.92x. Not in FIDELITY_TOGGLES. A
     # song entry `"vibrato_hold": true`.
     "vibrato_hold",
+    # `prev_class_firstwave`: the note-init frame shows the previous note's
+    # last waveform, as the original's does (h2g.prev_class_firstwave). Per
+    # song and never a default; not in FIDELITY_TOGGLES. A song entry
+    # `"prev_class_firstwave": true`.
+    "prev_class_firstwave",
 }
 
 

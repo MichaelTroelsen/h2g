@@ -162,8 +162,15 @@ def test_the_restore_stays_on_the_note_without_the_closing_travel():
 
 @needs_corpus
 @pytest.mark.parametrize("multiplier", [2, 3])
-def test_above_s1_nothing_changes(multiplier):
-    # a portamento rides beside the opcode there (`_wave_program_travels`)
+def test_above_s1_nothing_changes(multiplier, monkeypatch):
+    # a portamento rides beside the opcode there (`_wave_program_travels`).
+    # The `>= $80` opcodes' absolute pitch reads `pitches` at every
+    # multiplier (`_wave_set_note_byte`, test_wave_set_note_lo.py), so it is
+    # held at the plain quantisation: this is a claim about the slide frames.
+    from h2g.goatwriter import wave_program
+    monkeypatch.setattr(wave_program, "_wave_set_note_byte",
+                        lambda arg, pitches, running:
+                        wave_program._sfx_note_byte(arg))
     assert (_entries("Mega_Apocalypse", 2, {51: 1034}, multiplier)
             == _entries("Mega_Apocalypse", 2, None, multiplier))
 

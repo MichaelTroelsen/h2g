@@ -1558,7 +1558,9 @@ test dependency).
     Delta adopted (subtune 8 drift -25.0 -> 0.0 per 1000 at 2a13c5f); the 16
     above is now HISTORY.** **RE-GRADED AT v0.5.595: **18 adoptions** -- Star_Paws adopted (regrid +
     regrid_full_debt + regrid_per_play; drift -7.8 -> -0.3 per 1000, gate +12.4
-    pp); the 17 above is now HISTORY.** The drift split is not
+    pp); the 17 above is now HISTORY.** **RE-GRADED AT v0.5.662: **19 adoptions** -- Knucklebusters
+    adopted (regrid + regrid_floored; subtune 2 drift -58.8 -> 0.0 per 1000, gate .49 -> .90);
+    the 18 above is now HISTORY.** The drift split is not
     re-graded here and must not be: it is a per-file measurement and the
     artefact is now `-t 180` where that figure was taken at `-t 60`, so the
     test SKIPS it rather than comparing two different quantities.
