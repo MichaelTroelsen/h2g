@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.661 presets.py",
+  "generator": "h2g 0.5.662 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -447,8 +447,8 @@
       "multiplier": 1,
       "no_test_restart": true,
       "aligned_firstwave": true,
-      "wave_alternate": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "wave_alternate": true
     },
     "Chimera.sid": {
       "max_rows": 94,
@@ -792,8 +792,8 @@
         61,
         62
       ],
-      "regrid": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "regrid": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -1328,14 +1328,14 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14516,
+      "bytes": 15025,
       "subtunes": 3,
       "rows": 7778,
       "multiplier": 1,
       "no_test_restart": true,
       "aligned_firstwave": true,
-      "wave_alternate": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "wave_alternate": true
     },
     "Human_Race.sid": {
       "max_rows": 128,
@@ -1886,7 +1886,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16160,
+      "bytes": 16168,
       "subtunes": 3,
       "rows": 12260,
       "multiplier": 2,
@@ -1904,8 +1904,8 @@
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 3,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "hard_restart_frames": 3
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2344,9 +2344,9 @@
       "two_stage": true,
       "wave_program": true,
       "aligned_firstwave": true,
-      "prev_class_firstwave": true,
       "arpeggio": true,
-      "arpeggio_default": true
+      "arpeggio_default": true,
+      "prev_class_firstwave": true
     },
     "Pandora.sid": {
       "max_rows": 128,
@@ -2500,8 +2500,8 @@
       "wave_program": true,
       "aligned_firstwave": true,
       "arpeggio": true,
-      "prev_class_firstwave": true,
-      "arpeggio_default": true
+      "arpeggio_default": true,
+      "prev_class_firstwave": true
     },
     "Rasputin.sid": {
       "max_rows": 94,
@@ -2797,8 +2797,8 @@
         61,
         62
       ],
-      "rest_envelope_silence": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "rest_envelope_silence": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -3012,6 +3012,7 @@
       "multiplier": 1,
       "no_test_restart": false,
       "two_stage": true,
+      "drum_fall": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -3075,8 +3076,7 @@
         60,
         61,
         62
-      ],
-      "drum_fall": true
+      ]
     },
     "Thanatos.sid": {
       "max_rows": 128,
@@ -3097,7 +3097,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18570,
+      "bytes": 18578,
       "subtunes": 1,
       "rows": 17381,
       "multiplier": 2,
@@ -3193,8 +3193,8 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3,
-      "rest_envelope_silence": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "rest_envelope_silence": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
