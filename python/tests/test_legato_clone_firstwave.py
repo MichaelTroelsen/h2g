@@ -84,24 +84,30 @@ def test_trans_atlantic_clones_leave_the_waveform_to_the_wavetable():
 
 
 @needs_corpus
-def test_a_clone_whose_wavetable_opens_on_a_delay_keeps_the_waveform_byte():
-    """Sanxion's second clone is of a record whose first wavetable entry is a
-    delay: firstwave 0 would leave the whole first call unwritten, so it keeps
-    the record's own waveform byte with the gate (the old rule)."""
+def test_sanxions_zero_record_clone_keeps_the_free_running_byte():
+    """Sanxion's second clone is of record 08 (waveform $00), whose first
+    wavetable entry was a delay; it keeps the base's gate-ON firstwave byte
+    (`firstwave_of` copies any gated byte but the testbit). Since
+    `instruments.park_free_running` that block opens on $E0 (silent wave
+    $00), a waveform entry like any other, so both clones now OPEN on a
+    waveform -- yet the zero record's clone still takes the base's $01, the
+    early return, not the wavetable rule. No corpus clone opens on a delay any
+    more; the delay branch of `firstwave_of` is not pinned by a corpus file."""
     song = _song("Sanxion.sid")
     pairs = _clones(song)
     assert len(pairs) == 2
-    delays = [(c, b) for c, b in pairs if not _opens_on_a_waveform(song, c)]
-    assert len(delays) == 1
-    clone, base = delays[0]
+    assert all(_opens_on_a_waveform(song, c) for c, _b in pairs)
     # The base is record 08, waveform $00: since
     # sanxion-free-running-first-wave-adoption (2026-11-07) a record with no
     # select bit gets the free-running $01, not the testbit, so its oscillator
     # runs for the ring/sync neighbour as the original's ctrl $00 does.
-    assert base.firstwave == G.FIRSTWAVE_FREERUN
-    assert clone.firstwave == 0x01
-    waves = [(c, b) for c, b in pairs if _opens_on_a_waveform(song, c)]
-    assert len(waves) == 1 and waves[0][0].firstwave == 0
+    zero = [(c, b) for c, b in pairs if b.firstwave == G.FIRSTWAVE_FREERUN]
+    assert len(zero) == 1
+    clone, base = zero[0]
+    assert song.tables["WTBL"][base.wave_ptr - 1][0] == G.WAVE_SILENT_BASE
+    assert clone.firstwave == 0x01, clone
+    others = [(c, b) for c, b in pairs if (c, b) != (clone, base)]
+    assert len(others) == 1 and others[0][0].firstwave == 0
 
 
 @needs_corpus

@@ -664,6 +664,15 @@ original did. Detected, the rest is a KEYOFF. At `-t 180` under presets
 Devils_Galop 59% -> 68%, the other five +0-2 pp; melody, wave, adsr,
 attacks and `release_tail_agreement` unmoved on all nine.
 
+Delta tests one more thing first. Its note fetch (`$BEBA..$BED0`) checks
+`status & $60 == $60` (`AND #$60 / CMP #$60 / BNE`) *before* the bit-6 test, so a
+`$6x`/`$7x` byte only reloads the counter: no note, instrument or waveform is
+written and bit 5 skips the gate-off at counter zero. It is a *continue*, not a
+rest. `detect.STATUS_CONTINUE_SHAPE` (`29 60 C9 60`, Delta only in the corpus)
+sets `Detection.status_continue`, and such an event becomes plain hold rows with
+the tie kept pending, where the rest reading had emitted a mid-note KEYOFF
+(Delta_13 gate 85% -> 98% alone, 100% beside `goatwriter.drum_unit`, v0.5.661).
+
 **3. Legato → tone portamento.** If `NoADSR` is set and the *same instrument
 was used twice in a row*, emit GT command `$3` (tone portamento):
 
@@ -1058,6 +1067,16 @@ same offsets in both, so only the stride differs.
 
 The engine drives **four** voices; the fourth is the sample channel these
 files are named for, and Goattracker has no place for it.
+
+Its `$FD nn` orderlist transpose does not reach every note. The note fetch
+reads a flag from the record's `+7` byte and sounds the raw note when bit 0 is
+set (Lakers `$1277-$1287`, Pacific Coast `$126B-$127B`: `AND #$01`, then
+`ADC $1B02,X` only when it is clear). Goattracker's orderlist transpose covers
+every note, so `transpose_exempt.exempt_records` names the flagged records and
+the converter gives each (pattern, transpose) pair its own pattern copy with
+those notes lowered by the transpose (`tracks.exempt_transpose_copies`,
+`patterns.lower_exempt_notes`). It is unconditional; a song with no flagged
+record under a non-zero transpose converts byte-identically.
 
 ### A third engine: a command jump table and a duration table
 

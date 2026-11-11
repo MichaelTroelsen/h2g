@@ -43,6 +43,15 @@ that fails with its code removed:
    envelope unchanged) continues the note instead of starting a new one --
    unless it falls on the side's row grid (its shortest row, a fifth or more of
    its rise gaps): rows of two to four frames play real notes that close.
+   3c. The envelope cut is not a changed envelope. A Hubbard player writes
+   AD/SR 0 on its gate-off frames and ours keeps them, so the same restrike
+   differed in envelope alone: two notes on the original, one on ours (Game_Killer
+   65 missing, Master_of_Magic 17). A rise that is a restrike only if a gate-off
+   frame may hold AD/SR 0 is merged when the OTHER side restrikes there under the
+   strict rule (`cut_merges`). Where the other side writes the test bit in the gap
+   it starts a note, and the original's cut is its own hard restart, so both
+   sides keep the note (Rasputin: a blanket merge on the original alone invented
+   55 notes).
 4. A gate-off inside the note's first row (all but the row's last 2 frames, the
    row length being each side's most common gap between note starts) belongs
    to the instrument: the note is compared up to gate-off plus its SID release
@@ -75,6 +84,8 @@ K = 6          # frames of each note's program compared
 TAIL = 4       # longest hard-restart tail
 C0 = 0x0112    # PAL C-0, a reference only: tuning is fitted per side
 
+ENV_CUT = (0, 0)  # AD/SR as a Hubbard player writes them on a gate-off frame
+PAIR_SLACK = 2  # frames either side of the lag at which two notes pair
 RESTRIKE = 2   # longest gate-on and gate-off of a restrike, in frames
 # SID release times in ms, indexed by the release nibble (datasheet values)
 RELEASE_MS = (6, 24, 48, 72, 114, 168, 204, 240, 300, 750, 1500, 2400,
@@ -150,10 +161,11 @@ def release_frames(sr: int) -> int:
 
 
 def restruck(st: list[list[int]], rises: list[int], v: int,
-             grid: int | None = None) -> set[int]:
+             grid: int | None = None, cut: bool = False) -> set[int]:
     """The rises that strike an earlier note again instead of starting one. A
     rise a whole number of `grid` frames (the side's shortest row) after the
-    last is a note on a row, however briefly the one before it sounded."""
+    last is a note on a row, however briefly the one before it sounded. With
+    `cut`, a gate-off frame may also hold the envelope cut (`ENV_CUT`)."""
     b = 7 * v
     falls = [i for i in range(1, len(st))
              if (st[i - 1][b + 4] & 1) and not (st[i][b + 4] & 1)]
@@ -174,7 +186,9 @@ def restruck(st: list[list[int]], rises: list[int], v: int,
         if fall - before > RESTRIKE or rise - fall > RESTRIKE:
             continue
         env = (st[before][b + 5], st[before][b + 6])
-        if (all(not silent(st[f][b + 4]) and (st[f][b + 5], st[f][b + 6]) == env
+        same = (env, ENV_CUT) if cut else (env,)
+        if (all(not silent(st[f][b + 4])
+                and (st[f][b + 5], st[f][b + 6]) in same
                 for f in range(fall, rise))
                 and (st[rise][b + 5], st[rise][b + 6]) == env):
             found.add(rise)
@@ -195,14 +209,16 @@ def shortest_row(rises: list[list[int]]) -> int | None:
 
 
 def note_starts(st: list[list[int]], rose: list[list[bool]], v: int,
-                grid: int | None = None) -> tuple[list[int], list[int]]:
+                grid: int | None = None,
+                merged: frozenset[int] | set[int] = frozenset()
+                ) -> tuple[list[int], list[int]]:
     """Voice `v`'s note starts and each one's `$09`-style pre-frames. A note is
     anchored on the first frame after its rise that carries a waveform, so a
     `$09` frame before the attack is counted as `testpre` rather than shifting
     the note."""
     b = 7 * v
     rises = rise_frames(rose, v)
-    skip = restruck(st, rises, v, grid)
+    skip = restruck(st, rises, v, grid) | set(merged)
     starts, pre = [], []
     for i in (i for i in rises if i not in skip):
         j = i
@@ -236,12 +252,13 @@ def _named(st: list[list[int]], b: int, lo: int, hi: int,
 
 
 def notes(st: list[list[int]], rose: list[list[bool]], v: int,
-          tune: float, row: int | None = None, grid: int | None = None) -> list[dict]:
+          tune: float, row: int | None = None, grid: int | None = None,
+          merged: frozenset[int] | set[int] = frozenset()) -> list[dict]:
     """Voice `v`'s notes. `row` is the side's row length in frames (default:
     estimated from this voice alone); `grid` its shortest row, which a restrike
     cannot fall on (default: none)."""
     b = 7 * v
-    starts, pre = note_starts(st, rose, v, grid)
+    starts, pre = note_starts(st, rose, v, grid, merged)
     if row is None:
         row = row_length([starts])
     in_first = min(K, max(row - 2, min(row, 4)))
@@ -310,7 +327,7 @@ def best_lag(on: list[list[dict]], bn: list[list[dict]],
 
 
 def pair(on: list[dict], bn: list[dict], lag: int,
-         slack: int = 2) -> tuple[list[tuple[dict, dict | None]], list[dict]]:
+         slack: int = PAIR_SLACK) -> tuple[list[tuple[dict, dict | None]], list[dict]]:
     """Each original note to the nearest unused one of ours within `slack`
     frames after `lag`; returns the pairs and our unpaired (invented) notes."""
     used, pairs = set(), []
@@ -375,8 +392,28 @@ def diffs(a: dict, b: dict, multiplier: int = 1) -> set[str]:
     return out
 
 
-def compare(orig: dict, ours: dict, mult_o: int, mult_b: int) -> dict:
-    """Pair the two traces' notes and count each attribute's differences."""
+def cut_merges(st: list[list[int]], rose: list[list[bool]], grid: int | None,
+               other: list[set[int]], shift: int) -> list[set[int]]:
+    """Per voice, the rises that are a restrike only once a gate-off frame may
+    hold `ENV_CUT`, and that the other side restrikes too (`other`, its strict
+    restrike rises, `shift` frames away): a Hubbard player clears AD/SR on its
+    gate-off frames and ours keeps them, so the same restrike differs in
+    envelope alone. Where the other side starts a note instead (a hard restart
+    with the test bit, say) the cut is the original's real hard restart, so the
+    rise stays a note on both."""
+    out = []
+    for v in range(3):
+        rises = rise_frames(rose, v)
+        extra = restruck(st, rises, v, grid, cut=True) - restruck(st, rises, v, grid)
+        out.append({r for r in extra
+                    if any(abs(o + shift - r) <= PAIR_SLACK for o in other[v])})
+    return out
+
+
+def segment(orig: dict, ours: dict, mult_o: int, mult_b: int
+            ) -> tuple[list[list[dict]], list[list[dict]], int]:
+    """Both sides' notes per voice and the lag between them, as `compare`
+    scores them (rule 3c needs both sides, so a side alone is not enough)."""
     so, ro = frames(orig, mult_o)
     sb, rb = frames(ours, mult_b)
     to, tb = tuning(so), tuning(sb)
@@ -387,6 +424,23 @@ def compare(orig: dict, ours: dict, mult_o: int, mult_b: int) -> dict:
     on = [notes(so, ro, v, to, row_o, grid_o) for v in range(3)]
     bn = [notes(sb, rb, v, tb, row_b, grid_b) for v in range(3)]
     lag = best_lag(on, bn)
+    # the envelope-cut restrikes both sides agree on, found at the strict lag
+    strict_o = [restruck(so, rise_frames(ro, v), v, grid_o) for v in range(3)]
+    strict_b = [restruck(sb, rise_frames(rb, v), v, grid_b) for v in range(3)]
+    mo = cut_merges(so, ro, grid_o, strict_b, -lag)
+    mb = cut_merges(sb, rb, grid_b, strict_o, lag)
+    if any(mo) or any(mb):
+        row_o = row_length([note_starts(so, ro, v, grid_o, mo[v])[0] for v in range(3)])
+        row_b = row_length([note_starts(sb, rb, v, grid_b, mb[v])[0] for v in range(3)])
+        on = [notes(so, ro, v, to, row_o, grid_o, mo[v]) for v in range(3)]
+        bn = [notes(sb, rb, v, tb, row_b, grid_b, mb[v]) for v in range(3)]
+        lag = best_lag(on, bn)
+    return on, bn, lag
+
+
+def compare(orig: dict, ours: dict, mult_o: int, mult_b: int) -> dict:
+    """Pair the two traces' notes and count each attribute's differences."""
+    on, bn, lag = segment(orig, ours, mult_o, mult_b)
     c = Counter()
     for v in range(3):
         pairs, inv = pair(on[v], bn[v], lag)

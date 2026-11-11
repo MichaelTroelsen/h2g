@@ -12,6 +12,7 @@ using System.Text.Json;
 using MagPlay.Transcribe;
 using MagPlay.Score;
 using MagSid.Playback;
+using MagPlay.C64;
 
 string? scorePath = null;
 var rest = new List<string>();
@@ -26,7 +27,13 @@ double secs = double.Parse(args[1], System.Globalization.CultureInfo.InvariantCu
 int song = int.Parse(args[2]);
 if (song == 0) song = sid.StartSong;
 var sw = System.Diagnostics.Stopwatch.StartNew();
-var rec = Recording.Record(sid, song, secs);
+// A bare machine has no KERNAL to set $02A6, the PAL/NTSC flag (1 = PAL), so it reads 0 = NTSC,
+// and Phantoms_of_the_Asteroid and Las_Vegas_Video_Poker branch on it (skip a frame in six; pick
+// a reload of 2 where PAL picks 4). siddump-rt sets it with -v1; so does this.
+var tune = SidTune.Load(sid, song);
+tune.Computer.Ram[0x02A6] = (byte)(tune.Computer.Machine == Machine.Ntsc ? 0 : 1);
+tune.Run((long)(secs * Machines.ClockHz(tune.Computer.Machine)));
+var rec = Recording.Of(tune.Computer);
 var (score, rep) = Transcriber.Transcribe(rec, Music.Of(rec));
 var gaps = Enumerable.Range(1, Math.Max(0, rec.Calls.Count - 1))
     .Select(i => rec.Calls[i] - rec.Calls[i - 1]).Order().ToList();

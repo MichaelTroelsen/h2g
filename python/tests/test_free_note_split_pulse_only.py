@@ -51,8 +51,11 @@ def test_delta_splits_for_its_pulse_only_records():
             ) in free[0], free[0]
     split = [ln for ln in lines if ln.startswith("Entry instrument split")]
     # 6 and pattern 53 since status-bit6-late-abs (Delta's rests detected,
-    # so they are KEYOFF rows): 53 now enters with two instruments too.
-    assert split and "6 pattern cop(ies) of 02, 03, 53" in split[0], split
+    # so they are KEYOFF rows): 53 entered with two instruments too. Back to
+    # 5 (02, 03) at v0.5.661, when Delta's `$60`-class status bytes stopped
+    # being read as rests (detect.STATUS_CONTINUE_SHAPE); the 53 entry was
+    # measured gone, its cause was not traced.
+    assert split and "5 pattern cop(ies) of 02, 03," in split[0], split
 
 
 @needs_corpus

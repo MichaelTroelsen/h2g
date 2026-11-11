@@ -183,6 +183,51 @@ def test_rule3_a_restrike_continues_the_note():
     assert len(H.notes(so, ro, 0, 0.0)) == 2
 
 
+def _env_trace(frames: list[tuple[int, int, int]]) -> dict:
+    """(control, AD, SR) per frame, one pitch, one call a frame."""
+    return {"writes": [[0, 5, ad, 0, 6, sr, 0, 0, A4 & 0xFF, 0, 1, A4 >> 8, 0, 4, ctl]
+                       for ctl, ad, sr in frames]}
+
+
+def _cmp(orig, ours):
+    return H.compare(_env_trace(orig), _env_trace(ours), 1, 1)
+
+
+ENV = (0x19, 0xBA)
+REST_E = [(0x40,) + ENV] * 6
+
+
+def _strike(gap_ctl: int, gap_env: tuple[int, int]):
+    """Six notes on a 6-frame row (so 4 frames is no grid), then gate on 2, off
+    2 (`gap_ctl`, `gap_env`), on 3, then a rest."""
+    row = [(0x41,) + ENV] * 3 + [(0x40,) + ENV] * 3
+    return (REST_E + row * 6 + [(0x41,) + ENV] * 2 + [(gap_ctl,) + gap_env] * 2
+            + [(0x41,) + ENV] * 3 + REST_E)
+
+
+def test_rule3c_the_envelope_cut_on_the_gate_off_frames_is_still_a_restrike():
+    # the original clears AD/SR while the gate is off, ours keeps them: one note
+    # on both sides, not two on the original and one on ours
+    cut = _strike(0x40, (0, 0))
+    kept = _strike(0x40, ENV)
+    r = _cmp(cut, kept)
+    assert (r["notes"], r["missing"], r["invented"], r["instr"]) == (7, 0, 0, 1.0)
+    # alone, with no counterpart to agree with, the original keeps its two notes
+    assert len(H.notes(*H.frames(_env_trace(cut), 1), 0, 0.0, grid=6)) == 8
+
+
+def test_rule3c_a_cut_restrike_is_a_note_where_the_other_side_hard_restarts():
+    # ours writes the test bit in the gap: a note start on ours, so the
+    # original's cut is its own hard restart and both sides keep two notes
+    r = _cmp(_strike(0x40, (0, 0)), _strike(0x08, ENV))
+    assert (r["notes"], r["missing"], r["invented"]) == (8, 0, 0)
+
+
+def test_rule3c_only_the_zero_cut_counts_as_the_envelope_cut():
+    r = _cmp(_strike(0x40, (0x11, 0x22)), _strike(0x40, ENV))
+    assert (r["notes"], r["missing"]) == (8, 1)
+
+
 def test_rule3b_a_strike_on_the_row_grid_is_a_note():
     # on 2, off 2, on again: 4 frames apart. On a 4-frame grid that is the next
     # row's note; with no grid, or a 6-frame one, it is the same note struck again

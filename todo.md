@@ -23,6 +23,8 @@ Keep items actionable: what to run, and what makes it done.
 
   added: 2026-11-09
 
+  **DONE (v0.5.658, d832928, 2026-11-10):** fix2.patch adopted -- regrid_phase, sfx_drum and sfx_drum_stage on IK_plus; wave .654 -> .839, gate .577 -> .998, instr .353 -> .849, aud .872 -> .907.
+
 - **Rebuild `build/instrmap`.** The dumps on disk are stale against HEAD:
   `build/instrmap/*.md` has mtime `2026-08-23 14:03`, while `428ca07` — which
   enables `--rest-envelope-silence` for ACE_II, Thundercats, Shockway_Rider,
@@ -232,6 +234,25 @@ Keep items actionable: what to run, and what makes it done.
   `[subagent]` for the pulse census and the hold refutation; `[main]` for any
   emitter change.
 
+  **Amended 2026-11-10 from the gate column pass (was the "5 Title Tunes: amend" entry):**
+  From the gate column:
+
+  **Gate M9: amend "5 Title Tunes fidelity" -- its gate 75% is one uniform
+  gate-rise-one-frame-early, and `hard_restart_frames` 4 does not move it.**
+  Not a new defect: the open entry already says "one frame of surplus ringing
+  per release, and `max_hard_restart` has SATURATED it". Measured now at
+  v0.5.655: all 2807 gate-off runs pair as `o4>u3 s+0 e-1` (the original's gap
+  is 4 frames, ours 3, starting together, ours rising a frame early), 86% of
+  the miss frames are tone-waveform ring (`40>41` 73%, `10>11` 14%), only 14% is
+  the `$09` byte (so this is not M3), and `hard_restart_frames` 4 in a copy of
+  the preset leaves gate at 75%. Evidence:
+  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M9, `diag/5_Title_Tunes.*`,
+  `ab/5tt_hr4.out`. Done when that entry carries these three figures and the
+  `gplay.c:334` arithmetic for this song's rows, or states the measured
+  ceiling in one line. `[main]` (a docs edit).
+
+
+  The instr finding on this song (the attack frame carrying the previous note's pitch) is its own entry under "Sub-99% mechanisms".
 - **DONE (v0.5.604, 2026-10-25): the full suite runs in ~14 minutes.**
   `python -m pytest tests/ -n 12 --dist worksteal` (from `python/`, needs
   `pytest-xdist`, installed 3.6.1) took 834.89 s on a quiet machine against
@@ -396,6 +417,8 @@ Keep items actionable: what to run, and what makes it done.
 
   added: 2026-10-30
 
+  **DONE (closed record abpage-song-pages-wider):** song pages 93rem, index 96rem, pinned by a test.
+
 - **Nineteen: emit the hi-hat's per-frame band-pass toggle.** The original
   player's hat code at `$94DD` writes cutoff `$60` and mode `$2F` (band-pass)
   on each hat frame, then low-pass on the next. That makes 66 band/low pairs
@@ -415,6 +438,8 @@ Keep items actionable: what to run, and what makes it done.
   phase also counts as done. `[subagent]`.
 
   added: 2026-11-08
+
+  **DONE (v0.5.656, 22f20e4):** sfx_drum_bandpass on for Nineteen; aud .9082 -> .9168.
 
 - **Corpus: lift the listening index's sub-99% columns.** The user pointed at
   `build/listen/index.html` (2026-11-08): plenty of its melody, gate, wave,
@@ -670,29 +695,7 @@ Each entry below came out of the five column passes the user asked for on 2026-1
 
   added: 2026-11-08
 
-- **5 Title Tunes: amend the open entry with the gate and instr findings.** Merged from the gate, instr column passes.
-
-  From the gate column:
-
-  **Gate M9: amend "5 Title Tunes fidelity" -- its gate 75% is one uniform
-  gate-rise-one-frame-early, and `hard_restart_frames` 4 does not move it.**
-  Not a new defect: the open entry already says "one frame of surplus ringing
-  per release, and `max_hard_restart` has SATURATED it". Measured now at
-  v0.5.655: all 2807 gate-off runs pair as `o4>u3 s+0 e-1` (the original's gap
-  is 4 frames, ours 3, starting together, ours rising a frame early), 86% of
-  the miss frames are tone-waveform ring (`40>41` 73%, `10>11` 14%), only 14% is
-  the `$09` byte (so this is not M3), and `hard_restart_frames` 4 in a copy of
-  the preset leaves gate at 75%. Evidence:
-  `C:/t/corpus-gate-column-sub99-mechanisms/plan.md` M9, `diag/5_Title_Tunes.*`,
-  `ab/5tt_hr4.out`. Done when that entry carries these three figures and the
-  `gplay.c:334` arithmetic for this song's rows, or states the measured
-  ceiling in one line. `[main]` (a docs edit).
-
-  added: 2026-11-08
-
-  From the instr column:
-
-  **Instr: the attack frame carries the previous note's pitch on 5 Title
+- **Instr: the attack frame carries the previous note's pitch on 5 Title
   Tunes (13.6% instr).** At the gate-rise frame ours still holds the old
   note's frequency (`2714` where the original has `49b8`) and the new
   frequency lands one frame later: 2370 of the 2370 pitch-different notes,
@@ -710,9 +713,7 @@ Each entry below came out of the five column passes the user asked for on 2026-1
   finding that the first wavetable step cannot carry the note's pitch also
   counts. `[subagent]`.
 
-  added: 2026-11-08
-
-  added: 2026-11-08
+  added: 2026-11-08 (split out of the retired "5 Title Tunes: amend" entry, 2026-11-10)
 
 - **Gate and instr: attack placement scatters and drifts in phase (Wiz worst).** Merged from the gate, instr column passes.
 
@@ -1411,6 +1412,8 @@ Each entry below came out of the five column passes the user asked for on 2026-1
   `[subagent]`.
 
   added: 2026-11-08
+
+  **DONE (v0.5.658, d832928):** the tick lands on the original's frame on 99.9% of voice-2 hits; instr .353 -> .849.
 
 - **Instr: the original's octave arpeggio inside the note is missing or out of
   phase in ours (7 songs, Radio_ACE 38.3% worst).** Radio_ACE voice 2 original

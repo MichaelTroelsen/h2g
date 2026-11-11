@@ -651,7 +651,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 # sustain rule cleared it (`tick`): the player masks the gate
                 # whatever the sustain. The gate lasts the note's first frame
                 # and the noise tick, the length `_drum_entries` holds.
-                gate_frames=(1 + _noise_tick_frames(sid, det)
+                gate_frames=((det.drum_first_unit.get(i + 1 + lead)
+                              or 1 + _noise_tick_frames(sid, det))
                              if det.drum_gate_off and (drum or tick)
                              else None),
                 own_note=own_note,

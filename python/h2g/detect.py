@@ -261,6 +261,10 @@ class Detection:
     # when the option is on and the player has such records, and are empty
     # otherwise -- which is what keeps every other conversion byte-identical.
     rest_wave_exempt: frozenset = frozenset()
+    # Records the interleaved `$FD nn` players do not add the orderlist
+    # transpose to (flag byte bit 0; see transpose_exempt.py). Set by
+    # `convert`, empty on every other file.
+    transpose_exempt: frozenset = frozenset()
     rest_entry_records: Dict[int, int] = field(default_factory=dict)
     # `convert(drum_gate_off=...)`, carried here so the wavetable emitter can
     # read it without threading a parameter through every layout call.
@@ -269,6 +273,12 @@ class Detection:
     # `convert(drum_sustain_gate_off=...)`, the same carriage: a sustaining
     # drum record keeps the drum shape (gate-off and fall). False by default.
     drum_sustain_gate_off: bool = False
+    # `{Goattracker instrument: frames its drum notes hold the gate}` for the
+    # records the bit-$02 alternation emitter writes under `drum_gate_off`
+    # (`goatwriter.drum_unit.drum_first_units`), set by `convert` just before
+    # the build. Empty by default and for every player without an outer gate,
+    # which keeps those conversions byte-identical.
+    drum_first_unit: Dict[int, int] = field(default_factory=dict)
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform
@@ -422,6 +432,12 @@ class Detection:
     # (`BIT status / BVS`), branching past the operand read AND the note read
     # -- so a $C0-$FE status byte consumes only itself. See STATUS_BIT6_SHAPE.
     status_bit6: bool = False
+    # True when the fetch tests `status & $60 == $60` BEFORE the bit-6 test
+    # (`AND #$60 / CMP #$60 / BNE / JMP <advance>`): such an event is a pure
+    # duration extension -- it reloads the counter, leaves the voice's wave,
+    # note and gate alone, and (bit 5 set) never closes the gate at its end.
+    # Only Delta carries the shape in the corpus. See STATUS_CONTINUE_SHAPE.
+    status_continue: bool = False
     # ...and whether the branch it takes silences the voice *itself* rather
     # than leaving it to the ordinary end-of-note path. 21 of the 61 files
     # with the shape do. Read and logged; **not** a gate on anything, because
@@ -2262,6 +2278,11 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Zero-wait event.........: skips the note-end gate-off "
             "(ties into the next note)")
 
+    det.status_continue = search_file(data, STATUS_CONTINUE_SHAPE) >= 0
+    if det.status_continue:
+        log("Pattern status $60.....: counter-only continue event "
+            "(AND #$60 / CMP #$60 tested before the bit-6 rest)")
+
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
         det.rest_silence_kind = _rest_silence_kind(data)
@@ -4083,6 +4104,21 @@ def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
 # shape, and thirteen more spell it otherwise (`_status_bit6_bvs`); the rest
 # (the digi and cmdtable engines among them) fetch differently and are not
 # touched by the flag this gates.
+# Delta $BEC2-$BED0: the status byte's low five bits become the counter, and
+# BEFORE the bit-6 test the fetch asks whether bits 6 AND 5 are both set:
+#
+#     BEC2  29 1F     AND #$1F / STA counter,X
+#     BEC7  AD 04 C3  LDA status
+#     BECA  29 60     AND #$60
+#     BECC  C9 60     CMP #$60
+#     BECE  D0 03     BNE +3
+#     BED0  4C 74 BF  JMP $BF74      ; advance the pattern cursor, nothing else
+#
+# $BF74 skips the operand read, the note read, the instrument load and the
+# waveform write; the gate mask was reloaded to $FF at $BEB7 and the bit-6
+# `DEC` that would close it ($BF1B) is never reached. Corpus census at v0.5.660
+# (search_file over the 95 Hubbard files): Delta only.
+STATUS_CONTINUE_SHAPE = "29 1F 9D ?? ?? AD ?? ?? 29 60 C9 60 D0 ?? 4C ?? ??"
 STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
 
 

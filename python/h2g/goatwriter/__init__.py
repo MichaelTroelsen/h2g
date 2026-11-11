@@ -89,6 +89,8 @@ from .hard_restart import (SINGLE_ROW_HARD_RESTART_TICKS,  # noqa: F401
 from .instruments import (_build_header, _field_bytes, _instruments_used,
                           _padded_name_bytes, gate_off_firstwave,
                           named_testbit_firstwave, record_envelope,
+                          adopter_firstwave, park_free_running,
+                          _PLAIN_ZERO_WAVE_BLOCK,
                           _table_length_byte, _write_instruments)  # noqa: F401
 from .appending import (append_song, _latched_after, _parse_song,
                         _pattern_plays, _pin_start_instruments, _place_region,
@@ -430,3 +432,5 @@ from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
                     _TIE_BLOCK_KINDS, _block_residue_of,
                     _tie_block_source, _tie_blocks_wanted,
                     _tie_phase_verdicts)  # noqa: F401
+from .drum_unit import (clock_cells, drum_first_units,  # noqa: F401
+                        fetch_frames)

@@ -1,31 +1,33 @@
 {
-  "max_open": 60,
-  "max_opened_per_record": 1,
-  "admit_re": "(\\d*\\.\\d+|\\d+)\\s*(->|→)\\s*(\\d*\\.\\d+|\\d+)",
-  "chore_re": "^(\\[\\w+\\]\\s*)?(census|audit|optional|count |list every|record in|add a docs|docs/|correct the|update the|re-?(measure|take|check|grade|run)|check (whether|why)|measure (whether|how)|decide whether|pin |promote |fix the syntaxwarning|after (the )?(merge|merging|sibling))",
-  "hold_re": "ON HOLD|DIGI file|python/hold\\.py",
-  "listen_re": "listen|verdict|by ear|audible|sign-off",
-  "listen_task_id": "listen-current-builds-2026-10",
-  "keep_ids": [
-    "fbs-queue-holds-and-new-keys",
-    "hand-adopt-named-firstwave-on-the-s2",
-    "land-four-adoptions-v0-5-653",
-    "monty-voice-2-bend-deficit-mid-tune",
-    "corpus-gate-column-sub99-mechanisms",
-    "corpus-wave-column-sub99-mechanisms",
-    "corpus-hold-column-sub99-mechanisms",
-    "corpus-melody-column-sub99-mechanisms",
-    "corpus-instr-column-sub99-mechanisms",
-    "corpus-sub99-merge-mechanisms-into-todo",
-    "ik-plus-sub99-priority"
-  ],
-  "cycle": {
-    "auto_adopt": {
-      "refuse_re": "measured constant|tuned|empirical|clamp|not derived",
-      "max_moved_files": 12
-    },
-    "land": "python/land.py",
-    "commit": true,
-    "push": true
-  }
+ "max_open": 60,
+ "max_opened_per_record": 1,
+ "admit_re": "(\\d*\\.\\d+|\\d+)\\s*(->|→)\\s*(\\d*\\.\\d+|\\d+)",
+ "chore_re": "^(\\[\\w+\\]\\s*)?(census|audit|optional|count |list every|record in|add a docs|docs/|correct the|update the|re-?(measure|take|check|grade|run)|check (whether|why)|measure (whether|how)|decide whether|pin |promote |fix the syntaxwarning|after (the )?(merge|merging|sibling))",
+ "hold_re": "ON HOLD|DIGI file|python/hold\\.py",
+ "listen_re": "listen|verdict|by ear|audible|sign-off",
+ "listen_task_id": "listen-current-builds-2026-10",
+ "keep_ids": [
+  "fbs-queue-holds-and-new-keys",
+  "hand-adopt-named-firstwave-on-the-s2",
+  "land-four-adoptions-v0-5-653",
+  "monty-voice-2-bend-deficit-mid-tune",
+  "corpus-gate-column-sub99-mechanisms",
+  "corpus-wave-column-sub99-mechanisms",
+  "corpus-hold-column-sub99-mechanisms",
+  "corpus-melody-column-sub99-mechanisms",
+  "corpus-instr-column-sub99-mechanisms",
+  "corpus-sub99-merge-mechanisms-into-todo",
+  "ik-plus-sub99-priority",
+  "drum-tick-gate-off-where-original-gates",
+  "wave-attacks-1-4-frames-off"
+ ],
+ "cycle": {
+  "auto_adopt": {
+   "refuse_re": "measured constant|tuned|empirical|clamp|not derived",
+   "max_moved_files": 12
+  },
+  "land": "python/land.py",
+  "commit": true,
+  "push": true
+ }
 }

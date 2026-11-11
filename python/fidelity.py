@@ -4718,7 +4718,18 @@ def sound_note_runs(voices: list[Voice], nframes: int) -> dict:
     reduction, not about the conversion, and `classify_hold` calls it `gap`.
     """
     out: dict = {}
-    for v in voices:
+    for _, _, key, note in _sound_notes(voices, nframes):
+        out.setdefault(key, []).append(note)
+    return out
+
+
+def _sound_notes(voices: list[Voice], nframes: int):
+    """`(voice, attack, adsr key, (held, slot, total))` for every whole note.
+
+    The enumeration `sound_note_runs` groups by key, split out so
+    `hold_populations` can read the same notes by attack frame instead.
+    """
+    for vi, v in enumerate(voices):
         wf = register_timeline(v.wf_events, nframes)
         adsr = register_timeline(v.adsr_events, nframes)
         attacks = sorted(a for a in v.attack_frames if 0 <= a < nframes)
@@ -4730,9 +4741,92 @@ def sound_note_runs(voices: list[Voice], nframes: int) -> dict:
             while a + held < stop and wf[a + held] & 0xF0:
                 held += 1
             total = sum(1 for k in range(stop - a) if wf[a + k] & 0xF0)
-            out.setdefault(adsr[min(a + 1, nframes - 1)],
-                           []).append((held, stop - a, total))
-    return out
+            yield (vi, a, adsr[min(a + 1, nframes - 1)],
+                   (held, stop - a, total))
+
+
+# How far apart, in frames, an original attack and ours may be and still be
+# the same note. Twelve is `sound_pair`'s reach in the column pass that found
+# the split key (Human_Race: every pair at lag 0 or -8, none beyond).
+SPLIT_PAIR_REACH = 12
+
+
+def hold_populations(orig: list[Voice], ours: list[Voice], nframes: int,
+                     ) -> list[tuple[int, int, list, list]]:
+    """`(their key, our key, their notes, our notes)` for every `hold` pair.
+
+    **A key that `--cut-release` splits is read whole.** `paired_keys` joins
+    by key, and `cut_release` rewrites the release nibble on our side only, so
+    one original instrument can land on two of our keys: Human_Race `$0A09`
+    has 509 notes, ours keeps `$0A09` on 92 and `$0A00` on 417, and the exact
+    pair compared 509 notes with the 92 -- a mode over a fifth of the
+    instrument. Thrust `$0FFF` (165 notes; ours 20 under `$0FFF`, 101 under
+    `$0FF0`) is the same shape. Las Vegas `$0A0C` has no note of ours under
+    its own key at all and the masked fallback hands it the whole `$0A0x`
+    family.
+
+    So for a pair that is split -- an exact pair on which ours keeps fewer
+    than half the notes the original has (`2 * ours < theirs`) while the rest
+    of them strike under a sibling of our key -- our population becomes **the
+    notes of ours that strike where its original notes do**: same voice,
+    nearest attack within `SPLIT_PAIR_REACH`, one of ours per original note,
+    restricted to keys in the original key's masked family. Every other pair
+    keeps `paired_keys`' population untouched, so a file with no split key
+    reads exactly as before.
+
+    **The short count is the trigger, and a sibling key alone is not.** A
+    first draft re-read every pair that had any sibling, or that came from the
+    masked fallback; on a corpus A/B that flipped `match` to `slot` on eight
+    instruments of seven files (Commando `$0909`, Confuzion, Action Biker
+    `$0739`, One Man and His Droid `$077F`/`$088F`, ...). Where the exact pair
+    already holds the original's whole population, a nearest-attack join over
+    dense notes can pair a note with its neighbour's sibling key, and the
+    subset it keeps is no better a population than the one it replaced.
+    A masked-fallback pair (Las Vegas `$0A0C`) is left as `paired_keys` has
+    it: its verdict did not move under either reading.
+    """
+    a = sound_note_runs(orig, nframes)
+    b = sound_note_runs(ours, nframes)
+    pairs = paired_keys(a, b)
+    out = [[ka, kb, a[ka], b[kb]] for ka, kb in pairs]
+    if not out:
+        return [tuple(r) for r in out]
+
+    ours_by_voice: dict[int, list] = {}
+    for vi, at, key, note in _sound_notes(ours, nframes):
+        ours_by_voice.setdefault(vi, []).append((at, key, note))
+    wanted = {ka for ka, _ in pairs}
+    orig_by_key: dict[int, list] = {}
+    for vi, at, key, _ in _sound_notes(orig, nframes):
+        if key in wanted:
+            orig_by_key.setdefault(key, []).append((vi, at))
+
+    for rec in out:
+        ka, kb = rec[0], rec[1]
+        fam = instrument_key(ka)
+        used: set = set()
+        got: list = []                  # (our key, note), in attack order
+        for vi, at in orig_by_key.get(ka, []):
+            cands = ours_by_voice.get(vi, [])
+            lo = bisect.bisect_left(cands, (at - SPLIT_PAIR_REACH,))
+            best = None
+            for j in range(lo, len(cands)):
+                if cands[j][0] > at + SPLIT_PAIR_REACH:
+                    break
+                if (vi, j) in used:
+                    continue
+                if best is None or abs(cands[j][0] - at) < abs(
+                        cands[best][0] - at):
+                    best = j
+            if best is None:
+                continue
+            used.add((vi, best))
+            if instrument_key(cands[best][1]) == fam:
+                got.append((cands[best][1], cands[best][2]))
+        siblings = sum(1 for k, _ in got if k != kb)
+        if siblings and ka == kb and 2 * len(rec[3]) < len(rec[2]):
+            rec[3] = [n for _, n in got]
+    return [tuple(r) for r in out]
 
 
 def sound_runs(voices: list[Voice], nframes: int) -> dict:
@@ -4843,11 +4937,10 @@ def sound_run_agreement(orig: list[Voice], ours: list[Voice],
     waveform into `firstwave` instead of `$09`, takes Commando from 0 of 6
     instruments matching to 6 of 6 and the delta to 0.
     """
-    a = sound_runs(orig, nframes)
-    b = sound_runs(ours, nframes)
-    shared = paired_keys(a, b)
-    pairs = [(a[ka].most_common(1)[0][0], b[kb].most_common(1)[0][0])
-             for ka, kb in shared]
+    shared = hold_populations(orig, ours, nframes)
+    pairs = [(Counter(h for h, *_ in on).most_common(1)[0][0],
+              Counter(h for h, *_ in un).most_common(1)[0][0])
+             for _, _, on, un in shared]
     matched = sum(1 for x, y in pairs if x == y)
     deltas = Counter(y - x for x, y in pairs)
     return {
@@ -4942,18 +5035,16 @@ def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
         return (h, Counter(s for s, _ in same).most_common(1)[0][0],
                 Counter(t for _, t in same).most_common(1)[0][0])
 
-    a = sound_note_runs(orig, nframes)
-    b = sound_note_runs(ours, nframes)
     out = []
-    for adsr, ours_key in paired_keys(a, b):
-        oh, os_, ot = modal(a[adsr])
-        uh, us, ut = modal(b[ours_key])
+    for adsr, ours_key, on, un in hold_populations(orig, ours, nframes):
+        oh, os_, ot = modal(on)
+        uh, us, ut = modal(un)
         rec = {"adsr": adsr, "orig_held": oh, "our_held": uh,
                "delta": uh - oh, "orig_slot": os_, "our_slot": us,
                "slot_delta": us - os_,
                "orig_total": ot, "our_total": ut,
-               "orig_notes": len(a[adsr]),
-               "our_notes": len(b[ours_key])}
+               "orig_notes": len(on),
+               "our_notes": len(un)}
         rec["kind"] = classify_hold(rec["delta"], rec["slot_delta"],
                                     rec["orig_notes"], rec["our_notes"],
                                     (oh, ot), (uh, ut))
@@ -7326,7 +7417,16 @@ DIMENSIONS = (
               "call is a quarter-frame at `-S4`. The -1 it reads on every file "
               "is the `$09` firstwave frame sitting below $10 and breaking the "
               "run, not a short note; `gate` counts that same frame's gate bit "
-              "as a surplus, which is why the two report opposite signs"),
+              "as a surplus, which is why the two report opposite signs. "
+              "**`(ceiling)` marks a fetch-only song** -- every instrument it "
+              "misses is `hold_census`'s `fetch` kind, so the figure is the "
+              "target player's own bound (`player.s:1090-1098`: `gatetimer & "
+              "$3f` calls early, a call a frame at `-S1`), not a note-length "
+              "defect, and `holdnf` is the figure graded; the songs are "
+              "listed under *Fetch-only songs* below the table. An "
+              "instrument `--cut-release` splits across two of our keys is "
+              "read whole: ours is the notes that strike where its original "
+              "notes do (`hold_populations`), not the half that kept the key"),
     # `hold` with the fetch frame forgiven. `hold` is left exactly as it was
     # (it is a `fidelity_better` acceptance term and every quoted figure
     # stays comparable); this one reads `hold_census`'s kinds, so it can
@@ -8870,6 +8970,45 @@ def _fmt_pct(x) -> str:
     return "-" if x is None else f"{100 * x:.0f}%"
 
 
+def fetch_only(row: dict) -> bool:
+    """True when every instrument `hold` misses on this row is the next-note
+    fetch frame -- the row's `hold` is then the target player's ceiling, not a
+    note-length reading, and `holdnf` is the figure to grade.
+
+    Read from `holdnf` and the fetch count, the two scalars every run records
+    (a run without `--hold-census` carries no per-instrument census, and the
+    mark must not depend on that flag): `holdnf` counts `match` plus `fetch`,
+    so it reads exactly 1.0 only when no instrument is `slot`, `short`, `gap`
+    or any other kind, and a fetch count above 0 says at least one was
+    `fetch`. One other kind anywhere and the song is NOT fetch-only. Equal to
+    the census reading on all 99 rows of the v0.5.659 artefact.
+    """
+    return (row.get("sound_run_agreement_nofetch") == 1.0
+            and (row.get("sound_run_fetch") or 0) > 0)
+
+
+def _fmt_hold(row: dict) -> str:
+    """The `hold` cell: the percentage, plus `(ceiling)` on a fetch-only row.
+
+    Only the printed cell changes. `sound_run_agreement` itself is an
+    acceptance term of `fidelity_better` and is left exactly as measured.
+    """
+    cell = _fmt_pct(row.get("sound_run_agreement"))
+    v = row.get("sound_run_agreement")
+    if v is not None and v < 1.0 and fetch_only(row):
+        cell += " (ceiling)"
+    return cell
+
+
+def fetch_only_files(rows: list[dict]) -> list[dict]:
+    """The measured rows `_fmt_hold` marks, in file order."""
+    return sorted((r for r in rows
+                   if r.get("status") in ("measured", "silent")
+                   and r.get("sound_run_agreement") is not None
+                   and r["sound_run_agreement"] < 1.0 and fetch_only(r)),
+                  key=lambda r: r["file"].lower())
+
+
 def _fmt_ratio(x) -> str:
     return "-" if x is None else f"{x:.2f}"
 
@@ -9443,7 +9582,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('onset_timing'))} | "
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
-            f"{_fmt_pct(r.get('sound_run_agreement'))} | "
+            f"{_fmt_hold(r)} | "
             f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
             f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('gate_nofetch'))} | "
@@ -9461,6 +9600,34 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('ctrl'))} | "
             f"{_fmt_pct(r.get('res'))} | {_fmt_pct(r.get('route'))} | "
             f"{_fmt_rate(r)} | {status} |")
+
+    fo = fetch_only_files(rows)
+    if fo:
+        out += [
+            "",
+            "## Fetch-only songs: `hold` is a ceiling, graded on `holdnf`",
+            "",
+            f"**{len(fo)}** file(s) read `hold` below 100% and every "
+            "instrument they miss is `hold_census`'s `fetch` kind -- one "
+            "frame short in an unchanged slot, the next-note fetch frame. "
+            "That is the target player's bound (`gatetimer & $3f` calls "
+            "early, `player.s:1090-1098`; at `-S1` a call is a frame; "
+            "`_hard_restart_ticks` never returns 0), priced in "
+            "`closed.jsonl`, not a converter defect. Their `hold` cell reads "
+            "`(ceiling)` and `holdnf` is the figure to grade; one `slot`, "
+            "`short` or other kind on any instrument takes a song out of "
+            "this list. The only lever is `--no-test-restart` per song, "
+            "which the preset search already prices.",
+            "",
+            "| File | hold | holdnf | instruments `fetch` / `match` |",
+            "|---|---:|---:|---|",
+        ]
+        for r in fo:
+            n, f = r.get("sound_run_instruments") or 0, r["sound_run_fetch"]
+            out.append(f"| {r['file']} | "
+                       f"{_fmt_pct(r.get('sound_run_agreement'))} | "
+                       f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
+                       f"{f} / {n - f} |")
 
     if measured:
         n = len(measured)

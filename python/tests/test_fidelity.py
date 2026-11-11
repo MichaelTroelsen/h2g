@@ -5889,3 +5889,170 @@ def test_adsrnf_is_registered_beside_adsr_and_says_what_it_is_blind_to():
     assert "level model" in d.of
     # and `adsr` itself is untouched: still keyed on its own key
     assert next(x for x in fidelity.DIMENSIONS if x.column == "adsr").key == "adsr"
+
+
+# --- hold: a fetch-only song's figure is the target player's ceiling ---------
+#
+# Chimera, Commando_2, Gerry_the_Germ, Hunter_Patrol, Last_V8_C128_version,
+# Lightforce, Mozart, Zoids, Rasputin, Bangkok_Knights and 5_Title_Tunes read
+# `hold` below 99% with every missed instrument the next-note fetch frame
+# (`holdnf` 100% on all). The report marks the `hold` cell `(ceiling)` and
+# lists them; the measured value is untouched.
+
+def _hold_row(name, kinds, hold, holdnf):
+    r = _row(name, "measured", 1.0, 50, 50)
+    # The scalars `sound_run_agreement_nofetch` records: match + fetch over all.
+    ok = sum(k in ("match", "fetch") for k in kinds)
+    assert ok / len(kinds) == holdnf
+    r.update(sound_run_agreement=hold, sound_run_agreement_nofetch=holdnf,
+             sound_run_fetch=kinds.count("fetch"),
+             sound_run_instruments=len(kinds),
+             hold_census=[{"kind": k} for k in kinds])
+    return r
+
+
+def _hold_cell(text, name):
+    header = next(l for l in text.splitlines() if l.startswith("| File | orig"))
+    cols = [c.strip() for c in header.strip().strip("|").split("|")]
+    line = next(l for l in text.splitlines() if l.startswith(f"| {name} |"))
+    return [c.strip() for c in line.strip().strip("|").split("|")][
+        cols.index("hold")]
+
+
+def test_fetch_only_is_every_missed_instrument_being_fetch():
+    assert fidelity.fetch_only(_hold_row("A.sid", ["fetch"] * 3, 0.0, 1.0))
+    # Rasputin / Bangkok_Knights / 5_Title_Tunes: matches alongside the fetches.
+    assert fidelity.fetch_only(
+        _hold_row("B.sid", ["fetch"] * 9 + ["match"], 0.1, 1.0))
+    # One slot anywhere takes the song out.
+    assert not fidelity.fetch_only(
+        _hold_row("C.sid", ["fetch"] * 3 + ["slot"], 0.0, 0.75))
+    # No fetch at all is not "fetch-only" -- it is a clean song.
+    assert not fidelity.fetch_only(_hold_row("D.sid", ["match"] * 3, 1.0, 1.0))
+    # Marked without the census too: a run without `--hold-census` carries
+    # only the scalars, and the mark must not depend on that flag.
+    bare = _hold_row("F.sid", ["fetch"] * 3, 0.0, 1.0)
+    del bare["hold_census"]
+    assert fidelity.fetch_only(bare)
+    # A row with no fetch count (older JSON) is never marked.
+    assert not fidelity.fetch_only(_row("E.sid", "measured", 1.0, 5, 5))
+
+
+def test_the_report_marks_a_fetch_only_hold_cell_and_only_that():
+    rows = [_hold_row("Chimera.sid", ["fetch"] * 9, 0.0, 1.0),
+            _hold_row("Mixed.sid", ["fetch"] * 3 + ["slot"], 0.0, 0.75),
+            _hold_row("Clean.sid", ["match"] * 4, 1.0, 1.0)]
+    text = fidelity.report(rows, _Args())
+    assert _hold_cell(text, "Chimera.sid") == "0% (ceiling)"
+    assert _hold_cell(text, "Mixed.sid") == "0%"
+    assert _hold_cell(text, "Clean.sid") == "100%"
+    section = text.split("## Fetch-only songs", 1)[1].split("\n## ", 1)[0]
+    assert "| Chimera.sid | 0% | 100% | 9 / 0 |" in section
+    assert "Mixed.sid" not in section and "Clean.sid" not in section
+    # The measured value the acceptance terms read is not rewritten.
+    assert rows[0]["sound_run_agreement"] == 0.0
+
+
+def test_no_fetch_only_song_means_no_section():
+    text = fidelity.report(
+        [_hold_row("Clean.sid", ["match"] * 2, 1.0, 1.0)], _Args())
+    assert "## Fetch-only songs" not in text
+    assert "(ceiling)" not in text.split("## What this run compared")[0]
+
+
+# --- `hold` reads a key that --cut-release splits whole ----------------------
+#
+# Human_Race $0A09 has 509 notes; ours keeps $0A09 on 92 and carries $0A00
+# (release zeroed) on 417. `paired_keys` joins by key, so the exact pair
+# compared the original's 509 with a fifth of them. Thrust $0FFF is the same
+# shape (165 against 20 + 101) and Las Vegas $0A0C has no note of ours under
+# its own key at all.
+
+
+def _keyed_voice(slot, notes):
+    """One voice, one note per `slot` frames: `notes` is `[(adsr, held)]`.
+    A closing attack repeats the last note's key so every listed note is
+    whole (the window drops a note whose slot reaches its end)."""
+    wf, ad, at = [], [], []
+    for i, (key, held) in enumerate(notes + [notes[-1]]):
+        a = i * slot
+        at.append(a)
+        wf.append((a, 0x11))
+        ad.append((a, key))
+        if held < slot:
+            wf.append((a + held, 0x09))
+    return fidelity.Voice(wf_events=wf, adsr_events=ad, attack_frames=at)
+
+
+def _split_pair():
+    """Ten original notes under K, all eight frames. Ours strikes them all
+    on the same frames, but `cut_release` has put six under K & 0xFFF0: the
+    four left under K are short, so the exact pairing reads their mode."""
+    k = 0x0A09
+    orig = [_keyed_voice(8, [(k, 8)] * 10), fidelity.Voice(), fidelity.Voice()]
+    ours = [_keyed_voice(8, [(k, 6)] * 4 + [(k & 0xFFF0, 8)] * 6),
+            fidelity.Voice(), fidelity.Voice()]
+    return k, orig, ours
+
+
+def test_hold_reads_a_cut_release_split_key_whole():
+    k, orig, ours = _split_pair()
+    # the premise: the exact pairing sees only the four short notes
+    a = fidelity.sound_note_runs(orig, 200)
+    b = fidelity.sound_note_runs(ours, 200)
+    assert fidelity.paired_keys(a, b) == [(k, k)]
+    assert Counter(h for h, *_ in b[k]).most_common(1) == [(6, 4)]
+    got = fidelity.sound_run_agreement(orig, ours, 200)
+    assert got["sound_run_instruments"] == 1
+    assert got["sound_run_matched"] == 1          # the exact pairing reads 0
+    assert got["sound_run_agreement"] == 1.0
+    (rec,) = fidelity.hold_census(orig, ours, 200)
+    assert (rec["kind"], rec["orig_notes"], rec["our_notes"]) == (
+        "match", 10, 10)
+
+
+def test_hold_leaves_a_masked_fallback_pair_alone():
+    """Las Vegas shape: ours has no note under `$0A0C`, so `paired_keys`
+    falls back to the masked `$0A00`, whose population includes a voice the
+    original never plays that instrument on. Read by attack that pair's
+    verdict did not move on the corpus, so it keeps `paired_keys`' notes."""
+    k = 0x0A0C
+    orig = [_keyed_voice(8, [(k, 8)] * 10), fidelity.Voice(), fidelity.Voice()]
+    ours = [_keyed_voice(8, [(0x0A00, 8)] * 10),
+            _keyed_voice(8, [(0x0A00, 5)] * 12), fidelity.Voice()]
+    a = fidelity.sound_note_runs(orig, 200)
+    b = fidelity.sound_note_runs(ours, 200)
+    assert fidelity.paired_keys(a, b) == [(k, 0x0A00)]
+    ((_, _, _, un),) = fidelity.hold_populations(orig, ours, 200)
+    assert un == b[0x0A00] and len(un) == 22
+    assert fidelity.sound_run_agreement(orig, ours, 200)["sound_run_matched"] == 0
+
+
+def test_hold_a_stray_sibling_does_not_re_read_a_whole_pair():
+    """Ours keeps eight of the original's ten notes under K and strikes two
+    under K & 0xFFF0. That is not a split key -- the exact pair already holds
+    most of the population -- and re-reading it by attack is what flipped
+    `match` to `slot` on eight corpus instruments. Untouched, and still
+    `fetch` (one frame short), not whatever the two strays would make it."""
+    k = 0x0A09
+    orig = [_keyed_voice(8, [(k, 8)] * 10), fidelity.Voice(), fidelity.Voice()]
+    ours = [_keyed_voice(8, [(k, 7)] * 8 + [(k & 0xFFF0, 8)] * 2),
+            fidelity.Voice(), fidelity.Voice()]
+    ((_, _, _, un),) = fidelity.hold_populations(orig, ours, 200)
+    assert un == fidelity.sound_note_runs(ours, 200)[k] and len(un) == 8
+    (rec,) = fidelity.hold_census(orig, ours, 200)
+    assert rec["kind"] == "fetch" and rec["our_notes"] == 8
+
+
+def test_hold_leaves_an_unsplit_key_alone():
+    """No sibling key and an exact pair: the population is `paired_keys`',
+    note for note, so a file with no split key reads as it always did."""
+    k = 0x0A09
+    orig = [_keyed_voice(8, [(k, 8)] * 6), fidelity.Voice(), fidelity.Voice()]
+    ours = [_keyed_voice(8, [(k, 7)] * 6), fidelity.Voice(), fidelity.Voice()]
+    ((ka, kb, on, un),) = fidelity.hold_populations(orig, ours, 200)
+    assert (ka, kb) == (k, k)
+    assert on == fidelity.sound_note_runs(orig, 200)[k]
+    assert un == fidelity.sound_note_runs(ours, 200)[k]
+    (rec,) = fidelity.hold_census(orig, ours, 200)
+    assert rec["kind"] == "fetch"

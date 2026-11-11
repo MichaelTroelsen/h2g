@@ -12,6 +12,7 @@ from .detect import Detection
 from .patterns import (CMD_SETPULSEPTR, CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
                        GT_KEYOFF, GT_LASTNOTE, GT_NO_NOTE,
                        GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
+                       GT_TRANSPOSE_UP,
                        MAX_PATTERNS, MAX_TRACK_LEN,
                        cmdtable_transposes, command_floor, decode_entry,
                        pattern_references, pattern_top_note)
@@ -2064,3 +2065,102 @@ def legalise_restarts(tracks: List[List[int]], log=None,
             log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's "
                 "$FE stop marker; restarted at 0 so the song can be relocated")
     return fixed
+
+
+def exempt_transpose_copies(sid: SidFile, det: Detection,
+                            tracks: List[List[int]], log=None,
+                            slides: bool = False, status_bit6: bool = False,
+                            instr_base: int = 2, first: int = 0,
+                            limit: int = 0) -> List[Tuple[int, int]]:
+    """Pattern copies for the notes the player does not transpose.
+
+    The `$FD nn` interleaved players add a voice's orderlist transpose to a
+    note only when the note's record has flag bit 0 clear
+    (`transpose_exempt`). Goattracker's transpose is per voice and applies to
+    every note, so a pattern that mixes the two kinds, reached under a
+    non-zero transpose, plays its exempt notes off by that transpose. Each
+    `(pattern, transpose)` pair of that kind gets a copy numbered `first`,
+    `first + 1`, ... whose exempt notes are lowered by the transpose (so the
+    orderlist's own addition brings them back to the raw pitch), and the
+    orderlist positions are rewritten in place in `tracks`.
+
+    The transpose in force is the orderlist's own byte, walked twice per
+    voice -- the second pass from the restart position with the first pass's
+    exit state, which wins where they differ (the loop plays longest) -- so
+    it is whatever Goattracker will add, including an unfoldable step's +14
+    clamp and a folded step's `mod 12`. A position that names a table entry
+    only is rewritten; an octave variant or other copy is left (its notes were
+    already moved for a reason this does not model), and counted.
+
+    Returns `(source entry, transpose)` in copy order. Empty when the player
+    has no exempt record.
+    """
+    exempt = det.transpose_exempt
+    if not exempt:
+        return []
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
+    has: Dict[int, bool] = {}
+
+    def mixed(entry: int) -> bool:
+        if entry not in has:
+            events = decode_entry(sid, det, entry, slides, status_bit6,
+                                  None, False, instr_base)
+            has[entry] = bool(events) and any(
+                GT_FIRSTNOTE <= events[k] <= GT_LASTNOTE
+                and events[k + 1] - instr_base in exempt
+                for k in range(0, len(events) - 3, 4))
+        return has[entry]
+
+    where: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+    skipped = 0
+    for tn, track in enumerate(tracks):
+        marker = len(track)
+        restart = None
+        for i, b in enumerate(track):
+            if b == GT_ORDER_RESTART:
+                marker = i
+                restart = track[i + 1] if i + 1 < len(track) else 0
+                break
+        state: Dict[int, int] = {}
+        cell = 0
+        passes = [0]
+        if restart is not None and restart < marker:
+            passes.append(restart)
+        for begin in passes:
+            # A transpose before the restart position was applied by pass
+            # one and is still standing in `cell`.
+            for i in range(begin, marker):
+                b = track[i]
+                if b >= floor:
+                    cell = b - GT_TRANSPOSE_UP
+                else:
+                    state[i] = cell
+        for i, t in state.items():
+            b = track[i]
+            if not t:
+                continue
+            if b > det.pattern_used:
+                skipped += 1
+                continue
+            if mixed(b):
+                where.setdefault((b, t), []).append((tn, i))
+    copies: List[Tuple[int, int]] = []
+    moved = refused = 0
+    for key in sorted(where):
+        if first + len(copies) >= limit:
+            refused += len(where[key])
+            continue
+        number = first + len(copies)
+        copies.append(key)
+        for tn, i in where[key]:
+            tracks[tn][i] = number
+            moved += 1
+    if log and (copies or refused or skipped):
+        log(f"Untransposed notes......: {len(copies)} pattern copy(ies) for "
+            f"{moved} orderlist position(s) under records "
+            + ", ".join(f"{r}" for r in sorted(exempt))
+            + (f"; {refused} position(s) kept the transposed notes, no "
+               "pattern number left" if refused else "")
+            + (f"; {skipped} position(s) name a variant or copy and were "
+               "left" if skipped else ""))
+    return copies

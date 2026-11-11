@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.661 — 2026-11-11
+
+- Adopt 8 clean-bar sub-99% patches: transpose exemption, Nemesis park, Delta continue, drum first unit, hold/heard harness fixes, magplay PAL
+
 ## 0.5.660 — 2026-11-10
 
 - cycle.jsonl records the v0.5.659 hand-finished landing

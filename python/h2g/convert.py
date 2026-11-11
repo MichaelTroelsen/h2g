@@ -7,6 +7,7 @@ from typing import Callable, List, Optional
 from .detect import (Detection, PlayerView, detect, player_view,
                      rest_wave_rewrite_records, wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
+from .goatwriter import drum_unit as _gw_drum_unit
 from .goatwriter import note_passes as _gw_note_passes
 from .goatwriter import pulse as _gw_pulse_stair
 from .goatwriter import wave_eor as _gw_wave_eor
@@ -53,7 +54,9 @@ from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
 from .sidfile import SidFile, load_sid
 from .stored_wave import stored_wave_copies
+from .transpose_exempt import exempt_records
 from .tracks import (apply_initial_instruments, convert_tracks,
+                     exempt_transpose_copies,
                      ensure_playable_orderlists, fold_transposes,
                      silence_pre_instrument_notes,
                      instrument_row_calls, instrument_voices,
@@ -996,6 +999,17 @@ def convert(sid_path: str, log: Logger = print,
             exempt=exempt,
             first=first_pattern + len(variants) + len(wave_copies),
             limit=floor, origin=origin)
+    # The `$FD nn` players leave the notes of some records untransposed
+    # (transpose_exempt.py); a pattern copy per (pattern, transpose) lowers
+    # those notes so Goattracker's own addition brings them back. After the
+    # other copies, whose numbers it follows. Empty on every other file.
+    det.transpose_exempt = exempt_records(sid, det)
+    exempt_copies = exempt_transpose_copies(
+        sid, det, tracks, log, slides=slides, status_bit6=status_bit6,
+        instr_base=instr_base,
+        first=(det.pattern_used + 1 + len(variants) + len(wave_copies)
+               + len(rest_copies)),
+        limit=floor)
     want_event_rows = bool(pulse_phase and pulse and det.pulse_tri_hi >= 0)
     # `--rest-program-stop`: a bit-6 rest bypasses the wave-program
     # interpreter in the players that carry the branch, so it stops the
@@ -1032,6 +1046,7 @@ def convert(sid_path: str, log: Logger = print,
         instr_base=instr_base, tie=tie,
         wave_notes=wave_notes, wave_copies=wave_copies,
         rest_copies=rest_copies,
+        exempt_copies=exempt_copies,
         # The triangle walk's fetch rows (patterns.collect_pulse_phases'
         # `event_rows`). Unlike `free_rows` the request moves no byte -- the
         # dedup key is left alone -- so it is made wherever that walk can run.
@@ -1569,6 +1584,12 @@ def convert(sid_path: str, log: Logger = print,
             return _build_sng(tracks, new_patterns, gate_off, log, reserve)
 
     def _build_sng(tracks, new_patterns, gate_off, log, reserve):
+        # The frames each drum record's notes hold the gate (see
+        # `goatwriter.drum_unit`): read off the orderlists this build is
+        # given, so a rebuilt phased song sees its own.
+        det.drum_first_unit = (
+            _gw_drum_unit.drum_first_units(sid, det, tracks, new_patterns)
+            if drum_gate_off else {})
         return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                          speed_table=speed_table, effects=effects,
                          pulse=pulse, multiplier=multiplier,

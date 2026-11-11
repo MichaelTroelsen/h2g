@@ -78,7 +78,12 @@ def _compare_with_the_plain_build(sid, reference=None, **kw):
     recs = _records(plain)
     assert recs == _records(got)
     inside = {rec + k for rec in recs for k in (7, 8)}
-    assert {i for i, (a, b) in enumerate(zip(plain, got)) if a != b} <= inside
+    outside = {i for i, (a, b) in enumerate(zip(plain, got))
+               if a != b} - inside
+    # ... and the wavetable bytes `instruments.park_free_running` writes:
+    # every instrument is a gate-off adopter here, so a waveform-$00 record's
+    # plain block opens on $E0 (silent wave $00) instead of the no-op $00.
+    assert all((plain[i], got[i]) == (0x00, 0xE0) for i in outside),         sorted(outside)
     trimmed, kept_fallback, deep = 0, 0, 0
     for n, rec in enumerate(recs):
         gt_plain, gt_got = plain[rec + 7], got[rec + 7]

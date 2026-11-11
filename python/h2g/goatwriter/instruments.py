@@ -204,6 +204,91 @@ def named_testbit_firstwave(waveform: int) -> int:
     return fw if waveform & 0xF0 and fw < 0xFE else FIRSTWAVE_TESTBIT
 
 
+def adopter_firstwave(data, base: int, det: Detection, sfx_drum: bool,
+                      named_firstwave: bool) -> int:
+    """The firstwave byte of a `gate_off_firstwave_instruments` adopter's
+    record at `base` -- the one decision `_write_instruments` and
+    `park_free_running` must agree on."""
+    # `named_firstwave` keeps the test bit on the same gate-clear
+    # byte, so the frame is nameable and still resets the oscillator.
+    firstwave = (named_testbit_firstwave if named_firstwave
+                 else gate_off_firstwave)(data[base + 2])
+    if (sfx_drum and firstwave == FIRSTWAVE_FREERUN
+            and det.effect_bit80 == "sfx" and data[base + 7] & 0x80):
+        # **The drum-alone record's init call keeps the gate CLEAR
+        # too.** `gate_off_firstwave` returns `$01` for a record
+        # selecting no waveform (the free-running oscillator a
+        # neighbour may sync off), and `$01` is gate ON: the gate
+        # rises on the init call, a frame before the wavetable's
+        # lead entry writes the pitch, while the original opens gate
+        # and pitch on ONE frame and sounds the drum on the next
+        # (IK+ voice 2, ctl `01 81 01 00`, frames f..f+3). With the
+        # `$01` the drum lands at f+2, a frame late on every row.
+        # `$08` is gate clear and test bit set -- silent exactly as
+        # the original's `$00` is, and the oscillator is restarted,
+        # which matters only when a neighbour syncs or rings off it.
+        firstwave = FIRSTWAVE_DRUM_INIT
+    return firstwave
+
+
+# The plain five-entry block `_wavetable_entries` lays out for a record whose
+# waveform byte is $00 and that carries no effect: `[wave, 0, tail, FF, FF]`
+# with `tail = (wave & $FE) | 1` (gate alone, a delay of two calls).
+_PLAIN_ZERO_WAVE_BLOCK = [(0x00, 0x00), (0x01, 0x00), (0x01, 0x00),
+                          (0xFF, 0x00), (0xFF, 0x00)]
+
+
+def park_free_running(sid: SidFile, det: Detection, instr_used: int,
+                      wave_entries: List[tuple], wave_starts: List[int],
+                      lead: int, gate_off_firstwave_instruments: tuple,
+                      no_test_restart: bool = False,
+                      real_firstwave_instruments: tuple = (),
+                      sfx_drum: bool = False,
+                      named_firstwave: bool = False) -> List[int]:
+    """Park a waveform-$00 record's voice at `$00`, as the original does.
+
+    **`gate_off_firstwave` gives such a record the free-running `$01`
+    (`FIRSTWAVE_FREERUN`), and the plain block then writes no waveform at
+    all** (entry 0 is `$00`, "no change"), so the voice HOLDS `$01` for the
+    whole note: gate ON with no waveform selected. The original's record
+    writes `$00` -- gate clear, nothing selected, oscillator running --
+    and Nemesis_the_Warlock voice 0 (record 15, all-zero, the instrument
+    the subtune starts on) is parked there for 1130 frames: `gate` .593,
+    61% of its miss frames ours `$01` against the original's `$00`.
+
+    `$E0` is Goattracker's "silent waveform $00" (gplay.c:527). The packed
+    player writes it only when the song keeps wavetable delays
+    (greloc.c:1270-1271: `+$10` only with `!nowavedelay`; otherwise the byte
+    ships as a literal `$00`, "no change"), and the block this rewrites
+    carries two `$01` delays of its own, so for it the byte always lands --
+    and where it did not, the entry would be today's no-op. The firstwave
+    stays `$01`, not `$08`: the oscillator keeps running through the init
+    call (a neighbour that syncs or rings off it was Sanxion's gain), so
+    only that one init frame still reads gate ON.
+
+    Mutates `wave_entries` in place (the table is the caller's list) and
+    returns the 1-based entry numbers it rewrote.
+    """
+    data = sid.data
+    done: List[int] = []
+    for i in range(max(instr_used - lead, 0)):
+        gt_number = i + lead + 1
+        base = det.instr_start + i * det.instr_stride
+        if (no_test_restart or gt_number in real_firstwave_instruments
+                or gt_number not in gate_off_firstwave_instruments
+                or data[base + 2] != 0x00 or i + lead >= len(wave_starts)):
+            continue
+        if adopter_firstwave(data, base, det, sfx_drum,
+                             named_firstwave) != FIRSTWAVE_FREERUN:
+            continue
+        at = wave_starts[i + lead] - 1
+        if at < 0 or wave_entries[at:at + 5] != _PLAIN_ZERO_WAVE_BLOCK:
+            continue
+        wave_entries[at] = (_gw_constants.WAVE_SILENT_BASE, 0x00)
+        done.append(at + 1)
+    return done
+
+
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_used: int, pulse_starts: List[int],
                        sustain_exact: bool = False,
@@ -480,25 +565,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         if use_real_firstwave:
             firstwave = (data[base + 2] | 0x01) & 0xFF
         elif gt_number in gate_off_firstwave_instruments:
-            # `named_firstwave` keeps the test bit on the same gate-clear
-            # byte, so the frame is nameable and still resets the oscillator.
-            firstwave = (named_testbit_firstwave if named_firstwave
-                         else gate_off_firstwave)(data[base + 2])
-            if (sfx_drum and firstwave == FIRSTWAVE_FREERUN
-                    and det.effect_bit80 == "sfx" and data[base + 7] & 0x80):
-                # **The drum-alone record's init call keeps the gate CLEAR
-                # too.** `gate_off_firstwave` returns `$01` for a record
-                # selecting no waveform (the free-running oscillator a
-                # neighbour may sync off), and `$01` is gate ON: the gate
-                # rises on the init call, a frame before the wavetable's
-                # lead entry writes the pitch, while the original opens gate
-                # and pitch on ONE frame and sounds the drum on the next
-                # (IK+ voice 2, ctl `01 81 01 00`, frames f..f+3). With the
-                # `$01` the drum lands at f+2, a frame late on every row.
-                # `$08` is gate clear and test bit set -- silent exactly as
-                # the original's `$00` is, and the oscillator is restarted,
-                # which matters only when a neighbour syncs or rings off it.
-                firstwave = FIRSTWAVE_DRUM_INIT
+            firstwave = adopter_firstwave(data, base, det, sfx_drum,
+                                          named_firstwave)
             if gatetimer_trim and firstwave not in (FIRSTWAVE_TESTBIT,
                                                     FIRSTWAVE_FREERUN):
                 # `aligned_firstwave`: the init call is now one of the gate's

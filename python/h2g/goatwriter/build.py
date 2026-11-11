@@ -37,6 +37,7 @@ from .vibrato import (_classic_gate_refine, _free_gate_calls,
 from .wavetable import (_wavetable_layout, _write_wavetable)
 from .primitives import _record_row_calls
 from . import arpeggio as _gw_arpeggio
+from . import instruments as _gw_instruments
 from . import drum_fall as _gw_drum_fall
 from . import lfo_wave as _gw_lfo_wave
 from . import call_phase as _gw_call_phase
@@ -1638,6 +1639,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                     lead, no_test_restart,
                                     real_firstwave_instruments,
                                     duration_onset=vibrato_onset)
+    if gate_off_firstwave_instruments:
+        parked = _gw_instruments.park_free_running(
+            sid, det, instr_used, wave_entries, wave_starts, lead,
+            tuple(gate_off_firstwave_instruments), no_test_restart,
+            real_firstwave_instruments, sfx_drum, named_firstwave)
+        if parked and log:
+            log(f"Free-running park.....: {len(parked)} waveform-$00 "
+                f"record(s) write $E0 (wave $00) after the init call")
     instr_at = len(out)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,

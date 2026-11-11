@@ -733,7 +733,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        legato_bit7: bool = False,
                        top_rows: Optional[Dict[int, int]] = None,
                        event_span: Optional[List[tuple]] = None,
-                       wave_depth: Optional[Dict[int, int]] = None
+                       wave_depth: Optional[Dict[int, int]] = None,
+                       status_continue: bool = False
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -981,7 +982,18 @@ def _build_raw_pattern(data: bytes, addr: int,
         # condition reduces to `not no_note`, which bit 6 has already denied.
         # The low 5 bits still count -- the player stores the wait before the
         # BVS -- and the event emits its hold rows like any other no-note one.
-        if status_bit6 and no_note:
+        # **A `$60`-class status byte is NOT a rest in a player that tests
+        # `status & $60 == $60` before the bit-6 branch** (Delta $BECA, see
+        # detect.STATUS_CONTINUE_SHAPE): it only reloads the counter and
+        # advances the cursor. The voice keeps its note, its waveform and its
+        # open gate, and bit 5 keeps the gate open at the counter's end. Delta
+        # voice 0 plays `37 <note> 77` as one held note of two events; reading
+        # the `77` as a bit-6 rest closed the gate for its whole length
+        # (subtune 12: 17 runs of 32-122 gate-off frames, `gate` 85%).
+        continues = bool(status_continue and (b1 & 0x60) == 0x60)
+        if continues:
+            get_next = 0
+        elif status_bit6 and no_note:
             get_next = 0
             # ...and a bit-6 event is a **rest**: the voice is released for
             # its duration in every player with the shape. `KEYOFF` is the
@@ -1678,6 +1690,10 @@ def _build_raw_pattern(data: bytes, addr: int,
         pending_tie = tie and not no_note and not past_rest \
             and not gate_closes and (
                 bool(no_adsr) or (wait == 0 and gate_hold))
+        if continues:
+            # The gate mask was reloaded to $FF at the fetch and bit 5 skips
+            # the end-of-note close: the next note arrives on an open gate.
+            pending_tie = tie and not gate_closes
         ring_chain = ring_chain_next
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
@@ -2774,6 +2790,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             top_rows=top_rows)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
+                              status_continue=(status_bit6 and det.status_bit6
+                                               and det.status_continue),
                               instr_mask=_instrument_mask(det.instr_stride),
                               rest_instrument=rest_instrument,
                               rest_keyoff=rest_keyoff,
@@ -2876,6 +2894,20 @@ def pattern_top_note(events: List[int]) -> int:
     """Highest pitch in an event stream, or 0 if it sounds no note."""
     return max((events[k] for k in range(0, len(events), 4)
                 if GT_FIRSTNOTE <= events[k] <= GT_LASTNOTE), default=0)
+
+
+def lower_exempt_notes(events: List[int], exempt: frozenset, instr_base: int,
+                       transpose: int) -> List[int]:
+    """Copy of an event stream with the pitches of `exempt` records' notes
+    lowered by `transpose`, which the orderlist then adds back. A note the
+    shift would push out of the note range stays where it was."""
+    out = list(events)
+    for k in range(0, len(out) - 3, 4):
+        if (GT_FIRSTNOTE <= out[k] <= GT_LASTNOTE
+                and out[k + 1] - instr_base in exempt
+                and GT_FIRSTNOTE <= out[k] - transpose <= GT_LASTNOTE):
+            out[k] -= transpose
+    return out
 
 
 def shift_notes(events: List[int], semitones: int) -> List[int]:
@@ -3317,6 +3349,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      wave_notes: Optional[Dict[int, Dict[int, int]]] = None,
                      wave_copies: Optional[List[tuple]] = None,
                      rest_copies: Optional[List[tuple]] = None,
+                     exempt_copies: Optional[List[tuple]] = None,
                      event_rows: bool = False,
                      top_cols: Optional[dict] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
@@ -3380,6 +3413,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     MAX_PATTERNS**: its positions then play the source, the majority note --
     the pre-copy compromise, which costs a pitch, where the abort would cost
     the whole file.
+
+    `exempt_copies` is `tracks.exempt_transpose_copies`' result: `(source
+    entry, transpose)` copies numbered after the rest-state copies, each the
+    source decoded again with the notes of `det.transpose_exempt` records
+    lowered by `transpose` -- see `transpose_exempt.py`. A copy dropped at
+    MAX_PATTERNS plays the source, like the others.
 
     `event_rows` asks for `TrackIndex.event_rows`: per output pattern, the
     rows on which an event starts, as opposed to its hold rows. A variant
@@ -3538,6 +3577,38 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             log(f"*** PATTERN ${n:X} (WAVEFORM-STATE COPY OF ${src:X}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
+        raw_patterns.append(events)
+    # ...then the untransposed-note copies (`tracks.exempt_transpose_copies`):
+    # the source with the notes of the records the player does not transpose
+    # lowered by the transpose its positions sit under.
+    for src, transpose in (exempt_copies or ()):
+        n = len(raw_patterns)
+        copy_from[n] = src
+        ex = []
+        fr = []
+        ev = []
+        tr = {}
+        events = decode_entry(sid, det, src, slides, status_bit6, steps,
+                              rest_instrument, instr_base, tie=tie,
+                              rest_keyoff=rest_keyoff,
+                              rest_wave=rest_wave,
+                              rest_envelope=rest_envelope, rest_ring=rest_ring, exits_tied=ex,
+                              arps=arps,
+                              free_rows=fr if collect else None,
+                              wave_notes=(wave_notes or {}).get(src),
+                              event_rows=ev if want_ev else None,
+                              top_rows=tr if want_top else None)
+        exits[n] = bool(ex and ex[0])
+        free[n] = fr
+        tops[n] = tr if want_top else None
+        starts[n] = ev if want_ev and events is not None else None
+        if events is None:
+            log(f"*** PATTERN ${n:X} (UNTRANSPOSED COPY OF ${src:X}) "
+                "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
+            events = list(ERROR_PATTERN)
+        else:
+            events = lower_exempt_notes(events, det.transpose_exempt,
+                                        instr_base, transpose)
         raw_patterns.append(events)
     copies_dropped = 0
 
