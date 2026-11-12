@@ -197,9 +197,10 @@ def test_the_index_header_and_every_row_agree_on_the_column_count():
     widths = {len(re.findall(r"<td", r))
               for r in re.findall(r"<tr>(?:(?!</tr>).)*</tr>", got, re.S)[1:]}
     # `<th[ >]`: the instr, length and measure headings carry a title
-    # attribute. 12 since the heard-census `instr` column.
-    assert len(re.findall(r"<th[ >]", head)) == 12
-    assert widths == {12}
+    # attribute. 12 since the heard-census `instr` column; 26 with the 13
+    # extra fidelity columns and the `worst` cell.
+    assert len(re.findall(r"<th[ >]", head)) == 26
+    assert widths == {26}
 
 
 def test_length_text_reads_the_length_probe():
@@ -1699,3 +1700,56 @@ def test_original_score_reuses_only_a_cache_with_the_same_key(tmp_path, monkeypa
     cache.write_text(json.dumps(dict(_score(), _key=dict(key, song=1))),
                      encoding="utf-8")
     assert A.original_score("X") is None                   # stale, and no exe to redo it
+
+
+# --- the index's extra fidelity columns and the worst-column cell -----------
+
+GOOD = {"melody": "100%", "gate": "100%", "wave": "100%", "hold": "100%",
+        "gatenf": "100%", "holdnf": "100%", "adsrnf": "100%", "bend": "1.00x",
+        "travel": "1.00x", "depth": "1.00x", "tiefr": "100%", "pphase": "1.00x",
+        "pspan": "1.00x", "band": "100%", "cut": "1.00x", "ctrl": "100%",
+        "otime": "100%"}
+
+
+def _worst_cells(rows, heard=None):
+    names = list(rows)
+    got = A.index(names, rows, "v1", notes={}, heard=heard or {})
+    return re.findall(r'<td[^>]*>([^<]*)</td>(?=<td class="len")', got), got
+
+
+def test_the_index_shows_every_extra_column_from_the_fidelity_row():
+    row = dict(GOOD, gatenf="77%", holdnf="88%", adsrnf="84%", bend="0.74x",
+               travel="0.62x", depth="0.52x", tiefr="41%", pphase="0.95x",
+               pspan="0.96x", band="97%", cut="0.93x", ctrl="91%", otime="86%")
+    got = A.index(["T"], {"T": row}, "v1", notes={}, heard={})
+    for v in ("77%", "88%", "84%", "0.74x", "0.62x", "0.52x", "41%", "0.95x",
+              "0.96x", "97%", "0.93x", "91%", "86%"):
+        assert ">%s</td>" % v in got
+    for h in ("gatenf", "holdnf", "adsrnf", "tiefr", "pphase", "pspan", "band",
+              "cut", "ctrl", "otime", "worst"):
+        assert ">%s</th>" % h in got
+
+
+def test_the_worst_cell_names_a_column_the_page_did_not_show_before():
+    """The only low column is `ctrl`, which the index never showed: the worst
+    cell must name it. Restricted to the five old columns it cannot."""
+    row = dict(GOOD, ctrl="37%")
+    cells, got = _worst_cells({"T": row})
+    assert cells == ["37% ctrl"]
+    assert A.worst_column(row, {"instr": 1.0})[0] == "ctrl"
+    old = A.worst_column(row, {"instr": 1.0}, cols=A.OLD_COLS)
+    assert old[0] != "ctrl" and old[1] == 1.0
+    assert _balanced(got) == []
+
+
+def test_a_ratio_is_scored_as_min_v_over_v_and_absent_is_skipped():
+    # 2.00x is as far from 1 as 0.50x; a dash is skipped, not read as 0.
+    row = dict(GOOD, bend="2.00x", travel="0.80x", depth="-")
+    assert A.worst_column(row) == ("bend", 0.5)
+    assert A.worst_column({"melody": "-", "gate": "-"}) is None
+    assert A.worst_column({"gate": "-", "wave": "93%"}) == ("wave", 0.93)
+    assert A.worst_column({}, {"instr": 0.0}) == ("instr", 0.0)
+    assert A.worst_cell({}) == "<td>&mdash;</td>"
+    # a fetch-only `hold` is a ceiling, graded on holdnf instead
+    assert A.worst_column({"hold": "86% (ceiling)", "holdnf": "100%"}) == \
+        ("holdnf", 1.0)

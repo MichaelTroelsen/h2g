@@ -3701,6 +3701,100 @@ INDEX_JS = """
 """
 
 
+# The index's extra fidelity columns, as (fidelity.json key, FIDELITY.md column,
+# kind). `kind` is how a cell scores: "fraction" is a percentage read as v,
+# "ratio" is a `0.74x` ratio scored as min(v, 1/v) so 2x and 0.5x are equally
+# far from 1. The md column is the one `fidelity_rows()` returns, i.e. the same
+# row the melody/gate/wave/hold cells read.
+EXTRA_COLS = (
+    ("gate_nofetch", "gatenf", "fraction"),
+    ("sound_run_agreement_nofetch", "holdnf", "fraction"),
+    ("adsr_nf", "adsrnf", "fraction"),
+    ("bend_ratio", "bend", "ratio"),
+    ("travel_ratio", "travel", "ratio"),
+    ("depth_ratio", "depth", "ratio"),
+    ("tie_agreement", "tiefr", "fraction"),
+    ("pulse_phase", "pphase", "ratio"),
+    ("pulse_span", "pspan", "ratio"),
+    ("passband_agree", "band", "fraction"),
+    ("cutoff_sweep", "cut", "ratio"),
+    ("ctrl", "ctrl", "fraction"),
+    ("onset_timing", "otime", "fraction"),
+)
+# The five columns the index showed before the extras.
+OLD_COLS = (("melody", "melody", "fraction"), ("gate", "gate", "fraction"),
+            ("wave", "wave", "fraction"), ("hold", "hold", "fraction"),
+            ("instr", None, "fraction"))
+
+
+EXTRA_HEAD = "".join(
+    '<th title="%s">%s</th>' % (t, h) for h, t in (
+        ("gatenf", "gate, fetch frames excluded (gate_nofetch)"),
+        ("holdnf", "hold, fetch-only misses excluded (sound_run_agreement_nofetch)"),
+        ("adsrnf", "ADSR agreement, fetch frames excluded (adsr_nf)"),
+        ("bend", "pitch-bend travel ratio (bend_ratio); scored min(v, 1/v)"),
+        ("travel", "pitch travel ratio (travel_ratio); scored min(v, 1/v)"),
+        ("depth", "vibrato depth ratio (depth_ratio); scored min(v, 1/v)"),
+        ("tiefr", "tied-frame agreement (tie_agreement)"),
+        ("pphase", "pulse phase ratio (pulse_phase); scored min(v, 1/v)"),
+        ("pspan", "pulse span ratio (pulse_span); scored min(v, 1/v)"),
+        ("band", "filter passband agreement (passband_agree)"),
+        ("cut", "filter cutoff sweep ratio (cutoff_sweep); scored min(v, 1/v)"),
+        ("ctrl", "control-register agreement (ctrl)"),
+        ("otime", "onset timing agreement (onset_timing)"))
+) + ('<th title="the lowest-scoring shown column for this tune, as '
+     'score and name; sort to find the worst tunes">worst</th>')
+
+
+def _score(cell: str | None, kind: str) -> float | None:
+    """A FIDELITY.md cell as a 0..1 score, or None when it carries none.
+
+    `-` (and anything unparsable) is None, never 0: it means the column does
+    not apply to this song. A `(ceiling)` hold is the target player's own
+    bound, not a defect -- `holdnf` is graded instead, so it scores None.
+    """
+    if not cell or "ceiling" in cell:
+        return None
+    m = re.match(r"\s*(-?\d*\.?\d+)\s*(%|x)?", cell)
+    if not m:
+        return None
+    v = float(m.group(1))
+    if m.group(2) == "%" or (kind == "fraction" and not m.group(2)):
+        return v / 100 if m.group(2) == "%" else v
+    if kind == "ratio" or m.group(2) == "x":
+        if v <= 0:
+            return 0.0
+        return min(v, 1 / v)
+    return None
+
+
+def worst_column(r: dict, heard: dict | None = None,
+                 cols=OLD_COLS + EXTRA_COLS) -> tuple[str, float] | None:
+    """The lowest-scoring shown column for one tune as (name, score), or None
+    when it carries none. `instr` comes from heard.py's row, the rest from the
+    FIDELITY.md row `r`. A column the row lacks is skipped, never read as 0."""
+    best = None
+    for key, md_key, kind in cols:
+        if key == "instr":
+            v = (heard or {}).get("instr")
+            sc = None if v is None else float(v)
+        else:
+            sc = _score(r.get(md_key), kind)
+        if sc is not None and (best is None or sc < best[1]):
+            best = (md_key or key, sc)
+    return best
+
+
+def worst_cell(r: dict, heard: dict | None = None,
+               cols=OLD_COLS + EXTRA_COLS) -> str:
+    w = worst_column(r, heard, cols)
+    if not w:
+        return "<td>&mdash;</td>"
+    return ('<td%s title="the lowest-scoring shown column (a ratio scores as '
+            'min(v, 1/v))">%.0f%% %s</td>'
+            % (' class="low"' if w[1] < 0.9 else "", 100 * w[1], w[0]))
+
+
 def _low(cell: str, floor: float = 90.0) -> str:
     """`td` class for a fidelity cell under `floor` percent (or .xx form)."""
     m = re.match(r"\s*(\d*\.?\d+)\s*(%?)", cell or "")
@@ -3827,15 +3921,16 @@ def index(names: list[str], rows: dict, version: str,
         reason = hold.held(n)
         badge = ('<span class="onhold" title="%s">on hold</span>' % _attr(reason)
                  if reason else "")
-        return ("<tr><td><a href=\"%s.html\">%s</a>%s</td>"
+        return (("<tr><td><a href=\"%s.html\">%s</a>%s</td>"
                  "<td class=\"sidid\" title=\"%s\">%s</td>"
                  "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
                  "<td class=\"test\">%s</td>"
                  "<td%s>%s</td><td%s>%s</td><td%s>%s</td><td%s>%s</td>"
                  "<td%s>%s</td>"
+                 + "<td%s>%s</td>" * len(EXTRA_COLS) + "%s"
                  "<td class=\"len\" title=\"%s\">%s</td>"
-                 "<td class=\"mtime\">%s</td></tr>"
+                 "<td class=\"mtime\">%s</td></tr>")
                  % (n, n.replace("_", " "), badge,
                     # Escaped the way this file already escapes (see md()),
                     # rather than importing `html` into a module that binds
@@ -3846,12 +3941,16 @@ def index(names: list[str], rows: dict, version: str,
                     *[x for k in ("melody", "gate", "wave", "hold")
                       for x in (_low(r.get(k, "")), r.get(k, "&mdash;"))],
                     _low(heard_cell(heard.get(n))), heard_cell(heard.get(n)),
+                    *[x for _k, mk, _t in EXTRA_COLS
+                      for x in (_low(r.get(mk, "")), r.get(mk, "&mdash;"))],
+                    worst_cell(r, heard.get(n)),
                     _attr(length_text(fidjson.get(n, {}))[1]),
                     length_text(fidjson.get(n, {}))[0],
                     measure_text(fidjson.get(n, {}))))
 
     head = ("<thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th>"
-            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title='share of original notes played by an identical instrument over their first frames (heard.py)'>instr</th><th title='where the original ends / where ours ends (m:ss); both loop = the original has no ending to match'>length</th><th title='how long fidelity.py took on this song: convert, pack, trace, render'>measure</th></tr></thead>")
+            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title='share of original notes played by an identical instrument over their first frames (heard.py)'>instr</th>"
+            + EXTRA_HEAD + "<th title='where the original ends / where ours ends (m:ss); both loop = the original has no ending to match'>length</th><th title='how long fidelity.py took on this song: convert, pack, trace, render'>measure</th></tr></thead>")
     held_card = ""
     if parked:
         held_card = ("""<div class="card held">
@@ -3892,7 +3991,7 @@ def index(names: list[str], rows: dict, version: str,
     <span class="count" id="shown"></span>
   </div>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="share of original notes played by an identical instrument over their first frames (heard.py)">instr</th><th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
+    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th><th title="share of original notes played by an identical instrument over their first frames (heard.py)">instr</th>%(extra_head)s<th title="where the original ends / where ours ends (m:ss); loops = no ending">length</th><th title="how long fidelity.py took on this song: convert, pack, trace, render">measure</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
@@ -3924,7 +4023,8 @@ def index(names: list[str], rows: dict, version: str,
 """ % dict(css=CSS, xcss=INDEX_CSS, js=INDEX_JS, chips=chips,
            version=version, count=len(names), body=body,
            held_card=held_card,
-           held_count=(" (%d on hold)" % len(parked)) if parked else "")
+           held_count=(" (%d on hold)" % len(parked)) if parked else "",
+           extra_head=EXTRA_HEAD)
 
 
 def prune_stale_pages(names: list[str]) -> list[Path]:
