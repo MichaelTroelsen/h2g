@@ -2824,6 +2824,136 @@ def pitch_motion_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+# The frequency tolerance of `pitch_cents_compare`, in cents. Half a semitone:
+# the distance at which a register value stops naming the same note, so the
+# column asks "do the two sides sound the same NOTE on this frame", which is
+# the question `melody` asks once per attack and nothing asked per frame.
+# Chosen before the column was measured on a bad and a good pair, not fitted
+# to them; `tests/test_fidelity.py` pins it.
+PITCH_CENTS_TOLERANCE = 50.0
+
+# Why a frame is left out of `pitch_cents_compare`, in the order the reasons
+# are tried: a frame gets the FIRST that applies, once per side.
+PITCH_CENTS_DECLINES = ("silent", "test", "no_waveform", "noise", "no_freq")
+
+
+def _pitch_decline(wf: int, fq: int, audible: bool) -> str | None:
+    """The reason one side's frame has no pitch to compare, or None.
+
+    * `silent` -- the envelope cannot be sounding (`audible_frames`: outside a
+      note's span, or past `envelope_zero_frame`); a latched frequency under
+      a dead envelope is a register, not a sound.
+    * `test` -- the test bit holds the oscillator at zero.
+    * `no_waveform` -- no waveform selected (`$0x`), e.g. the `$09` firstwave
+      frame opening each of our notes.
+    * `noise` -- a waveform containing noise: the register sets a noise
+      clock, not a musical pitch, and `wave`/`nrun` already score it.
+    * `no_freq` -- the frequency register reads 0, which has no log.
+    """
+    if not audible:
+        return "silent"
+    if wf & WF_TEST:
+        return "test"
+    if not wf & 0xF0:
+        return "no_waveform"
+    if wf & WF_NOISE:
+        return "noise"
+    if not fq:
+        return "no_freq"
+    return None
+
+
+def pitch_cents_compare(orig: list[Voice], ours: list[Voice], nframes: int,
+                        lag: int = 0,
+                        tolerance: float = PITCH_CENTS_TOLERANCE) -> dict:
+    """Per-FRAME pitch agreement, in cents, over the frames both sides sound.
+
+    **Nothing else in this module compares a pitch frame by frame.**
+    `pitch_motion_compare` and `depth_compare` are whole-song totals
+    (reversals, oscillation depth) -- an early over-bend and a late under-bend
+    cancel in them -- `within_note_travel`/`bend` sum register deltas, and
+    `melody`/`pitch` compare the NAME at each attack. `vice_pitch_compare`
+    feeds the same totals. So a voice that plays every note at the right
+    attack and then holds it a quarter-tone flat reads 100% on all of them.
+
+    A frame counts when BOTH sides sound it (`_pitch_decline`: audible
+    envelope, no test bit, a waveform selected, not noise, a non-zero
+    frequency) on the `lag`-aligned timelines -- ours at frame `f + lag`
+    against the original's `f`, the startup lag the other per-frame columns
+    use (`startup_lag`; estimated, never fitted). It agrees when the two
+    frequency registers are within `tolerance` cents,
+    `1200 * |log2(fo / fu)|`. A frame either side declines is not charged;
+    `pitch_cents_declined` says per side how many, and why, over the aligned
+    window (a frame silent on both counts once on each).
+
+    **What it does not see.** It compares the register at the end of the
+    play call, one sample a frame, so a sub-frame difference is invisible
+    (`--vice` is the instrument for those; this column is not computed there).
+    A tune whose original is not tuned to the semitone grid the converter
+    emits against (the four NTSC tables, 0.65 semitones flat) reads low on
+    every frame, because the registers really do differ by that much.
+
+    **It is blind to any pitch error under the tolerance, vibrato included.**
+    Commando at -t 60 under its shipped preset reads 0.9786 over 5760 frames
+    and reads exactly 0.9786 over the same 5760 with `vibrato` and
+    `vibrato_command` switched off (`vib` 1.01 -> 0.96, `travel` 0.97 ->
+    0.26): its vibrato never leaves 50 cents. `vib`/`depth`/`travel` are the
+    columns for that; this one is for the notes and slides that land more
+    than a quarter-tone away. It is also lag-sensitive by construction -- a
+    voice that steps in semitones disagrees on every step frame a lag off by
+    one (Sanxion 0.92 at its lag, 0.79 and 0.81 at lag -1 and +1) -- so read
+    a drop at the neighbouring lags before believing it.
+    """
+    declined = {"orig": {k: 0 for k in PITCH_CENTS_DECLINES},
+                "ours": {k: 0 for k in PITCH_CENTS_DECLINES}}
+    agree = total = 0
+    devs: list[float] = []
+    per_voice = []
+    for a, b in zip(orig, ours):
+        tl = []
+        for v in (a, b):
+            aud = audible_frames(v, nframes)
+            if aud is None:
+                aud = [False] * nframes
+            tl.append((register_timeline(v.wf_events, nframes),
+                       register_timeline(v.freq_events, nframes), aud))
+        # Lag-align each of the three per-side timelines the same way.
+        wa, wb = _aligned(tl[0][0], tl[1][0], lag)
+        fa, fb = _aligned(tl[0][1], tl[1][1], lag)
+        aa, ab = _aligned(tl[0][2], tl[1][2], lag)
+        va = vt = 0
+        for x, fx, ax, y, fy, ay in zip(wa, fa, aa, wb, fb, ab):
+            ra = _pitch_decline(x, fx, ax)
+            rb = _pitch_decline(y, fy, ay)
+            if ra:
+                declined["orig"][ra] += 1
+            if rb:
+                declined["ours"][rb] += 1
+            if ra or rb:
+                continue
+            vt += 1
+            cents = abs(1200.0 * math.log2(fx / fy))
+            devs.append(cents)
+            if cents <= tolerance:
+                va += 1
+        per_voice.append({"agreement": (va / vt) if vt else None,
+                          "frames": vt})
+        agree += va
+        total += vt
+    return {
+        "pitch_cents_agreement": (agree / total) if total else None,
+        "pitch_cents_frames": total,
+        "pitch_cents_tolerance": tolerance,
+        "pitch_cents_declined": declined,
+        # How far off the disagreeing frames are: the median, over the
+        # frames that exceed the tolerance, of |cents|. A column at 90% whose
+        # misses sit at 60 cents and one whose misses sit at 1200 are not
+        # the same finding.
+        "pitch_cents_miss_median": _median([d for d in devs if d > tolerance]),
+        "pitch_cents_voices": per_voice,
+    }
+
+
 def _median(values: list[float]) -> float | None:
     """Plain median, or None for an empty list.
 
@@ -5562,6 +5692,150 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
         "our_pulse_phases": u_phases,
         "pulse_phase": (u_phases / o_phases) if o_phases else None,
         "pulse_voices": per_voice,
+        **pulse_offset_compare(orig, ours, nframes),
+    }
+
+
+# How many frames after a note's opening `pulse_offset` follows the duty cycle.
+# Long enough for a Hubbard sweep (a handful of units a frame) to have gone
+# somewhere an ear can tell from a standing width, short enough that most notes
+# are still sounding: a note shorter than the window contributes the offsets it
+# has, so a long window costs population only at its far end.
+PULSE_OFFSET_FRAMES = 16
+
+
+def _signed12(d: int) -> int:
+    """A difference of two 12-bit duty cycles, wrapped to -0x800..0x7FF."""
+    return ((d + 0x800) & 0xFFF) - 0x800
+
+
+def pulse_offset_profiles(voices: list[Voice], nframes: int) -> tuple[dict, dict]:
+    """How far the duty cycle has travelled from where a note opened it, per
+    frame offset from the attack, keyed by the instrument playing the note.
+
+    **What is aligned, and what is deliberately not scored.** `pulse_compare`
+    declines a per-frame equality because two players sweeping the same band
+    at the same rate from different phases share almost no frame values. This
+    answers that objection twice. Each note is read from its OWN attack, so the
+    packed player's startup latency cancels (`onset_shapes`' reason) and no lag
+    is needed; and the width is taken as the DISPLACEMENT from the width the
+    note opened on -- one frame after the attack, `_onset_phases`' reading --
+    so a sweep entered at a different point of the band reads the same.
+    *Where* a note opens is `pphase`'s question and is not asked here.
+
+    **Unsigned, and on purpose.** An accumulator that free-runs and bounces
+    between limits sends two notes of one instrument up and down from the same
+    opening width depending on where the global sweep happens to be; a signed
+    displacement would score that phase. The size of the move at offset k is
+    the rate, and the rate is what a conversion can get right or wrong. The
+    cost is that a sweep which runs the wrong DIRECTION at the right rate reads
+    as correct, which `pspan` and `pphase` do not catch either.
+
+    Keyed by the ADSR pair latched on the opening frame (`onset_shapes`). Read
+    per note from `attack + 1` to the frame before the voice's next attack
+    (named or not), at most `PULSE_OFFSET_FRAMES`.
+
+    Returns `(profiles, declined)`. `profiles` is
+    `{adsr: {offset: [displacement, ...]}}`. `declined` counts what was left out:
+    `unset` (a note whose opening width is $000: nothing has written the
+    register yet, `_span`'s rule), `short` (no offset fits before the next
+    attack) and `cut` (opening frame past the window).
+    """
+    out: dict = {}
+    declined = {"unset": 0, "short": 0, "cut": 0}
+    for v in voices:
+        tp = register_timeline(v.pulse_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        marks = sorted(set(v.attack_frames) | set(v.unnamed_attack_frames))
+        for a in v.attack_frames:
+            g = a + 1
+            if a < 0 or g >= nframes:
+                declined["cut"] += 1
+                continue
+            i = bisect.bisect_right(marks, a)
+            nxt = marks[i] if i < len(marks) else nframes
+            n = min(PULSE_OFFSET_FRAMES, nxt - g - 1, nframes - g - 1)
+            if n < 1:
+                declined["short"] += 1
+                continue
+            w0 = tp[g]
+            if not w0:
+                declined["unset"] += 1
+                continue
+            prof = out.setdefault(adsr[g], {})
+            for k in range(1, n + 1):
+                prof.setdefault(k, []).append(abs(_signed12(tp[g + k] - w0)))
+    return out, declined
+
+
+def _pulse_offset_credit(mo: int, mu: int) -> float:
+    """One (instrument, offset) cell: `(min + B) / (max + B)`."""
+    return ((min(mo, mu) + PULSE_PHASE_BUCKET)
+            / (max(mo, mu) + PULSE_PHASE_BUCKET))
+
+
+def pulse_offset_compare(orig: list[Voice], ours: list[Voice],
+                         nframes: int) -> dict:
+    """Pulse-width travel at each offset from the attack, instrument by
+    instrument: do our notes sweep the duty cycle like the original's?
+
+    Per paired instrument (`paired_keys`) and per offset both sides have notes
+    at, the median displacement from the opening width on each side, scored
+    `(min + B) / (max + B)` with `B = PULSE_PHASE_BUCKET` -- a ratio, so a
+    sweep half as fast reads half whatever its rate, and with one audible
+    bucket of slack so that two widths under a bucket apart (which the ear does
+    not separate) agree. The column is the mean over every (instrument, offset)
+    cell compared.
+
+    **The population is the instruments with a sweep to reproduce.** An
+    instrument both sides hold on one width through the window has nothing to
+    score and would read a free 1.00 (`pulse_compare`'s `pphase` rule); one
+    side moving and the other not IS the defect and stays in. What was left out
+    is recorded per side, so a `-` or a high score says why:
+    `pulse_offset_{orig,our}_static` (paired instruments that side holds
+    still), `_unpaired` (instruments the other side lacks -- `melody` and
+    `onset` report those), `_unset` and `_short` (notes, see
+    `pulse_offset_profiles`). `pulse_offset_instruments` and
+    `pulse_offset_cells` are the numerator's population.
+
+    Ignores where the note opens, which direction the width moves, and the
+    voice (a profile pools every voice that plays the instrument).
+    """
+    a, ad = pulse_offset_profiles(orig, nframes)
+    b, bd = pulse_offset_profiles(ours, nframes)
+    pairs = paired_keys(a, b)
+    paired_a = {ka for ka, _ in pairs}
+    paired_b = {kb for _, kb in pairs}
+    credit = 0.0
+    cells = used = o_static = u_static = 0
+    for ka, kb in pairs:
+        pa, pb = a[ka], b[kb]
+        moves_o = any(x for xs in pa.values() for x in xs)
+        moves_u = any(x for xs in pb.values() for x in xs)
+        o_static += not moves_o
+        u_static += not moves_u
+        if not (moves_o or moves_u):
+            continue
+        shared = sorted(set(pa) & set(pb))
+        if not shared:
+            continue
+        used += 1
+        for k in shared:
+            mo, mu = _median_or_zero(pa[k]), _median_or_zero(pb[k])
+            credit += _pulse_offset_credit(mo, mu)
+            cells += 1
+    return {
+        "pulse_offset": (credit / cells) if cells else None,
+        "pulse_offset_instruments": used,
+        "pulse_offset_cells": cells,
+        "pulse_offset_orig_static": o_static,
+        "pulse_offset_our_static": u_static,
+        "pulse_offset_orig_unpaired": len(set(a) - paired_a),
+        "pulse_offset_our_unpaired": len(set(b) - paired_b),
+        "pulse_offset_orig_unset": ad["unset"],
+        "pulse_offset_our_unset": bd["unset"],
+        "pulse_offset_orig_short": ad["short"] + ad["cut"],
+        "pulse_offset_our_short": bd["short"] + bd["cut"],
     }
 
 
@@ -5624,6 +5898,85 @@ def passband_agreement(orig: FilterState, ours: FilterState, nframes: int,
     return {"passband_agree_frames": agree,
             "passband_union_frames": union,
             "passband_agree": (agree / union) if union else None}
+
+
+# The per-frame cutoff comparison below, in siddump's cutoff units
+# (`$D415 << 5 | $D416 << 8`: 0x0100 is one step of the high register, 0x2000
+# an eighth of the 16-bit range). A difference up to SLACK is no error -- two
+# steps of the high byte, 0.8% of the range, which the ear does not separate
+# (ACE_II's whole sweep sits one step under the original's and sounds the same).
+# Past it the credit falls linearly and is spent at SLACK + SPAN.
+CUTOFF_FRAME_SLACK = 0x0200
+CUTOFF_FRAME_SPAN = 0x2000
+CUTOFF_FRAME_MODULUS = 0x10000
+
+
+def _cutoff_credit(x: int, y: int) -> float:
+    d = abs(x - y)
+    d = min(d, CUTOFF_FRAME_MODULUS - d)        # circular, see the docstring
+    return 1.0 - min(1.0, max(0, d - CUTOFF_FRAME_SLACK) / CUTOFF_FRAME_SPAN)
+
+
+def cutoff_frame_compare(orig: FilterState, ours: FilterState, nframes: int,
+                         lag: int = 0) -> dict:
+    """The cutoff value itself, frame for frame on the original's filtered
+    frames, lag-aligned.
+
+    `cutoff_sweep` is a ratio of TRAVEL: a conversion that sweeps as far as the
+    original but through a different band, or at a different moment, reads 1.00x
+    there, and `passband_agree` only says that some output is selected. This is
+    the value: for every frame on which both sides route a voice through the
+    filter with a passband selected (`_filter_band_timeline`, the frames
+    `filtered_frames` counts), a credit of 1 for a cutoff within
+    `CUTOFF_FRAME_SLACK` of the original's, falling linearly to 0 at
+    `CUTOFF_FRAME_SPAN` further, averaged. **Not a ratio**: the first version
+    scored `(min + S) / (max + S)` and read ACE_II 0.965 for a sweep that is
+    the original's exactly, one high-register step low, because a ratio charges
+    the same step far more at the bottom of the register than at the top.
+
+    Aligned by the row's `startup_lag`, as `passband_agree` is -- which makes
+    it sensitive to a sweep entered at a different phase, and that is intended
+    here: a filter sweep is one global cell, not a per-note event, so there is
+    no attack to align it on. It reads `-` on a `--vice` row (no lag) and where
+    no frame is filtered by both sides. A wrap through zero (the register is 16
+    bits and a sweep passes `$FF00` to `$0000`) is read CIRCULARLY: a side that
+    wraps one frame after the other would otherwise lose a full frame's credit
+    at every wrap -- 31 of the 34 frames of credit ACE_II lost at `-t 60`,
+    with the sweep otherwise exact. **The price is a blind spot**: a standing cutoff
+    at the top of the register against one at the bottom reads as close.
+
+    **Population: the frames the ORIGINAL filters.** On each the credit is the
+    one above if ours filters too, and 0 if it does not -- a filter we dropped
+    is the largest cutoff error there is, and the literal population (frames
+    BOTH filter) declines it: a conversion built with `filters` off reads `-`
+    there, not low, which measured as exactly the failure this column cannot be
+    allowed to hide. Frames only OURS filters are declined (an invented filter
+    is `filt`'s and `band`'s to report; scoring it here would let one defect
+    move three columns) and counted. Per side:
+    `cutoff_frame_orig_only` frames scored 0 because ours does not filter,
+    `cutoff_frame_our_only` frames declined, `cutoff_frame_frames` the frames
+    both filter -- the credit above is averaged over `frames + orig_only`.
+    `None` where the original never filters.
+    """
+    ao, au = _aligned(_filter_band_timeline(orig, nframes),
+                      _filter_band_timeline(ours, nframes), lag)
+    co, cu = _aligned(register_timeline(orig.cutoff_events, nframes),
+                      register_timeline(ours.cutoff_events, nframes), lag)
+    credit = 0.0
+    both = o_only = u_only = 0
+    for fo, fu, x, y in zip(ao, au, co, cu):
+        if fo and fu:
+            both += 1
+            credit += _cutoff_credit(x, y)
+        elif fo:
+            o_only += 1
+        elif fu:
+            u_only += 1
+    denom = both + o_only
+    return {"cutoff_frame": (credit / denom) if denom else None,
+            "cutoff_frame_frames": both,
+            "cutoff_frame_orig_only": o_only,
+            "cutoff_frame_our_only": u_only}
 
 
 # $D418 bits 4-6 as (value >> 4) & 7: 2 is band-pass alone.
@@ -5722,6 +6075,7 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int,
                            if o["cutoff_travel"] else None)
     if lag is not None:
         out.update(passband_agreement(orig, ours, nframes, lag))
+        out.update(cutoff_frame_compare(orig, ours, nframes, lag))
     return out
 
 
@@ -7618,6 +7972,19 @@ DIMENSIONS = (
     # reproduce and would score a free 1.00.
     Dimension("pulse_phase", "pphase", ("$D402/$D403",), "ratio",
               "distinct duty cycles a note opens on, over the original's"),
+    # `poff` is the first pulse column that follows a note AFTER it opens.
+    # `pspan` is a whole-song band, `pphase` counts opening points, and
+    # neither can say whether a sweep that starts in the right place goes at
+    # the right rate: a conversion sweeping a quarter as fast reads 1.00x on
+    # both. This reads each instrument's displacement from its opening width at
+    # each frame offset from the attack (up to 16), per note from its own
+    # attack, so the sweep's global phase and the packed player's latency are
+    # both out of it. See `pulse_offset_compare` for what it ignores (opening
+    # point, direction) and what it declines (static instruments, unpaired
+    # instruments), recorded per side in the JSON.
+    Dimension("pulse_offset", "poff", ("$D402/$D403",), "fraction",
+              "pulse-width travel at each frame offset from the attack, per "
+              "instrument, ours against the original's"),
     # The filter is two dimensions because it is two questions, and one of
     # them is not a count: `filt` is whether we filter at all, `cut` is
     # whether the cutoff then moves as far as the original's. A count reads
@@ -7628,6 +7995,17 @@ DIMENSIONS = (
               "selected", source="our_filtered_frames"),
     Dimension("cutoff_sweep", "cut", ("$D415/$D416",), "ratio",
               "how far the cutoff travels, over the original's travel"),
+    # `cfrm` is the cutoff VALUE where `cut` is its travel. A sweep that goes
+    # as far as the original's through a different band, or at a different
+    # moment, is 1.00x on `cut`; frame by frame it is not. Taken on the frames
+    # the ORIGINAL routes a voice through the filter, lag-aligned like `band`:
+    # a frame ours does not filter scores 0 (a dropped filter), a frame only
+    # ours filters is declined and counted (`filt`'s and `band`'s), both per
+    # side in the JSON. `-` on --vice rows (no lag) and where the original
+    # never filters.
+    Dimension("cutoff_frame", "cfrm", ("$D415/$D416", "$D417", "$D418"),
+              "fraction",
+              "the cutoff value frame for frame on the original's filtered frames, lag-aligned"),
     # `filt` counts a filtered frame under ANY passband, so filtering on the
     # right frames through the wrong output (bandpass for lowpass) reads 1.00x.
     # This is the share of the frames either side filters on which both do,
@@ -7789,6 +8167,22 @@ DIMENSIONS = (
               "frames with the ring-mod bit (bit 2) set, ours over the "
               "original's; `-` where the original has none. Below 1.00 is a "
               "ring modulation we lost, which `wave` (`& $F0`) cannot see"),
+    Dimension("pitch_cents_agreement", "cents", _PITCH_REGS, "fraction",
+              "share of the frames BOTH sides sound (audible envelope, a "
+              "waveform selected, not noise, test bit clear, non-zero "
+              "frequency) on which the $D400/$D401 registers are within "
+              f"{PITCH_CENTS_TOLERANCE:.0f} cents, at the row's startup lag. The only "
+              "per-FRAME pitch comparison: `vib`/`depth`/`bend`/`travel` are "
+              "whole-song totals and `melody` names one pitch an attack, so a "
+              "note held flat reads 100% on all of them. Frames either side "
+              "declines are not charged and are counted per side and reason "
+              "in `pitch_cents_declined`. One sample a frame, so blind to a "
+              "sub-frame difference, and not computed under --vice. A tune "
+              "tuned off the semitone grid reads low on every frame, "
+              "because the registers really differ. **BLIND TO ANY ERROR "
+              "UNDER THE TOLERANCE, VIBRATO INCLUDED** (Commando reads the "
+              "same with its vibrato off), and lag-sensitive: read a drop at "
+              "the neighbouring lags"),
     Dimension("ctrl", "ctrl", ("$D404",), "fraction",
               "bitwise agreement of $D404 bits 1-3 (sync, ring, test) over the "
               "lag-aligned frames on which either side sets one. The `$09` "
@@ -8951,6 +9345,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(volume_compare(a.filter, best_dump.filter, nframes,
                                       lag))
             row.update(ctrl_bits_compare(a, best_dump, nframes, lag))
+            # Per-frame pitch, in cents, at the same startup lag as the other
+            # per-frame columns. Not computed on the --vice branch above, which
+            # has no lag and a different sample axis.
+            row.update(pitch_cents_compare(a, best_dump, nframes, lag))
             row.update(filter_ctrl_compare(a.filter, best_dump.filter,
                                            nframes, lag))
             row.update(passband_note_relative(a, best_dump, nframes))
@@ -9603,6 +10001,24 @@ def report(rows: list[dict], args) -> str:
         "no startup lag, so it reads whether a drum blip sits in the right "
         "place in its note where **band** charges it for the note's onset. "
         "Pure band-pass only; `-` where neither side has one.",
+        "* **poff** -- how far the duty cycle has travelled from the width a "
+        "note opened on, at each frame offset (1-16) from its own attack, per "
+        "instrument, ours against the original's. Read from each side's own "
+        "attacks and as a displacement, so neither the startup lag nor the "
+        "sweep's global phase is scored (**pphase** is where a note opens). "
+        "Unsigned: a sweep running the wrong direction at the right rate "
+        "reads correct. `-` on a `--vice` run, or where no instrument is "
+        "swept by either side; the JSON counts, per side, the static, "
+        "unpaired, unset and short material left out.",
+        "* **cfrm** -- the cutoff value itself, frame for frame, on the "
+        "frames the original filters, lag-aligned like **band**: full credit "
+        "within two high-register steps, none at a further eighth of the "
+        "range, circular so a sweep's wrap is not a full-scale error. "
+        "**cut** is a travel ratio and reads 1.00x for the right distance "
+        "through the wrong band or a frame late. A frame ours does not "
+        "filter scores 0; a frame only ours filters is counted in the JSON "
+        "and left to **filt** and **band**. `-` on a `--vice` run or where "
+        "the original never filters.",
         "",
         "* **depth** -- how far our vibrato *swings*, over the original's: "
         "the median peak-to-peak excursion of the frequency within a note, as "
@@ -9680,8 +10096,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | holdn | gate | gatenf | tail | adsr | adsrnf | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | holdn | gate | gatenf | tail | adsr | adsrnf | pul | pspan | pphase | poff | filt | cut | cfrm | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | cents | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -9726,13 +10142,16 @@ def report(rows: list[dict], args) -> str:
             f"{_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
+            f"{_fmt_pct(r.get('pulse_offset'))} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
+            f"{_fmt_pct(r.get('cutoff_frame'))} | "
             f"{_fmt_pct(r.get('passband_agree'))} | "
             f"{_fmt_pct(r.get('passband_note'))} | {_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{_fmt_pct(r.get('vol'))} | "
             f"{_fmt_ratio(r.get('sync'))} | {_fmt_ratio(r.get('ring'))} | "
             f"{_fmt_pct(r.get('ctrl'))} | "
+            f"{_fmt_pct(r.get('pitch_cents_agreement'))} | "
             f"{_fmt_pct(r.get('res'))} | {_fmt_pct(r.get('route'))} | "
             f"{_fmt_rate(r)} | {status} |")
 

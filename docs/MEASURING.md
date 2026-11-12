@@ -247,6 +247,66 @@ on a voice routed into the filter, and compares the two offset histograms:
 | `--json` | `passband_note_orig_frames`, `passband_note_our_frames`, `passband_note_agree_frames` |
 | test | `python/tests/test_band_note_relative.py` |
 
+**poff** and **cfrm** (added after v0.5.662) are the value-level companions of
+**pspan**/**pphase** and **cut**. Those three are whole-song totals or counts, so
+a sweep that opens where the original does but runs at a quarter of its rate
+reads 1.00x on both pulse columns, and a filter that travels the original's
+distance through a different band, or a frame late, reads 1.00x on **cut**.
+
+| key | `pulse_offset` (column **poff**) |
+|---|---|
+| reads | `$D402/$D403`, the attack frames, the ADSR latched one frame after each attack (the instrument key, as `onset`) |
+| score | per paired instrument and per frame offset 1..16 from the attack, the median displacement of the width from the width the note opened on (`attack + 1`), each cell `(min + 0x100) / (max + 0x100)`; the mean over all cells |
+| aligned | on each side's OWN attacks, so neither the startup lag nor the sweep's global phase is scored; *where* a note opens is **pphase**'s question |
+| falls for | a sweep at the wrong rate, a sweep we do not run (the emitter off), one that stops early |
+| ignores | the opening width, the **direction** of the move (unsigned: a bouncing accumulator sends two notes of one instrument both ways from one width), voice |
+| `-` | no paired instrument is swept by either side, or `--vice` |
+| declined, per side | `pulse_offset_{orig,our}_static` (paired, held on one width), `_unpaired` (instrument the other side lacks), `_unset` (note opening on `$000`), `_short` (no offset fits before the next attack) |
+| `--json` | the above, `pulse_offset_instruments`, `pulse_offset_cells` |
+
+| key | `cutoff_frame` (column **cfrm**) |
+|---|---|
+| reads | `$D415/$D416`, `$D417`, `$D418` |
+| score | over the frames the ORIGINAL routes a voice through the filter with a passband selected, lag-aligned like **band**: credit 1 within `0x200` of the original's cutoff, falling linearly to 0 at `0x2200` (an eighth of the range further), circular mod `0x10000` so a sweep's wrap is not a full-scale error |
+| falls for | the right sweep through the wrong band, a sweep a frame late (global `startup_lag`), a standing cutoff off the original's, a filter we do not run (0 per frame) |
+| ignores | resonance, which voice is routed, volume; **blind** to a cutoff at the top of the register against one at the bottom (circular) |
+| `-` | the original never filters, or `--vice` (no lag) |
+| declined, per side | `cutoff_frame_our_only` (frames only ours filters: **filt**'s and **band**'s to report) ; `cutoff_frame_orig_only` is not declined but scored 0 |
+| `--json` | `cutoff_frame_frames` (frames both filter), `_orig_only`, `_our_only` |
+
+**Why `cfrm`'s population is the original's frames and not the frames both
+sides filter.** The literal "frames both route" definition was built first and
+measured: a conversion with `filters` off reads `-` there (nothing is compared),
+not low, so the one error the column most needs to see is the one it declines.
+`filt` and `band` already report that defect, so scoring it here does double it
+across three columns; that is the price and it is stated. The first cut also
+scored `(min + S) / (max + S)` and read ACE_II 0.965 for a sweep exactly the
+original's one high-register step low, because a ratio charges a step far more
+at the bottom of the register; and it charged every wrap through zero a full
+frame (31 of the 34 frames of credit lost at `-t 60`).
+
+Validation (v0.5.662 `presets.json`, `-t 180`, the other keys of each re-measured
+row identical before and after; C:/t/fidelity-pulse-per-offset-and-cutoff-frame-columns):
+
+| song | arm | pspan | pphase | cut | poff | cfrm |
+|---|---|---:|---:|---:|---:|---:|
+| ACE_II | shipped | .9985 | 1.000 | 1.0075 | **.9974** | **.9987** |
+| ACE_II | `pulse` off | .4001 | .4167 | 1.0075 | .3825 | .9987 |
+| ACE_II | `filters` off | .9985 | 1.000 | 0 | .9974 | 0.000 |
+| Nemesis_the_Warlock | shipped | .9936 | 1.000 | 1.0064 | .9984 | .9847 |
+| Auf_Wiedersehen_Monty | shipped | 1.000 | 1.000 | .9986 | .9907 | **.6063** |
+
+Nemesis_the_Warlock and Auf_Wiedersehen_Monty read within 1% on all three old
+columns and **cfrm** is below 0.99 on both, and it is not an artefact of the
+alignment: in the stretch read, Nemesis sweeps linearly in `0x200` steps with
+ours two frames ahead (`0x2200` against `0x2600` at the same aligned frame, a
+constant `0x400` over the 55 frames printed; 603 of its 8991 frames fall short
+of full credit), Monty runs a six-frame saw-tooth of `0x2000` steps with ours a
+frame behind (`0xb000` at aligned frame 1575 on the original, 1576 on ours), and
+moving Monty's lag by one in either direction lowers the score (lags 5/6/7:
+.18/.61/.53). A score that `startup_lag` is chosen to maximise would be fitted,
+so none is; these are leads, not verdicts.
+
 **aud** and **loud** are the only two columns in the report that read no SID
 register at all. Every other one goes through `siddump`; these two render both
 sides to WAV with `sidplayfp` and compare the audio, so they see what a
@@ -971,6 +1031,63 @@ against the printed corpus median (-0.053), not zero. The two leads it found
 localised to a master-volume fade (Confuzion) and a missing per-note pulse sweep
 (Chicken_Song): the latter shape also reaches Mega_Apocalypse, Mozart and
 Commodore_64_Music_Examples.
+
+#### `cents` — per-frame pitch agreement (added after v0.5.662)
+
+Share of the frames **both** sides sound whose `$D400/$D401` registers are
+within 50 cents (`PITCH_CENTS_TOLERANCE`, half a semitone: the distance at
+which a register stops naming the same note), at the row's own `startup_lag`.
+**Before it nothing compared a pitch frame by frame**: `vib`, `depth`, `bend` and
+`travel` are whole-song totals (an early over-bend and a late under-bend cancel),
+`melody`/`pitch` name one pitch per attack, `heard.py` reads a note's first 6
+frames, and `vice_pitch_compare` feeds the same totals. A note held a quarter-tone
+flat read 100% on all of them.
+
+A frame is compared when neither side declines it; the row records, per side and
+per reason, what was declined (`pitch_cents_declined`, in the order tried):
+`silent` (envelope cannot be sounding, `audible_frames`), `test` (test bit),
+`no_waveform` (`$0x`, e.g. our `$09` first-wave frame), `noise` (the register is
+a noise clock, not a pitch; `wave`/`nrun` score it) and `no_freq` (register 0).
+A voice silent for the whole window counts all its frames as `silent`, so read
+`pitch_cents_frames` for the compared count. Also in the row:
+`pitch_cents_tolerance`, `pitch_cents_miss_median` (median |cents| of the misses)
+and `pitch_cents_voices`. Not computed under `--vice` (that branch has no lag).
+
+**Validation (v0.5.662 plus this column, `-t 60`, shipped `presets.json`; each
+bad arm is the same preset with ONE pitch option set false, nothing else
+changed, over each row's own window -- Sanxion 338 s, Flash_Gordon 376 s,
+Knucklebusters 197 s, Lion_Heart 60 s; the figures re-traced from the kept
+`o.sid`/`b.sid` reproduce the row exactly).** Lag row = the row's `startup_lag`, then lag -1 and +1:
+
+| song | shipped (lag-1 / lag / lag+1) | option off | bad arm (lag-1 / lag / lag+1) |
+|---|---|---|---|
+| Sanxion | .785 / **.923** / .808 | `slides` | .508 / **.627** / .517 |
+| Flash_Gordon | .627 / **.908** / .634 | `slides` | .231 / **.311** / .233 |
+| Knucklebusters | .896 / **.941** / .896 | `slides` | .166 / **.187** / .165 |
+| Lion_Heart | .817 / **.909** / .822 | `arpeggio` | .828 / **.886** / .842 |
+
+The first three drop at the row's lag and at both neighbours. **Lion_Heart does
+not survive the neighbouring lags**: the arpeggio-off arm reads 0.023 lower at
+its own lag and 0.011 and 0.020 *higher* at lag -1 and +1, so a small effect
+is within what one frame of lag costs this column; do not cite it as a
+validation. Good side: 5_Title_Tunes is the only row of `build/fidelity.json` whose defined
+pitch-motion columns all read within 1% (`vib` 0.997; `depth`, `bend` and
+`travel` are `-`, v0.5.662 `-t 180`), and it reads 1.0000 over 6171 frames
+at `-t 60`; it
+falls to .806 and .927 a frame either side, which is the column being
+lag-sensitive, not the tune being wrong. Human_Race is near but not within 1%
+(`vib` .994, `depth` .957, `bend` .937, `travel` .998 at `-t 60`) and also reads
+1.0000. Commando reads .9786 (voice 0 .945: gate-off `$14` frames, ours at
+`$2A01`/`$0127` against the original's `$0303`/`$1025`).
+
+**Blind to:** any error under the tolerance. Commando with `vibrato` and
+`vibrato_command` off reads *exactly* .9786 over the same 5760 frames
+(`vib` 1.01 -> 0.96, `travel` 0.97 -> 0.26): its vibrato stays inside 50 cents,
+so `vib`/`depth`/`travel` remain the columns for vibrato. One sample a frame, so a
+sub-frame difference is invisible. A tune on an off-grid table (the four NTSC
+ones, 0.65 semitone flat) reads low on every frame because the registers do
+differ. The tolerance was fixed before the pairs were measured; the pairs
+were not used to choose it.
 
 #### Two corrections to older columns
 

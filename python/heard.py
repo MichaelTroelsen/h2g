@@ -463,13 +463,23 @@ def _sha(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()[:12]
 
 
-def _cached_trace(sid: Path, seconds: float, song: int, runs: Path) -> dict:
-    """A trace keyed by the file's bytes, window and song, so a rebuilt
-    conversion is never read through a stale trace."""
-    out = runs / f"{sid.stem}.{_sha(sid)}.s{song}.t{seconds:g}.json"
+def _build_id(exe: Path) -> str:
+    """What identifies a magplay-rt build: the exe's content hash, so a
+    rebuild (e.g. the PAL one) is never read through a trace of the old one."""
+    return _sha(exe)
+
+
+def _cached_trace(sid: Path, seconds: float, song: int, runs: Path,
+                  exe: Path | None = None) -> dict:
+    """A trace keyed by the file's bytes, window, song and the magplay-rt
+    build, so neither a rebuilt conversion nor a rebuilt tracer is read
+    through a stale trace."""
+    exe = MAGPLAY_RT if exe is None else exe
+    out = runs / (f"{sid.stem}.{_sha(sid)}.s{song}.t{seconds:g}"
+                  f".b{_build_id(exe)}.json")
     if out.exists():
         return json.loads(out.read_text(encoding="utf-8"))
-    return trace(sid, seconds, song, out)
+    return trace(sid, seconds, song, out, exe)
 
 
 def staged_pairs(listen: Path, corpus: Path) -> list[tuple[str, Path, int, Path, int, int, int, float]]:

@@ -197,10 +197,10 @@ def test_the_index_header_and_every_row_agree_on_the_column_count():
     widths = {len(re.findall(r"<td", r))
               for r in re.findall(r"<tr>(?:(?!</tr>).)*</tr>", got, re.S)[1:]}
     # `<th[ >]`: the instr, length and measure headings carry a title
-    # attribute. 12 since the heard-census `instr` column; 26 with the 13
+    # attribute. 12 since the heard-census `instr` column; 29 with the 16
     # extra fidelity columns and the `worst` cell.
-    assert len(re.findall(r"<th[ >]", head)) == 26
-    assert widths == {26}
+    assert len(re.findall(r"<th[ >]", head)) == 29
+    assert widths == {29}
 
 
 def test_length_text_reads_the_length_probe():
@@ -1708,7 +1708,7 @@ GOOD = {"melody": "100%", "gate": "100%", "wave": "100%", "hold": "100%",
         "gatenf": "100%", "holdnf": "100%", "adsrnf": "100%", "bend": "1.00x",
         "travel": "1.00x", "depth": "1.00x", "tiefr": "100%", "pphase": "1.00x",
         "pspan": "1.00x", "band": "100%", "cut": "1.00x", "ctrl": "100%",
-        "otime": "100%"}
+        "otime": "100%", "cents": "100%", "poff": "100%", "cfrm": "100%"}
 
 
 def _worst_cells(rows, heard=None):
@@ -1720,13 +1720,14 @@ def _worst_cells(rows, heard=None):
 def test_the_index_shows_every_extra_column_from_the_fidelity_row():
     row = dict(GOOD, gatenf="77%", holdnf="88%", adsrnf="84%", bend="0.74x",
                travel="0.62x", depth="0.52x", tiefr="41%", pphase="0.95x",
-               pspan="0.96x", band="97%", cut="0.93x", ctrl="91%", otime="86%")
+               pspan="0.96x", band="97%", cut="0.93x", ctrl="91%", otime="86%",
+               cents="63%", poff="58%", cfrm="61%")
     got = A.index(["T"], {"T": row}, "v1", notes={}, heard={})
     for v in ("77%", "88%", "84%", "0.74x", "0.62x", "0.52x", "41%", "0.95x",
-              "0.96x", "97%", "0.93x", "91%", "86%"):
+              "0.96x", "97%", "0.93x", "91%", "86%", "63%", "58%", "61%"):
         assert ">%s</td>" % v in got
     for h in ("gatenf", "holdnf", "adsrnf", "tiefr", "pphase", "pspan", "band",
-              "cut", "ctrl", "otime", "worst"):
+              "cut", "ctrl", "otime", "cents", "poff", "cfrm", "worst"):
         assert ">%s</th>" % h in got
 
 

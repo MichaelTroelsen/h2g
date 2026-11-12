@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.665 — 2026-11-12
+
+- Harness: cents, poff and cfrm columns (frame-level pitch, pulse per offset, cutoff per frame); heard trace cache keyed on the tracer build; index shows the three new columns
+
 ## 0.5.664 — 2026-11-12
 
 - Listening index shows the nofetch, pitch-motion, tie, pulse, filter, ctrl and onset cells plus a sortable worst-column cell

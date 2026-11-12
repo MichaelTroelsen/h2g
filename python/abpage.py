@@ -3720,6 +3720,9 @@ EXTRA_COLS = (
     ("cutoff_sweep", "cut", "ratio"),
     ("ctrl", "ctrl", "fraction"),
     ("onset_timing", "otime", "fraction"),
+    ("pitch_cents_agreement", "cents", "fraction"),
+    ("pulse_offset", "poff", "fraction"),
+    ("cutoff_frame", "cfrm", "fraction"),
 )
 # The five columns the index showed before the extras.
 OLD_COLS = (("melody", "melody", "fraction"), ("gate", "gate", "fraction"),
@@ -3741,7 +3744,12 @@ EXTRA_HEAD = "".join(
         ("band", "filter passband agreement (passband_agree)"),
         ("cut", "filter cutoff sweep ratio (cutoff_sweep); scored min(v, 1/v)"),
         ("ctrl", "control-register agreement (ctrl)"),
-        ("otime", "onset timing agreement (onset_timing)"))
+        ("otime", "onset timing agreement (onset_timing)"),
+        ("cents", "frames whose pitch agrees within 50 cents "
+                  "(pitch_cents_agreement); blind to vibrato"),
+        ("poff", "pulse width per offset from the attack (pulse_offset)"),
+        ("cfrm", "cutoff on the frames the original filters "
+                 "(cutoff_frame)"))
 ) + ('<th title="the lowest-scoring shown column for this tune, as '
      'score and name; sort to find the worst tunes">worst</th>')
 

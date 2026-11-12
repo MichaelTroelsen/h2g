@@ -285,3 +285,26 @@ def test_rule4_near_the_row_end_the_hard_restart_tail_carries_the_difference():
     na, nb = _two(a, b)
     assert len(na) == len(nb) == 3
     assert H.diffs(na[0], nb[0]) == {"tail_len"}
+
+
+def test_cached_trace_is_keyed_on_the_magplay_build(tmp_path, monkeypatch):
+    sid = tmp_path / "a.sid"
+    sid.write_bytes(b"sid")
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    calls = []
+
+    def fake_trace(sid, seconds, song, out, exe=None):
+        calls.append(exe)
+        out.write_text('{"writes": []}', encoding="utf-8")
+        return {"writes": []}
+
+    monkeypatch.setattr(H, "trace", fake_trace)
+    exe1, exe2 = tmp_path / "e1.exe", tmp_path / "e2.exe"
+    exe1.write_bytes(b"build one")
+    exe2.write_bytes(b"build two")
+    H._cached_trace(sid, 6, 1, runs, exe1)
+    H._cached_trace(sid, 6, 1, runs, exe1)   # same build: hit
+    assert calls == [exe1]
+    H._cached_trace(sid, 6, 1, runs, exe2)   # other build: miss
+    assert calls == [exe1, exe2]

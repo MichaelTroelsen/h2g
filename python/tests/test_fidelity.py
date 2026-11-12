@@ -1548,10 +1548,12 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
     text = fidelity.report(rows, _Args())
     assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | holdn | gate | gatenf | tail | adsr |"
             in text)
-    # adsr | adsrnf | pul | pspan | pphase | filt | cut -- `pphase` sits between the
-    # span and the filter, so this fragment moves when it is added and the
-    # test is the record that it did.
-    assert "| 50% | 100% | 60/100 | 0.75x | 1.00x | 40/0 ! | 2.00x |" in text
+    # adsr | adsrnf | pul | pspan | pphase | poff | filt | cut | cfrm -- `pphase`
+    # sits between the span and the filter, so this fragment moves when a
+    # column is added there (`poff` and `cfrm` did) and the test is the record
+    # that it did.
+    assert ("| 50% | 100% | 60/100 | 0.75x | 1.00x | 100% | 40/0 ! | 2.00x "
+            "| 100% |") in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
     assert "filtered frames, ours/original: **40/0**" in text
@@ -1748,7 +1750,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_pulse_span=0, our_pulse_span=0,
                  pulse_span=1.0,
                  orig_pulse_phases=0, our_pulse_phases=0,
-                 pulse_phase=1.0,
+                 pulse_phase=1.0, pulse_offset=melody, cutoff_frame=melody,
                  passband_agree=melody, passband_note=melody, travel_ratio=1.0,
                  orig_ends_at=10.0, ours_ends_at=10.0,
                  length_delta=0.0, length_bounded=False,
@@ -1776,6 +1778,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
                  call_rate=1.0, vol=melody, sync=1.0, ring=1.0, ctrl=melody, res=melody, route=melody,
+                 pitch_cents_agreement=melody,
                  sound_frames=100, sound_lag_ms=0.0,
                  orig_octave_split_frames=0, our_octave_split_frames=0)
     return r
@@ -6159,3 +6162,308 @@ def test_hold_leaves_an_unsplit_key_alone():
     assert un == fidelity.sound_note_runs(ours, 200)[k]
     (rec,) = fidelity.hold_census(orig, ours, 200)
     assert rec["kind"] == "fetch"
+
+# --------------------------------------------------------------------------
+# pitch_cents_compare: the per-FRAME pitch column.
+# --------------------------------------------------------------------------
+
+
+def _pitched_voice(freqs, gate_wave=0x41, adsr=0x0AF0):
+    """A voice gated on at frame 0 with `freqs[f]` written on every frame.
+    Sustain 15, so the envelope is audible for the whole span."""
+    return fidelity.Voice(
+        attack_frames=[0], attacks=["C-4"],
+        wf_events=[(0, gate_wave)], adsr_events=[(0, adsr)],
+        freq_events=list(enumerate(freqs)))
+
+
+def _detuned(freq, cents):
+    return round(freq * 2 ** (cents / 1200))
+
+
+def test_pitch_cents_scores_the_share_of_frames_off_by_more_than_the_tolerance():
+    """Known share, known cents: 100 frames, 10 off by +100 cents (a
+    semitone, over the 50 tolerance), 10 off by +20 (under it), 80 exact.
+    Exactly 90% agree; with the tolerance check replaced by equality the
+    20-cent frames would be charged too and this reads 80%."""
+    base = 0x1000
+    orig = [_pitched_voice([base] * 100), fidelity.Voice(), fidelity.Voice()]
+    ours_f = ([_detuned(base, 100)] * 10 + [_detuned(base, 20)] * 10
+              + [base] * 80)
+    ours = [_pitched_voice(ours_f), fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.pitch_cents_compare(orig, ours, 100)
+    assert got["pitch_cents_frames"] == 100
+    assert got["pitch_cents_agreement"] == pytest.approx(0.90)
+    assert got["pitch_cents_tolerance"] == fidelity.PITCH_CENTS_TOLERANCE == 50.0
+    # The misses sit at the 100 cents the fixture put them at.
+    assert got["pitch_cents_miss_median"] == pytest.approx(100, abs=0.5)
+    # A wider tolerance takes the 100-cent frames back in.
+    assert fidelity.pitch_cents_compare(
+        orig, ours, 100, tolerance=150)["pitch_cents_agreement"] == 1.0
+
+
+def test_pitch_cents_is_taken_at_the_startup_lag():
+    """Ours is the same line shifted by 3 frames. Unlagged, every step of
+    the staircase is charged; at lag 3 the two agree on every frame."""
+    steps = [0x1000] * 20 + [0x1800] * 20 + [0x2000] * 20
+    orig = [_pitched_voice(steps), fidelity.Voice(), fidelity.Voice()]
+    ours = [_pitched_voice([0x1000] * 3 + steps), fidelity.Voice(),
+            fidelity.Voice()]
+    assert fidelity.pitch_cents_compare(
+        orig, ours, 63, lag=3)["pitch_cents_agreement"] == 1.0
+    assert fidelity.pitch_cents_compare(
+        orig, ours, 63, lag=0)["pitch_cents_agreement"] < 1.0
+
+
+def test_pitch_cents_declines_frames_and_says_why_per_side():
+    """Ours is silent (gate off at 10, release nibble 0) for frames 11-19,
+    noise on 20-29, test-bit on 30-39; the original sounds throughout. 51
+    frames are compared, and each decline lands on OUR side under its own
+    reason and on none of the original's voice 0."""
+    n = 80
+    orig = [_pitched_voice([0x1000] * n), fidelity.Voice(), fidelity.Voice()]
+    ours_v = _pitched_voice([0x1000] * n)
+    ours_v.attack_frames = [0, 20, 30, 40]
+    ours_v.attacks = ["C-4"] * 4
+    ours_v.wf_events = [(0, 0x41), (10, 0x40), (20, 0x81), (30, 0x49),
+                        (40, 0x41)]
+    # Release nibble 0 is one frame: gate-off at 10 sounds frame 10 only.
+    ours_v.adsr_events = [(0, 0x0AF0), (10, 0x0A00), (20, 0x0AF0)]
+    ours = [ours_v, fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.pitch_cents_compare(orig, ours, n)
+    d = got["pitch_cents_declined"]
+    # The two empty voices are silent on both sides (2 x 80 frames); voice 0
+    # of the original sounds throughout, so nothing else is declined there.
+    assert d["orig"] == {**{k: 0 for k in fidelity.PITCH_CENTS_DECLINES},
+                         "silent": 2 * n}
+    assert d["ours"]["noise"] == 10 and d["ours"]["test"] == 10
+    assert d["ours"]["silent"] == 2 * n + 9          # frames 11-19
+    assert got["pitch_cents_frames"] == n - (sum(d["ours"].values()) - 2 * n)
+    assert got["pitch_cents_agreement"] == 1.0
+
+
+def test_pitch_cents_reads_none_where_nothing_is_sounded_on_both_sides():
+    got = fidelity.pitch_cents_compare(
+        [fidelity.Voice()] * 3, [fidelity.Voice()] * 3, 50)
+    assert got["pitch_cents_agreement"] is None
+    assert got["pitch_cents_frames"] == 0
+
+
+# --- `poff` and `cfrm`: the duty cycle and the cutoff, value by value -----
+#
+# `pspan` and `cut` are whole-song ratios and `pphase` counts where a note
+# opens; none of them can say that a sweep which starts in the right place goes
+# at the wrong rate, or that a filter which travels the right distance does it
+# through the wrong band or a frame late. `poff` follows each note's width from
+# its own attack, as a displacement from where it opened (so neither the packed
+# player's latency nor the sweep's global phase is scored); `cfrm` compares the
+# cutoff itself on the original's filtered frames. Each test builds timelines
+# with a KNOWN error and asserts the score; the last test of each group shows the
+# assertion cannot pass if the comparison is replaced by a constant 1.0.
+
+_POFF_ADSR = 0x0F0A
+_POFF_GAP = 20          # frames between attacks
+_POFF_NOTES = 5
+
+
+def _poff_side(rate, opens=lambda n: 0x800, adsr=_POFF_ADSR, notes=_POFF_NOTES):
+    """One voice of `notes` notes every `_POFF_GAP` frames. Each opens on
+    `opens(n)` one frame after its attack and then moves `rate` a frame."""
+    events, attacks = [], []
+    for n in range(notes):
+        a = n * _POFF_GAP
+        attacks.append(a)
+        events.append((a, 0x100))               # the instrument load's own write
+        for k in range(_POFF_GAP - 1):
+            events.append((a + 1 + k, opens(n) + rate * k))
+    v = fidelity.Voice(pulse_events=events, attack_frames=attacks,
+                       attacks=["C-4"] * notes, adsr_events=[(0, adsr)])
+    return [v, fidelity.Voice(), fidelity.Voice()]
+
+
+def _poff_expected(rate_o, rate_u):
+    """The cell-by-cell mean, derived from the definition rather than by
+    calling the function: offsets 1..16, displacement rate * k."""
+    b = fidelity.PULSE_PHASE_BUCKET
+    cells = [(min(rate_o, rate_u) * k + b) / (max(rate_o, rate_u) * k + b)
+             for k in range(1, fidelity.PULSE_OFFSET_FRAMES + 1)]
+    return sum(cells) / len(cells)
+
+
+N_POFF = _POFF_GAP * _POFF_NOTES
+
+
+def test_poff_a_sweep_at_half_the_rate_scores_the_known_amount():
+    got = fidelity.pulse_compare(_poff_side(0x40), _poff_side(0x20), N_POFF)
+    assert got["pulse_offset"] == pytest.approx(_poff_expected(0x40, 0x20))
+    assert got["pulse_offset"] < 0.8
+    assert got["pulse_offset_instruments"] == 1
+    assert got["pulse_offset_cells"] == fidelity.PULSE_OFFSET_FRAMES
+
+
+def test_poff_the_same_sweep_scores_one_and_survives_the_opening_phase():
+    """Every note of ours opens somewhere else on the band, as a free-running
+    accumulator's do against a reseeded one. Width differs at every offset; the
+    sweep does not."""
+    same = fidelity.pulse_compare(_poff_side(0x40), _poff_side(0x40), N_POFF)
+    assert same["pulse_offset"] == 1.0
+    moved = fidelity.pulse_compare(
+        _poff_side(0x40, opens=lambda n: 0x200 + 0x2c0 * n), _poff_side(0x40),
+        N_POFF)
+    assert moved["pulse_offset"] == 1.0
+    # ...which is `pphase`'s to report, not this column's
+    assert moved["pulse_phase"] < 1.0
+
+
+def test_poff_a_sweep_that_goes_the_other_way_reads_correct():
+    """Documented blind spot: the displacement is unsigned, because a bouncing
+    accumulator sends two notes of one instrument both ways from one width."""
+    up = _poff_side(0x40)
+    down = _poff_side(-0x40, opens=lambda n: 0xC00)
+    assert fidelity.pulse_compare(up, down, N_POFF)["pulse_offset"] == 1.0
+
+
+def test_poff_a_dropped_pulse_program_reads_low_and_says_which_side_is_static():
+    """The emitter switched off: the original sweeps, ours holds one width."""
+    got = fidelity.pulse_compare(_poff_side(0x40), _poff_side(0), N_POFF)
+    assert got["pulse_offset"] == pytest.approx(_poff_expected(0x40, 0))
+    assert got["pulse_offset"] < 0.5
+    assert (got["pulse_offset_orig_static"], got["pulse_offset_our_static"]) == (0, 1)
+
+
+def test_poff_an_instrument_neither_side_sweeps_is_declined_not_scored_one():
+    got = fidelity.pulse_compare(_poff_side(0), _poff_side(0), N_POFF)
+    assert got["pulse_offset"] is None
+    assert got["pulse_offset_cells"] == 0
+    assert (got["pulse_offset_orig_static"], got["pulse_offset_our_static"]) == (1, 1)
+
+
+def test_poff_declines_are_recorded_per_side():
+    # An instrument only the original has (ADSR far from ours), a note opening
+    # on $000 (nothing has written the register), and notes too short to read.
+    orig = _poff_side(0x40)
+    ours = _poff_side(0x40, adsr=0x3333)
+    got = fidelity.pulse_compare(orig, ours, N_POFF)
+    assert got["pulse_offset"] is None
+    assert (got["pulse_offset_orig_unpaired"], got["pulse_offset_our_unpaired"]) == (1, 1)
+
+    unset = _poff_side(0x40, opens=lambda n: 0 if n == 0 else 0x800)
+    unset[0].pulse_events = [(f, 0) if f < 21 else (f, w)
+                             for f, w in unset[0].pulse_events]
+    got = fidelity.pulse_compare(unset, _poff_side(0x40), N_POFF)
+    assert got["pulse_offset_orig_unset"] == 1 and got["pulse_offset_our_unset"] == 0
+
+    tight = _poff_side(0x40)
+    tight[0].attack_frames = [0, 2, 40]
+    tight[0].attacks = ["C-4"] * 3
+    got = fidelity.pulse_compare(tight, _poff_side(0x40), N_POFF)
+    assert got["pulse_offset_orig_short"] == 1 and got["pulse_offset_our_short"] == 0
+
+
+def test_poff_is_registered_and_printed():
+    d = next(d for d in fidelity.DIMENSIONS if d.key == "pulse_offset")
+    assert d.column == "poff" and d.kind == "fraction"
+    assert d.reads == ("$D402/$D403",)
+    assert d.fmt(d.value({"pulse_offset": 0.5})) == "50%"
+    header = next(l for l in fidelity.report(
+        [_row("A.sid", "measured", 1.0)], _Args()).splitlines()
+        if l.startswith("| File |"))
+    assert " pphase | poff | filt |" in header
+
+
+def test_poff_would_fail_if_the_comparison_were_a_constant(monkeypatch):
+    """The known-error assertion above is what stops a constant 1.0 passing."""
+    monkeypatch.setattr(fidelity, "_pulse_offset_credit", lambda mo, mu: 1.0)
+    got = fidelity.pulse_compare(_poff_side(0x40), _poff_side(0x20), N_POFF)
+    assert got["pulse_offset"] == 1.0
+    assert got["pulse_offset"] != pytest.approx(_poff_expected(0x40, 0x20))
+
+
+_CFRM_N = 100
+
+
+def _cfrm_filter(cutoff, route=(0, _CFRM_N)):
+    """Voice 1 routed with a low-pass over `route`, cutoff `f -> cutoff(f)`."""
+    start, end = route
+    ctrl = [(start, 0x01)] + ([(end, 0x00)] if end < _CFRM_N else [])
+    return _filt(cutoff=[(f, cutoff(f)) for f in range(_CFRM_N)],
+                 ctrl=ctrl, passband=[(0, 1)])
+
+
+def _cfrm(orig, ours, lag=0):
+    return fidelity.filter_compare(orig, ours, _CFRM_N, lag=lag)
+
+
+def test_cfrm_a_constant_cutoff_error_scores_the_known_amount():
+    slack, span = fidelity.CUTOFF_FRAME_SLACK, fidelity.CUTOFF_FRAME_SPAN
+    err = slack + span // 2                       # half the credit, every frame
+    got = _cfrm(_cfrm_filter(lambda f: 0x4000),
+                _cfrm_filter(lambda f: 0x4000 + err))
+    assert got["cutoff_frame"] == pytest.approx(0.5)
+    assert got["cutoff_frame_frames"] == _CFRM_N
+    # `cutoff_sweep` cannot see it: both held, nothing travels
+    assert got["cutoff_sweep"] is None
+
+
+def test_cfrm_sees_a_sweep_of_the_right_size_in_the_wrong_band():
+    """Why this is not `cut`: both sweep 0x20 a frame for 100 frames."""
+    got = _cfrm(_cfrm_filter(lambda f: 0x1000 + 0x20 * f),
+                _cfrm_filter(lambda f: 0x9000 + 0x20 * f))
+    assert got["cutoff_sweep"] == 1.0
+    assert got["cutoff_frame"] == 0.0
+
+
+def test_cfrm_a_step_or_two_of_the_register_is_not_an_error():
+    got = _cfrm(_cfrm_filter(lambda f: 0x4000),
+                _cfrm_filter(lambda f: 0x4000 - fidelity.CUTOFF_FRAME_SLACK))
+    assert got["cutoff_frame"] == 1.0
+
+
+def test_cfrm_a_wrap_through_zero_is_not_a_full_scale_error():
+    got = _cfrm(_cfrm_filter(lambda f: 0x0000), _cfrm_filter(lambda f: 0xFF00))
+    assert got["cutoff_frame"] == 1.0
+
+
+def test_cfrm_is_lag_aligned_like_band():
+    lag = 3
+    sweep = lambda f: 0x1000 + 0x800 * (f % 20)                         # noqa: E731
+    delayed = lambda f: sweep(max(f - lag, 0))                   # noqa: E731
+    aligned = _cfrm(_cfrm_filter(sweep), _cfrm_filter(delayed), lag=lag)
+    off = _cfrm(_cfrm_filter(sweep), _cfrm_filter(delayed), lag=0)
+    assert aligned["cutoff_frame"] > 0.97
+    assert off["cutoff_frame"] < 0.6
+
+
+def test_cfrm_a_dropped_filter_scores_zero_and_an_invented_one_is_declined():
+    held = lambda f: 0x4000                                      # noqa: E731
+    none = _filt(cutoff=[(0, 0x4000)])
+    dropped = _cfrm(_cfrm_filter(held), none)
+    assert dropped["cutoff_frame"] == 0.0
+    assert dropped["cutoff_frame_orig_only"] == _CFRM_N
+    assert dropped["cutoff_frame_our_only"] == 0
+    invented = _cfrm(none, _cfrm_filter(held))
+    assert invented["cutoff_frame"] is None
+    assert invented["cutoff_frame_our_only"] == _CFRM_N
+    # half of the original's filtered frames are ours too
+    half = _cfrm(_cfrm_filter(held), _cfrm_filter(held, route=(0, 50)))
+    assert half["cutoff_frame"] == pytest.approx(0.5)
+    assert (half["cutoff_frame_frames"], half["cutoff_frame_orig_only"]) == (50, 50)
+
+
+def test_cfrm_needs_a_lag_and_is_registered_and_printed():
+    assert "cutoff_frame" not in fidelity.filter_compare(
+        _cfrm_filter(lambda f: 1), _cfrm_filter(lambda f: 1), _CFRM_N)
+    d = next(d for d in fidelity.DIMENSIONS if d.key == "cutoff_frame")
+    assert d.column == "cfrm" and d.kind == "fraction"
+    assert "$D415/$D416" in d.reads
+    header = next(l for l in fidelity.report(
+        [_row("A.sid", "measured", 1.0)], _Args()).splitlines()
+        if l.startswith("| File |"))
+    assert " cut | cfrm | band |" in header
+
+
+def test_cfrm_would_fail_if_the_comparison_were_a_constant(monkeypatch):
+    monkeypatch.setattr(fidelity, "_cutoff_credit", lambda x, y: 1.0)
+    got = _cfrm(_cfrm_filter(lambda f: 0x1000 + 0x20 * f),
+                _cfrm_filter(lambda f: 0x9000 + 0x20 * f))
+    assert got["cutoff_frame"] == 1.0
