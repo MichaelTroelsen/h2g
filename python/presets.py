@@ -409,6 +409,10 @@ EXCLUDED_FROM_ALWAYS = {
     # tempo floored (convert's `regrid_floored`; Knucklebusters subtune 2).
     # Inert without `regrid`.
     "regrid_floored",
+    # Per song: the first rows at the lengths the original's outer gate gives
+    # them before its first underflow (convert's `first_rows`; a JMP-form gate
+    # whose cell starts mid-cycle). Inert without a `jmp_gate` player.
+    "first_rows",
     # An INTEGER (rows), not a toggle: where in the looping voice's pattern
     # `regrid_park`'s pairs sit, as a rotation of the evenly spread rows. The
     # original's extra frame is a free-running counter and the pairs are
@@ -423,6 +427,11 @@ EXCLUDED_FROM_ALWAYS = {
     # (Mega_Apocalypse, Pygmies_Revenge); the read also reaches held DIGI
     # files, which the hold forbids working, so it cannot be an `always` flag.
     "master_volume",
+    # Per song and never a default: writes CMD_SETWAVE with the control byte
+    # of the instrument each subtune-0 voice starts on, before its first
+    # note (`h2g/pre_note_wave.py`). Reaches every player that writes the held
+    # instrument's waveform on a rest.
+    "pre_note_wave",
     # Per song and never a default: reproduces a $D418 volume the player
     # derives from a voice's orderlist position (`detect.find_master_fade`),
     # one pattern copy per fading position. Reaches Sanxion.sid alone.
@@ -609,6 +618,13 @@ EXCLUDED_FROM_ALWAYS = {
     # evidence for offering the next value along, which a guard on paper is
     # not.
     "max_hard_restart",
+    # The hard restart taken ONE PAST that limit, to the row itself
+    # (`hard_restart._hard_restart_ticks(row=True)`): the original gates off for a whole
+    # beat, and on a `no_test_restart` song the gap is the gatetimer, so
+    # `row - 1` is one frame short on every note. Per song, chosen by
+    # measurement, and NOT searched: its .sng stops in the GoatTracker
+    # editor (gplay.c:334), which a score cannot see.
+    "row_hard_restart",
     # Also measured and rejected as a default, twice: the first attempt (before
     # v0.5.66's variable-length wavetable) cost 82 points of wave agreement
     # across 18 files, and re-measuring under v0.5.175's aligned harness -- the

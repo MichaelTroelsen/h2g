@@ -488,7 +488,9 @@ def test_5_title_tunes_subtune_k_plays_what_player_k_converts_to_alone(five):
     opts, merged, _alone, lines = five
     level = next(l for l in lines
                  if l.startswith("Players.................: 4 of 4"))
+    # The same numbering-bound options `_append_players` clears (base_opts).
     view_opts = dict(opts, real_firstwave_instruments=(),
+                     gate_off_firstwave_instruments=(),
                      drop_unnamed_instruments=False)
     if "without pulse_phase" in level or "without pulse sweeps" in level:
         view_opts["pulse_phase"] = False

@@ -3708,6 +3708,62 @@ schedule lands on 673/673, 559/559 and 420/420 Wiz attacks and 442/442, 827/827 
 `instr` .630 -> .854 and .717 -> .929. Wiz has three subtunes, so the gate in
 `convert` reads the schedule for subtune 0 whatever the subtune count
 (`tests/test_regrid_phase_wiz_sanxion.py`).
+**A lengthened row on a pattern too short for a pair is carried to the next play,
+not dropped.** I_Ball joins its sections through pattern 8, one musical row long,
+and the schedule lengthens that row 3 times in the first pass (rows 895, 2239,
+3135). A pair needs a pattern of 4 or more rows, so those were dropped without a
+count and the rows' starts walked 0 -> -3 frames from the original's (18.2%
+exact, `regrid_phase` forced, cb2d3e3, `-t 180`). `regrid_phase_tempos` now asks
+the next play for the row, at the first row the guards allow (row 1, one row of
+transient): 99.6% exact, never more than 1 frame off (`tests/test_regrid_phase_short_pattern.py`).
+**I_Ball ships it** (`-t 180 --presets --sound`): `wave` .604 -> .896, `gate`
+.408 -> .815, `otime` .130 -> .993, `drift` 0.00 -> 0.00, `aud` .859 -> .867.
+No other corpus file's bytes move.
+
+**Bangkok_Knights, Sigma_Seven, Nemesis_the_Warlock and Trans-Atlantic_Balloon_Challenge
+ship it** (measured at cb2d3e3, `-t 180 --presets --sound`): the same schedule lands on
+every voice-0 and voice-1 attack of each (Bangkok 364/364, 765/765; Sigma 81/81, 87/87;
+Nemesis 209/209, 227/227; Trans-Atlantic 256/256 on voice 0), rows start on the original's
+frame 11.3% -> 99.8%, 18.1% -> 99.5%, 17.7% -> 99.6% and 24.6% -> 72.8%, `wave` .568 -> .859,
+.916 -> .995, .873 -> .983 and .833 -> .929. Trans-Atlantic stops at 72.8% because 5
+lengthened rows find no free command column (`5 skipped` in the log) and each leaves a
+permanent frame of debt. Forced, the option LOWERS Nineteen (`wave` .771 -> .740)
+and Auf_Wiedersehen_Monty (with the
+single-subtune guard relaxed the walk drifts to -52 frames), so those stay off.
+`tests/test_regrid_phase_onset_jitter.py` pins the four.
+
+**`--first-rows` (`first_rows`) gives the first rows the lengths the original's
+gate gives them.** A JMP-form outer gate (`call_phase.jmp_gate`) counts down from
+the byte the file holds, so until its first underflow the rows are not the
+cycle's rows. Star_Paws (cell `$06`, reload 127): the call skipped on the 7th
+call lands in its third row, 3 frames where every other row is 2, so voice 1
+attacks at 1, 10, 18, 26 where ours (lead removed) were 1, 9, 17, 25.
+Knucklebusters subtune 0 (cell `$03`, reload 1): fetches on 1, 6, 12, 18 -- its
+first row is 5 frames where the rest are 6. `startup_lag` takes the lead from
+the FIRST attack, so both were scored a frame off their own steady lag. The
+three cells are read off the init run (`arpeggio._init_cells`), the fetch
+frames walked by `jmp_gate_ticks` (which lands on the first 40 notes of
+Star_Paws voice 1 and on `siddump -w` of both gates' cells), and the first
+pattern's play gets a clone with `CMD_SETTEMPO` `row + delta` on the row and
+the steady tempo on the row after (`patterns.first_rows_tempos`). Only the
+rows up to the first underflow's are touched: the later skips of a long gate
+are the rate `skip_gate` and `regrid` already pay for, and a subtune whose
+tempo is neither the gate's exact average nor paid by `regrid` is left alone
+(Knucklebusters subtune 2 lost `wave` .833 -> .656 with its correct first row
+in front of an unpaid 6% rate error). Measured at 64c8265 (`-t 180 --presets
+--sound`, the option on for those two files only): Star_Paws `wave` .768 ->
+.934, `onset` .188 -> .805, `gate` .647 -> .798, `ctrl` .694 -> .851, `tiefr`
+66% -> 83%, `adsr` 94% -> 98%; Knucklebusters_1 `wave` .847 -> .998, `onset`
+.003 -> 1.000, `hold` 89% -> 100%, `ctrl` 79% -> 100%, `gate` 82% -> 87%. Star_Paws'
+`aud` .940 -> .925 and `loud` .982 -> .973 fall: both are scored at the whole-frame
+prior `0.02 * startup_lag`, and the packed song's notes sit half a frame off a
+frame boundary (odd call of a 2-call frame), so the prior was 0.4 frame off
+before and 0.6 after; scored at its best prior (60 s prefix) each reads .9409 / .9808
+before and .9409 / .9804 after. Off by default and per song: Knucklebusters_1 ships it
+and Star_Paws does not, for the `aud`/`loud` fall above; forced on it also
+moves Auf_Wiedersehen_Monty, Delta, Kings_of_the_Beach_ingame, Nineteen,
+Sigma_Seven, Trans-Atlantic_Balloon_Challenge and Wiz, none measured.
+`tests/test_first_rows.py` pins it.
 
 **`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
 record sets after the drum's hit.** IK_plus' pulse+drum records read

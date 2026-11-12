@@ -41,6 +41,9 @@ def test_hunter_patrol_enters_the_records_block_instead_of_cloning_it(
     # ... and before v0.5.588's `drum_gate_off` in its preset, whose gate-off
     # drum tick shares one more table row (23460 with it).
     opts["drum_gate_off"] = False
+    # ... and before v0.5.663's `pre_note_wave`, whose first-lap copy of the
+    # entry patterns adds 1020 bytes (24484 with it).
+    opts["pre_note_wave"] = False
     blob =convert(str(CORPUS / "Hunter_Patrol.sid"), log=lambda s: None, **opts)
     # 23532 before the drop of the pulse and filter rows only a dropped record
     # reaches (instrument_drop._drop_dead_blocks) took 68 bytes (23532 - 23464) of table rows.

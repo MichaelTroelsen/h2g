@@ -9,7 +9,8 @@ SINGLE_ROW_HARD_RESTART_TICKS = 2
 
 def _hard_restart_ticks(multiplier: int, row_calls: int,
                         wide: bool = False, full: bool = False,
-                        frames: int | None = None) -> int:
+                        frames: int | None = None,
+                        row: bool = False) -> int:
     """Calls to hold the gate off before a note, bounded by the row.
 
     **gplay.c:334 stops the song outright** when the gatetimer exceeds the
@@ -150,6 +151,22 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     test_the_packed_player_compares_the_counter_with_this_gatetimer` reads the
     immediate back out of a packed Action_Biker.
 
+    **`row` takes the SCHEDULE value to the row itself, `row_calls` rather than
+    `row_calls - 1`, and is meant for a writer that then takes `aligned_firstwave`'s
+    one call off.** `_write_instruments` stores `ticks - gatetimer_trim` for such a
+    record (the init call is itself one of the gate's off calls), so a schedule
+    value of `row_calls` is a STORED gatetimer of `row_calls - 1`, the most
+    gplay.c:334 allows -- and it is one frame more gate-off than the
+    `row_calls - 1` bound reaches. The original's gap is one beat, the whole
+    last row. Ninja (-S1, 4-call rows, `no_test_restart`, `aligned_firstwave`):
+    the original gates off 4 frames before every note, this function's
+    default bound gives 3 (gate 74.8%; 2369 of 2427 miss frames are that one
+    frame); `row` gives 4 (gate 99.4%, attacks and melody unchanged), and
+    one more (stored 4, past the tick) collapses the song to 3 attacks.
+    A writer that does NOT trim must clamp the value back (it does:
+    `instruments._write_instruments`). Reads `row_calls` only; `wide`, `full`
+    and `frames` are ignored.
+
     Falls back to that constant where the row is unknown, which is what a
     caller building instruments without a tempo pass has.
     """
@@ -166,6 +183,8 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     want = max(1, base * max(1, multiplier))
     if not row_calls or row_calls <= 1:
         return min(want, 2)
+    if row:
+        return row_calls
     # Ordered, not exclusive: the search tries every combination of its
     # toggles, so `full` and `wide` can arrive together and the wider of the
     # two has to win rather than the later-tested one. A song selecting both

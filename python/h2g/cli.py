@@ -144,6 +144,13 @@ def main(argv=None) -> int:
              "Paws' voice 1 does; a song with no such voice is unchanged. "
              "Per song. Off by default")
     parser.add_argument(
+        "--first-rows", action="store_true",
+        help="give the first rows the lengths the original's outer gate gives "
+             "them before its first underflow (a JMP-form gate whose cell "
+             "starts mid-cycle: Star_Paws' 3-frame third row, Knucklebusters "
+             "subtune 0's 5-frame first row), in a clone of the first "
+             "pattern. Per song. Off by default")
+    parser.add_argument(
         "--regrid-phase", action="store_true",
         help="with --regrid, put the compensating rows on the rows the "
              "original's free-running gate lengthens (cloned patterns, one "
@@ -170,6 +177,14 @@ def main(argv=None) -> int:
              "whose player holds $D418's volume below $F, on row 0 of a "
              "voice >= 1 entry pattern. A song whose player sets $F or has "
              "no such shape is unchanged. Per song. Off by default")
+    parser.add_argument(
+        "--pre-note-wave", action="store_true",
+        help="write CMD_SETWAVE with the control byte (gate clear) of the "
+             "instrument each voice of subtune 0 starts on, on the first "
+             "free row before its first note: the original's player writes "
+             "the held instrument's waveform every frame, rests included. "
+             "A voice whose first row is a note is unchanged. Per song. Off "
+             "by default")
     parser.add_argument(
         "--master-fade", action="store_true",
         help="reproduce a $D418 volume the player derives from a voice's "
@@ -561,6 +576,17 @@ def main(argv=None) -> int:
              "behind --fidelity, and off by default"
     )
     parser.add_argument(
+        "--row-hard-restart", action="store_true",
+        help="hold the gate off for the WHOLE last row before a note, one "
+             "call past --max-hard-restart's `row - 1`. Rob Hubbard's players "
+             "release for exactly one beat, the converter's row, so on a "
+             "`--no-test-restart` song `row - 1` is one frame short on every "
+             "note. Effective only on a record `--aligned-firstwave` trims "
+             "(its stored gatetimer is then `row - 1`, within gplay.c:334); "
+             "every other record keeps the old bound. Per song, off by "
+             "default"
+    )
+    parser.add_argument(
         "--rest-wave-silence", action="store_true",
         help="on a bit-6 rest, write the silent waveform the player parks "
              "(CMD_SETWAVE $08) as well as keying off. A Goattracker KEYOFF "
@@ -844,7 +870,9 @@ def main(argv=None) -> int:
                           ("--regrid-unshare-rest", "regrid_unshare_rest"),
                           ("--regrid-phase", "regrid_phase"),
                           ("--regrid-floored", "regrid_floored"),
+                          ("--first-rows", "first_rows"),
                           ("--master-volume", "master_volume"),
+                          ("--pre-note-wave", "pre_note_wave"),
                           ("--master-fade", "master_fade"),
                           ("--keep-hard-restart", "keep_hard_restart"),
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
@@ -858,6 +886,7 @@ def main(argv=None) -> int:
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--wide-hard-restart", "wide_hard_restart"),
                           ("--max-hard-restart", "max_hard_restart"),
+                          ("--row-hard-restart", "row_hard_restart"),
                           ("--pulse-phase", "pulse_phase"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
@@ -972,8 +1001,10 @@ def main(argv=None) -> int:
                       regrid_unshare_rest=args.regrid_unshare_rest,
                       regrid_phase=args.regrid_phase,
                       regrid_floored=args.regrid_floored,
+                      first_rows=args.first_rows,
                       regrid_park_shift=args.regrid_park_shift,
                       master_volume=args.master_volume,
+                      pre_note_wave=args.pre_note_wave,
                       master_fade=args.master_fade,
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
@@ -1000,6 +1031,7 @@ def main(argv=None) -> int:
                       no_hard_restart=args.no_hard_restart,
                       wide_hard_restart=args.wide_hard_restart,
                       max_hard_restart=args.max_hard_restart,
+                      row_hard_restart=args.row_hard_restart,
                       hard_restart_frames=args.hard_restart_frames,
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,

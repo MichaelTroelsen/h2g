@@ -1546,7 +1546,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr |"
+    assert ("| vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | holdn | gate | gatenf | tail | adsr |"
             in text)
     # adsr | adsrnf | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1731,6 +1731,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  noise_run_ours_only=0,
                  sound_run_agreement=melody, sound_run_matched=1,
                  sound_run_agreement_nofetch=melody, sound_run_fetch=0,
+                 holdn=melody, holdn_notes=1,
                  sound_run_instruments=1, sound_run_delta=0,
                  release_tail_agreement=melody, release_tail_matched=1,
                  release_tail_instruments=1, release_tail_ours_longer=0,
@@ -5696,6 +5697,108 @@ def test_holdnf_is_registered_beside_hold_and_says_what_it_is_blind_to():
     assert "Blind to a one-frame fetch difference" in d.of
     # and `hold` itself is untouched: still keyed on the original key
     assert next(x for x in fidelity.DIMENSIONS if x.column == "hold").key         == "sound_run_agreement"
+
+
+# --- `holdn`: `hold` read note by note rather than by mode -------------------
+
+
+def _slot_voice(adsr, slots, hold_cut=None):
+    """One voice playing notes of the given `slots` (frames to the next
+    attack), each sounding for its whole slot unless `hold_cut` says a slot
+    stops sounding after that many frames. A closing attack makes the last note
+    whole. Returns the 3-voice list the column functions take."""
+    wf, at, f = [], [], 0
+    for sl in slots:
+        at.append(f)
+        wf.append((f, 0x11))
+        if hold_cut and sl in hold_cut:
+            wf.append((f + hold_cut[sl], 0x09))
+        f += sl
+    at.append(f)
+    wf.append((f, 0x11))
+    return [fidelity.Voice(wf_events=wf, adsr_events=[(0, adsr)],
+                           attack_frames=at),
+            fidelity.Voice(), fidelity.Voice()]
+
+
+def test_holdn_reads_100_where_hold_reads_0_on_a_bimodal_key():
+    """The Wiz `$0909` shape, made synthetic. The same 12/36 rhythm on both
+    sides, note for note; the original's long notes are split 36/37 by
+    sub-frame jitter (9 and 9) and ours are all 36. The original's modal length
+    is therefore the short note (12 of 12/9/9) and ours is the long one (18 of
+    12/18), so `hold` calls the instrument wrong while every one of the 30
+    notes is within a frame of its partner."""
+    orig = [12, 36] * 6 + [12, 37] * 6 + [36, 37] * 3
+    ours = [12, 36] * 12 + [36] * 6
+    oo = _slot_voice(0x0909, orig)
+    uu = _slot_voice(0x0909, ours)
+    assert fidelity.sound_run_agreement(oo, uu, 4000)["sound_run_agreement"]         == 0.0
+    rec = fidelity.hold_census(oo, uu, 4000)[0]
+    assert (rec["orig_held"], rec["our_held"]) == (12, 36)
+    got = fidelity.hold_note_agreement(oo, uu, 4000)
+    assert got["holdn"] == 1.0
+    assert got["holdn_notes"] == 30
+    assert rec["holdn"] == 1.0
+
+
+def test_holdn_does_not_agree_where_the_notes_do_not():
+    """Nemesis `$0CC8` shape: same slots, but ours keeps sounding for 48 frames
+    on the notes the original lets go of after 16. The keys' MODES still match
+    (the 16-frame note is the mode on both sides), so `hold` reads 100%."""
+    slots = [16] * 3 + [48] * 2
+    oo = _slot_voice(0x0C09, slots * 8, hold_cut={48: 16})   # original lets go
+    uu = _slot_voice(0x0C09, slots * 8)                        # ours holds on
+    assert fidelity.sound_run_agreement(oo, uu, 4000)["sound_run_agreement"] \
+        == 1.0
+    got = fidelity.hold_note_agreement(oo, uu, 4000)
+    assert got["holdn"] == 24 / 40               # the 16s agree, the 48s not
+    assert got["holdn_notes"] == 40
+
+
+def test_holdn_forgives_the_fetch_frame_and_a_frame_of_slot_jitter():
+    for dh, ok in ((0, True), (-1, True), (-2, True), (1, True),
+                   (2, False), (-3, False)):
+        oo = _hold_voices(0x0A09, 20, 20, 6)
+        # held cannot exceed the slot, so a longer note is a longer slot
+        uu = (_hold_voices(0x0A09, 20, 20 + dh, 6) if dh <= 0
+              else _hold_voices(0x0A09, 20 + dh, 20 + dh, 6))
+        got = fidelity.hold_note_agreement(oo, uu, 400)
+        assert got["holdn"] == (1.0 if ok else 0.0), dh
+
+
+def test_holdn_counts_an_original_note_with_no_partner_as_a_miss():
+    oo = _hold_voices(0x0A09, 20, 20, 8)
+    uu = _hold_voices(0x0A09, 20, 20, 3)      # ours plays 3 of the 8 notes
+    got = fidelity.hold_note_agreement(oo, uu, 400)
+    assert got["holdn_notes"] == 8
+    assert got["holdn"] == 3 / 8
+
+
+def test_holdn_takes_the_startup_lag_out_before_pairing():
+    """Ours starts 6 frames late. A 10-frame note pairs with the right
+    partner only if the lag is taken out first."""
+    oo = _hold_voices(0x0A09, 10, 10, 8)
+    base = _hold_voices(0x0A09, 10, 10, 8)[0]
+    late = [fidelity.Voice(
+        wf_events=[(f + 6, w) for f, w in base.wf_events],
+        adsr_events=[(0, 0x0A09)],
+        attack_frames=[a + 6 for a in base.attack_frames]),
+        fidelity.Voice(), fidelity.Voice()]
+    assert fidelity.hold_note_agreement(oo, late, 400, lag=6)["holdn"] == 1.0
+
+
+def test_holdn_is_registered_and_hold_is_untouched():
+    cols = [d.column for d in fidelity.DIMENSIONS]
+    assert "holdn" in cols
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "holdn")
+    assert "MODE" in d.of and "Counts notes, not instruments" in d.of
+    assert next(x for x in fidelity.DIMENSIONS
+                if x.column == "hold").key == "sound_run_agreement"
+    # the census record carries it beside the kind, `kind` untouched
+    oo = _hold_voices(0x0A09, 8, 8, 6)
+    uu = _hold_voices(0x0A09, 8, 7, 6)
+    rec = fidelity.hold_census(oo, uu, 200)[0]
+    assert rec["kind"] == "fetch" and rec["holdn"] == 1.0
 
 
 # --- `gatenf`: `gate` with the next-note fetch frame not charged -------------

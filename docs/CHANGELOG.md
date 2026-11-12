@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.663 — 2026-11-12
+
+- v0.5.663: Adopt 10 sub-99% patches: row hard restart, holdn column, Tarzan drum pitch, gate-off firstwave, pre-note waveform latch, I_Ball phase carry, 5 Title Tunes gate frame, Knucklebusters_1 first rows, regrid_phase on 4
+
 ## 0.5.662 — 2026-11-11
 
 - Adopt 9 user-approved sub-99% patches: Knucklebusters clock, Wiz/Sanxion phase, prev-class firstwave, Lion_Heart drum pitch, Sun drum, I_Ball/Bangkok click, gate M6, Lightforce drum gate-off, octave arpeggio

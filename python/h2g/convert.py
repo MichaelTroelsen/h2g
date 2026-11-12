@@ -25,12 +25,13 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_pulse_phase_table, pulse_usage, _instruments_used, find_song_speeds, effective_frames,
                          step_durations,
                          HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT,
+                         first_row_deltas,
                          _parse_song, GT_MAX_TABLELEN)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
-                       regrid_phase_tempos,
+                       regrid_phase_tempos, first_rows_tempos,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations, played_note_weights,
                        played_duration_histograms,
@@ -305,6 +306,7 @@ def convert(sid_path: str, log: Logger = print,
             no_hard_restart: bool = False,
             wide_hard_restart: bool = False,
             max_hard_restart: bool = False,
+            row_hard_restart: bool = False,
             hard_restart_frames: int | None = None,
             no_test_restart: bool = False,
             two_stage: bool = False,
@@ -345,6 +347,7 @@ def convert(sid_path: str, log: Logger = print,
             regrid_park_shift: int = 0,
             regrid_phase: bool = False,
             regrid_floored: bool = False,
+            first_rows: bool = False,
             aligned_firstwave: bool = False,
             named_firstwave: bool = False,
             pitch_tie_phase: bool = False,
@@ -359,6 +362,7 @@ def convert(sid_path: str, log: Logger = print,
             vibrato_hold: bool = False,
             prev_class_firstwave: bool = False,
             master_volume: bool = False,
+            pre_note_wave: bool = False,
             master_fade: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
@@ -710,6 +714,15 @@ def convert(sid_path: str, log: Logger = print,
     is written, on a free row 0 that is no subtune's voice-0 entry
     (`patterns.apply_master_volume`). Off by default: it moves the bytes of
     the files whose original holds a lower level, and nothing adopts it yet.
+
+    pre_note_wave writes `CMD_SETWAVE` with the control byte (gate clear) of
+    the instrument each voice of subtune 0 starts on, on the first free row
+    before its first note: the original's player writes the held instrument's
+    control byte every frame, rests included, so a voice that opens on rests
+    already shows that waveform while Goattracker shows `$00`
+    (`pre_note_wave.py`; the wave column charges those frames). Reads
+    `Detection.init_instrument` / `initial_instruments`. Off by default: it
+    moves the bytes of every file it reaches.
 
     master_fade reproduces a volume the play routine derives from a voice's
     orderlist POSITION (`LDA #base / SEC / SBC pos / ... STA $D418`,
@@ -1260,6 +1273,7 @@ def convert(sid_path: str, log: Logger = print,
         # one's clock. See patterns.apply_tempos.
         written = apply_tempos(new_patterns, tracks, values, log)
         group_tempos = list(values)
+        rate_paid = []
         if regrid:
             # The fractional part of a row the tempo cannot express. Only
             # where `effective_frames` DECLINED the exact row -- if it was
@@ -1267,6 +1281,7 @@ def convert(sid_path: str, log: Logger = print,
             # would double-count. See patterns.regrid_tempos.
             deficits = regrid_deficits(find_song_speeds(sid, det), values,
                                        skip_gate, multiplier, regrid_floored)
+            rate_paid = [d > 0 for d in deficits]
             if regrid_phase and any(deficits) and multiplier == 1:
                 # The extra frames on the ROWS the original puts them on,
                 # not spread evenly; see patterns.regrid_phase_tempos.
@@ -1285,6 +1300,18 @@ def convert(sid_path: str, log: Logger = print,
                               park=regrid_park,
                               unshare_rest=regrid_unshare_rest,
                               park_shift=regrid_park_shift)
+        if first_rows and groups == subtunes_before:
+            # The rows before the gate's first underflow, which are not the
+            # cycle's rows; see call_phase.first_row_deltas. After the
+            # regrid pairs so the clone carries them, before any pass reads
+            # the finished tempo column.
+            for k in range(groups):
+                deltas = first_row_deltas(
+                    sid, k, multiplier, values[k],
+                    rate_paid=k < len(rate_paid) and rate_paid[k])
+                if deltas:
+                    first_rows_tempos(new_patterns, tracks, k, values[k],
+                                      deltas, log)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
@@ -1627,6 +1654,7 @@ def convert(sid_path: str, log: Logger = print,
                                           and not keep_hard_restart),
                          wide_hard_restart=wide_hard_restart,
                          max_hard_restart=max_hard_restart,
+                         row_hard_restart=row_hard_restart,
                          hard_restart_frames=hard_restart_frames,
                          no_test_restart=no_test_restart,
                          two_stage=two_stage,
@@ -1676,6 +1704,7 @@ def convert(sid_path: str, log: Logger = print,
                          drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,
                          master_volume=master_volume,
+                         pre_note_wave=pre_note_wave,
                          drum_fall=drum_fall,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence))

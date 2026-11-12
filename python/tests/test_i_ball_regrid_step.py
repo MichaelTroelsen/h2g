@@ -48,7 +48,8 @@ def _i_ball(monkeypatch, full_debt):
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, "I_Ball.sid")
     opts.update(regrid=True, regrid_full_debt=full_debt,
-                regrid_per_play=False, regrid_prepay=0, regrid_park=False)
+                regrid_per_play=False, regrid_prepay=0, regrid_park=False,
+                regrid_phase=False)     # these pin regrid_tempos; phase skips it
     seen = {}
     real = C.regrid_tempos
 

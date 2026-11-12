@@ -104,6 +104,10 @@ def _corpus_ledger(monkeypatch, name, **force):
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
     assert opts.get("regrid"), name
+    # The phase pass (Bangkok_Knights, Trans-Atlantic since the onset-jitter
+    # adoption) pays the debt itself and zeroes the deficit, so
+    # `regrid_tempos` below would never be called.
+    opts["regrid_phase"] = False
     opts.update(force)
     seen = {}
     real = C.regrid_tempos

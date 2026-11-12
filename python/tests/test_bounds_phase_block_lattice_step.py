@@ -175,7 +175,7 @@ def _census(name: str, mult_ok=None):
 
 
 @needs_corpus
-@pytest.mark.parametrize("name,entries", [("Pandora.sid", 17), ("Sigma_Seven.sid", 9),
+@pytest.mark.parametrize("name,entries", [("Pandora.sid", 17), ("Sigma_Seven.sid", 10),
                                            ("Lightforce.sid", 26)])
 def test_shipped_tables_of_these_bounds_files_turn_exactly(name, entries):
     exact, within, total = _census(name)

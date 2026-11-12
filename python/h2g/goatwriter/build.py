@@ -532,6 +532,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
               max_hard_restart: bool = False,
+              row_hard_restart: bool = False,
               real_firstwave_instruments: tuple = (),
               arps: Optional[List[tuple]] = None,
               wave_alternate: bool = False,
@@ -550,6 +551,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               vibrato_onset: bool = False,
               lfo_wave: bool = False,
               master_volume: bool = False,
+              pre_note_wave: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1656,6 +1658,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        multiplier=multiplier, row_calls=row_calls,
                        wide_hard_restart=wide_hard_restart,
                        max_hard_restart=max_hard_restart,
+                       row_hard_restart=row_hard_restart,
                        hard_restart_frames=hard_restart_frames,
                        real_firstwave_instruments=real_firstwave_instruments,
                        instr_row_calls=instr_row_calls,
@@ -2178,6 +2181,32 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         from ..patterns import apply_master_volume
         patterns = [list(p) for p in patterns]
         apply_master_volume(patterns, tracks, det.master_volume, log)
+
+    # The waveform a voice shows before its first note, LAST: it takes only a
+    # free command cell, and an entry pattern that is played again is copied,
+    # so the orderlist bytes written above are patched in place
+    # (`pre_note_wave.apply_pre_note_waves`).
+    if pre_note_wave:
+        from ..pre_note_wave import apply_pre_note_waves, start_waves
+        from ..patterns import MAX_PATTERNS
+        waves = start_waves(sid, det)
+        if any(w is not None for w in waves):
+            vib_of = {n: out[instr_at + 1 + (n - 1) * 25 + 5]
+                      for n in range(1, out[instr_at] + 1)}
+            patterns, new_tracks, _n = apply_pre_note_waves(
+                patterns, tracks, waves, MAX_PATTERNS, log, vib_of)
+            if _n:
+                # A first-lap copy lengthens an orderlist, so the whole
+                # track section is rewritten (nothing after it has been
+                # written that points back into it).
+                first = track_at[0] - 1
+                last = track_at[-1] + len(tracks[-1])
+                section = bytearray()
+                for track in new_tracks:
+                    section.append((len(track) - 1) & 0xFF)
+                    section += bytes(track)
+                out[first:last] = section
+                tracks = new_tracks
 
     out.append(len(patterns) & 0xFF)
     for pattern in patterns:

@@ -59,6 +59,9 @@ DRUM_FALL_EXCLUDED = 0x02 | 0x08 | 0x10 | 0x40 | 0x80
 # and 11, effect $45/$65: the original gates off on the note's second tick
 # with the pitch held, `(3, 9)` on voice 1 where ours held `(9, 3)`).
 DRUM_GATE_ONLY_BITS = 0x40
+# Wavetable note byte of a gate-only head: $00 = the played note (a relative
+# note of +0), which is where the player's bit-$40 re-assert has the pitch.
+DRUM_GATE_HEAD_NOTE = 0x00
 # The block stops once the high byte is zero: it subtracts while hi != 0.
 DRUM_FALL_FLOOR = 0x100
 # Longest note a row is assumed to hold, in frames per row, for the chain
@@ -247,9 +250,16 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
         at_head[(w, k)] = first + len(entries)
         if not k:
             # gate-only (`drum_gate_records`): the gate off, then stop with
-            # the waveform latched -- the frequency belongs to the record's
-            # own fixed-pitch block, not to a fall
-            entries += [(w | 0x01, GT_WAVE_NO_NOTE), (w, GT_WAVE_NO_NOTE),
+            # the waveform latched. The frequency is the PLAYED NOTE's, not
+            # kept: measured on subtune 5's dump the original's click
+            # (`81` at C-6) lasts one call and the call that gates off
+            # (`10`) is back on the note's pitch; the bit-$40 block, which
+            # these records are chosen for, loads the pitch from a table
+            # every frame (`$58B0-$58C3`, `$59C9,X` the note). A kept
+            # frequency held the click's pitch through the whole release
+            # (Tarzan subtune 5: aud .7962 -> .7876 against no head).
+            entries += [(w | 0x01, DRUM_GATE_HEAD_NOTE),
+                        (w, DRUM_GATE_HEAD_NOTE),
                         (GT_WAVE_JUMP, 0x00)]
             continue
         entries += [(w | 0x01, GT_WAVE_NO_NOTE), (w, GT_WAVE_NO_NOTE),

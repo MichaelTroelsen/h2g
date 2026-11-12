@@ -683,3 +683,99 @@ def nibble_gate_step_lead(sid: SidFile, det: Detection, multiplier: int,
     if rest or step <= m or not entry_gate(sid):
         return 0
     return step - m
+
+
+# ---------------------------------------------------------------------------
+# The first rows of a JMP-form gate: the cell's power-on byte
+# ---------------------------------------------------------------------------
+
+# Fetches `first_row_deltas` walks. The modal interval is read from them, so
+# they must cover more than one cycle of a short gate; a long gate's (O = 127)
+# periodic skip is outside the window `first_row_deltas` keeps anyway.
+_FIRST_ROW_FETCHES = 64
+
+
+def jmp_gate_cells(sid: SidFile) -> Optional[Tuple[int, int, int]]:
+    """(outer cell, speed counter, counter reload) addresses of a `jmp_gate`
+    player, or None.
+
+    The three cells `jmp_gate_ticks` steps: the gate's `DEC cell`, and the
+    speed counter and its reload cell in the `DEC / BPL +6 / LDA reload / STA`
+    block the gate's `JMP` lands behind.
+    """
+    if not jmp_gate(sid):
+        return None
+    gate = OUTER_GATE.search(sid.data)
+    block = SPEED_GATE.match(sid.data, gate.end())
+    if gate is None or block is None:
+        return None
+    return (gate.group(1)[0] | gate.group(1)[1] << 8,
+            block.group(1)[0] | block.group(1)[1] << 8,
+            block.group(2)[0] | block.group(2)[1] << 8)
+
+
+def first_row_deltas(sid: SidFile, subtune: int, multiplier: int,
+                     row_calls: int, rate_paid: bool = False) -> dict:
+    """{row: calls to add} for the rows of `subtune` whose length in the
+    original is not the steady one because of the gate's power-on phase.
+
+    **The cell does not start where its cycle does.** A `jmp_gate` player is
+    run by three bytes the file holds at start (`jmp_gate_ticks`): the outer
+    cell, the speed counter and the counter's reload, set by the init
+    (`arpeggio._init_cells`, which reads the subtune's own reload from the
+    player's table). The cell counts down from whatever byte the file holds, so
+    until its FIRST underflow the rows are not the cycle's rows:
+
+        Star_Paws   cell $06, reload 127: the call skipped on the 7th call
+                    lands in row 2, which is 3 frames where every other row
+                    of the next 64 is 2 (a skip every 128 calls after it)
+        Knucklebusters, subtune 0   cell $03, reload 1: fetches on frames
+                    1, 6, 12, 18 ... -- row 0 is 5 frames where every row
+                    after it is 6
+
+    Our rows are all the steady length (`row_calls`), so our first attack sat
+    on the original's frame plus the packed player's lead and every later one
+    a frame off it, in the direction the original's first row went: Star_Paws
+    attacks at 1, 10, 18, 26 against ours 1, 9, 17, 25 once the lead is taken
+    out. `startup_lag` takes the lead from the FIRST attack, so the whole song
+    was scored one frame off its own steady lag.
+
+    Only the rows up to the first underflow's row are returned: the later
+    skips of a long gate are the rate `skip_gate` and `regrid` already pay for.
+    Declined (`{}`) unless the file's tick is exactly `row_calls` (the modal
+    interval times the multiplier), which is also what makes a row's
+    difference in frames a difference in calls -- and unless the rows AFTER
+    the first keep the original's rate: either `row_calls` is the gate's exact
+    average (`row_calls * O == frames * (O + 1) * multiplier`, the rule
+    `startup_phase` applies) or the caller says `regrid` pays the fraction
+    (`rate_paid`). A row the tempo rounded drifts against the grid, and a
+    first row put right in front of that drift moves the whole song a frame
+    for nothing: Knucklebusters subtune 2 (O = 16, a 6-call row for 6.375)
+    lost wave .833 -> .656 and onset .277 -> .127 with it, the row correct
+    and the 6% rate error after it untouched.
+    """
+    cells = jmp_gate_cells(sid)
+    if cells is None:
+        return {}
+    reload = _gw_tempo.outer_gate_skip(sid, subtune)
+    init = _gw_arpeggio._init_cells(sid, subtune)
+    if not reload or init is None:
+        return {}
+    read = init[1]
+    try:
+        cell, ctr, ctr_reload = (read(a) for a in cells)
+    except LookupError:
+        return {}
+    fetches = jmp_gate_ticks(cell, reload, ctr, ctr_reload, _FIRST_ROW_FETCHES)
+    if len(fetches) < 4:
+        return {}
+    gaps = [b - a for a, b in zip(fetches, fetches[1:])]
+    steady = Counter(gaps).most_common(1)[0][0]
+    if steady * multiplier != row_calls:
+        return {}
+    if not rate_paid and (row_calls * reload
+                          != (ctr_reload + 1) * (reload + 1) * multiplier):
+        return {}
+    underflow = cell + 1
+    return {j: (g - steady) * multiplier for j, g in enumerate(gaps)
+            if g != steady and fetches[j + 1] <= underflow + steady + 1}

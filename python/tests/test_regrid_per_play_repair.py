@@ -102,7 +102,8 @@ def _corpus_ledger(monkeypatch, name):
     doc = json.loads((ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
     opts.update(regrid=True, regrid_per_play=True, regrid_prepay=0,
-                regrid_park=False)      # Star_Paws ships the park; this walk is without it
+                regrid_park=False,      # Star_Paws ships the park; this walk is without it
+                regrid_phase=False)     # I_Ball ships it; this pins regrid_tempos
     seen = {}
     real = C.regrid_tempos
 

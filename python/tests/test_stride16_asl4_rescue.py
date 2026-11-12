@@ -123,6 +123,11 @@ def _opts(name, forced):
     from fidelity import _preset_opts
     presets = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
     opts = dict(_preset_opts(json.loads(presets.read_text()), name + ".sid"))
+    # pre_note_wave (v0.5.663) reads the voice's start instrument, which on
+    # Pygmies_Revenge only this rescue supplies: there it is the rescue's
+    # consumer, pinned by tests/test_pre_note_wave.py, not a disturbance of
+    # a file that read correctly. The A/B here is about every other byte.
+    opts["pre_note_wave"] = False
     if forced:
         opts["initial_instrument"] = True
     return opts

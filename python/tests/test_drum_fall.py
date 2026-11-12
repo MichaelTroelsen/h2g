@@ -195,7 +195,10 @@ def test_fixed_pitch_drum_records_get_the_gate_off_alone():
                 heads.add(rows[r + 1][3] - 1)
     assert heads
     for head in heads:
-        # held for the call the command lands on, gate off, stop: no fall
-        assert wt[head][1] == 0x80 and wt[head][0] & 1
-        assert wt[head + 1] == (wt[head][0] & 0xFE, 0x80)
+        # held for the call the command lands on, gate off, stop: no fall.
+        # The note byte is the played note's ($00), not "keep" ($80): the
+        # bit-$40 block re-asserts the note's pitch every frame
+        # (tests/test_drum_gate_pitch.py).
+        assert wt[head][1] == 0x00 and wt[head][0] & 1
+        assert wt[head + 1] == (wt[head][0] & 0xFE, 0x00)
         assert wt[head + 2] == (GT_WAVE_JUMP, 0x00)

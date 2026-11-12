@@ -303,6 +303,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        row_calls: int = 0,
                        wide_hard_restart: bool = False,
                        max_hard_restart: bool = False,
+                       row_hard_restart: bool = False,
                        hard_restart_frames: int | None = None,
                        real_firstwave_instruments: tuple = (),
                        instr_row_calls: dict | None = None,
@@ -448,7 +449,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         own_row_calls = (instr_row_calls or {}).get(i + lead + 1, row_calls)
         hr_ticks = _gw_hard_restart._hard_restart_ticks(
             multiplier, own_row_calls, wide_hard_restart, max_hard_restart,
-            hard_restart_frames) & 0x3F
+            hard_restart_frames, row_hard_restart) & 0x3F
         if strike_entries:
             hr_ticks = _gw_hard_restart.strike_safe_ticks(
                 strike_entries, wave_ptr, own_row_calls, hr_ticks)
@@ -571,7 +572,17 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         elif gt_number in gate_off_firstwave_instruments:
             firstwave = adopter_firstwave(data, base, det, sfx_drum,
                                           named_firstwave)
-            if gatetimer_trim and firstwave not in (FIRSTWAVE_TESTBIT,
+            own_gate_clear = (gate_clear_firstwave and data[base + 2] & 0xF0
+                              and not data[base + 2] & 0x01
+                              and data[base + 2] < 0xFE)
+            if own_gate_clear:
+                # **A record whose own waveform has the gate CLEAR stays
+                # LEGATO under the gate-off firstwave too.** The branch below
+                # (`gate_clear_firstwave`) writes the same byte and adds
+                # `GATETIMER_LEGATO`; naming the instrument here took the
+                # byte and dropped the bit (Chimera record 8, `$10`).
+                gatetimer |= _gw_constants.GATETIMER_LEGATO
+            elif gatetimer_trim and firstwave not in (FIRSTWAVE_TESTBIT,
                                                     FIRSTWAVE_FREERUN):
                 # `aligned_firstwave`: the init call is now one of the gate's
                 # off calls (it writes the record's waveform with the gate
@@ -620,6 +631,9 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             gatetimer |= _gw_constants.GATETIMER_LEGATO
         else:
             firstwave = FIRSTWAVE_TESTBIT
+        if (row_hard_restart and own_row_calls > 1
+                and (gatetimer & 0x3F) > own_row_calls - 1):
+            gatetimer = (gatetimer & ~0x3F) | (own_row_calls - 1)
         out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, stbl_ptr,
                       vib_delay, gatetimer, firstwave])
 

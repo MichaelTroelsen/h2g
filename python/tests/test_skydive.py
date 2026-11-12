@@ -127,13 +127,13 @@ def test_the_holding_program_steps_once_and_leaves_the_frame_between():
                    (0xF2, 0x41), (0x00, 0x80), (0xF2, 0x41), (0xFF, 0x00)]
 
 
-def _converted(name):
+def _converted(name, **override):
     import json
     import h2g.convert as C
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     lines = []
     sng = C.convert(str(CORPUS / f"{name}.sid"), log=lines.append,
-                    **fidelity._preset_opts(doc, f"{name}.sid"))
+                    **{**fidelity._preset_opts(doc, f"{name}.sid"), **override})
     return sng, lines
 
 
@@ -150,7 +150,10 @@ def test_hunter_patrol_points_each_long_note_nine_rows_before_its_end(
     replace it on the rows they fit."""
     import songview
     monkeypatch.setattr(S, "CARRY_VIBRATO", False)
-    sng, lines = _converted("Hunter_Patrol")
+    # pre_note_wave (v0.5.663) plays a first-lap copy of the entry patterns,
+    # which this lap walk reads beside the originals; the count is about the
+    # skydive pointers, so take it without the copy.
+    sng, lines = _converted("Hunter_Patrol", pre_note_wave=False)
     song = songview.parse_sng(sng)
     hits = []
     for vi, track in enumerate(song.tracks):

@@ -374,8 +374,8 @@ from .counter_fall import (_pattern_positions, _Segment, _setup, _visits,
 from .stored_fall import (STORED_FALL_MAX_DOWN, STORED_FALL_MODAL_SHARE,
                           stored_fall_offsets)  # noqa: F401
 from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
-                        DRUM_FALL_ROW_FRAMES, DRUM_GATE_ONLY_BITS,
-                        DrumFallPlan, drum_fall_plan, drum_fall_records,
+                        DRUM_FALL_ROW_FRAMES, DRUM_GATE_HEAD_NOTE,
+                        DRUM_GATE_ONLY_BITS, DrumFallPlan, drum_fall_plan, drum_fall_records,
                         drum_gate_records, fall_steps)  # noqa: F401
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
                         MIN_UNITS, DrumLongPlan, drum_long_plan,
@@ -405,7 +405,8 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          STARTUP_RESET_CALLS, StartupPhase,
                          GATE_OFF_FIRSTWAVE, zp_entry_gate,
                          SUBTUNE_DISPATCH, subtune_zero_entry,
-                         zp_speed_first_fetch,
+                         zp_speed_first_fetch, first_row_deltas,
+                         jmp_gate_cells, _FIRST_ROW_FETCHES,
                          _JMP_GATE_FETCH_FAR_WINDOW, _JMP_GATE_PRESCALER,
                          _fetch_names_the_cells,
                          _prescaled_new_song_test)  # noqa: F401

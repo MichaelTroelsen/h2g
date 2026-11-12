@@ -165,10 +165,12 @@ def test_at_s2_the_firstwave_ties_are_named_and_agree(tmp_path):
     Last_V8 itself shipped gate_off_firstwave_instruments on 2026-10-30
     (firstwave sweep), which removes these ties (tie_orig_only_firstwave
     0), so the case is read on the C128 version: the same music, -S2, and
-    left without it."""
+    left without it. The C128 version shipped it too at v0.5.663, so both
+    arms are taken with it cleared."""
     name = "Last_V8_C128_version.sid"
-    base = _row(tmp_path, name, 60)
-    got = _row(tmp_path, name, 60, named_firstwave=True)
+    base = _row(tmp_path, name, 60, gate_off_firstwave_instruments=[])
+    got = _row(tmp_path, name, 60, gate_off_firstwave_instruments=[],
+               named_firstwave=True)
     assert base["multiplier"] == 2
     assert base["tie_orig_only_firstwave"] > 100
     assert got["tie_orig_only_firstwave"] == 0

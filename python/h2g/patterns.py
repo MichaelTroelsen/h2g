@@ -5035,6 +5035,7 @@ def regrid_phase_tempos(patterns: List[List[int]], tracks: List[List[int]],
         row = 0
         stop = False
         extra_patterns = 0
+        carry: List[int] = []
         for i, entry in enumerate(track):
             newpos.append(len(out))
             if operand:
@@ -5062,6 +5063,17 @@ def regrid_phase_tempos(patterns: List[List[int]], tracks: List[List[int]],
                 for _ in range(n):
                     req = [r for r in range(musical)
                            if row + r < len(sched) and sched[row + r] > base]
+                    if carry:
+                        # A lengthened row that fell on a pattern too short
+                        # to hold a pair (I_Ball's one-row connector, pattern
+                        # 8) is asked of the NEXT play, at its first row the
+                        # guards allow, rather than dropped: a dropped pair
+                        # is one frame the row grid never gets back.
+                        req = req + [max(g - row, 0) for g in carry]
+                        carry = []
+                    short = req and musical < 4
+                    if short:
+                        carry = [row + r for r in req]
                     row += musical
                     placed = []
                     if req and musical >= 4:
@@ -5136,6 +5148,65 @@ def regrid_phase_tempos(patterns: List[List[int]], tracks: List[List[int]],
                if shifted else "")
             + (f", {skipped} skipped (command column in use)" if skipped else ""))
     return written, done
+
+
+def first_rows_tempos(patterns: List[List[int]], tracks: List[List[int]],
+                      k: int, base: int, deltas: dict, log=None) -> int:
+    """Give subtune `k`'s first rows the lengths the original's gate gives
+    them (`goatwriter.call_phase.first_row_deltas`).
+
+    `deltas` is `{row: calls to add}` for rows of voice 0's FIRST pattern play.
+    That play gets its own CLONE of the pattern -- a pattern the orderlist
+    plays again, or another subtune shares, must keep the steady rows -- with
+    `CMD_SETTEMPO base + delta` on each named row and `base` on the row after
+    the last of a run. Row 0 already carries the subtune's `CMD_SETTEMPO base`
+    (`apply_tempos`) and its data is replaced; any other row needs a free
+    command column and no running 1XY-4XY to cancel, and a row that cannot be
+    written declines the WHOLE subtune rather than half of a correction (a
+    first row lengthened without its restore would lengthen every row after
+    it). Declined too where the first pattern is under a `$Dn` repeat or the
+    rows run past its musical end. Returns the rows written.
+    """
+    ti = 3 * k
+    if ti >= len(tracks) or not deltas:
+        return 0
+    track = tracks[ti]
+    at = next((i for i, e in enumerate(track)
+               if e == GT_ORDER_RESTART or e < GT_COMMAND_FLOOR
+               or GT_REPEAT <= e < GT_TRANSPOSE_DOWN), None)
+    if at is None or track[at] >= GT_COMMAND_FLOOR or track[at] >= len(patterns):
+        return 0
+    if at > 0 and GT_REPEAT <= track[at - 1] < GT_TRANSPOSE_DOWN:
+        return 0
+    entry = track[at]
+    work = list(patterns[entry])
+    total = len(work) // 4
+    musical = next((r for r in range(total) if work[r * 4] == GT_END_PATTERN),
+                   total)
+    last = max(deltas)
+    if last + 1 >= musical or len(patterns) >= MAX_PATTERNS:
+        return 0
+    cur = base
+    wrote = 0
+    for r in range(min(deltas), last + 2):
+        want = base + deltas.get(r, 0)
+        if want == cur and r != 0:
+            continue
+        if r == 0:
+            if work[2] != CMD_SETTEMPO:
+                return 0
+        elif work[r * 4 + 2] != 0 or _inherits_continuous_effect(work, r):
+            return 0
+        work[r * 4 + 2], work[r * 4 + 3] = CMD_SETTEMPO, want
+        cur = want
+        wrote += 1
+    patterns.append(work)
+    track[at] = len(patterns) - 1
+    if log:
+        log(f"First rows..............: subtune {k} rows "
+            f"{sorted(deltas)} {sorted(set(deltas.values()))} call(s) in "
+            f"cloned pattern {len(patterns) - 1} (the gate's power-on phase)")
+    return wrote
 
 
 # Moves `_regrid_per_play`'s repair may apply before it stops: each one lowers a

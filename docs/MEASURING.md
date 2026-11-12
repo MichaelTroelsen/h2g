@@ -713,6 +713,15 @@ Commando_2, Last_V8, Mozart and Zoids (every instrument `fetch`); Gremlins,
 all `match`, read 100% on both. Whether that frame is audible is a listening
 question, not a measurement.
 
+**`holdn` (v0.5.663)** reads `hold` note by note instead of by mode: the share
+of the original's notes whose held length is within -2..+1 frames of the paired
+note of ours (ordinal pairing per voice when the counts agree, else nearest attack
+within 12 frames; an unpaired note is a miss). Like `holdnf` it forgives the fetch
+frame. It shows what the modal label hides in both directions: Sigma_Seven 50 -> 100,
+Pandora 12.5 -> 99.6, I_Ball 16.7 -> 94.0 (`hold` -> `holdn`, cb2d3e3), and
+Nemesis_the_Warlock $0CC8, labelled `match`, at 64% (the original lets go after 16
+frames of a 48-frame slot). It is a reading column, not a `fidelity_better` term.
+
 **`gatenf` (v0.5.638)** does for `gate` what `holdnf` does for `hold`, after
 the 2026-10-31 listening ruling that the next-note fetch frame is inaudible.
 `fidelity.fetch_frames` takes every note of a `fetch`-kind instrument held

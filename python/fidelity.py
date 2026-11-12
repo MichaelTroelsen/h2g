@@ -5012,7 +5012,7 @@ def classify_hold(delta: int, slot_delta: int,
 
 
 def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
-                stamps: dict | None = None) -> list[dict]:
+                stamps: dict | None = None, lag: int = 0) -> list[dict]:
     """Every instrument `hold` compared, with the kind of its disagreement.
 
     Same population and same modal reduction as `sound_run_agreement` -- the
@@ -5035,6 +5035,7 @@ def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
         return (h, Counter(s for s, _ in same).most_common(1)[0][0],
                 Counter(t for _, t in same).most_common(1)[0][0])
 
+    counts = hold_note_counts(orig, ours, nframes, lag)
     out = []
     for adsr, ours_key, on, un in hold_populations(orig, ours, nframes):
         oh, os_, ot = modal(on)
@@ -5045,6 +5046,9 @@ def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
                "orig_total": ot, "our_total": ut,
                "orig_notes": len(on),
                "our_notes": len(un)}
+        w, t = counts.get(adsr, (0, 0))
+        rec["holdn"] = (w / t) if t else None   # note by note; see holdn
+
         rec["kind"] = classify_hold(rec["delta"], rec["slot_delta"],
                                     rec["orig_notes"], rec["our_notes"],
                                     (oh, ot), (uh, ut))
@@ -5076,6 +5080,118 @@ def sound_run_agreement_nofetch(orig: list[Voice], ours: list[Voice],
     ok = sum(1 for r in recs if r["kind"] in ("match", "fetch"))
     return {"sound_run_agreement_nofetch": ok / len(recs),
             "sound_run_fetch": fetch}
+
+
+HOLDN_REACH = 12      # frames: how far an attack may sit from its pair
+# A paired note agrees when ours is held for `HOLDN_LOW..HOLDN_HIGH` frames
+# more than the original's: one frame either side of 0, and one frame either
+# side of -1, the next-note fetch frame every file loses (`classify_hold`'s
+# `fetch`). A fetch frame plus a frame of slot jitter reads -2, and 99 of
+# Pandora `$0079`'s 135 notes sit at -1, 17 at -2, 17 at 0.
+HOLDN_LOW, HOLDN_HIGH = -2, 1
+
+
+def hold_note_counts(orig: list[Voice], ours: list[Voice],
+                     nframes: int, lag: int = 0) -> dict:
+    """`{original ADSR key: (notes within tolerance, notes)}` -- see
+    `hold_note_agreement`, which is the column and carries the reasoning."""
+    a = sound_note_runs(orig, nframes)
+    b = sound_note_runs(ours, nframes)
+    keys = {ka for ka, _ in paired_keys(a, b)}
+    if not keys:
+        return {}
+    # `lag` is `startup_lag`'s, read with our first note anchored on its
+    # PITCH frame; the pairing here is on gate rises (`onset_timing_compare`).
+    lag -= pitch_anchor_shift(ours)
+    all_o: dict = {}
+    all_u: dict = {}
+    for vi_, a_, k_, nt_ in _sound_notes(orig, nframes):
+        all_o.setdefault(vi_, []).append((vi_, a_, k_, nt_[0]))
+    for vi_, a_, k_, nt_ in _sound_notes(ours, nframes):
+        all_u.setdefault(vi_, []).append((vi_, a_, k_, nt_[0]))
+    on, pair = [], {}
+    for vi, notes in all_o.items():
+        theirs = all_u.get(vi, [])
+        # Equal note counts on a voice: the k-th note is the k-th note. This
+        # is exact where it applies and, unlike a nearest-attack search, does
+        # not mispair a 12-frame note with its 36-frame neighbour when the
+        # two clocks have drifted a few frames apart (Wiz `$0909`, offsets
+        # -10..+5 against a startup lag of 6). Refused if any pair sits
+        # further than HOLDN_REACH from where `lag` puts it.
+        ordinal = (len(notes) == len(theirs) and all(
+            abs(u[1] - (o[1] + lag)) <= HOLDN_REACH
+            for o, u in zip(notes, theirs)))
+        cands = []
+        if not ordinal:
+            for i, o in enumerate(notes):
+                for j, u in enumerate(theirs):
+                    if abs(u[1] - (o[1] + lag)) <= HOLDN_REACH:
+                        cands.append((abs(u[1] - (o[1] + lag)), i, j))
+            cands.sort()
+        taken_o, taken_u, got = set(), set(), {}
+        if ordinal:
+            got = dict(enumerate(range(len(notes))))
+        else:
+            for _d, i, j in cands:
+                if i in taken_o or j in taken_u:
+                    continue
+                taken_o.add(i)
+                taken_u.add(j)
+                got[i] = j
+        for i, o in enumerate(notes):
+            if o[2] in keys:
+                if i in got:
+                    pair[len(on)] = theirs[got[i]]
+                on.append(o)
+    per_key: dict = {}
+    for i, n in enumerate(on):
+        w, t = per_key.get(n[2], (0, 0))
+        ok = i in pair and HOLDN_LOW <= pair[i][3] - n[3] <= HOLDN_HIGH
+        per_key[n[2]] = (w + ok, t + 1)
+    return per_key
+
+
+def hold_note_agreement(orig: list[Voice], ours: list[Voice],
+                        nframes: int, lag: int = 0) -> dict:
+    """The `holdn` column: `hold` read note by note instead of by mode.
+
+    `hold` reduces each instrument to the MODE of its notes' held length and
+    calls it matched only if the two modes are equal. On a key with two or
+    three near-equal bins a frame of sub-frame jitter picks different winners
+    -- Wiz `$0909` is {12: 65, 36: 52, 37: 20, 13: 7} in the original and
+    {36: 72, 12: 54, 13: 18} in ours, mode 12 against 36 -- and the instrument
+    is scored wrong although every note agrees. This asks the question the
+    mode cannot: **of the notes the original plays under an instrument both
+    sides sound, how many does ours hold for the same number of frames?**
+
+    Each original note is paired to the nearest attack of ours on the same
+    voice within `HOLDN_REACH` frames of where `lag` (`startup_lag`) puts it, one to one (the closest pair claims
+    first), whatever ADSR key ours carries -- so a key split by
+    `--cut-release` does not break the pairing. The pair agrees when the two
+    `held` lengths differ by `HOLDN_LOW..HOLDN_HIGH` frames (one frame
+    either side of 0 and of the fetch deficit -1, so like `holdnf` it forgives
+    the next-note fetch and is not the column to judge `--no-test-restart`). A note of the
+    original with no partner counts as a miss, so a voice we play too sparsely
+    cannot read high. The population is `paired_keys`' instruments, the same
+    ones `hold` scores, and the count is of NOTES, so a 500-note instrument
+    outweighs a 5-note one.
+
+    **Not a replacement.** `hold` stays exactly as it was -- it is an
+    acceptance term of `fidelity_better` -- and `holdn` is a reading column
+    beside it. It is blind to a SLOT difference only in that it never asks for
+    one (a note as long as the room it is given agrees), and, like `hold`,
+    `held` stops at the first hole in a note, so a `gap` instrument still
+    reads low here.
+
+    Returns `holdn` (None when no instrument is shared) and `holdn_notes`,
+    the denominator.
+    """
+    per_key = hold_note_counts(orig, ours, nframes, lag)
+    total = sum(t for _, t in per_key.values())
+    if not total:
+        return {"holdn": None, "holdn_notes": 0}
+    return {"holdn": sum(w for w, _ in per_key.values()) / total,
+            "holdn_notes": total}
 
 
 def hold_census_report(rows: list[dict]) -> str:
@@ -7440,6 +7556,23 @@ DIMENSIONS = (
               "construction** -- do not use it to judge `--no-test-restart`; "
               "`hold` is the column for that. Equals `hold` where the census "
               "finds no `fetch` instrument"),
+    # `hold` read note by note rather than by mode. `hold` stays as it was (a
+    # `fidelity_better` acceptance term); this is a reading column beside it.
+    Dimension("holdn", "holdn", ("$D404",), "fraction",
+              "share of the original's notes, under instruments both sides "
+              "sound, that ours holds for the same number of frames (within "
+              "one frame), each paired to the nearest attack of ours on the "
+              "same voice within 12 frames, one to one. `hold` compares the "
+              "MODE of each instrument's held lengths, so on a key with two "
+              "or three near-equal bins a frame of jitter flips the winner "
+              "and scores an instrument 0 although its notes agree (Wiz "
+              "`$0909`: mode 12 against 36); this does not. A note the "
+              "original plays that ours has no attack near counts as a miss. "
+              "**Counts notes, not instruments**, so one long instrument "
+              "dominates, and `held` still stops at the first hole in a note "
+              "(a `gap` instrument reads low). Does not ask about the slot: "
+              "a note as long as the room it is given agrees even when the "
+              "room differs"),
     # The column that sees a mechanism emitted one frame out of phase. `wave`
     # averages 3000 frames, so a wrong opening on a 43-note instrument is a
     # rounding error in it; `nrun` compares run lengths and is position-
@@ -8724,6 +8857,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement_nofetch(a, best_dump, nframes))
+            row.update(hold_note_agreement(a, best_dump, nframes, lag=lag))
             row.update(release_tail_agreement(a, best_dump, nframes))
             # No `lag`: each side is read at its *own* attack frames, so the
             # startup latency cancels rather than needing correcting. See
@@ -8797,7 +8931,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             if getattr(args, "hold_census", None):
                 # Same two traces, same modal reduction, same reason.
                 row["hold_census"] = hold_census(
-                    a, best_dump, nframes, instrument_stamps(sng))
+                    a, best_dump, nframes, instrument_stamps(sng), lag=lag)
             row.update(pitch_motion_compare(a, best_dump, nframes))
             # `depth` is `vib`'s other half and reads the same register, but
             # only on the records that carry a vibrato byte -- the population
@@ -9546,8 +9680,8 @@ def report(rows: list[dict], args) -> str:
         "100% at 0.84x speed. `-` where the original's header does not hold "
         "its rate (RSID, NTSC-only, or an unread timer write).",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | gate | gatenf | tail | adsr | adsrnf | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | travel | tie | tiefr | vib | depth | drift | wave | onset | otime | noise | nrun | hold | holdnf | holdn | gate | gatenf | tail | adsr | adsrnf | pul | pspan | pphase | filt | cut | band | bnote | len | cov | osplit | aud | loud | vol | sync | ring | ctrl | res | route | rate | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -9584,6 +9718,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_hold(r)} | "
             f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
+            f"{_fmt_pct(r.get('holdn'))} | "
             f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('gate_nofetch'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "

@@ -3,9 +3,11 @@
 `drop_unnamed_instruments` runs last, on the finished bytes, and renumbers
 the instrument columns. The preset's instrument numbers are therefore the
 numbers the writer assigned, not the ones songview shows afterwards.
-5_Title_Tunes is the one shipped preset where the two differ: record 4 is
-dropped, so the preset's (1, 2, 3, 5, 6, 8) are (1, 2, 3, 4, 5, 7) in the
-file a person opens.
+5_Title_Tunes was the one shipped preset where the two differ: record 4 is
+dropped, so (1, 2, 3, 5, 6, 8) are (1, 2, 3, 4, 5, 7) in the file a person
+opens. The shipped entry no longer names them (it gate-clears every record,
+tests/test_five_title_tunes_attack_pitch.py), so the set is pinned here and
+passed in, which keeps the numbering rule measured on the one file that has it.
 """
 import json
 from pathlib import Path
@@ -19,11 +21,14 @@ from h2g.goatwriter import FIRSTWAVE_TESTBIT
 
 PRESETS = Path(__file__).resolve().parents[2] / "presets.json"
 NAME = "5_Title_Tunes.sid"
+REAL = (1, 2, 3, 5, 6, 8)
 
 
 def _convert(**extra) -> bytes:
     doc = json.loads(PRESETS.read_text(encoding="utf-8"))
     opts = F._preset_opts(doc, NAME)
+    opts.update(real_firstwave_instruments=REAL,
+                gate_off_firstwave_instruments=())
     opts.update(extra)
     return convert(str(CORPUS / NAME), log=lambda m: None, **opts)
 
