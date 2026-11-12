@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.662 presets.py",
+  "generator": "h2g 0.5.663 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -41,8 +41,6 @@
       "rows": 20161,
       "multiplier": 1,
       "max_hard_restart": true,
-      "hard_restart_frames": 3,
-      "pulse_phase": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -106,7 +104,9 @@
         60,
         61,
         62
-      ]
+      ],
+      "hard_restart_frames": 3,
+      "pulse_phase": true
     },
     "ACE_II.sid": {
       "max_rows": 128,
@@ -313,8 +313,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "regrid": true,
-      "regrid_prepay": 1,
-      "regrid_phase": true
+      "regrid_phase": true,
+      "regrid_prepay": 1
     },
     "Battle_of_Britain.sid": {
       "max_rows": 94,
@@ -759,8 +759,8 @@
         62
       ],
       "keep_hard_restart": true,
-      "prev_class_firstwave": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "prev_class_firstwave": true
     },
     "Deep_Strike.sid": {
       "max_rows": 94,
@@ -1187,8 +1187,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "prev_class_firstwave": true
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -1381,8 +1381,8 @@
         62
       ],
       "initial_instrument": true,
-      "prev_class_firstwave": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "prev_class_firstwave": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -1776,6 +1776,7 @@
       "two_stage": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
+      "first_rows": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1841,8 +1842,7 @@
         62
       ],
       "regrid": true,
-      "regrid_floored": true,
-      "first_rows": true
+      "regrid_floored": true
     },
     "Lakers_vs_Celtics.sid": {
       "max_rows": 94,
@@ -1933,7 +1933,6 @@
       "rows": 6892,
       "multiplier": 4,
       "max_hard_restart": true,
-      "hard_restart_frames": 4,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1997,7 +1996,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "hard_restart_frames": 4
     },
     "Last_V8.sid": {
       "max_rows": 94,
@@ -2073,8 +2073,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "prev_class_firstwave": true
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
@@ -2165,7 +2165,6 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "hard_restart_frames": 3,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2229,7 +2228,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "hard_restart_frames": 3
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2550,8 +2550,8 @@
       "max_hard_restart": true,
       "aligned_firstwave": true,
       "hard_restart_frames": 3,
-      "voice_arp": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "voice_arp": true
     },
     "Off_the_Cuff.sid": {
       "max_rows": 94,
@@ -2690,9 +2690,6 @@
       "wave_program": true,
       "pitch_seq": true,
       "max_hard_restart": false,
-      "regrid": true,
-      "regrid_full_debt": true,
-      "rest_program_stop": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2756,7 +2753,10 @@
         60,
         61,
         62
-      ]
+      ],
+      "regrid": true,
+      "regrid_full_debt": true,
+      "rest_program_stop": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -2832,8 +2832,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "prev_class_firstwave": true
     },
     "Powerplay_Hockey_USA_vs_USSR.sid": {
       "max_rows": 94,
@@ -3672,8 +3672,8 @@
         62
       ],
       "regrid": true,
-      "rest_program_stop": true,
-      "regrid_phase": true
+      "regrid_phase": true,
+      "rest_program_stop": true
     },
     "W_A_R.sid": {
       "max_rows": 128,
