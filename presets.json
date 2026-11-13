@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.665 presets.py",
+  "generator": "h2g 0.5.666 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -299,8 +299,8 @@
       "aligned_firstwave": true,
       "regrid": true,
       "regrid_per_play": true,
-      "rest_envelope_silence": true,
-      "regrid_phase": true
+      "regrid_phase": true,
+      "rest_envelope_silence": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -1850,7 +1850,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16115,
+      "bytes": 16376,
       "subtunes": 1,
       "rows": 8775,
       "multiplier": 1,
@@ -2237,7 +2237,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20825,
+      "bytes": 21219,
       "subtunes": 1,
       "rows": 12348,
       "multiplier": 3,
@@ -2861,8 +2861,8 @@
       "multiplier": 7,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true,
-      "drum_held": true
+      "drum_held": true,
+      "drum_sustain_gate_off": true
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
@@ -3237,8 +3237,8 @@
       "multiplier": 5,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true,
-      "drum_held": true
+      "drum_held": true,
+      "drum_sustain_gate_off": true
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -3718,8 +3718,8 @@
       "multiplier": 7,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true,
-      "drum_held": true
+      "drum_held": true,
+      "drum_sustain_gate_off": true
     },
     "Wiz.sid": {
       "max_rows": 94,
