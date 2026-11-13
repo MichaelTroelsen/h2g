@@ -299,7 +299,8 @@
       "aligned_firstwave": true,
       "regrid": true,
       "regrid_per_play": true,
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "regrid_phase": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -2860,7 +2861,8 @@
       "multiplier": 7,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true
+      "drum_sustain_gate_off": true,
+      "drum_held": true
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
@@ -3034,7 +3036,8 @@
       "rows": 8020,
       "multiplier": 4,
       "max_hard_restart": true,
-      "hard_restart_frames": 4
+      "hard_restart_frames": 4,
+      "pre_note_wave": true
     },
     "Sanxion.sid": {
       "max_rows": 94,
@@ -3234,7 +3237,8 @@
       "multiplier": 5,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true
+      "drum_sustain_gate_off": true,
+      "drum_held": true
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -3714,7 +3718,8 @@
       "multiplier": 7,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "drum_sustain_gate_off": true
+      "drum_sustain_gate_off": true,
+      "drum_held": true
     },
     "Wiz.sid": {
       "max_rows": 94,

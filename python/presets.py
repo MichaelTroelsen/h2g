@@ -442,6 +442,11 @@ EXCLUDED_FROM_ALWAYS = {
     # ship it (A/B at v0.5.653: Monty bend .88 -> 1.09 alone, Devils .78 ->
     # .97), International_Karate moved within noise and stays off.
     "drum_long",
+    # Per song and never a default: the second noise frame the outer gate's
+    # withheld call holds on a drum note (`goatwriter/drum_held.py`). Reaches
+    # the players with a two-call speed gate and an outer gate whose clock
+    # the file reads (Spellbound, ...).
+    "drum_held",
     # Per song and never a default: a `$68` waveform-state copy's vibrato
     # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
     # constant). Reaches Monty_on_the_Run alone, which ships it with

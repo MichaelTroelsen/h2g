@@ -5,6 +5,8 @@ import copy
 from typing import Callable, List, Optional
 
 from .detect import (Detection, PlayerView, detect, player_view,
+                     wave_program_has_jump as _wave_program_has_jump,
+                     wave_program_set_stores_wave as _wave_program_set_stores,
                      rest_wave_rewrite_records, wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
 from .goatwriter import drum_unit as _gw_drum_unit
@@ -368,6 +370,7 @@ def convert(sid_path: str, log: Logger = print,
             drum_sustain_gate_off: bool = False,
             release_held_stored_wave: bool = False,
             drum_long: bool = False,
+            drum_held: bool = False,
             wobble_copy_depth: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -721,8 +724,11 @@ def convert(sid_path: str, log: Logger = print,
     control byte every frame, rests included, so a voice that opens on rests
     already shows that waveform while Goattracker shows `$00`
     (`pre_note_wave.py`; the wave column charges those frames). Reads
-    `Detection.init_instrument` / `initial_instruments`. Off by default: it
-    moves the bytes of every file it reaches.
+    `Detection.init_instrument` / `initial_instruments`; a player that keeps
+    the index in zero page and never initialises it (Samantha_Fox_Strip_Poker)
+    falls back to `Detection.zp_start_instrument` and is walked in every
+    subtune, not only subtune 0. Off by default: it moves the bytes of every
+    file it reaches.
 
     master_fade reproduces a volume the play routine derives from a voice's
     orderlist POSITION (`LDA #base / SEC / SBC pos / ... STA $D418`,
@@ -742,6 +748,13 @@ def convert(sid_path: str, log: Logger = print,
     gate-off head and a shared `CMD_PORTADOWN` chain (`goatwriter/drum_long.py`,
     -S2 and above only). Off by default: it moves the bytes of every file with
     such a record (Monty_on_the_Run, Devils_Galop, International_Karate).
+
+    drum_held gives the bit-$01 drum notes whose first unit ends on the outer
+    gate's withheld call the noise frame the original holds there: a
+    `CMD_SETWAVEPTR` on the note's row into a copy of the record's program
+    with the noise twice, the pattern copied per distinct spelling
+    (`goatwriter/drum_held.py`; speed gate of two calls and a readable clock
+    only). Off by default: it moves the bytes of every file it reaches.
 
     wobble_copy_depth sizes a `$68` waveform-state copy's vibrato depth on
     ITS OWN pitch instead of the pattern-wide majority (`patterns.
@@ -889,6 +902,7 @@ def convert(sid_path: str, log: Logger = print,
     det.drum_sustain_gate_off = drum_sustain_gate_off
     det.release_held_stored_wave = release_held_stored_wave
     det.drum_long = drum_long
+    det.drum_held = drum_held
     det.wobble_copy_depth = wobble_copy_depth
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
@@ -1716,7 +1730,7 @@ def convert(sid_path: str, log: Logger = print,
         # Around every build, the note rise's rebuilds included.
         with _gw_note_passes.entry_instruments_start(
                 _gw_note_passes.init_entry_start(det, instr_base)):
-            if det.note_rise is None:
+            if det.note_rise is None and not drum_held:
                 sng = _build(tracks, new_patterns, gate_off, log, 0)
             else:
                 # The note rise's per-row programs (`goatwriter.note_rise`) spend
@@ -1726,15 +1740,21 @@ def convert(sid_path: str, log: Logger = print,
                 # that no note row is left on a layout-dependent cell. So a song
                 # whose split came up short of wavetable rows is built again with
                 # that many held back from the rise (the pass that is only
-                # decoration gives way to the one that is a pitch).
+                # decoration gives way to the one that is a pitch). The drum
+                # held noise (`goatwriter/drum_held.py`) spends rows the same
+                # way and gives way the same way.
                 reserve = 0
                 for attempt in range(3):
                     lines: List[str] = []
                     sng = _build(copy.deepcopy(tracks), copy.deepcopy(new_patterns),
                                  gate_off, lines.append, reserve)
                     short = wave_rows_short(sng, sid, det)
-                    spent = any("wavetable step(s) at" in m for m in lines
-                                if m.startswith("Note rise"))
+                    spent = any(
+                        ("wavetable step(s) at" in m
+                         and m.startswith("Note rise"))
+                        or (m.startswith("Drum held noise")
+                            and "wavetable row(s)" in m)
+                        for m in lines)
                     if not short or not spent or attempt == 2:
                         break
                     reserve += short
@@ -1780,7 +1800,12 @@ def convert(sid_path: str, log: Logger = print,
         if prev_class_firstwave:
             # Last of the record/row passes, before the startup record: the
             # clones are made from the records as every other pass left them.
-            sng = _prev_class_firstwave(sng, group_tempos, multiplier, log)
+            # The raw-write tail is the `$86`-jump wave-program dialect's
+            # (Jason Page's interleaved players); see RAW_GATE_LEGATO.
+            sng = _prev_class_firstwave(
+                sng, group_tempos, multiplier, log,
+                raw_gate_legato=(_wave_program_has_jump(sid, det)
+                                 and _wave_program_set_stores(sid, det)))
         return sng
 
     sng = _assemble(tracks, new_patterns,

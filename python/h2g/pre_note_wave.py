@@ -51,6 +51,19 @@ which `wave = $00` hid. Those ties are silent (the gate is clear) and
 
 Off by default (`convert(pre_note_wave=...)`): it moves the bytes of every
 file it reaches (23 of 89 when forced on the whole corpus).
+
+**A zero-page index nothing initialises, every subtune.**
+Samantha_Fox_Strip_Poker keeps the per-voice instrument index in zero page
+(`LDA $B3,X`, `Detection.zp_start_instrument`), writes it only from the
+pattern reader, and writes the control byte on that same path every frame. A
+fresh machine therefore starts EVERY subtune's voices on record 0 (control
+`$41`, so `$40`), unlike the init-written array of the other players, which
+only subtune 0 is known to hold. Its scored subtune is 9 (PSID startSong 10),
+where voice 1 holds `$40` for the 210 frames before its first gate: 211 of the
+13784 frames the wave column charges (.9847). So for this reading `every`
+walks all 42 orderlists, and a siddump of all 14 subtunes (`-a N -t30`) shows
+the latch on exactly the twelve (subtune, voice) pairs the emitter writes it
+on (`tests/test_pre_note_wave.py::SAMANTHA_LATCHING`).
 """
 from __future__ import annotations
 
@@ -91,6 +104,8 @@ def start_waves(sid: SidFile, det: Detection) -> Tuple[Optional[int], ...]:
         index = (det.init_instrument,) * 3
     elif len(det.initial_instruments) == 3:
         index = tuple(det.initial_instruments)
+    elif det.zp_start_instrument is not None:
+        index = (det.zp_start_instrument,) * 3
     else:
         return (None, None, None)
     out: List[Optional[int]] = []
@@ -102,6 +117,17 @@ def start_waves(sid: SidFile, det: Detection) -> Tuple[Optional[int], ...]:
         wave = sid.data[at] & 0xFE
         out.append(wave if wave & 0xF0 else None)
     return tuple(out)
+
+
+def every_subtune(det: Detection) -> bool:
+    """Whether the start instrument holds for EVERY subtune, not subtune 0
+    alone: a zero-page index no init writes (`Detection.zp_start_instrument`)
+    is 0 on a fresh machine whichever subtune is started. The init-written
+    array of the other players is not (`note_passes._track_start`: 26 of 166
+    subtunes start on whatever the last tune left), so they stay on subtune 0.
+    """
+    return (det.zp_start_instrument is not None
+            and det.init_instrument is None and not det.initial_instruments)
 
 
 def _entry(track: List[int]) -> Optional[int]:
@@ -179,7 +205,8 @@ def quiet_idle_vibrato(pattern: List[int], first_note_instrument: Optional[int],
 
 def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
                          waves: Tuple[Optional[int], ...], max_patterns: int,
-                         log=None, vibrato: Optional[dict] = None
+                         log=None, vibrato: Optional[dict] = None,
+                         every: bool = False
                          ) -> Tuple[List[List[int]], List[List[int]], int]:
     """`CMD_SETWAVE wave` on the first free row of each voice's entry pattern
     that precedes its first note, for the FIRST LAP of subtune 0
@@ -221,11 +248,12 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
                 operand = True
             elif b < _COMMAND_FLOOR:
                 plays[b] = plays.get(b, 0) + 1
-    for v in range(min(3, len(tracks))):
+    for ti in range(len(tracks) if every else min(3, len(tracks))):
+        v = ti % 3
         wave = waves[v] if v < len(waves) else None
         if wave is None:
             continue
-        track = tracks[v]
+        track = tracks[ti]
         at = _entry(track)
         if (at is None or len(track) < 3 or track[-2] != _RESTART
                 or track[at] >= len(patterns)):
@@ -238,7 +266,7 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
             continue
         if repeated and note is not None:
             if log:
-                log(f"Pre-note wave...........: voice {v} entry pattern "
+                log(f"Pre-note wave...........: voice {v} (track {ti}) entry pattern "
                     f"{p:02X} repeats with a note in it; left alone")
             continue
         limit = note if note is not None else len(patterns[p]) // 4
@@ -247,13 +275,13 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
                     and patterns[p][4 * r + 3] == 0), None)
         if row is None:
             if log:
-                log(f"Pre-note wave...........: voice {v} has no free "
+                log(f"Pre-note wave...........: voice {v} (track {ti}) has no free "
                     f"command cell before its first note; ${wave:02X} not "
                     f"written")
             continue
         if restart != 0 and restart <= at:
             if log:
-                log(f"Pre-note wave...........: voice {v} restarts into its "
+                log(f"Pre-note wave...........: voice {v} (track {ti}) restarts into its "
                     f"entry prefix; ${wave:02X} not written")
             continue
         first_lap = restart == 0
@@ -261,13 +289,13 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
         if first_lap or shared:
             if len(patterns) >= max_patterns:
                 if log:
-                    log(f"Pre-note wave...........: voice {v} needs a "
+                    log(f"Pre-note wave...........: voice {v} (track {ti}) needs a "
                         f"pattern copy and the {max_patterns}-pattern "
                         f"ceiling is reached; ${wave:02X} not written")
                 continue
         if first_lap and len(track) + at + 1 > _MAX_ORDERLIST:
             if log:
-                log(f"Pre-note wave...........: voice {v} orderlist is too "
+                log(f"Pre-note wave...........: voice {v} (track {ti}) orderlist is too "
                     f"long to carry the first-lap copy; ${wave:02X} not "
                     f"written")
             continue
@@ -281,11 +309,11 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
         if vibrato and quiet_idle_vibrato(
                 patterns[copy], _first_note_instrument(patterns, track, at),
                 vibrato) and log:
-            log(f"Pre-note wave...........: voice {v} idles on a "
+            log(f"Pre-note wave...........: voice {v} (track {ti}) idles on a "
                 f"vibrato-free instrument until its first note")
         if first_lap:
             prefix = track[:at]
-            tracks[v] = (prefix + [copy] + track[at + 1:-2] + prefix + [p]
+            tracks[ti] = (prefix + [copy] + track[at + 1:-2] + prefix + [p]
                          + [_RESTART, len(prefix) + 1])
             where = "first lap"
         else:
@@ -296,6 +324,6 @@ def apply_pre_note_waves(patterns: List[List[int]], tracks: List[List[int]],
             where = "entry"
         written += 1
         if log:
-            log(f"Pre-note wave...........: voice {v} latches ${wave:02X} "
+            log(f"Pre-note wave...........: voice {v} (track {ti}) latches ${wave:02X} "
                 f"on row {row} of pattern {copy:02X} ({where})")
     return patterns, tracks, written

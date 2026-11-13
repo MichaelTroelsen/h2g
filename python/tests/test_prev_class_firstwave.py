@@ -49,7 +49,7 @@ def song(rows, instruments=None, tracks=None, program_a=None):
     for track in tracks or ([0x00, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]):
         out.append(len(track) - 1)
         out += bytes(track)
-    program_a = program_a or [(0x81, 0x00), (0xFF, 0x00)]
+    program_a = program_a or [(0x81, 0x00), (0x80, 0x00), (0xFF, 0x00)]
     b_at = len(program_a) + 1
     recs = instruments or [record(1, 0x80), record(b_at, 0x40)]
     out.append(len(recs))
@@ -68,9 +68,9 @@ def song(rows, instruments=None, tracks=None, program_a=None):
     return bytes(out)
 
 
-def run(blob, calls=(4,), multiplier=1):
+def run(blob, calls=(4,), multiplier=1, raw=False):
     return pcf.prev_class_firstwave(blob, list(calls) if calls else None,
-                                    multiplier)
+                                    multiplier, raw_gate_legato=raw)
 
 
 def parsed(blob):
@@ -165,3 +165,78 @@ def test_phantoms_converts_with_clones_and_stays_within_the_record_limit():
     for clone in b.instruments[len(a.instruments):]:
         assert (clone.ad, clone.sr, clone.wave_ptr, clone.pulse_ptr) in originals
         assert clone.firstwave & 0x01 == 0
+
+
+# --- A predecessor that leaves noise with the gate ON (RAW_GATE_LEGATO) ------
+#
+# Lakers_vs_Celtics voice 2, original frames 2678-2690: the drum program ends
+# `set $81` (an absolute opcode, written to $D404 raw and past the per-frame
+# `AND gate`), so the chip is gate-on through the original's own gate-off
+# window and the melodic note behind it (`41`) is a pitch change. Goattracker's
+# `wave & gate` ANDs that `$81` to `$80` inside the window and the note is a
+# fresh edge: one ours-only attack on instrument $09CB, hold 100% -> 93% once
+# the ILV tie fixes removed the other extras. A LEGATO clone of the note's
+# record (gatetimer $40) is not fetched with a window, and its firstwave is
+# the chip's waveform with the gate set.
+
+GATE_ON_TAIL = [(0x81, 0x00), (0xFF, 0x00)]
+
+
+def test_a_gate_on_noise_tail_gives_the_next_note_a_legato_clone_with_the_gate_up():
+    blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)], program_a=GATE_ON_TAIL)
+    sng = parsed(run(blob, raw=True))
+    assert instrument_column(sng)[:2] == [1, 3]
+    clone = sng.instruments[2]
+    assert clone.firstwave == 0x81
+    assert clone.gatetimer & 0x40
+    assert clone.wave_ptr == sng.instruments[1].wave_ptr
+    # Neither original record is touched.
+    assert not sng.instruments[1].gatetimer & 0x40
+    assert [i.firstwave for i in sng.instruments[:2]] == [0x80, 0x40]
+
+
+def test_a_gate_clear_noise_tail_keeps_the_plain_clone():
+    blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)])
+    sng = parsed(run(blob, raw=True))
+    clone = sng.instruments[2]
+    assert clone.firstwave == 0x80
+    assert not clone.gatetimer & 0x40
+
+
+def test_the_legato_clone_is_gone_when_the_switch_is_off(monkeypatch):
+    monkeypatch.setattr(pcf, "RAW_GATE_LEGATO", False)
+    blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)], program_a=GATE_ON_TAIL)
+    clone = parsed(run(blob, raw=True)).instruments[2]
+    assert clone.firstwave == 0x80
+    assert not clone.gatetimer & 0x40
+
+
+def test_a_player_without_the_raw_write_keeps_the_plain_clone():
+    # The finished bytes cannot tell a raw `$81` from one the gate mask clears
+    # (Chicken_Song, Chain_Reaction, Hollywood_or_Bust, Last_V8 and Zoolook all
+    # end notes on a masked `$81` and read worse with a legato clone), so the
+    # caller says which dialect it is.
+    blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)], program_a=GATE_ON_TAIL)
+    clone = parsed(run(blob, raw=False)).instruments[2]
+    assert clone.firstwave == 0x80
+    assert not clone.gatetimer & 0x40
+
+
+@needs_corpus
+def test_lakers_voice_two_drum_is_followed_by_legato_clones():
+    import json
+    import fidelity
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    doc = json.loads((repo / "presets.json").read_text(encoding="utf-8"))
+    name = "Lakers_vs_Celtics.sid"
+    opts = fidelity._preset_opts(doc, name)
+    assert opts["prev_class_firstwave"]
+    on = parsed(convert(str(CORPUS / name), log=lambda m: None, **opts))
+    pcf.RAW_GATE_LEGATO = False
+    try:
+        off = parsed(convert(str(CORPUS / name), log=lambda m: None, **opts))
+    finally:
+        pcf.RAW_GATE_LEGATO = True
+    legato = [i for i in on.instruments if i.gatetimer & 0x40 and i.firstwave & 1]
+    assert len(legato) >= 1
+    assert not [i for i in off.instruments if i.gatetimer & 0x40 and i.firstwave & 1]

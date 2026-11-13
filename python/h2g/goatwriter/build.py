@@ -1525,6 +1525,25 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if dlong is not None:
             patterns = dlong.patterns
             wave_entries = wave_entries + dlong.entries
+    # `drum_held` (convert option): the noise frame the outer gate's withheld
+    # call holds on the notes whose first unit ends on it
+    # (`goatwriter/drum_held.py`). Not beside a pass that rewrites the
+    # table's rows after this point (`note_rise`, `counter_fall`).
+    if (effects and det.effect_drum and getattr(det, "drum_held", False)
+            and det.note_rise is None and det.counter_fall is None):
+        from . import drum_held as _gw_drum_held
+        dheld = _gw_drum_held.drum_held_plan(
+            sid, det, tracks, patterns, lead, instr_used, wave_entries,
+            wave_starts, log=log, reserve=wave_reserve)
+        if dheld is not None:
+            patterns = dheld.patterns
+            tracks = dheld.tracks
+            # A copy plays its source's tie rows too.
+            legato_rows |= {(c, r) for (p, r) in tuple(legato_rows)
+                            for c, s in dheld.sources.items() if s == p}
+            for at, track in zip(track_at, tracks):
+                out[at:at + len(track)] = bytes(track)
+            wave_entries = wave_entries + dheld.entries
     # The same block without its window (`note_rise_plan`): a store on every
     # other tick of the whole note, one or two a row of two or three ticks,
     # each row pointed at a short program appended past every block whose
@@ -2187,14 +2206,16 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # so the orderlist bytes written above are patched in place
     # (`pre_note_wave.apply_pre_note_waves`).
     if pre_note_wave:
-        from ..pre_note_wave import apply_pre_note_waves, start_waves
+        from ..pre_note_wave import (apply_pre_note_waves, every_subtune,
+                                     start_waves)
         from ..patterns import MAX_PATTERNS
         waves = start_waves(sid, det)
         if any(w is not None for w in waves):
             vib_of = {n: out[instr_at + 1 + (n - 1) * 25 + 5]
                       for n in range(1, out[instr_at] + 1)}
             patterns, new_tracks, _n = apply_pre_note_waves(
-                patterns, tracks, waves, MAX_PATTERNS, log, vib_of)
+                patterns, tracks, waves, MAX_PATTERNS, log, vib_of,
+                every=every_subtune(det))
             if _n:
                 # A first-lap copy lengthens an orderlist, so the whole
                 # track section is rewritten (nothing after it has been

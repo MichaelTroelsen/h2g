@@ -111,7 +111,7 @@ from .tempo import (_adjacent_table_bound, derived_group_tempos,
                     _pal_ntsc_indexed,
                     restarted_gate_calls,
                     recommended_multiplier, SongSpeeds, _speeds_for_reload,
-                    step_durations,
+                    step_durations, _A_KEEPING_3, _stage_clears,
                     tempo_command_value, write_funktempo)  # noqa: F401
 from .arpeggio import (apply_tempo_duty_edits, ArpPhaseSplit, _countdown,
                        _expand_repeats, _fixed_arp_counter,
@@ -380,6 +380,11 @@ from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
                         MIN_UNITS, DrumLongPlan, drum_long_plan,
                         drum_long_records)
+from .drum_held import (PATTERN_RESERVE, VARIANT_ROWS, ZERO_FILL,  # noqa: F401
+                        DrumHeldPlan, _INDEXED_REACH, _ZP_INDEXED,
+                        _ZP_WRITERS, _abs_outer_start, _apply, _drum_records,
+                        _group, _shape, _zp_outer_start, drum_held_plan,
+                        held_clock, held_rows, withheld_calls)
 from .lfo_wave import (LFO_END, LFO_HOLD, LFO_MAX_READS, LFO_SIGN,  # noqa: F401
                        LFO_SPEED_RELATIVE, LfoPhase, _byte, _note_walk,
                        _program, _spell, _step, _walk_reads, cycle_row,

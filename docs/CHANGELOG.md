@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.666 — 2026-11-13
+
+- Adopt 4 sub-99% patches: drum_held, Samantha pre-note wave, Monty row clock, raw-gate drum legato
+
 ## 0.5.665 — 2026-11-12
 
 - Harness: cents, poff and cfrm columns (frame-level pitch, pulse per offset, cutoff per frame); heard trace cache keyed on the tracer build; index shows the three new columns

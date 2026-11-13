@@ -513,6 +513,12 @@ class Detection:
     # frame 0 finds the file image instead in 26: see
     # `note_passes._track_start`). See `_find_init_instrument`.
     init_instrument: Optional[int] = None
+    # The instrument a voice holds before any pattern names one, for a player
+    # whose per-voice index lives in ZERO PAGE and whose init never writes it
+    # (Samantha_Fox_Strip_Poker: `LDA $B3,X`, written only by the pattern
+    # reader), so every subtune of a fresh machine starts every voice on
+    # record 0. None everywhere else. See `_find_zp_start_instrument`.
+    zp_start_instrument: Optional[int] = None
     # The per-instrument filter array, once located. None in the 71 corpus
     # files whose player either has no filter routine or whose sweep origin
     # cannot be read statically -- see find_filter().
@@ -828,6 +834,55 @@ def _read_instrument_array(sid: SidFile, det: Detection, log: Logger,
     if det.init_instrument is not None:
         log(f"Init instrument.........: ${det.init_instrument:02X} on every "
             "voice (the player's init writes it, not the file image above)")
+
+
+# The per-voice instrument index in ZERO PAGE, with the control byte written
+# to the SID on the SAME path (Samantha_Fox_Strip_Poker `$70FB`):
+#
+#     LDA idx,X / STX save / ASL ASL ASL / TAX
+#     LDA rec+2,X / STA tmp / LDA rec+2,X / AND mask / STA $D404,Y
+#
+# That path runs every frame for every voice, rests included, so a voice
+# whose first rows are rests already shows the held instrument's waveform
+# (`pre_note_wave.py`). The shape is strict on purpose: Mega_Apocalypse and
+# Spellbound share the zero-page index load, but Mega_Apocalypse writes no
+# control byte before a voice's first note (siddump, subtune 0) and
+# Spellbound's write is behind a flag, so a looser spelling would claim a
+# latch they do not show.
+ZP_INDEX_CTRL_SHAPE = "B5 ?? 86 ?? 0A 0A 0A AA BD ?? ?? 85 ?? BD ?? ?? 25 ?? 99 04 D4"
+
+
+def _find_zp_start_instrument(sid: SidFile, det: Detection, log: Logger) -> None:
+    """Fill `det.zp_start_instrument` (0) for a zero-page index player whose
+    cell nothing but the pattern reader writes.
+
+    The cell's only writer must be one `STA zp,X` (`95 zp`): an init that
+    seeds it would make the start instrument that value, which this does not
+    read. A fresh machine (siddump, every subtune) holds the cell at 0, the
+    instrument record 0. Consulted only where the absolute-array shape found
+    nothing, so it can never move a file that already reads."""
+    if det.initial_instruments or det.init_instrument is not None:
+        return
+    data = sid.data
+    i = search_file(data, ZP_INDEX_CTRL_SHAPE)
+    if i <= -1 or det.instr_start < 0:
+        return
+    table = sid.to_address(det.instr_start)
+    first, second = _addr16(data, i + 9, i + 10), _addr16(data, i + 14, i + 15)
+    if first != second or first != table + 2:
+        return
+    zp = data[i + 1]
+    writers = 0
+    for op in (0x85, 0x95, 0x86, 0x84, 0x94, 0xE6, 0xF6, 0xC6, 0xD6):
+        k = data.find(bytes((op, zp)))
+        while k != -1:
+            writers += 1 if op == 0x95 else 2
+            k = data.find(bytes((op, zp)), k + 1)
+    if writers != 1:
+        return
+    det.zp_start_instrument = 0
+    log(f"Zero-page start instr...: ${zp:02X} is written only by the pattern "
+        "reader; every voice starts on record 0")
 
 
 # The same load as `INSTRUMENT_INDEX_SHAPE` with the record multiply spelled
@@ -1819,6 +1874,7 @@ def _locate_tables(sid: SidFile, det: Detection, log: Logger,
             _span_warn("INSTRUMENT", det.instr_start,
                        instr_used * det.instr_stride, len(data), log)
         _reconcile_instrument_index(sid, det, log, idx)
+        _find_zp_start_instrument(sid, det, log)
 
     # --- Tracks / subsongs ----------------------------------------------
     if digi:

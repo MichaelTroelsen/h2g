@@ -210,6 +210,13 @@ def main(argv=None) -> int:
              "program cannot (Monty_on_the_Run's G-5). -S2 and above. Per "
              "song. Off by default")
     parser.add_argument(
+        "--drum-held", action="store_true",
+        help="give the bit-$01 drum notes whose first unit ends on the outer "
+             "gate's withheld call the second noise frame the original holds "
+             "there: a CMD_SETWAVEPTR on the note's row into a two-noise "
+             "copy of the record's program, the pattern copied per spelling "
+             "(Spellbound, Warhawk, Proteus). Per song. Off by default")
+    parser.add_argument(
         "--wobble-copy-depth", action="store_true",
         help="size a $68 waveform-state copy's vibrato depth on its own pitch "
              "instead of the pattern-wide majority, and clone the note-free "
@@ -879,6 +886,7 @@ def main(argv=None) -> int:
                           ("--release-held-stored-wave",
                            "release_held_stored_wave"),
                           ("--drum-long", "drum_long"),
+                          ("--drum-held", "drum_held"),
                           ("--wobble-copy-depth", "wobble_copy_depth"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
@@ -1010,6 +1018,7 @@ def main(argv=None) -> int:
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
                       release_held_stored_wave=args.release_held_stored_wave,
                       drum_long=args.drum_long,
+                      drum_held=args.drum_held,
                       wobble_copy_depth=args.wobble_copy_depth,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,

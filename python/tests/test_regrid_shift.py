@@ -115,8 +115,11 @@ def _ledger_end(name):
 
     C.regrid_tempos = spy
     try:
+        # regrid_phase off: it zeroes the deficit and writes its own pairs, so
+        # this ledger of `regrid_tempos` would read them as unowed (Monty
+        # ships it since v0.5.666).
         C.convert(str(CORPUS / name), log=lambda m: None,
-                  **fidelity._preset_opts(doc, name))
+                  **dict(fidelity._preset_opts(doc, name), regrid_phase=False))
     finally:
         C.regrid_tempos = real
     assert cap, f"{name} never reached regrid_tempos"

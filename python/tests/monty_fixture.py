@@ -6,6 +6,11 @@ Since v0.5.644 presets.json ships Monty with `aligned_firstwave` instead of
 real-firstwave spelling reaches -- cut-note programs, the funk gatetimer
 split, the pitch lead, the legato clone's firstwave -- so they keep that
 spelling as a fixture rather than following the shipped entry.
+
+Since v0.5.666 the shipped entry also carries `regrid_phase`, whose per-play
+pattern clones move every pinned pattern, tie and succession count here (165
+tie rows read 169, and the row-0 lead's copies no longer cover the clones), so
+the fixture holds it off as the other `regrid_tempos` pins do.
 """
 from __future__ import annotations
 
@@ -25,5 +30,5 @@ def pinned_preset_opts(doc: dict, name: str) -> dict:
     opts = fidelity._preset_opts(doc, name)
     if name == MONTY:
         opts = dict(opts, real_firstwave_instruments=REAL_FIRSTWAVE,
-                    aligned_firstwave=False)
+                    aligned_firstwave=False, regrid_phase=False)
     return opts

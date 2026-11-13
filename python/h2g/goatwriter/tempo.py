@@ -904,6 +904,33 @@ def write_funktempo(patterns: List[List[int]], speed_table: List[tuple],
     return len(rows)
 
 
+# Instructions that leave A alone and are three bytes long: STA abs / abs,X /
+# abs,Y and LDY abs,X. The set-up stage clears its cells with a run of these
+# behind one `LDA #$00` (Monty `$E419`).
+_A_KEEPING_3 = (0x8D, 0x9D, 0x99, 0xBC)
+
+
+def _stage_clears(sid: SidFile, ctr: bytes) -> bool:
+    """True when some `STA ctr` stores the A that `LDA #$00` loaded.
+
+    Walks back from each `8D lo hi` naming the counter over A-preserving
+    three-byte instructions to an `A9 00`. Straight-line bytes only: a branch
+    target in between is not seen, which is why this reads a cleared cell and
+    nothing else (a reload `LDA #$7F / STA ctr` is not zero and never matches).
+    """
+    data = sid.data
+    sta = b"\x8d" + ctr
+    at = data.find(sta)
+    while at >= 0:
+        i = at
+        while i >= 3 and data[i - 3] in _A_KEEPING_3:
+            i -= 3
+        if i >= 2 and data[i - 2] == 0xA9 and data[i - 1] == 0x00:
+            return True
+        at = data.find(sta, at + 1)
+    return False
+
+
 def step_durations(sid: SidFile, rows: int) -> Optional[List[int]]:
     """Frames each of the song's first `rows` rows lasts in the ORIGINAL, or None.
 
@@ -970,7 +997,13 @@ def step_durations(sid: SidFile, rows: int) -> Optional[List[int]]:
     if not all(0 <= x < len(sid.data) for x in (out_at, in_at, rel_at)):
         return None
     reload_ = sid.data[rel_at]
-    outer_n, inner_n = sid.data[out_at], sid.data[in_at]
+    # A counter the set-up stage clears starts at 0 whatever the file image
+    # holds: Auf_Wiedersehen_Monty's image has $19 at $EA46 and its stage
+    # (`LDA #0 ... STA $EA46`, `$E419`) zeroes it, so its first underflow is
+    # call 1, not call 26, and the schedule read from the image was 25 calls
+    # late (rows 16-29 frames after the original's, constant).
+    outer_n = 0 if _stage_clears(sid, o_ctr) else sid.data[out_at]
+    inner_n = 0 if _stage_clears(sid, i_ctr) else sid.data[in_at]
     steps: List[int] = []
     frame = 1                       # call 0 is the set-up stage
     while len(steps) <= rows:

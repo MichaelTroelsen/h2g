@@ -63,6 +63,22 @@ _MAX_RECORDS = GT_TEMPO_INSTRUMENT - 1
 # the conversion misses elsewhere in the note. The record's own bits keep
 # every one of those columns where it was (measured, -t 180). Flip to trade.
 CONTROL_BITS_FROM_CHIP = False
+# **A predecessor that leaves noise with the gate ON leaves the gate on.** An
+# absolute (`>= $80`) wave-program opcode writes `$D404` raw and skips the
+# per-frame `AND gate` (Lakers_vs_Celtics `$16E2`: `STA $D404,X / ... JMP $17ED`
+# past `$17D8 LDA stored / AND mask`), so a drum whose last frames are `set $81`
+# sits gate-on through the original's own gate-off window, and the next note
+# (`41`, a pitch change) is not a gate edge. Goattracker's `wave & gate`
+# (gplay.c:951) has no raw write: the window ANDs that `$81` to `$80` and the
+# same note is a fresh edge (Lakers voice 2 f2691: one ours-only attack on
+# instrument `$09CB`). The window is fetched `gatetimer` calls before a note by
+# the NOTE'S instrument (gplay.c:920-927), so a legato clone of that
+# instrument (gatetimer `$40`) for the note that follows such a tail leaves the
+# gate up, and its firstwave is the chip's waveform with the gate set.
+RAW_GATE_LEGATO = True
+_RAW_GATE_ON = 0x81          # noise and gate: only an absolute opcode writes it
+_LEGATO = 0x40
+_GATETIMER_AT = 7
 
 
 def _layout(blob: bytes):
@@ -165,8 +181,8 @@ def _visits(track: List[int], patterns: List[Tuple[int, int]]):
 def prev_class_firstwave(blob: bytes,
                          subtune_row_calls: Optional[List[int]] = None,
                          multiplier: int = 1,
-                         log: Optional[Callable[[str], None]] = None
-                         ) -> bytes:
+                         log: Optional[Callable[[str], None]] = None,
+                         raw_gate_legato: bool = False) -> bytes:
     """`blob` with the clones and instrument columns described above.
 
     `subtune_row_calls` is the play calls a row lasts, per subtune
@@ -178,6 +194,13 @@ def prev_class_firstwave(blob: bytes,
     6-call notes: the pre-frame holds noise, which `D - 1` calls would call
     triangle; at -S2/-S3, `D - 1` against `D - 2` over Zoolook, Thundercats
     and Chain_Reaction: wave .9881/.9865/.9892 against .9816/.9865/.9878).
+
+    `raw_gate_legato` says the player's absolute opcode writes the chip raw
+    (the `$86`-jump wave-program dialect, `RAW_GATE_LEGATO`); the pass takes
+    it from the caller because the finished bytes cannot tell a raw `$81` from
+    one the gate mask clears. Unscoped, the rule moved Chicken_Song (melody
+    100% -> 87%, seq 100% -> 61%), Chain_Reaction (97%), Hollywood_or_Bust,
+    Last_V8 and Zoolook, whose `$81` tails are ours and are masked.
     """
     if not subtune_row_calls:
         return bytes(blob)
@@ -236,6 +259,9 @@ def prev_class_firstwave(blob: bytes,
                 if ((cand & 0xF0) and cand < 0xFE
                         and (cand & 0xF0) != (eligible[g] & 0xF0)):
                     nf = cand
+                if (RAW_GATE_LEGATO and raw_gate_legato
+                        and chip & _RAW_GATE_ON == _RAW_GATE_ON):
+                    nf = ("legato", (chip & 0xF0) | (eligible[g] & 0x0E) | 1)
             want[key][(g, nf)] += 1
             if i + 1 < len(events) and calls:
                 ncalls = (events[i + 1][2] - at) * calls - (1 if multiplier > 1 else 0)
@@ -345,7 +371,11 @@ def prev_class_firstwave(blob: bytes,
     result += blob[recs:recs + count * _RECORD_LEN]
     for (g, nf), num in sorted(clones.items(), key=lambda kv: kv[1]):
         rec = bytearray(record(g))
-        rec[_FIRSTWAVE_AT] = nf
+        if isinstance(nf, tuple):
+            rec[_FIRSTWAVE_AT] = nf[1]
+            rec[_GATETIMER_AT] |= _LEGATO
+        else:
+            rec[_FIRSTWAVE_AT] = nf
         result += rec
     result += blob[tables_at:patt_at + 1]
     for (start, nrows), (bpat) in zip(patterns, range(len(patterns))):
@@ -358,5 +388,8 @@ def prev_class_firstwave(blob: bytes,
         result += body
     if log:
         log(f"Previous-class firstwave: {len(clones)} clone(s), "
-            f"{len(choice)} row(s) retargeted")
+            f"{len(choice)} row(s) retargeted"
+            + (f", {sum(1 for v in choice.values() if isinstance(v[1], tuple))}"
+               " of them legato (a raw gate-on tail before the note)"
+               if RAW_GATE_LEGATO else ""))
     return bytes(result)

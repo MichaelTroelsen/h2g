@@ -17,7 +17,7 @@ from h2g.convert import convert
 from h2g.detect import detect
 from h2g.patterns import MAX_PATTERNS
 from h2g.pre_note_wave import (CMD_SETWAVE, _entry, apply_pre_note_waves,
-                               start_waves)
+                               every_subtune, start_waves)
 from h2g.sidfile import load_sid
 from songview import parse_sng
 
@@ -308,3 +308,88 @@ def test_phantoms_idles_on_a_vibrato_free_instrument_first_lap_only():
         quiet = on.patterns[first][1]
         assert quiet != 0 and on.instruments[quiet - 1].vib_ptr == 0
         assert on.patterns[last][1] == 0
+
+
+# ---- a zero-page index nothing initialises: every subtune ---------------------
+
+# siddump of the ORIGINAL, every subtune (-a N, -t30, fresh machine): the
+# (subtune, voice) pairs that show `$40` on a voice before its first gate.
+# Samantha_Fox_Strip_Poker's index lives at $B3,X and only the pattern reader
+# writes it, so each subtune starts every voice on record 0 (control $41).
+# The scored subtune is 9 (PSID startSong 10): voice 1 holds `$40` for the 210
+# frames before its first gate there, which is the whole of its wave deficit.
+SAMANTHA_LATCHING = ({(s, 2) for s in range(8)}
+                     | {(9, 1), (12, 0), (13, 0), (13, 2)})
+
+
+def _samantha_opts():
+    import json
+    from pathlib import Path
+    import fidelity
+    doc = json.loads((Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    opts = fidelity._preset_opts(doc, "Samantha_Fox_Strip_Poker.sid")
+    opts.pop("pre_note_wave", None)
+    return opts
+
+
+def test_every_subtune_latches_when_asked_and_only_subtune_0_otherwise():
+    """SABOTAGE TARGET: dropping `every` from the loop leaves subtunes 1+
+    unlatched."""
+    pats = [pattern(row(KEYOFF), row(), row(0x70, 3)), pattern(row(0x70, 3))]
+    tracks = [[1, 0xFF, 0], [1, 0xFF, 0], [1, 0xFF, 0],
+              [0, 0xFF, 0], [1, 0xFF, 0], [1, 0xFF, 0]]
+    _o, new, n = apply_pre_note_waves(pats, tracks, (0x40,) * 3, MAX_PATTERNS)
+    assert n == 0
+    _o, new, n = apply_pre_note_waves(pats, tracks, (0x40,) * 3, MAX_PATTERNS,
+                                      every=True)
+    assert n == 1 and new[3] != tracks[3] and new[:3] == tracks[:3]
+    assert new[4:] == tracks[4:]
+
+
+@needs_corpus
+def test_samantha_reads_a_zero_page_start_instrument():
+    det = _det("Samantha_Fox_Strip_Poker")
+    sid = load_sid(str(CORPUS / "Samantha_Fox_Strip_Poker.sid"))
+    assert det.zp_start_instrument == 0
+    assert det.initial_instruments == () and det.init_instrument is None
+    assert every_subtune(det)
+    assert start_waves(sid, det) == (0x40, 0x40, 0x40)
+
+
+@needs_corpus
+@pytest.mark.parametrize("stem", ["Mega_Apocalypse", "Spellbound"])
+def test_the_other_zero_page_index_players_are_not_claimed(stem):
+    """They share the zero-page index load but not the per-frame control write
+    on the same path (Mega_Apocalypse writes none before a voice's first note;
+    Spellbound's is behind a flag)."""
+    assert _det(stem).zp_start_instrument is None
+
+
+@needs_corpus
+def test_samantha_latches_exactly_the_voices_the_original_shows():
+    """SABOTAGE TARGET: `every_subtune` False (or the zero-page read gone)
+    leaves the cells out and the set empty."""
+    path = str(CORPUS / "Samantha_Fox_Strip_Poker.sid")
+    opts = _samantha_opts()
+    off = parse_sng(convert(path, log=lambda m: None, **opts))
+    on = parse_sng(convert(path, log=lambda m: None, pre_note_wave=True,
+                           **opts))
+    assert len(on.tracks) == len(off.tracks) == 42
+    assert _setwave_cells(off) == []
+
+    carrying = {p for p, _r, w in _setwave_cells(on) if w == 0x40}
+    got = set()
+    for ti, track in enumerate(on.tracks):
+        if track[_entry(track)] in carrying:
+            got.add((ti // 3, ti % 3))
+    assert got == SAMANTHA_LATCHING
+    assert on.instruments == off.instruments
+
+
+@needs_corpus
+def test_the_option_off_changes_no_byte_of_samantha():
+    path = str(CORPUS / "Samantha_Fox_Strip_Poker.sid")
+    opts = _samantha_opts()
+    assert (convert(path, log=lambda m: None, **opts)
+            == convert(path, log=lambda m: None, pre_note_wave=False, **opts))

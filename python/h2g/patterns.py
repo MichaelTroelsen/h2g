@@ -2291,6 +2291,12 @@ class IlvArps(list):
 
 ILV_SLIDE = 0x82
 ILV_TIE = 0x20                  # of a $C0-$FF duration byte; see above
+# A tied note that also carries a `$82` slide: tie on the row, slide on the
+# hold rows (see _build_raw_pattern_ilv). False restores the slide-wins row.
+TIE_UNDER_SLIDE = True
+# A one-row note's gate-off never fires in the player, so the next note is a
+# pitch change with no new gate edge (Lion_Heart f5149). False restores.
+ONEROW_TIE = True
 ILV_COMMAND_OPERANDS = {0x80: 1, ILV_SLIDE: 2, 0x83: 1, 0x84: 0,
                         0x86: 1, 0x87: 2, 0x88: 0, 0x89: 1}
 
@@ -2303,6 +2309,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            steps: Optional[List[int]] = None,
                            arps: Optional[List[tuple]] = None,
                            tie: bool = False,
+                           exits_tied: Optional[List[bool]] = None,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
 
@@ -2354,6 +2361,11 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
             if span is not None:
                 span.append(i2 + 1)
+            if exits_tied is not None:
+                # The player's no-attack flag is per voice and an `$81` is an
+                # orderlist fetch, not an event, so the next pattern's first
+                # note inherits it. See _apply_boundary_ties.
+                exits_tied.append(nexttie and tie)
             return events
 
         if b >= 0xC0:                       # duration; emits no row
@@ -2417,10 +2429,18 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         # N governs note N+1, and a rest consumes it without a row to put it
         # on. A tie never reaches row 0 of a pattern: `nexttie` starts False.
         tie_cmd = None
-        if (tie and cmd is None and nexttie and b != ILV_REST
+        hold_cmd = cmd              # what the hold rows repeat
+        if (tie and nexttie and b != ILV_REST
                 and not (armed and arps is not None and record is not None)):
-            tie_cmd = cmd = (CMD_TONEPORTA, 0)
-        nexttie = tieflag
+            if cmd is None:
+                tie_cmd = cmd = (CMD_TONEPORTA, 0)
+            elif TIE_UNDER_SLIDE and wait > 0:
+                # A tied note under a `$82` slide: the note row carries the
+                # tie (a slide there re-strikes a note the player does not)
+                # and its hold rows carry the slide. A one-row note has no
+                # hold row, so there the slide keeps the row.
+                tie_cmd = cmd = (CMD_TONEPORTA, 0)
+        nexttie = tieflag or (ONEROW_TIE and wait == 0 and b != ILV_REST)
         tieflag = False
         if cmd is not None:
             events[-2], events[-1] = cmd
@@ -2439,12 +2459,12 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         armed = None
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
-            if cmd is not None and tie_cmd is None:
+            if hold_cmd is not None:
                 # Continuous, so it is repeated rather than held: gplay.c
                 # executes a command on the row it appears on and nowhere
                 # else. The player's own step lasts exactly this event.
                 # The tie is one-shot (ONE_SHOT_COMMANDS) and is not.
-                events[-2], events[-1] = cmd
+                events[-2], events[-1] = hold_cmd
         pending = None
         i2 += 1
 
@@ -2792,7 +2812,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
                                       slides=slides, steps=steps, arps=arps,
-                                      tie=tie)
+                                      tie=tie, exits_tied=exits_tied)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -3336,9 +3356,12 @@ class TrackIndex(list):
     """
 
     def __init__(self, items=(), exits_tied=None, free_rows=None,
-                 event_rows=None):
+                 event_rows=None, wrap_tie=True):
         super().__init__(items)
         self.exits_tied: List[bool] = list(exits_tied or ())
+        # False where the orderlist's wrap must not be tied (the interleaved
+        # engine; see `_apply_wrap_tie` and `reindex_tracks`).
+        self.wrap_tie = wrap_tie
         self.free_rows: Dict[int, frozenset] = dict(free_rows or {})
         self.event_rows: Dict[int, Optional[frozenset]] = dict(event_rows or {})
 
@@ -3729,7 +3752,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     return new_patterns, TrackIndex(
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
-        pattern_free, pattern_starts)
+        pattern_free, pattern_starts,
+        wrap_tie=det.pattern_dialect != "ilv")
 
 
 def _ring_key(pattern: List[int]) -> bytes:
@@ -8080,6 +8104,7 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
         # position counts, and why voice 0 of a subtune yields to the tempo
         # `apply_tempos` writes into that same row after this runs.
         if (patterns is not None and exits_tied is not None
+                and getattr(track_index, "wrap_tie", True)
                 and prev_ref is not None and prev_ref < len(exits_tied)):
             _apply_wrap_tie(new_track, patterns, tie_copies,
                             bool(exits_tied[prev_ref]), ti % 3 == 0, log)

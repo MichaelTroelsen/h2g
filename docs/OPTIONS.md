@@ -3765,6 +3765,17 @@ moves Auf_Wiedersehen_Monty, Delta, Kings_of_the_Beach_ingame, Nineteen,
 Sigma_Seven, Trans-Atlantic_Balloon_Challenge and Wiz, none measured.
 `tests/test_first_rows.py` pins it.
 
+**`--drum-held` (`drum_held`) keeps a drum note's noise for the frame the
+outer gate withholds.** Measured on the originals at `-m1` over 120 s: a drum
+note whose gate rises on frame s keeps its noise 2 frames exactly when call
+s+3 is the call the outer gate withholds, else 1 (Spellbound 742/742, Warhawk
+605/605, Proteus 735/735). The option points each held note's row at a copy of
+its wave program with the noise doubled (`goatwriter/drum_held.py`), only for
+programs that stop (`FF:00`); a looping tail was measured to regress. Off by
+default; shipped on Spellbound, Warhawk and Proteus at v0.5.666 (wave .984->.990,
+.985->.987, .985->.986, no printed column falling). Two-call outer gates only:
+Thrust's three-call gate and full wavetable keep it out.
+
 **`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
 record sets after the drum's hit.** IK_plus' pulse+drum records read
 `41 81 81 40` in the original (the hit on frame 1, the stage's second frame on
