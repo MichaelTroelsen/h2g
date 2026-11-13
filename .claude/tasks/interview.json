@@ -1,16 +1,36 @@
 {
- "generated_from": {"head": "64c8265", "plan_head": "64c8265"},
- "note": "Adoption decisions for done diagnoses whose patch failed policy cycle.auto_adopt; none is a plan task yet (the next /whattask places the answers from decisions.jsonl). Applied after the v0.5.661 landing now running.",
+ "generated_from": {
+  "head": "0fbf079",
+  "plan_head": "0fbf079"
+ },
+ "note": "Adoption decision for a partial diagnosis whose patch failed policy cycle.auto_adopt; not a plan task yet (the next /whattask places the answer from decisions.jsonl).",
  "blockers": [
-  {"id":"knucklebusters-3-subtune-clock-off","kind":"decision","current_behaviour":"Knucklebusters subtune 2 row 17/8 floored to 6 calls; fix.patch adds opt-in regrid_floored (0 moved under shipped presets)","sources":["C:/t/knucklebusters-3-subtune-clock-off/finding.md","ab/final.ab.md"],"options":[{"label":"Adopt","consequence":"drift -58.8->0, gate .49->.90, instr .30->.83; depth .553->.543"},{"label":"Leave","consequence":"patch stays under C:/t"}],"recommendation":"Adopt","why":"every column but depth moves far toward the original; depth falls in every variant tried","auto_adopt_failed_on":"depth -0.010, no noise floor","question":"Adopt regrid_floored for Knucklebusters?","unblocked_by_research":false},
-  {"id":"attack-scatter-phase-drift-wiz-worst","kind":"decision","current_behaviour":"regrid_phase guarded to single-subtune; fix.patch relaxes it and sets it on Wiz and Sanxion (presets hunk)","sources":["C:/t/attack-scatter-phase-drift-wiz-worst/finding.md"],"options":[{"label":"Adopt","consequence":"Wiz gate 18->56 instr .63->.85; Sanxion gate 42->93 instr .72->.93; Wiz cut -1.5%, filt -0.6%"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt","why":"the same mechanism landed for IK_plus; the gains dwarf the filter falls","auto_adopt_failed_on":"Wiz cut and filt fall","question":"Adopt regrid_phase on Wiz and Sanxion?","unblocked_by_research":false},
-  {"id":"wave-gate-off-firstwave-writes-next-class-early","kind":"decision","current_behaviour":"opt-in prev_class_firstwave, needs the preset key on 16 songs","sources":["C:/t/wave-gate-off-firstwave-writes-next-class-early/finding.md"],"options":[{"label":"Adopt","consequence":"wave up on all 16 + Delta_13, nothing else moves"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt","why":"pure rise on every named song","auto_adopt_failed_on":"16 moved files > max_moved_files 12","question":"Adopt prev_class_firstwave on the 16 songs?","unblocked_by_research":false},
-  {"id":"melody-lion-heart-noise-drum-fixed-note","kind":"decision","current_behaviour":"wave-set opcode note written as 5F00; fix keeps previous lo byte","sources":["C:/t/melody-lion-heart-noise-drum-fixed-note/finding.md"],"options":[{"label":"Adopt","consequence":"Lion_Heart melody .915->.990; 21 files move; held Arcade_Classics depth -0.0086"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt","why":"only Lion_Heart's columns move; the one fall is on a held file","auto_adopt_failed_on":"21 moved files > 12","question":"Adopt the Lion_Heart drum-pitch fix?","unblocked_by_research":false},
-  {"id":"melody-hard-restart-swallows-sun-never-shines-drum","kind":"decision","current_behaviour":"hard_restart_frames 4 masks record 3's gate pulse","sources":["C:/t/melody-hard-restart-swallows-sun-never-shines-drum/finding.md"],"options":[{"label":"Adopt","consequence":"Sun melody .91->.99 gate .97->.99; vib 1.02->.92 (600 spurious reversals removed)"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt","why":"the vib fall is an artefact the fix removes","auto_adopt_failed_on":"vib printed fall","question":"Adopt the Sun_Never_Shines strike-safe hard restart?","unblocked_by_research":false},
-  {"id":"melody-sfx-drum-no-gate-edge-i-ball-bangkok","kind":"decision","current_behaviour":"sfx_rest_click needs a SETSR row neither preset has","sources":["C:/t/melody-sfx-drum-no-gate-edge-i-ball-bangkok/finding.md"],"options":[{"label":"Adopt","consequence":"melody I_Ball 97->99, Bangkok 97->100; wave/gate/tie/vib -<=1pp"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt","why":"melody is the headline column; the falls are small and unexplained","auto_adopt_failed_on":"printed falls up to 1pp","question":"Adopt the I_Ball/Bangkok drum-click rest fix?","unblocked_by_research":false},
-  {"id":"gate-m6-long-rests-released-at-hard-restart-frame","kind":"decision","current_behaviour":"Hollywood rests open with no KEYOFF; Tarzan drum_fall off and one frame early","sources":["C:/t/gate-m6-long-rests-released-at-hard-restart-frame/finding.md"],"options":[{"label":"Adopt patch + Tarzan drum_fall","consequence":"Hollywood gate .975->1.0, Tarzan gate .82->.99 (aud -.002); bend .685->.684"},{"label":"Adopt patch only","consequence":"Hollywood/Chicken_Song gate up; Tarzan unchanged until a listen"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt patch + Tarzan drum_fall","why":"Tarzan melody did not fall at HEAD, contrary to OPTIONS.md","auto_adopt_failed_on":"bend printed fall; Tarzan needs a preset decision","question":"Adopt gate M6 (Hollywood KEYOFF, Tarzan drum_fall)?","unblocked_by_research":false},
-  {"id":"instr-gate-off-lost-for-a-row-lightforce-tarzan","kind":"decision","current_behaviour":"Lightforce lacks drum_gate_off; Tarzan patch overlaps gate M6's","sources":["C:/t/instr-gate-off-lost-for-a-row-lightforce-tarzan/finding.md"],"options":[{"label":"Adopt Lightforce drum_gate_off","consequence":"instr .874->.988 gate 56->76%; voids its ear approval (re-approve)"},{"label":"Leave","consequence":"Lightforce keeps its approved conversion"}],"recommendation":"Adopt Lightforce drum_gate_off","why":"large instr gain, recorded inaudible","auto_adopt_failed_on":"preset hand-adoption voiding approved.json","question":"Turn drum_gate_off on for Lightforce (voids its approval)?","unblocked_by_research":false},
-  {"id":"instr-octave-arpeggio-in-note-missing","kind":"decision","current_behaviour":"Lakers arp delay row writes once; Last_V8 unphased; Radio_ACE/Pacific_Coast arpeggio off pending a listen","sources":["C:/t/instr-octave-arpeggio-in-note-missing/finding.md"],"options":[{"label":"Adopt patch + preset proposal","consequence":"instr Radio_ACE .38->.98, Lakers .82->.96, Pacific .89->.94, Last_V8 .93->.99; tie Last_V8 -.01 Thing -.04"},{"label":"Adopt patch only","consequence":"Lakers/Last_V8/Thing up; Radio_ACE/Pacific wait for a listen"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Adopt patch + preset proposal","why":"the falling ties were ours-only ties","auto_adopt_failed_on":"tie and vib printed falls","question":"Adopt the octave-arpeggio fix?","unblocked_by_research":false},
-  {"id":"gate-off-gap-starts-one-frame-late","kind":"decision","current_behaviour":"opt-in row_hard_restart; only Ninja traced","sources":["C:/t/gate-off-gap-starts-one-frame-late/finding.md"],"options":[{"label":"Measure the 4 songs first","consequence":"one more agent run A/Bs Ninja, Radio_ACE, Pacific_Coast, Pygmies_Revenge"},{"label":"Adopt on Ninja only","consequence":"Ninja voice-2 gap matches the original"},{"label":"Leave","consequence":"not adopted"}],"recommendation":"Measure the 4 songs first","why":"3 of the 4 songs are unmeasured","auto_adopt_failed_on":"preset entries on unmeasured songs","question":"row_hard_restart: measure all 4 first, or adopt on Ninja?","unblocked_by_research":false}
+  {
+   "id": "go-go-dash-sync-flashes-record-13",
+   "kind": "decision",
+   "title_at_research": "Go_Go_Dash: record 13 settles on $43 where the original stays on $41 with single-frame $43 flashes (sync 1.31 -> 1.37)",
+   "blocked_on_at_research": null,
+   "current_behaviour": "attack._two_stage_entries appends ONE delay entry (max 16 calls), so a two-stage record's first stage is cut short at -S4 (Go_Go_Dash record 13: 17 calls where the original runs 60); final.patch chains delay entries behind a wavetable-layout guard",
+   "sources": [
+    "C:/t/go-go-dash-sync-flashes-record-13/finding.md",
+    "C:/t/go-go-dash-sync-flashes-record-13/final.patch",
+    "C:/t/go-go-dash-sync-flashes-record-13/ab_base_new.md"
+   ],
+   "options": [
+    {
+     "label": "Adopt",
+     "consequence": "sync Go_Go_Dash 1.372 -> .993, Knucklebusters_3 .67 -> .98, Food_Feud 1.33 -> 1.02, Sanxion 1.21 -> 1.01, ACE_II .90 -> 1.00, Off_the_Cuff 1.08 -> 1.00; depth falls Go_Go_Dash .935 -> .904, Flash_Gordon .762 -> .753, Rock_Tells_the_Tale (held) .606 -> .595; 13 files move"
+    },
+    {
+     "label": "Leave",
+     "consequence": "patch stays under C:/t; sync stays as it is"
+    }
+   ],
+   "recommendation": "Adopt",
+   "why": "the stage length is read off the player and seven songs' sync and ctrl move to the original's; the depth fall is one record's vibrato swing (.01302 -> .01258 against .01392) while its reversal count moves toward the original",
+   "auto_adopt_failed_on": "depth falls beyond noise on three moved files; 13 moved files > max_moved_files 12; source outcome is partial",
+   "question": "Adopt the two-stage delay chain (Go_Go_Dash sync 1.37 -> .99 and six more songs, with depth falling .03 on Go_Go_Dash)?",
+   "unblocked_by_research": false
+  }
  ]
 }

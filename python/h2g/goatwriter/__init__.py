@@ -380,11 +380,13 @@ from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
                         MIN_UNITS, DrumLongPlan, drum_long_plan,
                         drum_long_records)
-from .drum_held import (PATTERN_RESERVE, VARIANT_ROWS, ZERO_FILL,  # noqa: F401
-                        DrumHeldPlan, _INDEXED_REACH, _ZP_INDEXED,
-                        _ZP_WRITERS, _abs_outer_start, _apply, _drum_records,
-                        _group, _shape, _zp_outer_start, drum_held_plan,
-                        held_clock, held_rows, withheld_calls)
+from .drum_held import (LOOP_VARIANT_ROWS, PATTERN_RESERVE,  # noqa: F401
+                        VARIANT_ROWS, ZERO_FILL, DrumHeldPlan,
+                        _INDEXED_REACH, _ZP_INDEXED, _ZP_WRITERS,
+                        _abs_outer_start, _apply, _drum_records, _group,
+                        _shape, _zp_outer_start, drum_held_plan, held_clock,
+                        held_rows, is_loop, variant, variant_rows,
+                        withheld_calls)
 from .lfo_wave import (LFO_END, LFO_HOLD, LFO_MAX_READS, LFO_SIGN,  # noqa: F401
                        LFO_SPEED_RELATIVE, LfoPhase, _byte, _note_walk,
                        _program, _spell, _step, _walk_reads, cycle_row,

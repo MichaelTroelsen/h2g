@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.667 — 2026-11-13
+
+- Adopt drum_held looping tails (Spellbound, Proteus, Warhawk); second-pass sub-99% mechanisms in todo.md
+
 ## 0.5.666 — 2026-11-13
 
 - Adopt 4 sub-99% patches: drum_held, Samantha pre-note wave, Monty row clock, raw-gate drum legato

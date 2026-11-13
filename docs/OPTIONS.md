@@ -3770,10 +3770,15 @@ outer gate withholds.** Measured on the originals at `-m1` over 120 s: a drum
 note whose gate rises on frame s keeps its noise 2 frames exactly when call
 s+3 is the call the outer gate withholds, else 1 (Spellbound 742/742, Warhawk
 605/605, Proteus 735/735). The option points each held note's row at a copy of
-its wave program with the noise doubled (`goatwriter/drum_held.py`), only for
-programs that stop (`FF:00`); a looping tail was measured to regress. Off by
-default; shipped on Spellbound, Warhawk and Proteus at v0.5.666 (wave .984->.990,
-.985->.987, .985->.986, no printed column falling). Two-call outer gates only:
+its wave program with the noise doubled (`goatwriter/drum_held.py`). A program
+that stops (`FF:00`) gets the noise appended; since v0.5.667 a looping tail
+gets it IN PLACE of the tail's first one-call row, so the call count up to the
+jump is unchanged (appending it put the loop entry a frame late for good), and
+only where the first two tail rows are plain waveform rows and the record's
+top-note row is not pinned by the past-table split. Off by default; shipped on
+Spellbound, Warhawk and Proteus at v0.5.666 (wave .984->.990, .985->.987,
+.985->.986, no printed column falling); the looping tails took them to .992,
+.989 and .988 at v0.5.667. Two-call outer gates only:
 Thrust's three-call gate and full wavetable keep it out.
 
 **`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
