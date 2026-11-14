@@ -53,6 +53,7 @@ from .pitch_lead import lead_ties
 from .unison_vibrato import chorus_doubled_notes
 from .vibrato_hold import hold_classic_vibrato
 from .prev_class_firstwave import prev_class_firstwave as _prev_class_firstwave
+from .rest_late_keyoff import rest_late_keyoff as _rest_late_keyoff
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -363,6 +364,7 @@ def convert(sid_path: str, log: Logger = print,
             unison_vibrato_phase: bool = False,
             vibrato_hold: bool = False,
             prev_class_firstwave: bool = False,
+            rest_late_keyoff: bool = False,
             master_volume: bool = False,
             pre_note_wave: bool = False,
             master_fade: bool = False,
@@ -1806,6 +1808,10 @@ def convert(sid_path: str, log: Logger = print,
                 sng, group_tempos, multiplier, log,
                 raw_gate_legato=(_wave_program_has_jump(sid, det)
                                  and _wave_program_set_stores(sid, det)))
+        if rest_late_keyoff:
+            # On the finished rows and records: the gatetimer each rest's
+            # held instrument carries is final here.
+            sng = _rest_late_keyoff(sng, group_tempos, multiplier, log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

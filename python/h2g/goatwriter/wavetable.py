@@ -46,6 +46,7 @@ from . import primitives as _gw_primitives
 from . import tempo as _gw_tempo
 from . import arpeggio as _gw_arpeggio
 from . import lfo_wave as _gw_lfo_wave
+from . import attack as _gw_attack
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
@@ -2703,6 +2704,79 @@ def _wavetable_layout(*args, **kwargs) -> tuple:
     return _wavetable_layout_once(*args, clone_reserve=reserve, **kwargs)
 
 
+# Keywords that decide a RECORD's own entries; the rest (clones, probes, arp
+# blocks, the lists they fill) only add blocks after them.
+_CHAIN_GUARD_DROP = ("arps", "arp_starts", "clones", "clone_starts",
+                     "phase_clones", "phase_clone_starts", "tie_blocks",
+                     "tie_block_starts", "phase_probe", "phase_block_probe",
+                     "attack_hold_starts", "cut_starts", "cut_probe",
+                     "eor_span", "eor_library_out", "unplaced",
+                     "clone_reserve", "log")
+
+
+def _record_lengths(starts: list, lead: int, n: int, total: int) -> list:
+    """Entries each record occupies, from the starts the layout recorded."""
+    marks = [starts[i] for i in range(lead, min(len(starts), lead + n))]
+    return [(marks[k + 1] if k + 1 < len(marks) else total + 1) - marks[k]
+            for k in range(len(marks))]
+
+
+def chain_is_safe(args: tuple, kwargs: dict) -> bool:
+    """Whether the chained two-stage stage (`attack.TWO_STAGE_CHAIN`) leaves
+    every record the shape it had without it.
+
+    The chain spends entries early in the table, and a later record's
+    LARGER shape (a 14-entry arpeggio program, a drum sweep) only fits in
+    what is left, while the layout reserves it just five. W_A_R's table is
+    250 of 255 entries full: with the chain its record 11 fell back from its
+    arpeggio to the plain shape and pitch agreement went 100% -> 96%
+    (C:/t/go-go-dash-sync-flashes-record-13). So the layout is laid out both
+    ways on the record-deciding keywords alone, and the chain stands only if
+    no record is shorter with it than without. Decided once per detection,
+    so every later layout call of the build agrees.
+    """
+    det = args[1]
+    cached = getattr(det, "_two_stage_chain_ok", None)
+    if cached is not None:
+        return cached
+    reduced = {k: v for k, v in kwargs.items() if k not in _CHAIN_GUARD_DROP}
+    lead = args[8] if len(args) > 8 else kwargs.get("lead", 1)
+    n = max(args[2] - lead, 0)
+    saved = _gw_attack.TWO_STAGE_CHAIN
+    try:
+        _gw_attack.TWO_STAGE_CHAIN = True
+        used0 = _gw_attack.CHAIN_USED[0]
+        on_e, on_s, _ = _wavetable_layout_once(*args, **dict(reduced))
+        used = _gw_attack.CHAIN_USED[0] != used0
+        if not used:
+            ok = True
+        else:
+            _gw_attack.TWO_STAGE_CHAIN = False
+            off_e, off_s, _ = _wavetable_layout_once(*args, **dict(reduced))
+            on_l = _record_lengths(on_s, lead, n, len(on_e))
+            off_l = _record_lengths(off_s, lead, n, len(off_e))
+            ok = all(a >= b for a, b in zip(on_l, off_l))
+    finally:
+        _gw_attack.TWO_STAGE_CHAIN = saved
+    try:
+        det._two_stage_chain_ok = ok
+    except AttributeError:
+        pass
+    return ok
+
+
+def _wavetable_layout_guarded(*args, **kwargs) -> tuple:
+    """`_wavetable_layout` with the two-stage chain only where
+    `chain_is_safe` says it starves no record. What `build_sng` calls."""
+    if not _gw_attack.TWO_STAGE_CHAIN or chain_is_safe(args, kwargs):
+        return _wavetable_layout(*args, **kwargs)
+    _gw_attack.TWO_STAGE_CHAIN = False
+    try:
+        return _wavetable_layout(*args, **kwargs)
+    finally:
+        _gw_attack.TWO_STAGE_CHAIN = True
+
+
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      instr_used: int, effects: bool = False,
                      fmt: str = DEFAULT_FORMAT,
@@ -2713,8 +2787,9 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      entries: Optional[List[tuple]] = None) -> None:
     if entries is None:
         table = speed_table if speed_table is not None else []
-        entries, _, _ = _wavetable_layout(sid, det, instr_used, effects, fmt,
-                                          table, multiplier, min_notes, lead)
+        entries, _, _ = _wavetable_layout_guarded(
+            sid, det, instr_used, effects, fmt, table, multiplier, min_notes,
+            lead)
     out.append(_table_length_byte(len(entries), "wave"))
     out += bytes(left for left, _ in entries)
     out += bytes(right for _, right in entries)

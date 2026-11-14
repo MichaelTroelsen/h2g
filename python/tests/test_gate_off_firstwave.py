@@ -37,6 +37,7 @@ import songview                                              # noqa: E402
 from corpus import CORPUS, needs_corpus                      # noqa: E402
 from h2g.convert import convert                              # noqa: E402
 from h2g.goatwriter import FIRSTWAVE_FREERUN, FIRSTWAVE_TESTBIT  # noqa: E402
+from h2g.goatwriter.constants import WAVE_SILENT_BASE       # noqa: E402
 from h2g.goatwriter.instruments import gate_off_firstwave    # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -150,7 +151,15 @@ def test_forced_on_every_instrument_moves_only_firstwave_bytes(name):
     offs = _firstwave_offsets(off)
     moved = _diff(off, on)
     assert moved, f"{name}: forcing the option moved nothing"
-    assert set(moved) <= set(offs), sorted(set(moved) - set(offs))[:10]
+    # The one byte allowed outside the firstwave column is a parked block's
+    # entry 0 (`instruments.park_free_running`, which acts only under this
+    # option): `$00` -> WAVE_SILENT_BASE. Delta has one since v0.5.668, when
+    # the park began to take multiplier-scaled plain blocks.
+    parked = [o for o in moved if o not in set(offs)]
+    assert all((off[o], on[o]) == (0x00, WAVE_SILENT_BASE) for o in parked), (
+        name, [(o, hex(off[o]), hex(on[o])) for o in parked][:10])
+    assert len(parked) == (1 if name == "Delta.sid" else 0), (name, parked)
+    moved = [o for o in moved if o in set(offs)]
     for o in moved:
         # A no-waveform record now writes the free-running $01 both ways.
         assert off[o] in (FIRSTWAVE_TESTBIT, FIRSTWAVE_FREERUN) and (

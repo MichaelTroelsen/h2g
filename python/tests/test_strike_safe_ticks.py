@@ -56,8 +56,11 @@ def _sun_gatetimers():
     presets = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
     doc = json.loads(presets.read_text(encoding="utf-8"))
     name = "Sun_Never_Shines.sid"
+    # Without prev_class_firstwave (in the preset since v0.5.668): its clones
+    # of the drum record carry the drum's lowered window after the records.
     blob = convert(str(CORPUS / name), log=lambda *a, **k: None,
-                   **F._preset_opts(doc, name))
+                   **dict(F._preset_opts(doc, name),
+                          prev_class_firstwave=False))
     song = parse_sng(blob)
     return [ins.gatetimer & 0x3F for ins in song.instruments], blob
 

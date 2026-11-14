@@ -227,9 +227,20 @@ def conversions():
     for name in CORPUS_SPLITS:
         lines = []
         blob = convert(str(CORPUS / name), log=lines.append,
-                       **pinned_preset_opts(doc, name))
+                       **_opts(doc, name))
         out[name] = (blob, lines)
     return out
+
+
+def _opts(doc, name):
+    """The preset without `prev_class_firstwave` (Human_Race's since
+    v0.5.668). That pass runs after the split and clones a record with the
+    gatetimer it has, so a clone only the longer subtunes name keeps the
+    bound of a shorter-rowed subtune its source is also played in (Human_Race
+    record $06: 2 calls from subtune 2, on a clone subtunes 0, 1 and 3 name).
+    The rows had that gatetimer before the clone; the postcondition below is
+    the split's own."""
+    return dict(pinned_preset_opts(doc, name), prev_class_firstwave=False)
 
 
 @needs_corpus
@@ -264,7 +275,7 @@ def test_no_record_a_longer_subtune_alone_plays_keeps_the_funk_gatetimer(
 
     import fidelity as F
     doc = json.loads((ROOT / "presets.json").read_text())
-    opts = pinned_preset_opts(doc, name)
+    opts = _opts(doc, name)
     C.instrument_row_calls = spy
     try:
         C.convert(str(CORPUS / name), log=lambda m: None, **opts)

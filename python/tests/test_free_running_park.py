@@ -116,7 +116,7 @@ def test_only_the_plain_block_is_rewritten():
     assert e == entries
     # ... nor is one whose block is not the plain shape ...
     e = list(entries)
-    e[2] = (0x00, 0x00)
+    e[2] = (0x41, 0x00)
     assert instruments.park_free_running(Sid, Det, 2, e, starts, 1,
                                          (2,)) == []
     # ... nor a record whose firstwave is written instead of the test bit
@@ -124,3 +124,35 @@ def test_only_the_plain_block_is_rewritten():
     assert instruments.park_free_running(
         Sid, Det, 2, e, starts, 1, (2,), no_test_restart=True) == []
     assert e == entries
+
+
+SCALED = [(0x00, 0x00), (0x00, 0x00), (0x01, 0x00), (0xFF, 0x00), (0xFF, 0x00)]
+
+
+def test_the_multiplier_scaled_plain_block_is_rewritten_too():
+    """Lightforce (-S2) instrument 22: the two middle delays are scaled, so the
+    block is not the -S1 spelling, yet it is the same plain block and the voice
+    held `$01` over the original's `$00` (gate .9393)."""
+    class Sid:
+        data = bytes(64)
+
+    class Det:
+        instr_start = 0
+        instr_stride = 8
+        effect_bit80 = False
+
+    entries = [(0x09, 0x00)] + SCALED
+    e = list(entries)
+    assert instruments.park_free_running(Sid, Det, 2, e, [1, 2], 1,
+                                         (2,)) == [2]
+    assert e[1] == (WAVE_SILENT_BASE, 0x00) and e[2:] == SCALED[1:]
+    # a block with a real waveform byte in a middle slot is not plain
+    e = list(entries)
+    e[3] = (0x41, 0x00)
+    assert instruments.park_free_running(Sid, Det, 2, e, [1, 2], 1,
+                                         (2,)) == []
+    # nor one whose middle entry carries a right-hand byte
+    e = list(entries)
+    e[3] = (0x01, 0x05)
+    assert instruments.park_free_running(Sid, Det, 2, e, [1, 2], 1,
+                                         (2,)) == []

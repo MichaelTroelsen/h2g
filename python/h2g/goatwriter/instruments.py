@@ -238,6 +238,18 @@ _PLAIN_ZERO_WAVE_BLOCK = [(0x00, 0x00), (0x01, 0x00), (0x01, 0x00),
                           (0xFF, 0x00), (0xFF, 0x00)]
 
 
+def _is_plain_zero_block(blk: List[tuple]) -> bool:
+    """`blk` is the plain five-entry zero-wave block, at any multiplier.
+
+    The `-S1` spelling is `_PLAIN_ZERO_WAVE_BLOCK`; at `-S2` the two middle
+    entries are multiplier-scaled delays and differ (Lightforce instrument
+    22: `[(00,00),(00,00),(01,00),(FF,00),(FF,00)]`), so the middle two are
+    accepted as any delay entry (`left < $10`, right `$00`)."""
+    return (len(blk) == 5 and blk[0] == (0x00, 0x00)
+            and all(b[1] == 0x00 and b[0] < 0x10 for b in blk[1:3])
+            and blk[3] == (0xFF, 0x00) and blk[4] == (0xFF, 0x00))
+
+
 def park_free_running(sid: SidFile, det: Detection, instr_used: int,
                       wave_entries: List[tuple], wave_starts: List[int],
                       lead: int, gate_off_firstwave_instruments: tuple,
@@ -282,7 +294,7 @@ def park_free_running(sid: SidFile, det: Detection, instr_used: int,
                              named_firstwave) != FIRSTWAVE_FREERUN:
             continue
         at = wave_starts[i + lead] - 1
-        if at < 0 or wave_entries[at:at + 5] != _PLAIN_ZERO_WAVE_BLOCK:
+        if at < 0 or not _is_plain_zero_block(wave_entries[at:at + 5]):
             continue
         wave_entries[at] = (_gw_constants.WAVE_SILENT_BASE, 0x00)
         done.append(at + 1)

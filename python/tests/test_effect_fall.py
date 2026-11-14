@@ -105,11 +105,15 @@ def _stair_rows(monkeypatch):
     rows the stair pass changed, found by converting twice -- once with the
     pass switched off -- since a tie respell also writes `CMD_TONEPORTA 00`
     on cells of its own."""
-    sng, lines, _ = _song(LVVP)
+    # `rest_late_keyoff` (in the preset since v0.5.668) is off on both sides:
+    # it runs after the stair and moves a KEYOFF onto the next row only where
+    # that row is bare, so 9 rests move without the stair and stay with it,
+    # and the two-conversion diff would read them as stair rows.
+    sng, lines, _ = _song(LVVP, rest_late_keyoff=False)
     song = parse_sng(sng)
     with monkeypatch.context() as m:
         m.setattr(RS, "rise_stair_plan", lambda *a, **k: None)
-        base_sng, _, _ = _song(LVVP)
+        base_sng, _, _ = _song(LVVP, rest_late_keyoff=False)
     base = parse_sng(base_sng)
     new, old = _played(song), _played(base)
     assert len(new) == len(old)

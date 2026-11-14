@@ -419,6 +419,32 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     return left + [0xFF], right + [(start + len(lead)) & 0xFF]
 
 
+# Switch and bound for the chained stage in `_two_stage_entries`: a stage
+# longer than one delay entry spells out its whole length (as many delay
+# entries as it takes) when that is at most this many entries.
+TWO_STAGE_CHAIN = True
+TWO_STAGE_CHAIN_MAX = 8
+# Counts the stages that took a chain, so a caller can tell whether a layout
+# used the switch at all (`wavetable._wavetable_layout`).
+CHAIN_USED = [0]
+
+
+def _stage_delay_chain(calls: int) -> List[int]:
+    """Delay bytes holding exactly `calls` (>= 2) calls: each entry is
+    `WAVE_MAX_DELAY + 1` calls at most and, since no delay encodes one call,
+    at least 2 -- a remainder of one is taken from the entry before it."""
+    chunks: List[int] = []
+    left = calls
+    while left > 0:
+        c = min(left, WAVE_MAX_DELAY + 1)
+        chunks.append(c)
+        left -= c
+    if len(chunks) > 1 and chunks[-1] == 1:
+        chunks[-1] = 2
+        chunks[-2] -= 1
+    return [c - 1 for c in chunks]
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
@@ -548,8 +574,25 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         left.append(attack)       # no delay encodes one call; rewrite instead
         right.append(0x00)
     elif extra > 1:
-        left.append(min(extra - 1, WAVE_MAX_DELAY))
-        right.append(0x80)
+        # **The stage is as long as the original's counter, not as long as one
+        # delay entry.** A delay holds at most WAVE_MAX_DELAY + 1 calls, and
+        # this used to append ONE, so a stage over 16 calls ended at call 16:
+        # Go_Go_Dash's record 13 (15 frames, -S4 = 60 calls) sounded `$41` for
+        # 4 frames and then the record's own `$43` for the rest, where the
+        # original holds `$41` for the 15 counted frames
+        # (C:/t/go-go-dash-sync-flashes-record-13/finding.md). The remaining
+        # calls chain as further delays, each at least two calls (no delay
+        # encodes one), while the whole block still fits `budget`; past that
+        # the single delay stands, as before. Switch: TWO_STAGE_CHAIN.
+        chain = [min(extra - 1, WAVE_MAX_DELAY)]
+        if TWO_STAGE_CHAIN and extra > WAVE_MAX_DELAY + 1:
+            longer = _stage_delay_chain(extra)
+            if (len(longer) <= TWO_STAGE_CHAIN_MAX
+                    and len(left) + len(longer) + 2 <= budget):
+                chain = longer
+                CHAIN_USED[0] += 1
+        left += chain
+        right += [0x80] * len(chain)
     # `hold_attack`: the second stage leaves the fixed pitch standing instead
     # of writing the played note back. That is the player's own branch once
     # the countdown runs out on a record whose vibrato byte is set (Sanxion

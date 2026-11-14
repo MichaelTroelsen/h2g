@@ -44,6 +44,10 @@ def _convert(name, **extra):
     # presets.json's always block turns the drop on since v0.5.495; every
     # test here compares an explicit off control against an explicit on.
     opts["drop_unnamed_instruments"] = False
+    # prev_class_firstwave (Human_Race and Hunter_Patrol since v0.5.668) runs
+    # AFTER the drop and appends clones, re-pointing rows off their source
+    # records, so the off and on files no longer differ by the drop alone.
+    opts["prev_class_firstwave"] = False
     opts.update(extra)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

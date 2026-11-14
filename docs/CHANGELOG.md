@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.668 — 2026-11-14
+
+- Adopt 8 sub-99% changes: prev-class firstwave on 10 songs, row hard restart on 5, Bangkok/Pandora/Nemesis presets, two-stage delay chain, Lightforce park, Las Vegas late key-off
+
 ## 0.5.667 — 2026-11-13
 
 - Adopt drum_held looping tails (Spellbound, Proteus, Warhawk); second-pass sub-99% mechanisms in todo.md

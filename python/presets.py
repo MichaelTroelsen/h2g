@@ -940,6 +940,11 @@ EXCLUDED_FROM_ALWAYS = {
     # song and never a default; not in FIDELITY_TOGGLES. A song entry
     # `"prev_class_firstwave": true`.
     "prev_class_firstwave",
+    # `rest_late_keyoff`: a ringing rest's KEYOFF one row later, so the gate
+    # drops at the rest's first tick (h2g.rest_late_keyoff). Per song and never
+    # a default; not in FIDELITY_TOGGLES. A song entry
+    # `"rest_late_keyoff": true`.
+    "rest_late_keyoff",
 }
 
 

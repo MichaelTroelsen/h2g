@@ -57,7 +57,11 @@ def _convert(name, free=True):
         NP.free_note_skips_two_stage = lambda sid, det: False
     try:
         lines = []
-        sng = convert(str(CORPUS / name), log=lines.append, **_preset_opts(name))
+        # Likewise prev_class_firstwave (Auf_Wiedersehen_Monty's preset since
+        # v0.5.668), which appends its clones after the variants and re-points
+        # their rows.
+        sng = convert(str(CORPUS / name), log=lines.append,
+                      **dict(_preset_opts(name), prev_class_firstwave=False))
     finally:
         NP.free_note_skips_two_stage = real
         _C.split_funk_gatetimers = real_split

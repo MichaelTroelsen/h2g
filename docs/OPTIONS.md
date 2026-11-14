@@ -2122,6 +2122,23 @@ every other column of its row identical. Both bits are checked **per record**,
 never per file. Requires `--format gts5`; a record whose block will not fit its
 wavetable budget falls back to the plain two-stage shape.
 
+**A first stage longer than one delay entry is chained since v0.5.668.** A
+wavetable delay entry lasts at most 16 calls, and `_two_stage_entries` wrote
+one, so above `-S1` a long attack stage was cut short: Go_Go_Dash's record 13
+held `$41` for 17 calls (4 frames) at `-S4` where the player's counter runs 15
+frames. `attack._stage_delay_chain` now lays as many delay entries as the
+stage needs (switch `attack.TWO_STAGE_CHAIN`, at most `TWO_STAGE_CHAIN_MAX`
+entries), and `wavetable.chain_is_safe` lays the table out both ways and keeps
+the chain only where no record's program comes out shorter (W_A_R and
+W_A_R_Preview, at 250 of 255 rows, keep the single delay). Measured at
+v0.5.667, `-t 180 --presets --sound`: `sync` Go_Go_Dash 1.372 -> .993,
+Knucklebusters_3 .673 -> .982, Food_Feud 1.329 -> 1.021, Sanxion 1.211 ->
+1.014, ACE_II .896 -> 1.000; `depth` fell on Go_Go_Dash .935 -> .904,
+Flash_Gordon .762 -> .753 and Rock_Tells_the_Tale .606 -> .595 (accepted by
+the user, 2026-11-13). The original's single-frame `$43` flashes inside the
+stage are tie ticks with the counter frozen and cannot be spelled in a
+wavetable program. `tests/test_two_stage_chain.py` pins it.
+
 See H2G-CONVERSION-METHOD.md § 7.vvv — including why the block must open on a
 zero step, which cost Thundercats 11.6 points of `melody` before it did.
 
@@ -2981,6 +2998,43 @@ Last_V8 .9338 -> .9796, Hollywood_or_Bust .9445 -> .9861, One_Man .9789 ->
 .9998, Lakers .9746 -> .9994, Delta .9832 -> .9999; melody, seq, gate, adsr
 and every other printed column are unchanged, `noise` moves toward the
 original's count on 13, `aud` moves at most .0020.
+
+## `--rest-late-keyoff` (a ringing rest's gate drops on the rest's first tick)
+
+A bit-6 rest drops the gate on its FIRST tick (Las_Vegas_Video_Poker `$511F
+DEC $54D2`), and a note carrying status bit 5 has no cut of its own, so the
+note sounds its whole length. A KEYOFF row cannot say that: Goattracker fetches
+the next row `gatetimer` calls before the current one ends (gplay.c:854, :905)
+and a KEYOFF drops the gate AT THE FETCH (gplay.c:928), so on a row of `R`
+calls and a record of gatetimer `g` the gate falls `g` calls before the KEYOFF's
+row, `R - g` calls after it when the KEYOFF sits one row later. Las_Vegas
+voice 1 (`-S4`, 15-call rows, `max_hard_restart` so `g` 14): 36 notes sound 11
+frames where the original sounds 15 (gate .9724, 144 miss frames, all record
+`AD$0A SR$0C`, offsets 11-14).
+
+`h2g/rest_late_keyoff.py` runs on the finished `.sng` (after
+`prev_class_firstwave`, with the subtune's row length) and moves the KEYOFF
+note one row down where (1) the row before it carries `CMD_SETSR <nonzero>`
+-- `rest_ring`'s ring, which exists only for a rest entered with the gate open
+-- (2) the next row is a bare rest, and (3) `R - g + multiplier <= g`, i.e.
+the move puts the gate-off at least a frame nearer the rest's tick 0. The
+rest's command column (pulse reseed, `CMD_TONEPORTA 00`, ring, cut) stays on
+its row. A rest that opens a pattern is edited in place where every position
+that plays it rings, otherwise copied for the ringing positions. The 5
+Las_Vegas notes whose own end-cut had already shut the gate before a rest are
+left alone: the KEYOFF's early fetch stands in for that cut. Off leaves every
+conversion byte-identical (89 of 89 compared files, 2026-11-13); a song entry
+`"rest_late_keyoff": true`.
+
+Forced on over the shipped presets (eaf2bbd + the change, `-t 180 --presets
+--sound`): 8 of 89 compared files move. Las_Vegas gate .9724 -> 1.0000 (144 ->
+0 miss frames, aud .9141 -> .9144); Confuzion .9950 -> .9964, Game_Killer
+.8879 -> .8889, Spellbound .9238 -> .9255, Thrust .8666 -> .8686 (all gate);
+International_Karate, Samantha_Fox_Strip_Poker and Warhawk move bytes and no
+printed column. Every melody, seq, pitch, wave and adsr value is unchanged.
+Two depth ratios move: Spellbound 1.012 -> 1.043 (a 3-instrument median set by
+a record with 138 of the original's 1945 oscillating frames) and Thrust .714
+-> .707. Not adopted in any preset.
 
 ## `--vibrato-hold` (the classic vibrato moves once a frame)
 

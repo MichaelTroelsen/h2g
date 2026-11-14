@@ -1,36 +1,7 @@
 {
  "generated_from": {
-  "head": "0fbf079",
+  "head": "eaf2bbd",
   "plan_head": "0fbf079"
  },
- "note": "Adoption decision for a partial diagnosis whose patch failed policy cycle.auto_adopt; not a plan task yet (the next /whattask places the answer from decisions.jsonl).",
- "blockers": [
-  {
-   "id": "go-go-dash-sync-flashes-record-13",
-   "kind": "decision",
-   "title_at_research": "Go_Go_Dash: record 13 settles on $43 where the original stays on $41 with single-frame $43 flashes (sync 1.31 -> 1.37)",
-   "blocked_on_at_research": null,
-   "current_behaviour": "attack._two_stage_entries appends ONE delay entry (max 16 calls), so a two-stage record's first stage is cut short at -S4 (Go_Go_Dash record 13: 17 calls where the original runs 60); final.patch chains delay entries behind a wavetable-layout guard",
-   "sources": [
-    "C:/t/go-go-dash-sync-flashes-record-13/finding.md",
-    "C:/t/go-go-dash-sync-flashes-record-13/final.patch",
-    "C:/t/go-go-dash-sync-flashes-record-13/ab_base_new.md"
-   ],
-   "options": [
-    {
-     "label": "Adopt",
-     "consequence": "sync Go_Go_Dash 1.372 -> .993, Knucklebusters_3 .67 -> .98, Food_Feud 1.33 -> 1.02, Sanxion 1.21 -> 1.01, ACE_II .90 -> 1.00, Off_the_Cuff 1.08 -> 1.00; depth falls Go_Go_Dash .935 -> .904, Flash_Gordon .762 -> .753, Rock_Tells_the_Tale (held) .606 -> .595; 13 files move"
-    },
-    {
-     "label": "Leave",
-     "consequence": "patch stays under C:/t; sync stays as it is"
-    }
-   ],
-   "recommendation": "Adopt",
-   "why": "the stage length is read off the player and seven songs' sync and ctrl move to the original's; the depth fall is one record's vibrato swing (.01302 -> .01258 against .01392) while its reversal count moves toward the original",
-   "auto_adopt_failed_on": "depth falls beyond noise on three moved files; 13 moved files > max_moved_files 12; source outcome is partial",
-   "question": "Adopt the two-stage delay chain (Go_Go_Dash sync 1.37 -> .99 and six more songs, with depth falling .03 on Go_Go_Dash)?",
-   "unblocked_by_research": false
-  }
- ]
+ "blockers": []
 }

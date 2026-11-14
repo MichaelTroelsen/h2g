@@ -433,6 +433,13 @@ def main(argv=None) -> int:
              "real waveform per predecessor class. Off leaves every "
              "conversion byte-identical.")
     parser.add_argument(
+        "--rest-late-keyoff", action="store_true",
+        help="put the KEYOFF of a ringing rest (one entered with the gate "
+             "open, after a status-bit-5 note) one row later, so the gate "
+             "drops where the original's rest begins instead of the "
+             "record's gatetimer early. Off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--vibrato-hold", action="store_true",
         help="at a multiplier above 1, play the classic vibrato as a "
              "frame-held wavetable program (one full-depth step every "
@@ -924,6 +931,7 @@ def main(argv=None) -> int:
                           ("--unison-vibrato-phase", "unison_vibrato_phase"),
                           ("--vibrato-hold", "vibrato_hold"),
                           ("--prev-class-firstwave", "prev_class_firstwave"),
+                          ("--rest-late-keyoff", "rest_late_keyoff"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -1070,6 +1078,7 @@ def main(argv=None) -> int:
                       unison_vibrato_phase=args.unison_vibrato_phase,
                       vibrato_hold=args.vibrato_hold,
                       prev_class_firstwave=args.prev_class_firstwave,
+                      rest_late_keyoff=args.rest_late_keyoff,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

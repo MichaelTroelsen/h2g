@@ -34,7 +34,9 @@ from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _vibrato_command_pass)
 from .vibrato import (_classic_gate_refine, _free_gate_calls,
                       _vibrato_layout)
-from .wavetable import (_wavetable_layout, _write_wavetable)
+# the guarded layout: the two-stage chain only where it starves no record
+from .wavetable import (_wavetable_layout_guarded as _wavetable_layout,
+                        _write_wavetable)
 from .primitives import _record_row_calls
 from . import arpeggio as _gw_arpeggio
 from . import instruments as _gw_instruments
