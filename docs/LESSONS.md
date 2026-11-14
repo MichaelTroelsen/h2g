@@ -1658,6 +1658,11 @@ test dependency).
     --sound`, committed presets.json against the adopted one): 94.1% / 71.1%
     -> 96.6% / 78.1%, output_sha 81b08d8a8b64 -> 0b70a3cc7bca -- the
     adoption alone moves it; the 5tt fall is recovered only in part.
+    **RE-GRADED AT v0.5.668 (`build/fidelity.json` at 846c788, `-t 180`,
+    presets with `row_hard_restart` on this file): the live pair is
+    `wave` 96.9% / `gate` 100.0%.** The 96.6% / 78.1% pair above is
+    HISTORICAL. The round's adoption A/B read gate .781 -> 1.000; output_sha
+    is now ca1924712100.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
