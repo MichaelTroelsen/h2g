@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.667 presets.py",
+  "generator": "h2g 0.5.668 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -299,11 +299,11 @@
       "two_stage": true,
       "wave_program": true,
       "aligned_firstwave": true,
+      "prev_class_firstwave": true,
       "regrid": true,
       "regrid_per_play": true,
       "regrid_phase": true,
-      "rest_envelope_silence": true,
-      "prev_class_firstwave": true
+      "rest_envelope_silence": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -316,9 +316,6 @@
       "multiplier": 1,
       "sfx_drum": true,
       "wave_program": true,
-      "regrid": true,
-      "regrid_phase": true,
-      "regrid_prepay": 1,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -383,7 +380,10 @@
         61,
         62
       ],
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "regrid": true,
+      "regrid_phase": true,
+      "regrid_prepay": 1
     },
     "Battle_of_Britain.sid": {
       "max_rows": 94,
@@ -2590,11 +2590,11 @@
         61,
         62
       ],
+      "prev_class_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "row_hard_restart": true,
       "rest_wave_silence": true,
-      "prev_class_firstwave": true
+      "row_hard_restart": true
     },
     "Nineteen.sid": {
       "max_rows": 128,
@@ -2835,8 +2835,8 @@
       ],
       "regrid": true,
       "regrid_full_debt": true,
-      "rest_program_stop": true,
       "regrid_phase": true,
+      "rest_program_stop": true,
       "row_hard_restart": true
     },
     "Phantoms_of_the_Asteroid.sid": {
@@ -2961,8 +2961,8 @@
       "hard_restart_frames": 3,
       "master_volume": true,
       "pre_note_wave": true,
-      "row_hard_restart": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "row_hard_restart": true
     },
     "Radio_ACE.sid": {
       "max_rows": 94,
