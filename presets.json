@@ -674,7 +674,9 @@
         60,
         61,
         62
-      ]
+      ],
+      "max_hard_restart": true,
+      "hard_restart_frames": 3
     },
     "Confuzion.sid": {
       "max_rows": 128,
@@ -751,7 +753,8 @@
         62
       ],
       "master_fade": true,
-      "pulse_phase": true
+      "pulse_phase": true,
+      "rest_late_keyoff": true
     },
     "Crazy_Comets.sid": {
       "max_rows": 94,
@@ -1270,7 +1273,8 @@
       "rows": 8132,
       "multiplier": 9,
       "max_hard_restart": true,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "rest_late_keyoff": true
     },
     "Geoff_Capes_Strongman_Challenge.sid": {
       "max_rows": 128,
@@ -3320,7 +3324,8 @@
       "max_hard_restart": true,
       "drum_gate_off": true,
       "drum_held": true,
-      "drum_sustain_gate_off": true
+      "drum_sustain_gate_off": true,
+      "rest_late_keyoff": true
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -3661,7 +3666,8 @@
       "rows": 18397,
       "multiplier": 3,
       "max_hard_restart": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "rest_late_keyoff": true
     },
     "Thundercats.sid": {
       "max_rows": 128,

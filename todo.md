@@ -1647,6 +1647,7 @@ Each entry below came out of the second regrouping the user asked for on 2026-11
   added: 2026-11-13
 
 - **Gate I: Mozart's gate reads 100% one frame earlier than the harness looks (lag 6 vs estimated 7); decide the reading, not the converter.** Mozart gate .3532, the lowest on the index. Gate by lag -4..+4 = `.330 .339 .353 1.0000 .353 .339 .330 .310 .297`: at lag 6 all 8050 frames agree, at the estimated lag 7 the gate rises one frame before the waveform that `startup_lag` aligns on (`orig 41 41 40 41 41 41 41 41 40` / `ours 41 40 09 41 41 41 41 40 09`). The converter lever (`gate_off_firstwave` forced) reaches .68 and costs slides 1.31x -> 1.51x (`gate-wave-firstwave-09-frame-in-gate-off-gap`); the user kept Mozart as staged (`listen-current-builds-2026-10`, "Still approved"). The 2026-11-08 pass found the same lag reading. Done when the user decides one of: (a) Mozart carries "harness: gate leads the waveform by one frame, 100% at lag 6" as its reason and the done-bar counts it, (b) `gate_compare` reports the best lag within +-1 of `startup_lag` for every song and the whole corpus is re-read (the byte-hash cannot name it; the column's per-song movers must be listed), or (c) the emitter route is reopened. `[user]`.
+  DECIDED 2026-11-15 (user, `/runhuman` `mozart-gate-lag-reading`): **(a)**. Mozart's reason is "harness: gate leads the waveform by one frame, 100% at lag 6", and the done-bar counts its gate cell as met. No converter, harness or preset change.
 
   added: 2026-11-13
 

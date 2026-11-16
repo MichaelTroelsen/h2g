@@ -90,10 +90,13 @@ def test_the_triangle_engine_keeps_its_keyoff_tie():
     (B-4 at calls 3158-3176: centre, then static for 12 frames) and the tie's
     `vibtime` restart is the nearest thing ours has to that; untying it left
     the vibrato running through the rest, aud .9569 -> .9538 and loud .9628 ->
-    .9589 (confuzion-keyoff-untie-scope). Pattern $0D row 60 is that KEYOFF."""
+    .9589 (confuzion-keyoff-untie-scope). Pattern $0D row 60 is that KEYOFF.
+    rest_late_keyoff (adopted on Confuzion at v0.5.669) leaves none of these
+    KEYOFF+SETSR+TONEPORTA rows (kept 0), so the tie is read with it off."""
     doc = json.loads(PRESETS.read_text())
     blob = convert(str(CORPUS / CONFUZION), log=lambda m: None,
-                   **fidelity._preset_opts(doc, CONFUZION))
+                   **dict(fidelity._preset_opts(doc, CONFUZION),
+                          rest_late_keyoff=False))
     s = songview.parse_sng(blob)
     kept = 0
     for p in s.patterns:
