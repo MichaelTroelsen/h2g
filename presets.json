@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.668 presets.py",
+  "generator": "h2g 0.5.669 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -611,6 +611,7 @@
       "subtunes": 1,
       "rows": 9864,
       "multiplier": 1,
+      "max_hard_restart": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -675,7 +676,6 @@
         61,
         62
       ],
-      "max_hard_restart": true,
       "hard_restart_frames": 3
     },
     "Confuzion.sid": {
