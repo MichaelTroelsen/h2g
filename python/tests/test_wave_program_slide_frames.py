@@ -181,10 +181,31 @@ def test_a_declined_deeper_frame_stays_where_the_last_one_put_the_voice():
     # and its third ($0B15) does not: frames 1-2 are counts, frame 3 onward
     # and the restore KEEP the frequency instead of bouncing up to the note,
     # and no travel follows.
-    got, speed = _entries("Nemesis_the_Warlock", 1, {36: 100})
+    #
+    # Played at ONE pitch the deeper sums wrap the accumulator and the frames
+    # are absolute top-of-register notes instead (the next test); this one is
+    # the distribution where fewer than `SLIDE_SEMITONE_SHARE` of the plays
+    # wrap -- 20% on C-3 against 80% on C-5 -- so no single count or note
+    # stands for them and the voice stays where the last frame put it.
+    got, speed = _entries("Nemesis_the_Warlock", 1, {36: 20, 60: 80})
     rights = [r for _l, r in got]
     assert rights[2] not in (BASE, KEEP) and rights[3] not in (BASE, KEEP)
     assert rights[4:-1] == [KEEP] * 5 and not speed
+    assert got[-1] == (0xFF, 0x00)
+
+
+@needs_corpus
+def test_a_wrapping_deeper_frame_is_the_wrapped_absolute_note():
+    # The same record at the one pitch ($0860, C-3) it wraps under: the
+    # player's accumulator is modular 16-bit, so frame 3 onward and the tail
+    # sound a note at the top of the register (`$0860 - $0B15 = $FD4B`),
+    # which only an absolute note can say (`_wave_tail_wrapped_note_byte`,
+    # Wiz record 1). Not the note, not KEEP, and no travel.
+    from h2g.goatwriter import WAVE_NOTE_ABS
+    got, speed = _entries("Nemesis_the_Warlock", 1, {36: 100})
+    rights = [r for _l, r in got]
+    assert rights[4:7] == [WAVE_NOTE_ABS + 95] * 3, [hex(x) for x in rights]
+    assert BASE not in rights[4:-2] and not speed
     assert got[-1] == (0xFF, 0x00)
 
 

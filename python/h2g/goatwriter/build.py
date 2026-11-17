@@ -47,8 +47,11 @@ from . import tempo as _gw_tempo
 from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
+from . import rest_wave_restart as _gw_rest_wave_restart
+from . import rest_two_stage as _gw_rest_two_stage
 from . import rest_park as _gw_rest_park
 from . import sfx_rest_click as _gw_sfx_rest_click
+from . import sfx_tick_voice as _gw_sfx_tick_voice
 from . import rest_ring as _gw_rest_ring
 from . import filters as _gw_filters
 from . import classic_filter_stop as _gw_classic_filter_stop
@@ -543,6 +546,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               gatetimer_trim: int = 0,
               tie_restart: bool = False,
               tie_pulse_restart: bool = False,
+              tie_late_pitch: bool = False,
               wave_reserve: int = 0,
               sfx_drum_bandpass: bool = False,
               drum_fall: bool = False,
@@ -554,6 +558,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               lfo_wave: bool = False,
               master_volume: bool = False,
               pre_note_wave: bool = False,
+              rest_wave_restart: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -719,7 +724,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             phase_split = _gw_arpeggio.pitch_seq_phase_split_plan(
                 sid, det, tracks, patterns, lead, instr_used,
                 instr_used + 1,
-                displaces=_phase_split_displaces_passes,
+                displaces=(None if getattr(det, "phase_split_over_passes",
+                                           False)
+                           else _phase_split_displaces_passes),
                 distinct=(lambda rec, res: (rec, res) not in no_room
                           and pitch_distinct(rec, res)),
                 log=held.append if log else None)
@@ -747,6 +754,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 hold_travel=not (no_test_restart
                                  or real_firstwave_instruments
                                  or gate_off_firstwave_instruments),
+                tie_late=tie_late_pitch,
                 note_pitches=note_pitches, note_spans=stale_spans)
             failed = {(rec, res) for (rec, _c, res), at
                       in zip(phase_split.clones, dry_starts) if not at}
@@ -819,6 +827,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     hold_travel=not (no_test_restart
                                      or real_firstwave_instruments
                                      or gate_off_firstwave_instruments),
+                    tie_late=tie_late_pitch,
                     note_pitches=note_pitches, note_spans=stale_spans)
                 failed = {(rec, res) for (rec, _c, res), at
                           in zip(phase_split.clones, dry_starts) if not at}
@@ -880,6 +889,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 hold_travel=not (no_test_restart
                                  or real_firstwave_instruments
                                  or gate_off_firstwave_instruments),
+                tie_late=tie_late_pitch,
                 note_pitches=note_pitches, note_spans=stale_spans)
             failed = {(rec, res) for (rec, _c, res), at
                       in zip(phase_split.clones, dry_starts) if not at}
@@ -1351,6 +1361,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # tail's pitch the next note's init call inherits is never heard.
         hold_travel=not (no_test_restart or real_firstwave_instruments
                          or gate_off_firstwave_instruments),
+        tie_late=tie_late_pitch,
         eor_phases=eor_phases, note_pitches=note_pitches,
         note_spans=stale_spans,
         eor_span=eor_span, eor_library_out=eor_lib_out)
@@ -1642,6 +1653,29 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, tracks, reseeded = _gw_rest_reseed.rest_pulse_reseeds(
             sid, det, tracks, patterns, pulse_starts, instr_used, lead,
             multiplier, log)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
+    # Opt-in, per song (`rest_wave_restart`, off by default): the tabled
+    # alternation's toggle restarts on a REST as on a note: a CMD_SETWAVEPTR
+    # on the KEYOFF row. After every pass that fills a command column, so it
+    # takes only the columns nobody else wanted, and before the budget and the
+    # instrument records.
+    if rest_wave_restart and effects and det.wave_alternate >= 0:
+        patterns, tracks, _restarted, wave_entries = (
+            _gw_rest_wave_restart.rest_wave_restarts(
+                sid, det, tracks, patterns, wave_entries, wave_starts,
+                instr_used, lead, log))
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
+    # A REST replays the two-stage attack, gate off (`rest_two_stage`): a
+    # CMD_SETWAVEPTR on the KEYOFF row. After every pass that fills a command
+    # column, so it takes only the columns nobody else wanted, and before the
+    # budget and the instrument records.
+    if effects and two_stage and det.effect_two_stage:
+        patterns, tracks, _replayed, wave_entries = (
+            _gw_rest_two_stage.rest_two_stages(
+                sid, det, tracks, patterns, wave_entries, wave_starts,
+                instr_used, lead, log))
         for at, track in zip(track_at, tracks):
             out[at:at + len(track)] = bytes(track)
     # A free-running filter sweep's accumulator starts at the file's byte, not
@@ -1956,8 +1990,13 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # (`free_note_rows` leaves every CMD_TONEPORTA row alone) and whose
     # numbers come first; not beside the tempo or phase split, whose
     # renamed columns hold no record of their own here.
+    # `phase_split_over_passes` lets it run beside the bit-$10 phase split:
+    # the split's clones are records of their own by now (the edits above
+    # renamed the columns), so each is handed the start its record is.
+    beside_phase = (phase_split is not None
+                    and getattr(det, "phase_split_over_passes", False))
     if (legato and two_stage and effects and duty_split is None
-            and phase_split is None
+            and (phase_split is None or beside_phase)
             and _gw_note_passes.free_note_skips_two_stage(sid, det)):
         # A record with no attack (`free_note_record_has_attack`) loses only
         # its pulse reseed and envelope write on a flagged note: its variant
@@ -1968,16 +2007,21 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # wavetable walk cannot enter past keeps the full start.
         pulse_ok = _gw_note_passes.free_note_attack_bits(sid, det) is not None
         free_starts, pulse_only, no_variant = {}, set(), {}
-        for g in range(lead + 1, instr_used + 1):
+        # (number, the record whose bytes it plays): the records, then the
+        # phase clones, which carry their record's bytes and their own block.
+        free_numbers = [(g, g) for g in range(lead + 1, instr_used + 1)]
+        if beside_phase:
+            free_numbers += [(c, r) for r, c, _res in phase_split.clones]
+        for g, src in free_numbers:
             rec = instr_at + 1 + (g - 1) * 25
             wstart = _gw_note_passes.free_note_wave_start(
-                sid, det, g - lead - 1, wave_entries, out[rec + 2])
+                sid, det, src - lead - 1, wave_entries, out[rec + 2])
             if wstart:
                 free_starts[g] = wstart
             elif not pulse_ok:
                 continue
             elif _gw_note_passes.free_note_record_has_attack(
-                    sid, det, g - lead - 1):
+                    sid, det, src - lead - 1):
                 no_variant[g] = "attack the wavetable cannot skip"
             elif not out[rec + 3]:
                 no_variant[g] = "full start already keeps the pulse"
@@ -1993,6 +2037,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             if base != number and number <= written_instr
             and out[instr_at + 1 + (number - 1) * 25 + 3]
             == out[instr_at + 1 + (base - 1) * 25 + 3]}
+        if beside_phase:
+            # A phase clone is its record's bytes, the pulse pointer among
+            # them: holding either runs the record's own pulse program.
+            same_pulse.update((c, r) for r, c, _res in phase_split.clones)
         patterns, free_variants, _kept = _gw_note_passes.free_note_variants(
             patterns, free_rows, tracks, free_starts, written_instr + 1,
             last_number=_gw_note_passes.clone_number_ceiling(
@@ -2069,6 +2117,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             _gw_sfx_rest_click.sfx_rest_click_plan(
                 det, tracks, patterns, out, instr_at, written_instr,
                 wave_entries, multiplier, log))
+        # The same drum's tick on the voice the player writes it to, for a
+        # record that voice does not play (`sfx_tick_voice`).
+        tracks, patterns, wave_entries, written_instr = (
+            _gw_sfx_tick_voice.sfx_tick_voice_plan(
+                det, tracks, patterns, out, instr_at, written_instr,
+                wave_entries, multiplier, log))
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
     # `--rest-wave-silence`'s parked waveform under a LOOPING wavetable
     # (`rest_park`): the rest's `CMD_SETWAVE $08` is overwritten by the next
     # call's WAVEEXEC, so such a rest points at a parked program appended

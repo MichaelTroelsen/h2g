@@ -7,8 +7,9 @@ from typing import (List, Optional)
 from ..detect import (Detection, _effect_byte_address)
 from ..search import (search_file)
 from ..sidfile import (find_freq_table, GT_FREQ0, SidFile)
-from .constants import (WAVE_MAX_DELAY, WAVE_NOTE_ABS, WAVE_SILENT_BASE,
-                        WAVE_SILENT_TESTBIT, WAVECMD_BASE)
+from .constants import (TESTED_GATE_ON, WAVE_MAX_DELAY, WAVE_NOTE_ABS,
+                        WAVE_SILENT_BASE, WAVE_SILENT_TESTBIT,
+                        WAVE_TESTED_GATE_ON_BASE, WAVECMD_BASE)
 from . import constants as _gw_constants
 def _note_freq(note: int) -> int:
     """Goattracker's `freqtbl` value for note index `note`, floored.
@@ -262,9 +263,26 @@ def _wave_byte(wave: int) -> int:
     **test bit**, which the packed player does write and which sounds nothing,
     because the test bit holds the oscillator at zero. `$F0` takes the same
     route for the same reason.
+
+    **A test-bit frame with the gate ON above `$F0` is `$D0 | low nibble`,
+    not `$E0 | low nibble`** (Wiz's `$FF` frame; measured 2026-11-14, v0.5.668,
+    `docs/LESSONS.md`). siddump prints a gate rising edge as an attack when
+    the voice's previous waveform byte was below `$10` -- `siddump.c:431-436`
+    reads `prevchn2.wave < 0x10` as a key-off whatever its gate bit says -- so
+    the `$0F` the `$EF` route writes made the next gated frame a counted attack
+    where the original's `$FF` (`>= $10`, gate held) made none: 144 extra
+    attacks in Wiz's first 180 s under `wave_program`, retrigger_ratio 1.0000
+    -> 1.0872, sequence 1.0000 -> .9539. On a chip the gate never fell, so
+    nothing was heard to re-strike; only the trace named it. `$DF` is
+    noise+pulse+triangle with test, sync, ring and gate, a byte `>= $10` and
+    `< $F0` that the player writes literally; the test bit silences it exactly
+    as it silences `$FF`, and the select-bit nibble is the one the player
+    could not carry anyway.
     """
     if 0x10 <= wave < WAVECMD_BASE:
         return wave
+    if wave >= WAVECMD_BASE and wave & TESTED_GATE_ON == TESTED_GATE_ON:
+        return WAVE_TESTED_GATE_ON_BASE | (wave & 0x0F)
     if not wave & 0x0F:
         return WAVE_SILENT_TESTBIT
     return WAVE_SILENT_BASE | (wave & 0x0F)

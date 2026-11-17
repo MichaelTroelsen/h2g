@@ -326,6 +326,12 @@ WAVECMD_BASE = 0xF0
 # `_wave_byte` for why `$E0` is not.
 WAVE_TEST_BIT = 0x08
 WAVE_SILENT_TESTBIT = 0x18
+# A player waveform of `$F0` or more with test AND gate set (`$F9 $FB $FD $FF`)
+# is written as `$D0 | low nibble`: a byte the
+# wavetable stores literally and that stays `>= $10`, so siddump does not read
+# the frame as a key-off (see `_wave_byte`).
+TESTED_GATE_ON = 0x09
+WAVE_TESTED_GATE_ON_BASE = 0xD0
 
 
 # --- Tempo -----------------------------------------------------------------

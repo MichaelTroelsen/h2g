@@ -56,6 +56,20 @@ needs_gt2reloc = pytest.mark.skipif(
 needs_presets = pytest.mark.skipif(not PRESETS.exists(),
                                    reason="presets.json not generated")
 
+@pytest.fixture(autouse=True)
+def _drum_hit_stays_on_its_record(monkeypatch):
+    """The blip is lined up with the hit in the drum RECORD's own wavetable
+    program. Thundercats' filtering record `$0E` is played on voice 1 alone, so
+    the shipped conversion moves its hit to voice 3 (`goatwriter.
+    sfx_tick_voice`) and its program has no lattice to line the blip up with
+    (the option is not shipped for Thundercats). These tests read the plain
+    drum record, as they did before that move."""
+    import h2g.goatwriter.sfx_tick_voice as tick
+    import h2g.goatwriter.wavetable as wavetable
+    monkeypatch.setattr(wavetable, "stray_drum_record", lambda *a: False)
+    monkeypatch.setattr(tick, "stray_drum_record", lambda *a: False)
+
+
 LP, BP = 0x10, 0x20
 RES = 0xF4
 MOVERS = {"I_Ball", "Nineteen", "Pandora", "Thundercats",

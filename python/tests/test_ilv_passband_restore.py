@@ -221,12 +221,13 @@ def test_one_passband_files_keep_their_spelling(stem, mode):
 
 
 @needs_corpus
-def test_sun_shipped_arpeggio_costs_exactly_one_routing_row():
-    """Under the SHIPPED preset (arpeggio_default + the ILV tie, v0.5.581)
-    exactly one of Sun's routing changes finds no free command cell and lands
-    a row late. Measured at the join: passband_agree .9999 with or without
-    it, while the arpeggio takes reversal_ratio .53 -> .92, so it is accepted
-    -- but pinned, so a change that loses MORE rows is caught."""
+def test_sun_shipped_arpeggio_costs_exactly_four_routing_rows():
+    """Under the SHIPPED preset (arpeggio_default + the ILV tie, v0.5.581;
+    `arpeggio: true` on Sun since v0.5.670) four of Sun's routing changes find
+    no free command cell and land a row late (one before the key). Measured at
+    v0.5.670: passband_agree .99989 unchanged by the key, route .9893 -> .9884,
+    inside the trade the user took for its cents .881 -> .917 and tie_ratio
+    .767 -> .886 -- but pinned, so a change that loses MORE rows is caught."""
     _song_, line = _sun()
-    assert " 1 unplaceable," in line and " 1 row(s) late," in line, line
+    assert " 4 unplaceable," in line and " 4 row(s) late," in line, line
     assert " 0 lagged," in line, line

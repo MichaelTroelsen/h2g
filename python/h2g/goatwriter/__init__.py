@@ -82,6 +82,7 @@ from .constants import (_ABS_X_LOAD, _ADJACENT_TABLE_WINDOW, ARP_HEAD_FRAMES,
                         WAVE_MAX_DELAY, WAVE_NOISE_GATEOFF, WAVE_NOTE_ABS,
                         WAVE_NOTE_BASE, WAVE_NOTE_KEEP, _WAVE_POINTER_COMMANDS,
                         WAVE_SILENT_BASE, WAVE_SILENT_TESTBIT,
+                        TESTED_GATE_ON, WAVE_TESTED_GATE_ON_BASE,
                         _WAVE_SPEED_COMMANDS, WAVE_TEST_BIT, WAVECMD_BASE,
                         WAVECMD_PORTADOWN, WAVECMD_PORTAUP, _X_RELOADERS)  # noqa: F401
 from .hard_restart import (SINGLE_ROW_HARD_RESTART_TICKS,  # noqa: F401
@@ -273,6 +274,13 @@ from .swell_phase import (SWELL_TRIANGLE_SHAPE, SWELL_PREFIXES,  # noqa: F401
                           plan_gate)
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
+from .rest_wave_restart import (ALTERNATE_BIT, REST_RESTART_DELAY,
+                                alternating_records, restart_block,
+                                rest_wave_restarts)  # noqa: F401
+from .rest_two_stage import (REST_REACH, REST_TWO_STAGE_DELAY,  # noqa: F401
+                             TWO_STAGE_BIT, _ENDS, _LEN, _plain_two_stage,
+                             rest_reaches_stage_count, rest_two_stages,
+                             two_stage_block, two_stage_records)
 from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,
                         program_instruments, programmed_instruments,
                         rest_park_pass, rest_park_plan,
@@ -286,6 +294,10 @@ from .sfx_rest_click import (ENVELOPE_FIRSTWAVE, ENVELOPE_HELD,
                              entry_notes, sfx_only_patterns,
                              sfx_rest_click_entries,
                              sfx_rest_click_plan)  # noqa: F401
+from .sfx_tick_voice import (FALLBACK_NOTE, _ORDER_RESTART, _REPEAT_LO, _rows,
+                             _TRANSPOSE_LO, click_pattern, live_spans,
+                             plays, sfx_tick_voice_plan, stray_drum_record,
+                             tick_entries, tick_rows)  # noqa: F401
 from .rest_ring import (CHAINS_WITH_NOTE_RISE, _CARRY_OPEN_CUT, _ring_free,
                         _ring_last_row,
                         _ring_marker, _ring_occurrences,
@@ -317,7 +329,8 @@ from .wave_program import (SLIDE_CUT_SHARE, SLIDE_SEMITONE_MAX_CENTS,
                            _wave_program_hold_travels,
                            _wave_program_record_vibrates,
                            _wave_program_travel_entry, _wave_program_travels,
-                           _wave_set_note_byte)  # noqa: F401
+                           _wave_set_note_byte,
+                           _wave_tail_wrapped_note_byte)  # noqa: F401
 from .wavetable import (_drum_duration_steps, _drum_entries, _drum_max_steps,
                         _drum_speed_index, _drum_sweep_hold, _drum_tick_noise,
                         _entered_record_block, _loop_of,

@@ -271,6 +271,80 @@ def test_the_one_value_that_range_cannot_carry_is_zero():
         assert _wave_byte(low) == WAVE_SILENT_BASE | low
 
 
+def test_a_tested_gate_on_frame_above_f0_stays_a_byte_siddump_reads_as_gated():
+    """Wiz's `$FF` frame (test + gate + all four selects). siddump counts a
+    gate rise after a frame whose waveform byte is below `$10` as an attack
+    (siddump.c:431-436), so the `$EF` -> `$0F` route made 144 attacks the
+    original's `$FF` does not (v0.5.668: retrigger_ratio 1.0000 -> 1.0872,
+    sequence 1.0000 -> .9539). `$D0 | nibble` keeps test, sync, ring and gate
+    and stays `>= $10`, `< $F0` -- a literal waveform byte."""
+    from h2g.goatwriter import (TESTED_GATE_ON, WAVE_SILENT_BASE,
+                                WAVE_TESTED_GATE_ON_BASE, _wave_byte)
+    for wave in (0xF9, 0xFB, 0xFD, 0xFF):
+        got = _wave_byte(wave)
+        assert got == WAVE_TESTED_GATE_ON_BASE | (wave & 0x0F)
+        assert 0x10 <= got < 0xF0
+        assert got & TESTED_GATE_ON == TESTED_GATE_ON, "gate and test kept"
+    # every other byte at or above $F0 keeps the old route
+    for wave in (0xF0, 0xF1, 0xF2, 0xF3, 0xF8, 0xFA, 0xFE):
+        if not wave & 0x0F:
+            continue
+        assert _wave_byte(wave) == WAVE_SILENT_BASE | (wave & 0x0F), hex(wave)
+
+
+@needs_corpus
+def test_wiz_program_frame_ff_is_not_written_below_10():
+    """Wiz record 1 is `81 11 11 11 FF 15 11 11`: the `$FF` frame is a byte
+    >= $10, so the `15` after it is not a gate rise to siddump."""
+    from h2g.goatwriter import _wavetable_entries
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Wiz.sid")),
+                              lambda *a, **k: None)
+    left, _r = _wavetable_entries(sid, det, 1, True, "gts5", [], 1,
+                                  start=1, budget=30, wave_program=True,
+                                  lead=0)
+    assert left[:8] == [0x81, 0x11, 0x11, 0x11, 0xDF, 0x15, 0x11, 0x11], \
+        [hex(x) for x in left]
+
+
+def test_a_wrapped_accumulator_tail_is_an_absolute_note():
+    """Wiz record 1 sums `$1304` of slides: C#4 (`$1271` in Goattracker's
+    table) - `$1304` comes round to `$FF6A` in the player's modular register
+    and the original holds it for the rest of the note. A relative note
+    cannot reach there from C#4, an absolute one can (note 95, `$FFFF`)."""
+    from h2g.goatwriter import WAVE_NOTE_ABS
+    from h2g.goatwriter.wave_program import _wave_tail_wrapped_note_byte
+    assert _wave_tail_wrapped_note_byte({49: 3}, 0x1304) == WAVE_NOTE_ABS + 95
+    # no wrap: the note stays above the sum, `_slide_semitones`' business
+    assert _wave_tail_wrapped_note_byte({49: 3}, 0x0100) is None
+    # a played note that does not wrap takes the share below the bar
+    assert _wave_tail_wrapped_note_byte({49: 1, 60: 3}, 0x1304) is None
+    assert _wave_tail_wrapped_note_byte(None, 0x1304) is None
+    assert _wave_tail_wrapped_note_byte({49: 3}, 0) is None
+
+
+@needs_corpus
+def test_wiz_record_1_slide_frames_and_tail_name_the_wrapped_pitch():
+    """Wiz `81 | slide $0200 / $0400 / $1106 | set $FF $FA | slide $FCFF /
+    $FEFF | hold` reads, on C#4, `106E 0C6E FB68 [FA68] FE69 FF6A` and holds
+    `FF6A`. Given the played pitches, the slide frames 3 and 5 and the tail
+    are absolute top-of-register notes; frames 1-2 stay relative."""
+    from h2g.goatwriter import WAVE_NOTE_ABS, _wavetable_entries
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Wiz.sid")),
+                              lambda *a, **k: None)
+    left, right = _wavetable_entries(sid, det, 1, True, "gts5", [], 1,
+                                     start=1, budget=30, wave_program=True,
+                                     lead=0, pitches={49: 3})
+    assert left[:9] == [0x81, 0x11, 0x11, 0x11, 0xDF, 0x15, 0x11, 0x11, 0xFF]
+    top = WAVE_NOTE_ABS + 95
+    got = [hex(x) for x in right]
+    # slide frames 1-2 are relative notes (`$7E`, `$79`: -2 and -7 semitones)
+    assert right[1] < WAVE_NOTE_ABS and right[2] < WAVE_NOTE_ABS, got
+    # slide frame 3 (`FB68`) is note 94, slide frames 5-6 (`FE69`, `FF6A`)
+    # and the restore's tail (`FF6A`) are note 95
+    assert right[3] == WAVE_NOTE_ABS + 94, got
+    assert right[5] == right[6] == right[7] == top, got
+
+
 def test_a_speed_entry_is_reused_rather_than_duplicated():
     from h2g.goatwriter import _speed_index
     table = []

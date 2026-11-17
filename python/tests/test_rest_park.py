@@ -225,6 +225,10 @@ def _convert(name, **extra):
     # rests as click notes instead of KEYOFFs; these tests pin the park on
     # the KEYOFF spelling, so they keep the option off.
     opts["rest_envelope_silence"] = False
+    # Shockway_Rider ships phase_split_over_passes since v0.5.670: its 15
+    # phase clones carry 17 more rest rows (37 -> 54 pointed), the same pass
+    # reaching the clones. Held off so the counts here are the park's alone.
+    opts["phase_split_over_passes"] = False
     opts.update(extra)
     # These tests pin the park-by-pointer pass on EVERY rest. The rule that a
     # rest after a record the player rewrites each frame is not parked at all

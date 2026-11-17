@@ -186,6 +186,14 @@ def main(argv=None) -> int:
              "A voice whose first row is a note is unchanged. Per song. Off "
              "by default")
     parser.add_argument(
+        "--rest-wave-restart", action="store_true",
+        help="restart the tabled waveform alternation's toggle on a rest "
+             "(CMD_SETWAVEPTR on the KEYOFF row of a record whose effect "
+             "bit $02 selects it): the original zeroes the toggle's call "
+             "counter in the fetch a rest shares with a note. A file "
+             "without that alternation is unchanged. Per song. Off by "
+             "default")
+    parser.add_argument(
         "--master-fade", action="store_true",
         help="reproduce a $D418 volume the player derives from a voice's "
              "orderlist position (Sanxion's fade to silence): one pattern "
@@ -222,6 +230,14 @@ def main(argv=None) -> int:
              "instead of the pattern-wide majority, and clone the note-free "
              "pattern after it per carried index (Monty_on_the_Run's B-5). "
              "Per song. Off by default")
+    parser.add_argument(
+        "--phase-split-over-passes", action="store_true",
+        help="run bit $10's per-note phase clones on a file where the "
+             "entry-instrument split or the free-note respell has work and "
+             "would otherwise make the split stand down; the entry split "
+             "then does not run, the free-note respell runs on the clones. "
+             "Moves 7 corpus files (I_Ball, Shockway_Rider, ...). Per song. "
+             "Off by default")
     parser.add_argument(
         "--release-held-stored-wave", action="store_true",
         help="lift Commando's by-name hold on the $68 stored-waveform pitch, "
@@ -379,6 +395,12 @@ def main(argv=None) -> int:
              "sweep as a legato clone. Per song (a --presets entry's "
              "tie_pulse_restart); off leaves every conversion "
              "byte-identical except the files it was measured on.")
+    parser.add_argument(
+        "--tie-late-pitch", action="store_true",
+        help="a plain wavetable program's third entry writes no pitch at a "
+             "3-call row, so a tie on the next row lands a call later, on "
+             "the original's frame. Per song (a --presets entry's "
+             "tie_late_pitch); off leaves every conversion byte-identical.")
     parser.add_argument(
         "--pitch-lead-tie", action="store_true",
         help="on the bare rest row before each note whose instrument opens "
@@ -887,6 +909,7 @@ def main(argv=None) -> int:
                           ("--first-rows", "first_rows"),
                           ("--master-volume", "master_volume"),
                           ("--pre-note-wave", "pre_note_wave"),
+                          ("--rest-wave-restart", "rest_wave_restart"),
                           ("--master-fade", "master_fade"),
                           ("--keep-hard-restart", "keep_hard_restart"),
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
@@ -895,6 +918,8 @@ def main(argv=None) -> int:
                           ("--drum-long", "drum_long"),
                           ("--drum-held", "drum_held"),
                           ("--wobble-copy-depth", "wobble_copy_depth"),
+                          ("--phase-split-over-passes",
+                           "phase_split_over_passes"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -927,6 +952,7 @@ def main(argv=None) -> int:
                           ("--vibrato-onset", "vibrato_onset"),
                           ("--lfo-wave", "lfo_wave"),
                           ("--tie-pulse-restart", "tie_pulse_restart"),
+                          ("--tie-late-pitch", "tie_late_pitch"),
                           ("--voice-arp", "voice_arp"),
                           ("--unison-vibrato-phase", "unison_vibrato_phase"),
                           ("--vibrato-hold", "vibrato_hold"),
@@ -1021,6 +1047,7 @@ def main(argv=None) -> int:
                       regrid_park_shift=args.regrid_park_shift,
                       master_volume=args.master_volume,
                       pre_note_wave=args.pre_note_wave,
+                      rest_wave_restart=args.rest_wave_restart,
                       master_fade=args.master_fade,
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
@@ -1028,6 +1055,7 @@ def main(argv=None) -> int:
                       drum_long=args.drum_long,
                       drum_held=args.drum_held,
                       wobble_copy_depth=args.wobble_copy_depth,
+                      phase_split_over_passes=args.phase_split_over_passes,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(
@@ -1074,6 +1102,7 @@ def main(argv=None) -> int:
                       vibrato_onset=args.vibrato_onset,
                       lfo_wave=args.lfo_wave,
                       tie_pulse_restart=args.tie_pulse_restart,
+                      tie_late_pitch=args.tie_late_pitch,
                       voice_arp=args.voice_arp,
                       unison_vibrato_phase=args.unison_vibrato_phase,
                       vibrato_hold=args.vibrato_hold,

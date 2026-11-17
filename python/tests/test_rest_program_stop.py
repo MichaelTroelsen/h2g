@@ -445,6 +445,13 @@ def test_thundercats_has_no_program_rest_so_nothing_moves(monkeypatch):
     the table this test is about is the full one."""
     _need_corpus()
     import h2g.goatwriter.dead_blocks as DB
+    import h2g.goatwriter.sfx_tick_voice as TV
+    import h2g.goatwriter.wavetable as WT
     monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
+    # The table this is about is the one the drum hit fills: with record
+    # `$0E`'s hit moved to voice 3 (`sfx_tick_voice`) its block is shorter and
+    # the table is no longer full.
+    monkeypatch.setattr(WT, "stray_drum_record", lambda *a: False)
+    monkeypatch.setattr(TV, "stray_drum_record", lambda *a: False)
     assert (_convert("Thundercats.sid", rest_program_stop=True)
             == _convert("Thundercats.sid"))

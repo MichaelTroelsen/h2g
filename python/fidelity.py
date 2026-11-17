@@ -7889,11 +7889,22 @@ DIMENSIONS = (
               "run, not a short note; `gate` counts that same frame's gate bit "
               "as a surplus, which is why the two report opposite signs. "
               "**`(ceiling)` marks a fetch-only song** -- every instrument it "
-              "misses is `hold_census`'s `fetch` kind, so the figure is the "
-              "target player's own bound (`player.s:1090-1098`: `gatetimer & "
-              "$3f` calls early, a call a frame at `-S1`), not a note-length "
-              "defect, and `holdnf` is the figure graded; the songs are "
-              "listed under *Fetch-only songs* below the table. An "
+              "misses is `hold_census`'s `fetch` kind: one frame short in an "
+              "unchanged slot because the last frame of each of our notes is "
+              "the firstwave `$09` (TEST+gate, no waveform nibble), which "
+              "`hold` does not count as held (`gatetimer & $3f` calls early, "
+              "`player.s:1090-1098`, a call a frame at `-S1`). It is a "
+              "ceiling only where nothing is spent on it: "
+              "`gate_off_firstwave_instruments` moves it (Hunter_Patrol, "
+              "Lightforce, Last_V8_C128_version and Las_Vegas_Video_Poker "
+              "went 0% -> 100% at v0.5.663), and `holdnf` is the figure "
+              "graded; the songs are listed under *Fetch-only songs* below "
+              "the table. **`(modal)` marks a modal tie** -- every "
+              "instrument it misses is `slot`/`short`/`long`/`gap`/`thin` "
+              "and each has its own `holdn` of at least .98, so `hold`'s "
+              "mode flipped on near-equal bins and `holdn` is the figure "
+              "graded (needs `--hold-census`; listed under *Modal-tie "
+              "songs*). An "
               "instrument `--cut-release` splits across two of our keys is "
               "read whole: ours is the notes that strike where its original "
               "notes do (`hold_populations`), not the half that kept the key"),
@@ -9519,8 +9530,52 @@ def fetch_only(row: dict) -> bool:
             and (row.get("sound_run_fetch") or 0) > 0)
 
 
+MODAL_KINDS = ("slot", "short", "long", "gap", "thin")
+MODAL_HOLDN = 0.98      # each missed instrument's own `holdn`, at least
+MODAL_BELOW = 0.99      # only a `hold` cell reading under this is marked
+
+
+def modal_only(row: dict) -> bool:
+    """True when `hold` reads below 99% although every instrument it misses
+    is graded fine note by note -- the modal reduction flipped on a tie.
+
+    `hold` calls an instrument matched only when the two sides' MODAL held
+    length is equal, so a key with two or three near-equal bins
+    (Knucklebusters_3 `$00F8`: original `{17: 80, 9: 80, 8: 80}`, ours
+    `{9: 80, 8: 80, 17: 76, ...}`) breaks the tie one way for each side and
+    scores the instrument 0 although its notes agree. The marker is the row
+    where EVERY instrument `hold` misses (census kind other than `match`) is
+    `slot`/`short`/`long`/`gap`/`thin` AND carries its own `holdn` of at
+    least `MODAL_HOLDN`, `holdn` being the figure graded. One `fetch`
+    instrument, one `sparse` or `holdn`-less one, or one under .98 takes the
+    song out: a real short instrument at `holdn` .6 is a defect, not a tie.
+
+    Needs the per-instrument census (`--hold-census`); a run without it
+    carries no census and marks nothing, unlike `fetch_only`, which reads
+    two scalars. Exclusive with `fetch_only` by construction (a `fetch`
+    instrument is neither a `MODAL_KINDS` kind nor `match`).
+    """
+    v = row.get("sound_run_agreement")
+    if v is None or v >= MODAL_BELOW:
+        return False
+    missed = [r for r in (row.get("hold_census") or [])
+              if r.get("kind") != "match"]
+    return bool(missed) and all(
+        r.get("kind") in MODAL_KINDS and r.get("holdn") is not None
+        and r["holdn"] >= MODAL_HOLDN for r in missed)
+
+
+def modal_only_files(rows: list[dict]) -> list[dict]:
+    """The measured rows `_fmt_hold` marks `(modal)`, in file order."""
+    return sorted((r for r in rows
+                   if r.get("status") in ("measured", "silent")
+                   and modal_only(r)),
+                  key=lambda r: r["file"].lower())
+
+
 def _fmt_hold(row: dict) -> str:
-    """The `hold` cell: the percentage, plus `(ceiling)` on a fetch-only row.
+    """The `hold` cell: the percentage, plus `(ceiling)` on a fetch-only row
+    and `(modal)` on a row whose misses are all a modal tie (`modal_only`).
 
     Only the printed cell changes. `sound_run_agreement` itself is an
     acceptance term of `fidelity_better` and is left exactly as measured.
@@ -9529,6 +9584,8 @@ def _fmt_hold(row: dict) -> str:
     v = row.get("sound_run_agreement")
     if v is not None and v < 1.0 and fetch_only(row):
         cell += " (ceiling)"
+    elif modal_only(row):
+        cell += " (modal)"
     return cell
 
 
@@ -10164,14 +10221,26 @@ def report(rows: list[dict], args) -> str:
             f"**{len(fo)}** file(s) read `hold` below 100% and every "
             "instrument they miss is `hold_census`'s `fetch` kind -- one "
             "frame short in an unchanged slot, the next-note fetch frame. "
-            "That is the target player's bound (`gatetimer & $3f` calls "
-            "early, `player.s:1090-1098`; at `-S1` a call is a frame; "
-            "`_hard_restart_ticks` never returns 0), priced in "
-            "`closed.jsonl`, not a converter defect. Their `hold` cell reads "
-            "`(ceiling)` and `holdnf` is the figure to grade; one `slot`, "
-            "`short` or other kind on any instrument takes a song out of "
-            "this list. The only lever is `--no-test-restart` per song, "
-            "which the preset search already prices.",
+            "The frame is the firstwave `$09` (TEST+gate, no waveform "
+            "nibble) our note-init call writes as the LAST frame of every "
+            "slot (`gatetimer & $3f` calls early, `player.s:1090-1098`; at "
+            "`-S1` a call is a frame; `_hard_restart_ticks` never returns "
+            "0): `hold` counts frames with a waveform nibble, so ours stops "
+            "one short. Measured at v0.5.668 (`lastagg`): the last frame of "
+            "1163 of 1163 of Chimera's `fetch` notes, 1196 of 1196 of "
+            "Zoids' and 2400 of 2400 of Commando's is `$09`; the "
+            "original's is `$40`/`$80`/`$10`. It is therefore not an "
+            "unavoidable ceiling: `gate_off_firstwave_instruments` removes "
+            "it per instrument (Hunter_Patrol, Lightforce, "
+            "Last_V8_C128_version and Las_Vegas_Video_Poker went hold 0% -> "
+            "100% at v0.5.663), and `--no-test-restart` is the other lever. "
+            "A song listed here stays at its figure where a printed column "
+            "refuses the option (it switches `hold_travel` off song-wide, "
+            "`goatwriter/build.py`) or a record says leave it -- see "
+            "`todo.md`, 'Hold A', and `closed.jsonl`. Their `hold` cell "
+            "reads `(ceiling)` and `holdnf` is the figure to grade; one "
+            "`slot`, `short` or other kind on any instrument takes a song "
+            "out of this list.",
             "",
             "| File | hold | holdnf | instruments `fetch` / `match` |",
             "|---|---:|---:|---|",
@@ -10182,6 +10251,33 @@ def report(rows: list[dict], args) -> str:
                        f"{_fmt_pct(r.get('sound_run_agreement'))} | "
                        f"{_fmt_pct(r.get('sound_run_agreement_nofetch'))} | "
                        f"{f} / {n - f} |")
+
+    mo = modal_only_files(rows)
+    if mo:
+        out += [
+            "",
+            "## Modal-tie songs: `hold` reads a tie, graded on `holdn`",
+            "",
+            f"**{len(mo)}** file(s) read `hold` below 99% and every "
+            "instrument they miss is `slot`, `short`, `long`, `gap` or "
+            "`thin` with its own `holdn` of at least .98. `hold` compares "
+            "the MODE of an instrument's held lengths, so a key with two or "
+            "three near-equal bins breaks the tie one way for the original "
+            "and the other for ours and scores the instrument 0 although "
+            "its notes agree. Their `hold` cell reads `(modal)` and `holdn` "
+            "is the figure to grade; one `fetch` instrument or one under "
+            ".98 takes a song out of this list. Needs `--hold-census`.",
+            "",
+            "| File | hold | holdn | missed instruments (`holdn`) |",
+            "|---|---:|---:|---|",
+        ]
+        for r in mo:
+            miss = ", ".join(
+                f"`${c['adsr']:04X}` {c['kind']} ({c['holdn']:.3f})"
+                for c in r["hold_census"] if c["kind"] != "match")
+            out.append(f"| {r['file']} | "
+                       f"{_fmt_pct(r.get('sound_run_agreement'))} | "
+                       f"{_fmt_pct(r.get('holdn'))} | {miss} |")
 
     if measured:
         n = len(measured)

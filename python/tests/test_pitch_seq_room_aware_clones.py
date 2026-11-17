@@ -35,7 +35,12 @@ def _log(name, monkeypatch=None):
     import fidelity as F
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     lines = []
-    convert(str(CORPUS / name), log=lines.append, **F._preset_opts(doc, name))
+    opts = F._preset_opts(doc, name)
+    # These pin the stand-down rule; phase_split_over_passes (shipped on
+    # Shockway_Rider and Lightforce since v0.5.670) is the option that lifts
+    # it, tested in test_phase_split_over_passes.py, so it is held off here.
+    opts.pop("phase_split_over_passes", None)
+    convert(str(CORPUS / name), log=lines.append, **opts)
     return lines
 
 

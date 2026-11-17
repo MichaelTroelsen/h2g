@@ -111,10 +111,11 @@ def test_thundercats_ships_the_click_on_its_drum_record_only():
     block = w[c.wave_ptr - 1:]
     assert (0x81, 0xC9) in block[:block.index(next(e for e in block
                                                    if e[0] == 0xFF))]
-    # record $0E (effect $A0) plays on voice 1, so its hit belongs to voice 3
-    # and no clone of it is made
-    assert not any(i.name.startswith("0E:") and (i.ad, i.sr) == (0, 0)
-                   for i in song.instruments)
+    # record $0E (effect $A0) plays on voice 1, so its hit belongs to voice 3:
+    # this pass makes no clone of it (`sfx_tick_voice` makes the one tick
+    # clone, pinned in test_sfx_tick_voice.py)
+    assert sum(1 for i in song.instruments
+               if i.name.startswith("0E:") and (i.ad, i.sr) == (0, 0)) == 1
     named = sum(1 for p in song.patterns for k in range(1, len(p), 4)
                 if p[k] == c.number)
     assert named == 2

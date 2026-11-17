@@ -359,6 +359,7 @@ def convert(sid_path: str, log: Logger = print,
             drum_fall: bool = False,
             vibrato_onset: bool = False,
             tie_pulse_restart: bool = False,
+            tie_late_pitch: bool = False,
             lfo_wave: bool = False,
             voice_arp: bool = False,
             unison_vibrato_phase: bool = False,
@@ -367,13 +368,15 @@ def convert(sid_path: str, log: Logger = print,
             rest_late_keyoff: bool = False,
             master_volume: bool = False,
             pre_note_wave: bool = False,
+            rest_wave_restart: bool = False,
             master_fade: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
             release_held_stored_wave: bool = False,
             drum_long: bool = False,
             drum_held: bool = False,
-            wobble_copy_depth: bool = False) -> bytes:
+            wobble_copy_depth: bool = False,
+            phase_split_over_passes: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -572,6 +575,16 @@ def convert(sid_path: str, log: Logger = print,
     reached the branch before that reading, so off is byte-inert
     everywhere else.
 
+    tie_late_pitch keeps a plain wavetable program's third entry from
+    writing the pitch at a 3-call row. That entry runs on the NEXT row's
+    init call, and where the next row is a tie (`CMD_TONEPORTA 00`) it
+    writes the tie's new note a call before the original's tie lands
+    (Gremlins, 69 of 69 voice-0 ties one tick after their attack: ours +2
+    frames, the original +3). Off by default and per song: it moves bytes in
+    every file with a 3-call plain record (38 of 89 at v0.5.668), and the
+    measured effect is in the task's finding (`--presets` entry's
+    tie_late_pitch).
+
     voice_arp emits effect bit $04's per-VOICE arpeggio (Ninja $CB1E,
     detect._find_voice_arp: note + interval,X wherever the per-note counter
     AND mask,X is nonzero), frame by frame with the outer gate's skipped
@@ -732,6 +745,17 @@ def convert(sid_path: str, log: Logger = print,
     subtune, not only subtune 0. Off by default: it moves the bytes of every
     file it reaches.
 
+    rest_wave_restart restarts the tabled waveform alternation's toggle on a
+    REST: `CMD_SETWAVEPTR` on the KEYOFF row of a record whose effect bit $02
+    selects the alternation (`goatwriter/rest_wave_restart.py`). The original
+    zeroes the per-voice call counter whose low bit picks the waveform in the
+    fetch a rest shares with a note; a plain KEYOFF leaves the previous
+    note's program in whatever phase it was. Reads `Detection.wave_alternate`
+    (21 corpus files carry it). Per song, off by default: where the original
+    does not re-phase on a rest, or our rest rows land a frame off, it moves
+    the toggle the wrong way (Knucklebusters tie_ratio .898 -> .866,
+    Zoolook tie_agreement 85 -> 82).
+
     master_fade reproduces a volume the play routine derives from a voice's
     orderlist POSITION (`LDA #base / SEC / SBC pos / ... STA $D418`,
     `Detection.master_fade`; Sanxion's fade to silence over its last 15
@@ -764,6 +788,20 @@ def convert(sid_path: str, log: Logger = print,
     note-free pattern after it per carried index (`note_passes._wobble_clone`).
     Off by default: it moves Monty_on_the_Run alone, and its extra depth is a
     measured constant, not a derived one (see `stored_wave.COPY_DEPTH_EXTRA`).
+
+    phase_split_over_passes lets bit $10's per-note phase clones
+    (`arpeggio.pitch_seq_phase_split_plan`) run on a file where the
+    entry-instrument split or the free-note respell has work. By default the
+    plan stands down there (`build._phase_split_displaces_passes`), because
+    both passes stand down beside any phase split, and every note attacking
+    in a minority state of the global phase counter plays its record's
+    majority phase, 1-2 frames off the original's octave steps (I_Ball,
+    Shockway_Rider). The entry split does not run beside it (Star_Paws); the
+    free-note respell does, on the split's clones, so a flagged note keeps
+    skipping the attack and the pulse reseed (`pulse_phase` held on
+    Shockway_Rider, Saboteur_II, Pandora). Per song and off by default:
+    forced on it moves 7 corpus files, instr up on all and a loudness or
+    tie column down on some.
 
     drum_sustain_gate_off gives a drum-flagged record whose envelope
     sustains the drum shape after all -- the gate-off after the tick and the
@@ -906,6 +944,7 @@ def convert(sid_path: str, log: Logger = print,
     det.drum_long = drum_long
     det.drum_held = drum_held
     det.wobble_copy_depth = wobble_copy_depth
+    det.phase_split_over_passes = phase_split_over_passes
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1
@@ -1716,11 +1755,13 @@ def convert(sid_path: str, log: Logger = print,
                          ilv_filter_routing=ilv_filter_routing,
                          tie_restart=tie_restart,
                          tie_pulse_restart=tie_pulse_restart,
+                         tie_late_pitch=tie_late_pitch,
                          wave_reserve=reserve,
                          drop_dead_blocks=drop_unnamed_instruments,
                          sfx_drum_bandpass=sfx_drum_bandpass,
                          master_volume=master_volume,
                          pre_note_wave=pre_note_wave,
+                         rest_wave_restart=rest_wave_restart,
                          drum_fall=drum_fall,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence))

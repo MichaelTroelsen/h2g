@@ -300,6 +300,60 @@ def _wave_set_note_byte(arg: int, pitches: Optional[Dict[int, int]],
     return (WAVE_NOTE_ABS + best) & 0xFF
 
 
+def _wave_tail_wrapped_note_byte(pitches: Optional[Dict[int, int]],
+                                 running: int) -> Optional[int]:
+    """The absolute note a program's tail sounds where the accumulator WRAPPED.
+
+    The player's `$85` hold sounds `note - sum(slides)` as a modular 16-bit
+    value, so a sum larger than the note's frequency does not go below it, it
+    comes round to the top of the register: Wiz record 1 (`slide $0200 /
+    $0400 / $1106 / set $FF $FA / slide $FCFF / $FEFF / hold`, sum `$1304`)
+    sounds `$126E - $1304 = $FF6A` -- B-7 -- for the rest of every C#4 note
+    (measured 2026-11-14, v0.5.668: 1536 of voice 1's 2394 compared frames,
+    median miss 4550 cents against our note-pitch tail).
+    `_slide_semitones` cannot say it (`_slide_goals` returns nothing for a
+    target at or below zero), and a relative note cannot reach there from a
+    low note. An ABSOLUTE note can, so this is `_wave_set_note_byte`'s
+    argument made over the wrapped target.
+
+    Returns None unless the wrap holds for at least `SLIDE_SEMITONE_SHARE` of
+    the instrument's plays, and the nearest note is within
+    `SLIDE_SEMITONE_MAX_CENTS` of the wrapped pitch for that share: a program
+    played at notes that do not all come round to one pitch has no single
+    byte, exactly as for `_slide_semitones`.
+    """
+    from .skydive import GT_FREQ_TABLE
+    s = running & 0xFFFF
+    if not pitches or not s:
+        return None
+    delta = -s if s < 0x8000 else 0x10000 - s
+    goals = []
+    for n, plays in pitches.items():
+        if n < 0 or n > 95 or plays <= 0:
+            continue
+        target = GT_FREQ_TABLE[n] + delta
+        if target > 0:
+            goals.append((None, plays))      # does not wrap: no single note
+        else:
+            goals.append((target & 0xFFFF, plays))
+    total = sum(w for _, w in goals)
+    wrapped = [(g, w) for g, w in goals if g is not None]
+    if not wrapped or sum(w for _, w in wrapped) < total * SLIDE_SEMITONE_SHARE:
+        return None
+
+    def errs(k: int) -> List[tuple]:
+        return [(abs(math.log2(GT_FREQ_TABLE[k] / max(g, 1))), w)
+                for g, w in wrapped]
+    best = min(range(96), key=lambda k: (round(sum(e * w for e, w in errs(k)), 9), k))
+    seen, need = 0, total * SLIDE_SEMITONE_SHARE
+    for e, w in sorted(errs(best)):
+        seen += w
+        if seen >= need:
+            return ((WAVE_NOTE_ABS + best) & 0xFF
+                    if e * 1200 <= SLIDE_SEMITONE_MAX_CENTS else None)
+    return None
+
+
 def _wave_program_record_vibrates(sid: SidFile, det: Detection,
                                   i: int) -> bool:
     """Whether the player's own instrument vibrato runs on record `i`.
@@ -802,6 +856,12 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # lands on is the quantised `note - sum`** (`_slide_semitones`) --
         # `WAVE_NOTE_BASE` plus a relative note, `adc mt_chnnote / and #$7f`.
         shift = 0 if travel else _slide_semitones(pitches, running + arg)
+        # A running sum the accumulator wrapped under (`_wave_tail_wrapped_
+        # note_byte`): the frame sounds a note near the top of the register,
+        # which only an ABSOLUTE note can say.
+        wrapped_note = (None if (travel or shift or vibrates)
+                        else _wave_tail_wrapped_note_byte(pitches,
+                                                          running + arg))
         # **A frame a note can END on stays on the note, under a written
         # firstwave** (`spans`, `_cut_share`): the next note's init call holds
         # whatever pitch this one left, and the original's own init frame
@@ -821,6 +881,9 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             quantised = False
         elif shift:
             right.append((WAVE_NOTE_BASE + shift) & 0x7F)
+            quantised = True
+        elif wrapped_note is not None:
+            right.append(wrapped_note)
             quantised = True
         elif quantised and not travel and (running + arg) & 0xFFFF:
             # A deeper frame whose own count was declined: stay where the
@@ -930,6 +993,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         right_byte = WAVE_NOTE_KEEP     # the last frame's pitch stands
     else:
         right_byte = WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE
+        wrapped = (None if (carried or vibrates or multiplier != 1)
+                   else _wave_tail_wrapped_note_byte(pitches, running))
+        if wrapped is not None:
+            right_byte = wrapped
     left.append(_wave_byte(persist))
     right.append(right_byte)
     # **At `-S1` too, where `closing` says so** (`hold_travel`,

@@ -1,14 +1,14 @@
 {
  "generated_from": {
-  "head": "2036237",
+  "head": "2874fb2",
   "focus": null,
   "sources": [
-   "the plan at 2036237 as patched by /runhuman (six decisions, 2026-11-15)",
-   ".claude/tasks/runs.jsonl (16 records at 2036237) and decisions.jsonl",
-   "docs/BACKLOG.md (0 open); whats-next.md (spent); gh: no open issues or PRs"
+   "the plan at 2036237 (committed in 66e14c5) as patched by /runhuman",
+   ".claude/tasks/runs.jsonl (24 records at 2036237) and decisions.jsonl",
+   "docs/BACKLOG.md and whats-next.md (both spent, as at 2036237); gh: no open issues or PRs"
   ],
   "model_policy": "5.5 tiers (user, 2026-10-08): Sonnet default, Opus only for the critical class, Haiku for mechanical work.",
-  "date": "2026-11-15"
+  "date": "2026-11-16"
  },
  "hazards": [
   "presets.json",
@@ -56,7 +56,7 @@
    "why_model": "main-mode: the trade is the human's to weigh",
    "why_effort": "mechanical once answered",
    "why_mode": "a measured gain against a measured fall on a printed column; the clean bar refuses it",
-   "why_lane": "shares a written path with 12 other task(s)"
+   "why_lane": "shares a written path with 10 other task(s)"
   },
   {
    "offload": null,
@@ -67,64 +67,7 @@
    "fork": null,
    "branch": null,
    "blocked_on": null,
-   "decision": "Set max_hard_restart: true and hard_restart_frames: 3 on Commodore_64_Music_Examples.sid; the user accepted aud -.0123, loud -.0059 and bend_ratio .90 -> .85 for instr 70.2 -> 100 and gate .803 -> 1.000. Confirm the A/B reproduces those figures and the byte-hash moves that file alone; stop and report if it moves anything else or the figures differ materially.",
-   "why_offload": null,
-   "id": "max-hard-restart-commodore-64-music-examples-trade",
-   "title": "Instr: max_hard_restart + hard_restart_frames 3 takes Commodore_64_Music_Examples instr 70.2 -> 100 and gate .803 -> 1.000 with aud .9255 -> .9132",
-   "source": "todo.md section 'Sub-99% mechanisms, second pass', entry 'Gate and instr: the gate-off gap is one frame short'",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:presets.json"
-   ],
-   "verify": "DONE when the user's answer is in decisions.jsonl and, if it is to take the trade, presets.json carries the option for the named song(s) with the corpus byte-hash naming exactly them; a refusal is recorded with the column that refused it.",
-   "why_model": "main-mode: the trade is the human's to weigh",
-   "why_effort": "mechanical once answered",
-   "why_mode": "a measured gain against a measured fall on a printed column; the clean bar refuses it",
-   "why_lane": "shares a written path with 12 other task(s)"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": "Record Mozart as a harness reading: in todo.md's \"Gate I\" entry write the user's verdict (2026-11-15) that Mozart's gate leads the waveform by one frame and reads 100% at lag 6, so the done-bar counts it; change no converter code, harness code or preset.",
-   "why_offload": null,
-   "id": "mozart-gate-lag-reading",
-   "title": "Gate I: Mozart reads gate 35% at the estimated lag 7 and 100% at lag 6; choose the reading",
-   "source": "todo.md section 'Sub-99% mechanisms, second pass', entry 'Gate I'",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "parallel",
-   "touches": [
-    "rw:todo.md",
-    "r:build/fidelity.json"
-   ],
-   "verify": "DONE when the user's answer is in decisions.jsonl and, if it is to take the trade, presets.json carries the option for the named song(s) with the corpus byte-hash naming exactly them; a refusal is recorded with the column that refused it.",
-   "why_model": "main-mode: the trade is the human's to weigh",
-   "why_effort": "mechanical once answered",
-   "why_mode": "a measured gain against a measured fall on a printed column; the clean bar refuses it",
-   "why_lane": "no written path overlaps another task"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "adopt-go-go-dash-two-stage-chain"
-   ],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": "Set \"arpeggio\": true on Sun_Never_Shines.sid only; Go_Go_Dash stays off (travel .930 -> .881 refused).",
+   "decision": "Sun_Never_Shines only (Recommended): set arpeggio on Sun_Never_Shines.sid, not Go_Go_Dash; byte-hash must move Sun_Never_Shines alone (heard instr .943 -> .996, melody 1.0 -> .9986 accepted).",
    "why_offload": null,
    "id": "arpeggio-sun-never-shines-go-go-dash-trade",
    "title": "Instr: arpeggio lifts Sun_Never_Shines instr 86.5 -> 91.8 (melody -.0014, gate -.0025, 5 invented attacks) and Go_Go_Dash 91.5 -> 92.6 (travel_ratio .947 -> .898)",
@@ -146,7 +89,7 @@
    "why_model": "a bounded measurement against the existing harness",
    "why_effort": "two A/B arms and a byte-hash, no diagnosis",
    "why_mode": "a measurement with a mechanical conclusion; the trade returns to the user",
-   "why_lane": "shares a written path with 12 other task(s)"
+   "why_lane": "shares a written path with 10 other task(s)"
   },
   {
    "offload": null,
@@ -183,7 +126,7 @@
    "why_model": "a diagnosis against trace pairs and the player before an emitter is changed",
    "why_effort": "the mechanism is named from traces but its writer is not read yet",
    "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no written path overlaps another task"
+   "why_lane": "no declared path overlaps a writer"
   },
   {
    "offload": null,
@@ -220,41 +163,7 @@
    "why_model": "a diagnosis against trace pairs and the player before an emitter is changed",
    "why_effort": "the mechanism is named from traces but its writer is not read yet",
    "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no written path overlaps another task"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "why_offload": null,
-   "id": "note-end-08-write-auf-thundercats",
-   "title": "Hold C: the original ends a note on a TEST-only $08 write and ours keeps the waveform selected (Auf_Wiedersehen_Monty, Thundercats)",
-   "source": "todo.md section 'Sub-99% mechanisms, second pass', entry 'Wave and hold: the original parks or ends a note on a TEST-only `$08` write' (hold, wave regroup pass, 2026-11-13)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/note-end-08-write-auf-thundercats",
-    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:build/fidelity.json",
-    "r:build/heard.json",
-    "r:.claude/tasks/closed.jsonl",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:host:C:/t/sub99-hold-column-regroup-2026-11-13",
-    "r:host:C:/t/sub99-wave-column-regroup-2026-11-13"
-   ],
-   "verify": "DONE when C:/t/note-end-08-write-auf-thundercats/finding.md first shows the player routine that writes $08 at the note end on Auf_Wiedersehen_Monty and Thundercats, and what decides which notes get it; and then ends in exactly one of: (a) a fix.patch that applies to a fresh worktree of HEAD, where a fidelity.py -t 180 --presets --sound A/B (private dirs under C:/t/note-end-08-write-auf-thundercats) emits the write and raises hold on both with no printed column falling more than its noise on ANY song the patch moves; or (b) a measured statement that the write changes no scored column and no render under a closed gate (give the measured reason). Start from the entry 'Wave and hold: the original parks or ends a note on a TEST-only `$08` write' in todo.md section 'Sub-99% mechanisms, second pass' and the evidence under C:/t/sub99-hold-column-regroup-2026-11-13, C:/t/sub99-wave-column-regroup-2026-11-13; re-take its figures before relying on them. Historical, at v0.5.666: hold Auf_Wiedersehen_Monty .900, Thundercats .909. The corpus byte-hash reports converted/refused/compared/moved and names every moved file, and the new test it adds (name the file) fails with the change short-circuited and passes restored. Nothing is adopted, committed or written to presets.json. The source and test edits happen in your own worktree only and leave it as fix.patch. Copy python/tools/siddump-rt/siddump.exe into a fresh worktree of HEAD first.",
-   "why_model": "a diagnosis against trace pairs and the player before an emitter is changed",
-   "why_effort": "the mechanism is named from traces but its writer is not read yet",
-   "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "shares a written path with 1 other task(s)"
+   "why_lane": "no declared path overlaps a writer"
   },
   {
    "offload": null,
@@ -288,7 +197,7 @@
    "why_model": "a harness predicate change in one module, checked over the whole corpus",
    "why_effort": "the simulation exists; the risk is an unintended mover",
    "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no written path overlaps another task"
+   "why_lane": "no declared path overlaps a writer"
   },
   {
    "offload": null,
@@ -396,7 +305,7 @@
    "why_model": "a diagnosis against trace pairs and the player before an emitter is changed",
    "why_effort": "the mechanism is named from traces but its writer is not read yet",
    "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no written path overlaps another task"
+   "why_lane": "no declared path overlaps a writer"
   },
   {
    "offload": null,
@@ -467,7 +376,7 @@
    "why_model": "a diagnosis against trace pairs and the player before an emitter is changed",
    "why_effort": "the mechanism is named from traces but its writer is not read yet",
    "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
-   "why_lane": "no written path overlaps another task"
+   "why_lane": "no declared path overlaps a writer"
   },
   {
    "offload": null,
@@ -475,7 +384,7 @@
    "needs_main": false,
    "needs_main_reason": null,
    "depends_on": [
-    "adopt-go-go-dash-two-stage-chain"
+    "go-go-dash-record-048c-vibrato-4x-depth"
    ],
    "fork": null,
    "branch": null,
@@ -513,36 +422,6 @@
    "fork": null,
    "branch": null,
    "blocked_on": null,
-   "decision": "Set rest_late_keyoff: true on Confuzion.sid, Game_Killer.sid, Spellbound.sid and Thrust.sid, one A/B per song (-t 180 --sound); keep each song where gate rises and no printed column other than depth falls (depth is the harness legato_starts artefact found by spellbound-depth-1-012-1-043-and), and drop any song where another column falls, reporting it. The byte-hash must move exactly the songs kept.",
-   "why_offload": null,
-   "id": "rest-late-keyoff-other-four-songs-trade",
-   "title": "Take or refuse rest_late_keyoff on Confuzion, Game_Killer, Spellbound and Thrust, which gain gate but move depth",
-   "source": "runs.jsonl las-vegas-36-notes-released-early; decisions.jsonl auto-adopt line (Las_Vegas only)",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:presets.json",
-    "r:python/h2g/rest_late_keyoff.py",
-    "r:build/fidelity.json",
-    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-   ],
-   "verify": "DONE when the user's answer is in decisions.jsonl and, for each song taken, presets.json carries rest_late_keyoff with the corpus byte-hash moving exactly the songs taken; a refusal closes the task by its decision line.",
-   "why_model": "main-mode: the trade is the human's to weigh",
-   "why_effort": "mechanical once answered",
-   "why_mode": "a printed column falls on a moved file, so the clean bar refuses it",
-   "why_lane": "shares a written path with 13 other task(s)"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
    "decision": "Apply C:/t/rest-wave-restart-per-song-option/final.patch and set \"rest_wave_restart\": true on W_A_R.sid and W_A_R_Preview.sid; the byte-hash must move those two alone.",
    "why_offload": null,
    "id": "adopt-rest-wave-restart-per-song-option",
@@ -564,7 +443,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -596,7 +475,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -628,7 +507,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -660,7 +539,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -692,7 +571,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -724,7 +603,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -756,7 +635,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 13 other task(s)"
+   "why_lane": "shares a written path with 11 other task(s)"
   },
   {
    "offload": null,
@@ -789,41 +668,7 @@
    "why_model": "main-mode: the adoption is the human's or the clean bar's",
    "why_effort": "apply, hash, A/B and test, already measured once",
    "why_mode": "a converter or preset adoption; the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 14 other task(s)"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "why_offload": null,
-   "id": "thundercats-wave-9865-9848-and-auf-wiedersehen",
-   "title": "Thundercats wave .9865 -> .9848 and Auf_Wiedersehen_Monty travel .938 -> .932 under rest_wave_silence with the SR/AD park program: remove the fall",
-   "source": "runs.jsonl note-end-08-write-auf-thundercats opened[0] (admitted by prune.js 2026-11-15)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/thundercats-wave-9865-9848-and-auf-wiedersehen",
-    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:build/fidelity.json",
-    "r:build/heard.json",
-    "r:.claude/tasks/closed.jsonl",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:python/tools/magplay-rt/bin",
-    "r:host:C:/t/note-end-08-write-auf-thundercats"
-   ],
-   "verify": "DONE when C:/t/thundercats-wave-9865-9848-and-auf-wiedersehen/finding.md names the rest frames where the park lands early or ends a slide the original keeps running, starting from C:/t/note-end-08-write-auf-thundercats/final.patch, from a siddump trace pair, and ends in exactly one of: (a) a final.patch that applies to a fresh worktree of HEAD, whose fidelity.py -t 180 --sound A/B shows the named fall gone with no other printed column falling past its noise, the corpus byte-hash moving only files the finding names, and a test that fails with the change short-circuited and passes restored; or (b) a written reason it cannot be removed, with the frames cited. Nothing committed; presets.json unchanged.",
-   "why_model": "a diagnosis against trace pairs before an emitter changes",
-   "why_effort": "a fall to explain where a plausible wrong cause is the risk",
-   "why_mode": "one mechanism, concluded by an A/B and a byte-hash",
-   "why_lane": "shares a written path with 1 other task(s)"
+   "why_lane": "shares a written path with 12 other task(s)"
   },
   {
    "offload": null,
@@ -868,40 +713,6 @@
    "fork": null,
    "branch": null,
    "blocked_on": null,
-   "decision": null,
-   "why_offload": null,
-   "id": "lion-heart-travel-9757-9637-and-go",
-   "title": "Lion_Heart travel .9757 -> .9637 and Go_Go_Dash .9300 -> .9090 under the ILV keep-pitch patch: find why our vibrato travel is undersized",
-   "source": "runs.jsonl go-go-dash-depth-under-two-stage-chain opened[0] (admitted by prune.js 2026-11-15)",
-   "model": "sonnet",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/lion-heart-travel-9757-9637-and-go",
-    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:build/fidelity.json",
-    "r:build/heard.json",
-    "r:.claude/tasks/closed.jsonl",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:python/tools/magplay-rt/bin",
-    "r:host:C:/t/go-go-dash-depth-under-two-stage-chain"
-   ],
-   "verify": "DONE when C:/t/lion-heart-travel-9757-9637-and-go/finding.md names why Lion_Heart record 7's per-note vibrato travel is smaller than the original's (orig 182855, ours 143741), starting from C:/t/go-go-dash-depth-under-two-stage-chain/final.patch, from a siddump trace pair, and ends in exactly one of: (a) a final.patch that applies to a fresh worktree of HEAD, whose fidelity.py -t 180 --sound A/B shows the named fall gone with no other printed column falling past its noise, the corpus byte-hash moving only files the finding names, and a test that fails with the change short-circuited and passes restored; or (b) a written reason it cannot be removed, with the frames cited. Nothing committed; presets.json unchanged.",
-   "why_model": "a diagnosis against trace pairs before an emitter changes",
-   "why_effort": "a fall to explain where a plausible wrong cause is the risk",
-   "why_mode": "one mechanism, concluded by an A/B and a byte-hash",
-   "why_lane": "shares a written path with 1 other task(s)"
-  },
-  {
-   "offload": null,
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
    "decision": "Apply C:/t/waveform-deselect-at-note-end/fix.patch ($E1 for the gate-only second stage); the byte-hash must move Tarzan alone; tie_ratio .861 -> .853 accepted. This reverses the earlier Leave.",
    "why_offload": null,
    "id": "revisit-the-leave-on-waveform-deselect-at",
@@ -922,7 +733,7 @@
    "why_model": "main-mode: a trade the user refused once",
    "why_effort": "mechanical once answered",
    "why_mode": "reopens a user Leave",
-   "why_lane": "shares a written path with 10 other task(s)"
+   "why_lane": "shares a written path with 9 other task(s)"
   },
   {
    "offload": null,
@@ -953,10 +764,80 @@
    "why_model": "main-mode: a preset adoption",
    "why_effort": "one key and an A/B already measured",
    "why_mode": "the clean bar decides whether it is asked",
-   "why_lane": "shares a written path with 14 other task(s)"
+   "why_lane": "shares a written path with 12 other task(s)"
+  },
+  {
+   "offload": null,
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "why_offload": null,
+   "id": "go-go-dash-record-048c-vibrato-4x-depth",
+   "title": "Go_Go_Dash travel .9300 -> .9090 under the ILV keep-pitch patch: record $048C (instrument 4, vib byte $23) vibrates at ~4x its byte's depth after a ~20-frame delay in the original (p-p $3E8 on note 2240), ours p-p 340 from frame 4; find why",
+   "source": "runs.jsonl lion-heart-travel-9757-9637-and-go opened (done at 2036237)",
+   "model": "sonnet",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:host:C:/t/go-go-dash-record-048c-vibrato-4x-depth",
+    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:build/fidelity.json",
+    "r:build/heard.json",
+    "r:.claude/tasks/closed.jsonl",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/tools/magplay-rt/bin",
+    "r:host:C:/t/go-go-dash-depth-under-two-stage-chain",
+    "r:host:C:/t/lion-heart-travel-9757-9637-and-go"
+   ],
+   "verify": "DONE when C:/t/go-go-dash-record-048c-vibrato-4x-depth/finding.md names the player code (address and instructions) that sets this record's vibrato depth and delay, quoting a siddump/--vice trace of the original on note 2240, and either a final.patch whose A/B under fidelity._preset_opts shows Go_Go_Dash travel_ratio closer to 1.00 than without it with the corpus byte-hash naming every moved file, or a stated reason no Goattracker encoding reaches it.",
+   "why_model": "diagnosis against a player trace; not the Opus critical class",
+   "why_effort": "a per-frame mechanism hunt where a plausible wrong answer is the failure",
+   "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
+   "why_lane": "shares a written path with 1 other task(s)"
+  },
+  {
+   "offload": null,
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "why_offload": null,
+   "id": "rest-park-ad-zero-placement-ik-plus-bangkok-i-ball",
+   "title": "IK_plus adsr .95 -> .93, Bangkok_Knights .96 -> .94 and I_Ball holdnf .92 -> .83 under both rest options with the SR/AD park patches: the AD zero sits on the rest's first hold row instead of inside the park program; find a placement that keeps the AD on the park's frame without the vibrato step a $Fx program row costs Auf_Wiedersehen_Monty (travel .9383 -> .9350)",
+   "source": "runs.jsonl thundercats-wave-9865-9848-and-auf-wiedersehen opened (done at 2036237)",
+   "model": "sonnet",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "rw:host:C:/t/rest-park-ad-zero-placement-ik-plus-bangkok-i-ball",
+    "r:host:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:build/fidelity.json",
+    "r:build/heard.json",
+    "r:.claude/tasks/closed.jsonl",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/tools/magplay-rt/bin",
+    "r:host:C:/t/note-end-08-write-auf-thundercats",
+    "r:host:C:/t/thundercats-wave-9865-9848-and-auf-wiedersehen"
+   ],
+   "verify": "DONE when C:/t/rest-park-ad-zero-placement-ik-plus-bangkok-i-ball/final.patch, applied over C:/t/note-end-08-write-auf-thundercats/final.patch and C:/t/thundercats-wave-9865-9848-and-auf-wiedersehen/final.patch with both rest options forced on, shows in a fidelity.py A/B that IK_plus adsr, Bangkok_Knights adsr and I_Ball holdnf no longer fall against the options-off arm and Auf_Wiedersehen_Monty travel_ratio does not fall below its options-off value, with the corpus byte-hash naming every moved file -- or finding.md says which of those cannot hold together and why.",
+   "why_model": "diagnosis against a player trace; not the Opus critical class",
+   "why_effort": "a per-frame mechanism hunt where a plausible wrong answer is the failure",
+   "why_mode": "one converter or harness module in a worktree, verified by a corpus byte-hash plus a targeted A/B",
+   "why_lane": "no declared path overlaps a writer"
   }
  ],
  "closed_archive": "closed.jsonl",
- "closed_count": 1806,
+ "closed_count": 1812,
  "closed": []
 }

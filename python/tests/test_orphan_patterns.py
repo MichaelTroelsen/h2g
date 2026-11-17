@@ -136,12 +136,44 @@ def _played(s):
             for kind, w, _ in songview.decode_orderlist(t) if kind == "pattern"}
 
 
-def _preset_convert(name, **over):
+def _preset_convert(name, log=None, **over):
     from fidelity import _preset_opts
     doc = json.load(open(PYTHON_ROOT.parent / "presets.json"))
     opts = _preset_opts(doc, name)
     opts.update(over)
-    return convert(str(CORPUS / name), log=lambda *a, **k: None, **opts)
+    return convert(str(CORPUS / name), log=log or (lambda *a, **k: None),
+                   **opts)
+
+
+def _declined_filter_stops(lines):
+    """Rows the classic filter stop declined at the pattern-table limit."""
+    import re
+    for ln in lines:
+        m = re.search(r"Classic filter stop.*?(\d+) DROPPED \(pattern table", ln)
+        if m:
+            return int(m.group(1))
+    return 0
+
+
+def _filter_stop_only_diff(kept, undropped):
+    """Count rows where the two builds differ, provided every difference is a
+    CMD_SETFILTERPTR 0 the dropped build has and the undropped one lacks."""
+    from h2g.goatwriter.constants import CMD_SETFILTERPTR
+    n = 0
+    assert len(kept) == len(undropped)
+    for a, b in zip(kept, undropped):
+        assert len(a) == len(b)
+        for x, y in zip(a, b):
+            if x == y:
+                continue
+            assert isinstance(x, tuple) and isinstance(y, tuple) and len(x) == len(y), (x, y)
+            for r in range(0, len(x), 4):
+                if x[r:r + 4] != y[r:r + 4]:
+                    assert (x[r], x[r + 1]) == (y[r], y[r + 1]), (x[r:r + 4], y[r:r + 4])
+                    assert x[r + 2:r + 4] == (CMD_SETFILTERPTR, 0), x[r:r + 4]
+                    assert y[r + 2:r + 4] == (0, 0), y[r:r + 4]
+                    n += 1
+    return n
 
 
 @needs_corpus
@@ -201,8 +233,20 @@ def test_the_drop_moves_numbering_only_not_what_any_position_plays(name):
     kept = _resolved(_preset_convert(name))
     real = C.drop_unplayed_patterns
     C.drop_unplayed_patterns = lambda tracks, patterns: (tracks, patterns, [])
+    lines = []
     try:
-        undropped = _resolved(_preset_convert(name))
+        undropped = _resolved(_preset_convert(name, log=lines.append))
     finally:
         C.drop_unplayed_patterns = real
-    assert kept == undropped
+    # The undropped arm keeps every pattern the drop removes, so on a crowded
+    # file it is at Goattracker's 208 when the classic filter stop runs (after
+    # the drop) and that pass declines its copies -- Knucklebusters since
+    # rest_two_stage (v0.5.670), 2 rows. A pattern number past 208 cannot be
+    # spelt in an orderlist, so the reference cannot be uncapped: allow exactly
+    # the rows its own log declined, as CMD_SETFILTERPTR 0 and nothing else.
+    declined = _declined_filter_stops(lines)
+    assert kept[1:] == undropped[1:]
+    if declined == 0:
+        assert kept == undropped
+    else:
+        assert _filter_stop_only_diff(kept[0], undropped[0]) == declined

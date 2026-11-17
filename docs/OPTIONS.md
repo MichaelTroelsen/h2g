@@ -1269,6 +1269,35 @@ files move. Kentilla voice-3 attacks 355 -> 379 (original 379), melody 95% ->
 `pulse_span` Samantha_Fox .850 -> .958, Warhawk .450 -> .690. Commando moves
 no byte: its 41 ties all restart silently.
 
+## `--tie-late-pitch` (the tie one tick after its attack)
+
+Off by default and per song (a `--presets` entry's `tie_late_pitch`, listed in
+`presets.EXCLUDED_FROM_ALWAYS`); byte-inert where it is off.
+
+A note's own init call runs no wavetable (gplay.c:403-405 `goto NEXTCHN`), so
+the plain program (`wave wave wave stop`, three note-writing entries) plays on
+calls 1, 2 and 3 after it, and at three calls a row call 3 is the NEXT row's
+init call. A tie row (`CMD_TONEPORTA 00`) does not skip the wavetable on that
+call and `cptr->note` is already its new note, so entry 2's `+0` steps the pitch
+there: a call before the original's tie, which lands on its attack's offset.
+With the option, entry 2 of a plain record at a 3-call row carries `$80` ("keep
+the note"): the same waveform byte is written, and the tie row's own command
+lands the pitch on the following call, as it does wherever the program has
+already stopped.
+
+Gremlins (Hubbard `00:n40 02:n42`, a one-tick note tied into the next): the
+original holds `$2BD6` for f+0..f+2 and steps to `$3138` at f+3; ours stepped
+at f+2. Voice 0 had 69 of 69 ties at +3 frames from the attack read -1 and
+none after the option (`{-1: 69, 0: 321}` -> `{0: 390}`). Measured at 2036237
++ the change, `--presets` with `"tie_late_pitch": true` on Gremlins, -t 180
+(historical): `heard.py` instr 0.934 -> 1.000 (68 pitch mismatches -> 0);
+`fidelity.py --sound` travel 0.89 -> 1.05, tiefr 85% -> 90%, no printed column
+falls.
+
+Reach: forced corpus-wide it moves 28 of 89 converting files (every file with a
+plain 3-call record), of which 14 carry the mechanism (a tie row right after a
+one-row note) -- see the task record `gremlins-first-pitch-step-early`.
+
 ## `--cut-release` (the release nibble that never sounds)
 
 **On by default via `presets.json`.** A no-op in the 62 corpus files whose
@@ -3844,6 +3873,35 @@ fell 100% -> 75% with the drum on. The stage frames go in the prologue the loop
 skips (once per note, as the `$40` pitch does). Needs `sfx_drum`; off by
 default and per song, because forced it also moves Pandora (wave +0.3pp,
 `aud` -0.0001, measured). `tests/test_sfx_drum_stage.py` pins both.
+
+**`--phase-split-over-passes` (`phase_split_over_passes`) runs bit $10's
+per-note phase clones where a pass would stand down for them.** The bit-$10
+phase cell is global and a wavetable restarts at every note, so a record's
+notes attacking in more than one state of the cell need one clone per state
+(`pitch_seq_phase_split_plan`). On the outer-gated clocks the plan is declined
+wherever the entry-instrument split or the free-note respell has work
+(`build._phase_split_displaces_passes`: both stand down beside any phase
+split), so those files play one majority phase per record: I_Ball's row is the
+counter's period, three frames, so every fetch reads the same state until the
+outer gate's 112-call skip moves the grid off it; Shockway_Rider's row is two
+frames against the same period and its first eight fetches read all three
+states (`2 0 0 1 1 2 2 0`). The option removes the check, and the free-note
+respell then runs BESIDE the split: the split's clones are records of their
+own by the time it runs (their instrument columns are written first), so each
+is handed the start and pulse pointer of its record, and the respell takes the
+same rows, variants and declines it takes with the split off
+(`beside_phase` in `build._build_sng`; `note_passes._free_note_variants`'
+pulse-only test reads a clone as its record). The entry-instrument split still
+does not run beside a phase split (Star_Paws). Measured at v0.5.668 (2036237),
+`-t 180 --sound`, forced on Shockway_Rider, Saboteur_II and Pandora: `pulse_phase`
+stays 1.0 on all three (before the respell ran beside the split it fell to
+.625, .692 and .533), heard `instr` Shockway_Rider 92.1 -> 97.9, Saboteur_II
+87.3 -> 94.1, Pandora 59.4 -> 71.0. Still down on a moved file: I_Ball's
+`loud_ratio` .942 -> .931 and `tie_ratio` .931 -> .923, Saboteur_II's
+`tie_ratio` .917 -> .903, Pandora's `tie_ratio` .999 -> .986 and Star_Paws'
+`pitch_cents_agreement` .756 -> .728 (the last measured at v0.5.667, untouched
+by the respell change). Off by default and per song; nothing is adopted.
+`tests/test_phase_split_over_passes.py` pins it.
 
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores

@@ -1542,7 +1542,9 @@ test dependency).
     single-speed** when Pacific_Coast and Radio_ACE adopted it at multiplier
     1, the 14 now HISTORY; re-graded at v0.5.630 to **12 multispeed / 16
     single-speed** when Lion_Heart adopted it by ear at multiplier 3, the 11
-    now HISTORY) and
+    now HISTORY; re-graded at v0.5.670 to **12 multispeed / 17 single-speed**
+    when Wiz adopted it at multiplier 1 (wave .835 -> .985), the 16 now
+    HISTORY) and
     `--regrid` has **14 adoptions** (One_on_One_Jordan_vs_Bird adopted; its
     recorded -37.0pp melody collapse does not reproduce -- melody IMPROVES
     0.9903 -> 0.9952 at 180 s). **What caught both was a TEST, not a reading**:

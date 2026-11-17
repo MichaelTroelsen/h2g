@@ -262,7 +262,17 @@ def prev_class_firstwave(blob: bytes,
                 if (RAW_GATE_LEGATO and raw_gate_legato
                         and chip & _RAW_GATE_ON == _RAW_GATE_ON):
                     nf = ("legato", (chip & 0xF0) | (eligible[g] & 0x0E) | 1)
-            want[key][(g, nf)] += 1
+            # **A visit with no predecessor casts no vote.** The track's
+            # first note has nothing before it (`chip` is None), so its
+            # "keep the record" tally says nothing about what the chip holds
+            # at that row -- and the loop revisits the row on every later
+            # lap with a real predecessor. Counting it let one start-of-song
+            # visit tie the restart lap's vote and keep the original record
+            # (Hollywood_or_Bust sub 2 voice 1: pattern 22 row 0, `$0A`, one
+            # visit after nothing and one after a noise tail, so every loop's
+            # note played `10` where the original holds `$84`).
+            if chip is not None:
+                want[key][(g, nf)] += 1
             if i + 1 < len(events) and calls:
                 ncalls = (events[i + 1][2] - at) * calls - (1 if multiplier > 1 else 0)
                 chip = _run_program(wtbl, record(g)[_WAVE_AT], chip, ncalls)

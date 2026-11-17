@@ -38,6 +38,7 @@ from .drums import (_arp_block, _chord_block, _arp_offsets, _sfx_drum_entries,
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
+from .sfx_tick_voice import stray_drum_record
 from .stored_fall import stored_fall_offsets
 from .wave_eor import (EOR_STOP_PROGRAM, EorPhase, eor_library,
                        has_skip_rows, wave_eor_block)
@@ -78,7 +79,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        spans: Optional[dict] = None,
                        cut_out: Optional[list] = None,
                        keep_slide: bool = False,
-                       stored_fall: bool = True) -> tuple:
+                       stored_fall: bool = True,
+                       sfx_stray: bool = False,
+                       tie_late: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -273,8 +276,12 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # it fires (`BNE` past them), so nothing else in this function applies to
     # the instrument. Loops for as long as the note is held, as the player's
     # per-voice counter does.
+    # `sfx_stray`: a record only voices other than the sfx voice play. The
+    # player fires its hit on the sfx voice whichever voice runs the record, so
+    # the hit written into this record's own program sounds on the wrong voice;
+    # `sfx_tick_voice` spells it on the right one.
     if (sfx_drum and det.sfx_pitch >= 0 and (arp_style & 0x80)
-            and fmt == FORMAT_GTS5):
+            and fmt == FORMAT_GTS5 and not sfx_stray):
         # The $40 pitch fires once per *note* -- its counter runs out -- so it
         # goes in a prologue the loop's jump skips. Passed into a single looping
         # block it landed on every tick: exact on Trans-Atlantic, whose bursts
@@ -1301,6 +1308,25 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             left[2] == tail or tail == wave):
         left[1] = hold
 
+    # **The plain shape's third call is the next row's init call at three
+    # calls a row, and it writes the pitch from the NEW note.** A note's own
+    # init call runs no wavetable (gplay.c:403-405 `goto NEXTCHN`), so entry 0
+    # plays on the call after it and entry 2 on the third, which at a 3-call
+    # row is the next row's init call. A tie row (`CMD_TONEPORTA 00`) does
+    # not skip the wavetable on that call and `cptr->note` is already its new
+    # note, so entry 2's `+0` steps the pitch there -- a call before the
+    # original's tie, which lands on its attack's offset (Gremlins: 69 of 69
+    # voice-0 ties one tick after the attack, ours at +2 frames against the
+    # original's +3). `$80` keeps the note on that call: the same waveform
+    # byte is written, and the tie row's own command lands the pitch a call
+    # later, exactly as it does where the program has stopped. Rows of any
+    # other length put entry 2 off the boundary (or past the program).
+    if (tie_late and row_calls == 3 and multiplier == 1 and not arp
+            and not drum and not tick
+            and left == [wave, tail, tail, 0xFF, 0xFF]
+            and right == [0, 0, 0, 0, 0]):
+        right[2] = 0x80
+
     return left, right
 
 
@@ -2197,7 +2223,8 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                       note_spans: Optional[dict] = None,
                       eor_library_out: Optional[list] = None,
                       clone_reserve: int = 0,
-                      unplaced: Optional[list] = None) -> tuple:
+                      unplaced: Optional[list] = None,
+                      tie_late: bool = False) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     `clone_reserve` entries are held back from every record's budget for the
@@ -2339,6 +2366,11 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                                   voice_two_stage=voice_two_stage,
                                   voice=_record_voice(instr_voices,
                                                       gt_number),
+                                  sfx_stray=bool(
+                                      sfx_drum and det.sfx_pitch >= 0
+                                      and stray_drum_record(
+                                          instr_voices, gt_number,
+                                          det.sfx_voice)),
                                   gate_skip=gate_skip,
                                   arp_phase=(phase if phase is not None
                                              else None if arp_phases is None
@@ -2367,7 +2399,8 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                                          else note_spans.get(gt_number)),
                                   cut_out=cut_out,
                                   keep_slide=keep_slide,
-                                  stored_fall=not plain)
+                                  stored_fall=not plain,
+                                  tie_late=tie_late)
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is

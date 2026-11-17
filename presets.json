@@ -383,7 +383,8 @@
       "prev_class_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "regrid_prepay": 1
+      "regrid_prepay": 1,
+      "pitch_seq": true
     },
     "Battle_of_Britain.sid": {
       "max_rows": 94,
@@ -1457,7 +1458,8 @@
       ],
       "initial_instrument": true,
       "pre_note_wave": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "tie_late_pitch": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -2309,7 +2311,8 @@
         61,
         62
       ],
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "phase_split_over_passes": true
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2323,7 +2326,8 @@
       "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
-      "arpeggio": true
+      "arpeggio": true,
+      "row_hard_restart": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -3282,7 +3286,8 @@
         62
       ],
       "prev_class_firstwave": true,
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "phase_split_over_passes": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -3421,7 +3426,7 @@
       "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
-      "arpeggio": false,
+      "arpeggio": true,
       "arpeggio_default": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -3781,7 +3786,8 @@
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "rest_wave_restart": true
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -3795,7 +3801,8 @@
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "drum_gate_off": true
+      "drum_gate_off": true,
+      "rest_wave_restart": true
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -3825,7 +3832,8 @@
       "aligned_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "wave_program": true
     },
     "Zoids.sid": {
       "max_rows": 128,

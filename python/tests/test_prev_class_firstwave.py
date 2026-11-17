@@ -95,7 +95,10 @@ def test_the_waveform_is_the_one_the_predecessor_had_reached_when_the_next_note_
     assert instrument_column(parsed(run(short)))[1] == 3
     held = song([(C4, 1, 0, 0)] + [(0xBD, 0, 0, 0)] * 4 + [(C4, 2, 0, 0)],
                 program_a=program_a)
-    assert run(held) == held
+    # B keeps its record; A, the song's first note, is a different matter:
+    # the restart lap plays it after B's pulse (see
+    # tests/test_prev_class_firstwave_start_visit.py).
+    assert instrument_column(parsed(run(held)))[5] == 2
 
 
 def test_the_option_is_off_by_default():
@@ -107,13 +110,19 @@ def test_a_record_after_a_different_class_takes_that_class_as_its_firstwave():
     blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)])
     out = run(blob)
     sng = parsed(out)
-    assert len(sng.instruments) == 3
-    # B after A plays the clone, whose firstwave is A's last waveform, gate clear.
-    assert instrument_column(sng)[:2] == [1, 3]
+    # B after A plays a clone, whose firstwave is A's last waveform, gate
+    # clear. A after B (the restart lap: a song loops) takes one too, with B's
+    # pulse; the song's first note, which has no predecessor, casts no vote.
+    assert len(sng.instruments) == 4
+    col = instrument_column(sng)[:2]
+    assert col[1] == 3
     assert sng.instruments[2].firstwave == 0x80
+    assert sng.instruments[2].wave_ptr == sng.instruments[1].wave_ptr
+    assert col[0] == 4
+    assert sng.instruments[3].firstwave == 0x40
+    assert sng.instruments[3].wave_ptr == sng.instruments[0].wave_ptr
     # The records themselves are untouched.
     assert [i.firstwave for i in sng.instruments[:2]] == [0x80, 0x40]
-    assert sng.instruments[2].wave_ptr == sng.instruments[1].wave_ptr
 
 
 def test_a_record_after_its_own_class_keeps_its_record():
@@ -139,7 +148,11 @@ def test_a_row_that_inherits_its_instrument_names_it_when_the_live_one_moved():
 def test_a_firstwave_that_is_not_a_gate_off_waveform_is_left_alone():
     recs = [record(1, 0x80), record(3, 0x09)]       # B carries the testbit
     blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)], instruments=recs)
-    assert run(blob) == blob
+    sng = parsed(run(blob))
+    # B is never cloned: A (a gate-off real firstwave, after B on the restart
+    # lap) is the only record that is.
+    assert instrument_column(sng)[1] == 2
+    assert [i.wave_ptr for i in sng.instruments[2:]] == [1]
 
 
 @needs_corpus
@@ -185,7 +198,7 @@ GATE_ON_TAIL = [(0x81, 0x00), (0xFF, 0x00)]
 def test_a_gate_on_noise_tail_gives_the_next_note_a_legato_clone_with_the_gate_up():
     blob = song([(C4, 1, 0, 0), (C4, 2, 0, 0)], program_a=GATE_ON_TAIL)
     sng = parsed(run(blob, raw=True))
-    assert instrument_column(sng)[:2] == [1, 3]
+    assert instrument_column(sng)[1] == 3
     clone = sng.instruments[2]
     assert clone.firstwave == 0x81
     assert clone.gatetimer & 0x40

@@ -6066,6 +6066,86 @@ def test_no_fetch_only_song_means_no_section():
     assert "(ceiling)" not in text.split("## What this run compared")[0]
 
 
+# --- hold: a modal tie is marked `(modal)`, a real short instrument is not --
+#
+# Knucklebusters_3 (hold 43%, holdn 100%): `$00F8` original `{17: 80, 9: 80,
+# 8: 80}` against ours `{9: 80, 8: 80, 17: 76, ...}` -- the tie breaks to 17
+# for one side and 9 for the other, and `hold` scores the instrument 0.
+
+def _modal_row(name, instruments, hold):
+    """`instruments` is [(kind, holdn)]; `hold` the measured cell value."""
+    r = _row(name, "measured", 1.0, 50, 50)
+    r.update(sound_run_agreement=hold,
+             sound_run_agreement_nofetch=hold,
+             sound_run_fetch=0, sound_run_instruments=len(instruments),
+             hold_census=[{"adsr": 0xF8 + i, "kind": k, "holdn": h}
+                          for i, (k, h) in enumerate(instruments)])
+    return r
+
+
+def test_modal_only_is_every_missed_instrument_graded_fine_by_holdn():
+    # A bimodal key: slot flip, holdn 1.0 -> marked.
+    assert fidelity.modal_only(
+        _modal_row("A.sid", [("slot", 1.0)] * 4 + [("match", 1.0)] * 3, 0.43))
+    # Each of the five kinds counts, at the .98 edge.
+    for k in ("slot", "short", "long", "gap", "thin"):
+        assert fidelity.modal_only(_modal_row("B.sid", [(k, 0.98)], 0.0)), k
+    # A real short instrument at holdn .6 is a defect, not a tie.
+    assert not fidelity.modal_only(
+        _modal_row("C.sid", [("slot", 1.0), ("short", 0.6)], 0.5))
+    # Just under the edge.
+    assert not fidelity.modal_only(_modal_row("D.sid", [("slot", 0.979)], 0.5))
+    # One fetch instrument anywhere takes the song out (that is `(ceiling)`'s).
+    assert not fidelity.modal_only(
+        _modal_row("E.sid", [("slot", 1.0), ("fetch", 1.0)], 0.0))
+    # `sparse`, and an instrument with no holdn at all, are never a tie.
+    assert not fidelity.modal_only(_modal_row("F.sid", [("sparse", 1.0)], 0.0))
+    assert not fidelity.modal_only(_modal_row("G.sid", [("slot", None)], 0.0))
+    # No missed instrument, or a hold at 99% or above: nothing to mark.
+    assert not fidelity.modal_only(_modal_row("H.sid", [("match", 1.0)], 1.0))
+    assert not fidelity.modal_only(_modal_row("I.sid", [("slot", 1.0)], 0.99))
+    # A run without --hold-census carries no census and marks nothing.
+    bare = _modal_row("J.sid", [("slot", 1.0)], 0.43)
+    del bare["hold_census"]
+    assert not fidelity.modal_only(bare)
+
+
+def test_the_report_marks_a_modal_hold_cell_and_only_that():
+    rows = [_modal_row("Knuckle.sid", [("slot", 1.0)] * 4 + [("match", 1.0)] * 3,
+                       0.429),
+            _modal_row("Defect.sid", [("slot", 1.0), ("short", 0.6)], 0.5),
+            _hold_row("Chimera.sid", ["fetch"] * 9, 0.0, 1.0),
+            _modal_row("Clean.sid", [("match", 1.0)] * 4, 1.0)]
+    text = fidelity.report(rows, _Args())
+    assert _hold_cell(text, "Knuckle.sid") == "43% (modal)"
+    assert _hold_cell(text, "Defect.sid") == "50%"
+    assert _hold_cell(text, "Chimera.sid") == "0% (ceiling)"
+    assert _hold_cell(text, "Clean.sid") == "100%"
+    section = text.split("## Modal-tie songs", 1)[1].split("\n## ", 1)[0]
+    assert "| Knuckle.sid | 43% |" in section
+    assert "Defect.sid" not in section and "Chimera.sid" not in section
+    # the measured value the acceptance terms read is not rewritten
+    assert rows[0]["sound_run_agreement"] == 0.429
+
+
+def test_no_modal_song_means_no_section():
+    text = fidelity.report(
+        [_hold_row("Chimera.sid", ["fetch"] * 2, 0.0, 1.0)], _Args())
+    assert "## Modal-tie songs" not in text
+    assert "(modal)" not in text.split("## What this run compared")[0]
+
+
+def test_the_ceiling_text_names_the_09_frame_and_its_lever():
+    rows = [_hold_row("Chimera.sid", ["fetch"] * 9, 0.0, 1.0)]
+    text = fidelity.report(rows, _Args())
+    section = text.split("## Fetch-only songs", 1)[1].split("\n## ", 1)[0]
+    assert "`$09`" in section
+    assert "gate_off_firstwave_instruments" in section
+    dim = next(d for d in fidelity.DIMENSIONS
+               if d.column == "hold").of
+    assert "`$09`" in dim and "gate_off_firstwave_instruments" in dim
+
+
 # --- `hold` reads a key that --cut-release splits whole ----------------------
 #
 # Human_Race $0A09 has 509 notes; ours keeps $0A09 on 92 and carries $0A00

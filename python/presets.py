@@ -432,6 +432,13 @@ EXCLUDED_FROM_ALWAYS = {
     # note (`h2g/pre_note_wave.py`). Reaches every player that writes the held
     # instrument's waveform on a rest.
     "pre_note_wave",
+    # Per song and never a default: `CMD_SETWAVEPTR` on the KEYOFF row of a
+    # record whose tabled alternation (effect bit $02) the player restarts on
+    # a rest (`goatwriter/rest_wave_restart.py`). Reaches the 21 files with
+    # `Detection.wave_alternate`; it lifts W_A_R and W_A_R_Preview and
+    # costs Knucklebusters tie_ratio and Zoolook tie_agreement, so it is a
+    # measured per-song choice.
+    "rest_wave_restart",
     # Per song and never a default: reproduces a $D418 volume the player
     # derives from a voice's orderlist position (`detect.find_master_fade`),
     # one pattern copy per fading position. Reaches Sanxion.sid alone.
@@ -447,6 +454,14 @@ EXCLUDED_FROM_ALWAYS = {
     # the players with a two-call speed gate and an outer gate whose clock
     # the file reads (Spellbound, ...).
     "drum_held",
+    # Per song and never a default: bit $10's per-note phase clones on a file
+    # where the entry-instrument split or the free-note respell would stand
+    # down beside them (`build._phase_split_displaces_passes`); the entry
+    # split then does not run (Star_Paws), the free-note respell runs on the
+    # split's clones (Shockway_Rider, Saboteur_II, Pandora). Reaches I_Ball, Shockway_Rider, Lightforce,
+    # Nineteen, Pandora, Saboteur_II and Star_Paws. A trade (instr up on all
+    # seven, a pulse/loudness column down on some): adopt it per song.
+    "phase_split_over_passes",
     # Per song and never a default: a `$68` waveform-state copy's vibrato
     # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
     # constant). Reaches Monty_on_the_Run alone, which ships it with
@@ -902,6 +917,13 @@ EXCLUDED_FROM_ALWAYS = {
     # Formula_1_Simulator (convert()'s docstring). A song entry
     # `"tie_pulse_restart": true`.
     "tie_pulse_restart",
+    # `tie_late_pitch`: a plain wavetable program's third entry writes no
+    # pitch at a 3-call row (goatwriter.wavetable), so a tie on the next row
+    # lands a call later, on the original's frame. Off by default and per
+    # song: it moves bytes in 38 of 89 files forced corpus-wide (task
+    # gremlins-first-pitch-step-early, v0.5.668). A song entry
+    # `"tie_late_pitch": true`.
+    "tie_late_pitch",
     # `lfo_wave`: the command-table engine's LFO-table vibrato as a
     # per-frame wave program at the walk's phase (goatwriter.lfo_wave)
     # instead of Goattracker's vibrato. Off by default and per song: forced

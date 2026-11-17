@@ -1301,7 +1301,7 @@ def _free_note_variants(patterns: List[List[int]], rows: set,
 
     def refuse(base: int, held: int) -> Optional[str]:
         held = same.get(held, held)
-        if base not in pulse_only or held == base:
+        if base not in pulse_only or held == same.get(base, base):
             return None
         return ("follows another instrument" if held
                 else "follows an unsettled instrument")
