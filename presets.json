@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.669 presets.py",
+  "generator": "h2g 0.5.670 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -316,6 +316,7 @@
       "multiplier": 1,
       "sfx_drum": true,
       "wave_program": true,
+      "pitch_seq": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -383,8 +384,7 @@
       "prev_class_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "regrid_prepay": 1,
-      "pitch_seq": true
+      "regrid_prepay": 1
     },
     "Battle_of_Britain.sid": {
       "max_rows": 94,
@@ -3285,9 +3285,9 @@
         61,
         62
       ],
+      "phase_split_over_passes": true,
       "prev_class_firstwave": true,
-      "rest_envelope_silence": true,
-      "phase_split_over_passes": true
+      "rest_envelope_silence": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -3829,11 +3829,11 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
+      "wave_program": true,
       "aligned_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "row_hard_restart": true,
-      "wave_program": true
+      "row_hard_restart": true
     },
     "Zoids.sid": {
       "max_rows": 128,
