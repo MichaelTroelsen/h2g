@@ -38,6 +38,14 @@ and the loop behind it keeps its phase -- only where that row and the one
 after it are plain waveform rows, since a delay behind the noise would hold it
 for the whole delay (Proteus records 11 and 12).
 
+**Speed gate 3** (Bump_Set_Spike, International_Karate, Thrust): the noise is `gate - 1`
+frames and `gate` where `f + 2` or `f + 3` is withheld (`is_held`). The
+programs are `overlay_key`'s, not the copies above: a program that stops gets
+the extra frame put IN (a sweep laid behind the noise starts a frame later on
+a held note), a looping one keeps its timeline and has the noise written over
+the rows that start in the held window. A note whose row a split renames
+takes the clone's program (`edits`, `extra_starts`).
+
 A pattern cell serves every orderlist position that plays it at every clock
 phase, so a pattern whose positions disagree about a row is COPIED, one copy
 per distinct spelling (the largest group stays on the pattern where nothing
@@ -65,6 +73,11 @@ GT_END_PATTERN = 0xFF
 # Patterns left for the passes after this one (the pre-note-wave copy, the
 # master volume) and rows left for none: the plan is dropped, not squeezed.
 PATTERN_RESERVE = 6
+# The speed gates whose held noise has been measured: 2 (the module's
+# docstring) and 3 (Bump_Set_Spike, International_Karate, Thrust -- the
+# noise is `gate - 1` frames and `gate` where the unit holds a withheld call).
+HELD_GATES = (2, 3)
+OVERLAY = "overlay"
 # `A B C D` (attack, delay, noise, delay), the noise again with the gate
 # closed and its delay, and the jump to the row after the record's own D.
 VARIANT_ROWS = 7
@@ -144,12 +157,16 @@ def _abs_outer_start(sid: SidFile) -> Optional[Tuple[int, int]]:
     return m.group(2)[0], sid.data[off]
 
 
-def held_clock(sid: SidFile, det: Detection
+def held_clock(sid: SidFile, det: Detection,
+               gates: Tuple[int, ...] = HELD_GATES
                ) -> Optional[Tuple[int, int, int, int]]:
     """(gate, skip, outer start, inner start) of the start subtune, or None.
 
-    Only a speed gate of two calls: the fetch call is followed by exactly one
-    call the drum block can write on, and that is the rule's whole shape.
+    Only a speed gate in `gates` (`HELD_GATES`): the noise runs from the call
+    after the fetch to the call before the next fetch, so a unit that holds a
+    withheld call is one frame longer than `gate` and its noise one longer
+    than `gate - 1` (module docstring; the gate-3 files are measured in
+    `tests/test_drum_held_gate3.py`).
     """
     try:
         speeds = _gw_tempo.find_song_speeds(sid, det if det.can_convert
@@ -161,7 +178,7 @@ def held_clock(sid: SidFile, det: Detection
     idx = max(0, getattr(sid, "start_song", 1) - 1)
     gate = speeds.frames_for(idx)
     skip = speeds.skip_for(idx)
-    if gate != 2 or not skip:
+    if gate not in gates or not skip:
         return None
     cells = clock_cells(sid)
     if cells is not None:
@@ -193,6 +210,16 @@ def withheld_calls(outer: int, skip: int, upto: int) -> Set[int]:
         if under:
             out.add(call)
     return out
+
+
+def is_held(f: int, gate: int, withheld: Set[int]) -> bool:
+    """The row fetched on call `f` has its noise held a frame: the call after
+    the fetch writes it (not a withheld one), and a call the fetch's unit
+    spends before the next fetch -- `f + 2` .. `f + gate` -- is withheld, so
+    the chip keeps the noise through it instead of taking the gate-off mask.
+    At gate 2 that is `f + 2` alone, the module's rule."""
+    return (f + 1) not in withheld and any(
+        (f + k) in withheld for k in range(2, gate + 1))
 
 
 def held_rows(sid: SidFile, det: Detection, tracks, patterns
@@ -229,7 +256,7 @@ def held_rows(sid: SidFile, det: Detection, tracks, patterns
             for r in range(0, len(pat), 4):
                 if pat[r] == GT_END_PATTERN:
                     break
-                out[(ti, pos, k, r)] = (fetched[row] + 2) in withheld
+                out[(ti, pos, k, r)] = is_held(fetched[row], gate, withheld)
                 row += 1
     return out
 
@@ -280,15 +307,255 @@ def _drum_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
 
 def is_loop(key: tuple) -> bool:
     """The program's tail ends in a jump back into itself (`FF:xx`, xx != 0)
-    rather than a stop (`FF:00`)."""
+    rather than a stop (`FF:00`). An overlay key (gate 3) carries it."""
+    if key[0] == OVERLAY:
+        return key[3]
     return key[2][-1][1] != 0
 
 
-def variant_rows(key: tuple) -> int:
+def overlay_key(entries: List[tuple], start: int, gate: int,
+                multiplier: int) -> Optional[tuple]:
+    """`(OVERLAY, 0, rows, loops)`: the program at wavetable row `start` with
+    its noise held a frame longer, or None. For a speed gate above 2.
+
+    The plain program writes noise from its first noise row (`C`, call `n0`)
+    to the first waveform row that is not noise (`n1`) -- `(gate - 1) *
+    multiplier` calls where the record is the `A B C D` shape, whatever its
+    own rows make of it otherwise. A held note keeps the chip on noise, gate
+    closed, one frame (`multiplier` calls) longer. Two ways to say it, by what
+    stands behind the noise:
+
+    * **A program that stops** (`FF:00`, no command rows behind the noise):
+      the frame goes IN, after the plain noise, and the rows behind it follow
+      -- `A B C D`, one frame of closed noise, a jump to the pulse row.
+    * **A program that loops** (a pitch alternation phased by the call grid, a
+      pitch dither): the timeline must not move, so the plain program is
+      unrolled up to the window's end, `n0 + gate * multiplier - 1`, with every
+      waveform row that STARTS in `[n1, end]` written as noise instead (its
+      right byte kept, so its pitch writes stay), the delay that crosses the
+      end cut there with the record's own waveform written back on the next
+      call, and a jump to the row behind. The window is whole frames, so the
+      sample at a frame's end sees it whatever the note's call phase.
+
+    None where the unrolled run meets a command row or a stop, where the plain
+    noise already reaches the end, where the row after the window is a delay
+    (it would keep the noise on) or a command row, and for a stop program
+    with a sweep (command rows) behind the noise: Bump_Set_Spike's record 1
+    (`F2:07` x 6) takes the frame IN and pitch_cents falls .8811 -> .8644, the
+    noise written over the pulse row with the waveform put back a call later
+    .8727, so it is left alone (the original's sweep starts a frame after its
+    noise ends, held or not, and ours is already matched to it by being a
+    frame early and slower).
+    """
+    i = start - 1
+    if start < 1 or i + 3 >= len(entries):
+        return None
+    a, b, c, d = entries[i:i + 4]
+    if not (0x10 <= a[0] < 0x80 and 1 <= b[0] <= 0x0F
+            and 0x80 <= c[0] < 0xE0 and 1 <= d[0] <= 0x0F):
+        return None
+    tail = []
+    for e in entries[i + 2:i + 2 + 24]:
+        tail.append(e)
+        if e[0] == GT_WAVE_JUMP:
+            if len(tail) < 3 or tail[2][0] == GT_WAVE_JUMP:
+                return None
+            # A looping tail is taken only where its first row is a plain
+            # waveform row, the one call the held noise replaces.
+            if e[1] != 0 and not (len(tail) >= 5
+                                  and 0x10 <= tail[2][0] < 0xE0
+                                  and 0x10 <= tail[3][0] < 0xE0):
+                return None
+            return (a, b, tuple(tail)), start + 2
+    return None
+
+
+def _drum_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
+    out: Set[int] = set()
+    data = sid.data
+    for i in range(records):
+        base = det.instr_start + i * det.instr_stride
+        if base + 7 >= len(data):
+            break
+        if data[base + 7] & 0x01:
+            out.add(i)
+    return out
+
+
+def is_loop(key: tuple) -> bool:
+    """The program's tail ends in a jump back into itself (`FF:xx`, xx != 0)
+    rather than a stop (`FF:00`). An overlay key (gate 3) carries it."""
+    if key[0] == OVERLAY:
+        return key[3]
+    return key[2][-1][1] != 0
+
+
+def overlay_key(entries: List[tuple], start: int, gate: int,
+                multiplier: int) -> Optional[tuple]:
+    """`(OVERLAY, start, rows, loops)` of the program at wavetable row `start`
+    with its noise held to `gate` frames, or None. For a speed gate above 2.
+
+    The plain program writes its noise for `(gate - 1) * multiplier` calls
+    from the first noise row (`C`, call `n0`) -- or whatever the record's own
+    rows make of it -- and then a waveform row that is not noise. A held note
+    keeps the chip on noise, gate closed, to call `n0 + gate * multiplier - 1`:
+    whole frames, so the sample the traces take at each frame's end sees it
+    whatever the call phase of the note. **The rows after the noise are NOT
+    moved**: the program's own timeline goes on exactly where it was (a second
+    `C D` put Bump_Set_Spike's pitch 0.881 -> 0.833 at gate 3, and a pitch
+    loop behind the noise is phased by the call grid, `variant`), so the
+    variant is the plain program unrolled up to the window's end with every
+    waveform row that STARTS inside `[first non-noise row, end]` written as
+    noise instead (its right byte kept, so its pitch writes stay), the delay
+    that crosses the end cut there with the record's own waveform written back
+    on the next call, and a jump to the row behind.
+
+    None where the straight run to the window's end meets a jump, a stop or a
+    command row, where the plain noise already reaches the end, or where the
+    row after the window is a delay (it would keep the noise on).
+    """
+    i = start - 1
+    if start < 1 or i + 3 >= len(entries):
+        return None
+    a, b, c, d = entries[i:i + 4]
+    if not (0x10 <= a[0] < 0x80 and 1 <= b[0] <= 0x0F
+            and 0x80 <= c[0] < 0xE0 and 1 <= d[0] <= 0x0F):
+        return None
+    m = max(1, multiplier)
+    span: List[tuple] = []          # (row index, first call, calls)
+    call, pos, hops, stopped = 0, i, 0, False
+    end = n1 = None
+    while len(span) < 40:
+        if end is not None and call > end:
+            break
+        if pos >= len(entries):
+            return None
+        left, right = entries[pos]
+        if left == GT_WAVE_JUMP:
+            # A jump costs no call: the row it lands on is the next call's.
+            if right == 0:
+                stopped = True
+                break
+            pos = right - 1
+            hops += 1
+            if hops > 8:
+                return None
+            continue
+        if left == 0 or left >= 0xF0:
+            return None
+        n = left + 1 if left <= 0x0F else 1
+        if pos == i + 2:
+            end = call + gate * m - 1
+        if (n1 is None and pos >= i + 2 and 0x10 <= left
+                and not left & 0x80):
+            n1 = call
+        span.append((pos, call, n))
+        call += n
+        pos += 1
+    else:
+        return None
+    if n1 is None or end is None or n1 > end:
+        return None
+    closed = c[0] & 0xFE
+    loops = True
+    for e in entries[i + 2:i + 2 + 24]:
+        if e[0] == GT_WAVE_JUMP:
+            loops = e[1] != 0
+            break
+    if not loops:
+        # A program that stops (the drum's pitch sweep is laid behind the
+        # noise as a run of command rows): its tail is timed from the end of
+        # the noise, which the original holds a frame -- Bump_Set_Spike's
+        # sweep starts a frame later on a held note -- so the frame goes IN,
+        # and the rows behind it follow it.
+        head = [entries[p] for p, first, _n in span if first < n1]
+        at = next(p for p, first, _n in span if first == n1)
+        for e in entries[at:at + 24]:
+            if e[0] == GT_WAVE_JUMP:
+                break
+            if e[0] >= 0xF0:
+                # A sweep (command rows) behind the noise: the original's
+                # starts a frame later on a held note and ours, which sweeps
+                # a call early and slower, is matched to it better where it
+                # is NOT moved (Bump_Set_Spike record 1: pitch_cents
+                # .8811 -> .8644 with the frame put in, -> .8727 with the
+                # noise written over the pulse row and the waveform written
+                # back a call later). Declined.
+                return None
+        if m <= 1:
+            frame = [(closed, 0x80)]
+        elif m == 2:
+            frame = [(closed, 0x80), (closed, 0x80)]
+        else:
+            frame = [(closed, 0x80), (m - 2, 0x80)]
+        return (OVERLAY, 0, tuple(head + frame + [(GT_WAVE_JUMP, at + 1)]),
+                False)
+    reg = None
+    out: List[tuple] = []
+    for p, first, n in span:
+        left, right = entries[p]
+        if 0x10 <= left < 0xF0:
+            reg = left
+            out.append((closed, right) if n1 <= first <= end
+                       else (left, right))
+        else:
+            out.append((left, right))
+    if stopped:
+        # The program ends inside the window: the noise runs on to its end
+        # and the record's waveform goes back where the plain program leaves
+        # it.
+        k = end - call + 1
+        if k > 0:
+            out.append((closed, 0x80) if k == 1 else (k - 1, 0x80))
+        out.append((reg, 0x80))
+        out.append((GT_WAVE_JUMP, 0))
+    else:
+        p, first, n = span[-1]
+        left, right = entries[p]
+        last_call = first + n - 1
+        nxt = entries[pos] if pos < len(entries) else None
+        if nxt is None:
+            return None
+        if last_call > end:
+            # A delay crosses the end: noise to the end, the record's own
+            # waveform on the call after, then what is left of the delay.
+            if not 1 <= left <= 0x0F:
+                return None
+            out.pop()
+            head = end - first + 1
+            out.append((closed, 0x80) if head == 1 else (head - 1, 0x80))
+            rest = last_call - end
+            if rest == 1:
+                out.append((reg, right))
+            else:
+                out.append((reg, 0x80))
+                out.append((reg, right) if rest == 2 else (rest - 2, right))
+        else:
+            after = nxt
+            if after[0] == GT_WAVE_JUMP and after[1]:
+                after = entries[after[1] - 1]
+            if 1 <= after[0] <= 0x0F:
+                return None                   # a delay would keep the noise
+            if 0xF0 <= after[0] < GT_WAVE_JUMP:
+                return None                   # a sweep: see the stop path
+            if after[0] == GT_WAVE_JUMP:
+                # The program's end: the chip would keep the noise, so the
+                # record's waveform is written back on the next call.
+                out.append((reg, 0x80))
+        out.append(nxt if nxt[0] == GT_WAVE_JUMP else (GT_WAVE_JUMP, pos + 1))
+    return (OVERLAY, 0, tuple(out), True)
+
+
+def variant_rows(key: tuple, gate: int = 2, multiplier: int = 1) -> int:
+    if key[0] == OVERLAY:
+        return len(key[2])
     return LOOP_VARIANT_ROWS if is_loop(key) else VARIANT_ROWS
 
 
-def variant(key: tuple, c_row: int, wave_entries: List[tuple]) -> List[tuple]:
+def variant(key: tuple, c_row: int, wave_entries: List[tuple],
+            gate: int = 2, multiplier: int = 1) -> List[tuple]:
+    if key[0] == OVERLAY:
+        return list(key[2])
     a, b, tail = key
     noise, delay = wave_entries[c_row - 1], wave_entries[c_row]
     if is_loop(key):
@@ -310,8 +577,16 @@ def variant(key: tuple, c_row: int, wave_entries: List[tuple]) -> List[tuple]:
 
 def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                    instr_used: int, wave_entries: List[tuple],
-                   wave_starts: List[int], log=None, reserve: int = 0
+                   wave_starts: List[int], log=None, reserve: int = 0,
+                   multiplier: int = 1, edits: Optional[dict] = None,
+                   extra_starts: Optional[Dict[int, int]] = None
                    ) -> Optional[DrumHeldPlan]:
+    """`edits` is `{pattern: {row: (old, new)}}`, the instrument bytes the
+    tempo-duty and phase splits write into the patterns LAST, and
+    `extra_starts` `{clone number: wavetable start}` of the clones they add.
+    A note whose row they rename plays the clone's program, not its record's:
+    at a gate above 2 the held program is the clone's (a gate-2 file keeps
+    the record's, as it always has)."""
     if not det.effect_drum or det.instr_start is None:
         return None
     held = held_rows(sid, det, tracks, patterns)
@@ -322,6 +597,7 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
         return None
     from ..patterns import MAX_PATTERNS
     declined: Dict[str, int] = {}
+    gate = held_clock(sid, det)[0]
 
     def no(why: str, n: int = 1) -> None:
         declined[why] = declined.get(why, 0) + n
@@ -333,13 +609,31 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
     for i in sorted(_drum_records(sid, det, max(instr_used - lead, 0))):
         g = i + lead + 1
         start = wave_starts[g - 1] if 0 < g <= len(wave_starts) else 0
-        shaped = _shape(wave_entries, start) if start else None
+        if gate == 2:
+            shaped = _shape(wave_entries, start) if start else None
+        else:
+            ov = (overlay_key(wave_entries, start, gate, multiplier)
+                  if start else None)
+            shaped = None if ov is None else (ov, 0)
         if shaped is None:
             continue
         if shaped[0] not in keys:
             keys.append(shaped[0])
             c_of[len(keys)] = shaped[1]
         key_of[g] = keys.index(shaped[0]) + 1
+    if gate != 2 and extra_starts:
+        # A split's clone of a drum record: its own program (the record's
+        # rows in the other phase), held the same way.
+        for clone, start in sorted(extra_starts.items()):
+            if clone in key_of or not start:
+                continue
+            ov = overlay_key(wave_entries, start, gate, multiplier)
+            if ov is None:
+                continue
+            if ov not in keys:
+                keys.append(ov)
+                c_of[len(keys)] = 0
+            key_of[clone] = keys.index(ov) + 1
     if not key_of:
         if log:
             log("Drum held noise.........: 0 rows (no drum record has the "
@@ -360,6 +654,10 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                     break
                 if pat[r + 1]:
                     cur = pat[r + 1]
+                    if gate != 2 and edits:
+                        edit = edits.get(p, {}).get(r // 4)
+                        if edit is not None and edit[0] == cur:
+                            cur = edit[1]
                 if not GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
                     continue
                 if pat[r + 2] == CMD_TONEPORTA:
@@ -391,6 +689,14 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
     spell: Dict[tuple, Dict[int, int]] = {
         pp: {r: vote(vs) for r, vs in rows.items()}
         for pp, rows in asks.items()}
+    for pp, rows in asks.items():
+        for r, vs in rows.items():
+            if any(vs) and not spell[pp][r]:
+                # Visits of one orderlist position share its pattern cell:
+                # a repeat count whose plays land on different clock
+                # residues cannot be spelled for the minority (the orderlist
+                # is laid before this pass and has no room to unroll).
+                no("visits disagree", sum(1 for v in vs if v))
     walked_pos = {(ti, pos) for (ti, pos) in spell}
     outside: Set[int] = set()
     for ti, track in enumerate(tracks):
@@ -402,11 +708,28 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                             for g in rows.values() if g)
     room = GT_MAX_TABLELEN - len(wave_entries) - reserve
     chosen: List[int] = []
-    for key, n in sorted(gain.items(), key=lambda kv: (-kv[1], kv[0])):
-        size = variant_rows(keys[key - 1])
-        if n and room >= size:
-            chosen.append(key)
-            room -= size
+    if gate == 2:
+        for key, n in sorted(gain.items(), key=lambda kv: (-kv[1], kv[0])):
+            size = variant_rows(keys[key - 1], gate, multiplier)
+            if n and room >= size:
+                chosen.append(key)
+                room -= size
+    else:
+        # The overlay programs are seven to nine rows each and a table may
+        # have room for two: the best SET, not the best first (the biggest
+        # program can strand two smaller ones that hold more notes).
+        best: Dict[int, Tuple[int, List[int]]] = {0: (0, [])}
+        for key, n in sorted(gain.items()):
+            size = variant_rows(keys[key - 1], gate, multiplier)
+            for used, (score, picks) in sorted(best.items(), reverse=True):
+                if used + size <= room and n:
+                    got = best.get(used + size)
+                    if got is None or score + n > got[0]:
+                        best[used + size] = (score + n, picks + [key])
+        top = max(best.values(), key=lambda v: (v[0], -len(v[1])))
+        chosen = list(top[1])
+        room -= sum(variant_rows(keys[k - 1], gate, multiplier)
+                    for k in chosen)
     if not chosen:
         no("no wavetable room")
         return None
@@ -420,10 +743,11 @@ def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
         no("no pattern room")
         return None
     out_patterns, out_tracks, copies, flagged, sources = _apply(
-        plan, patterns, tracks, wave_entries, chosen, keys)
+        plan, patterns, tracks, wave_entries, chosen, keys, gate, multiplier)
     entries: List[tuple] = []
     for key in chosen:
-        entries += variant(keys[key - 1], c_of[key], wave_entries)
+        entries += variant(keys[key - 1], c_of[key], wave_entries, gate,
+                           multiplier)
     if log:
         log(f"Drum held noise.........: {flagged} note row(s) play a "
             f"two-frame noise program ({len(chosen)} of {len(keys)} "
@@ -469,7 +793,8 @@ def _group(spell, tracks, chosen: Set[int], outside: Set[int]):
     return plan, by_pat, copies
 
 
-def _apply(plan, patterns, tracks, wave_entries, chosen, keys):
+def _apply(plan, patterns, tracks, wave_entries, chosen, keys, gate=2,
+           multiplier=1):
     groups, _by_pat, _copies = plan
     out_p = [list(p) for p in patterns]
     out_t = [list(t) for t in tracks]
@@ -478,7 +803,7 @@ def _apply(plan, patterns, tracks, wave_entries, chosen, keys):
     at = len(wave_entries) + 1
     for key in chosen:
         ptr_of[key] = at
-        at += variant_rows(keys[key - 1])
+        at += variant_rows(keys[key - 1], gate, multiplier)
     flagged = 0
     copies = 0
     sources: Dict[int, int] = {}

@@ -128,8 +128,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import AbstractSet, Callable, List, Optional, Sequence, Tuple
+from typing import (AbstractSet, Callable, Iterator, List, Optional, Sequence,
+                    Tuple)
 
 from ..detect import Detection, PlayerView
 from ..sidfile import SidFile
@@ -524,6 +526,51 @@ def default_startup_calls(multiplier: int) -> int:
     DEFAULTTEMPO, so the row is one call longer than the value.
     """
     return GT_DEFAULT_TEMPO_CALLS * max(1, multiplier)
+
+
+# Which call of its frame (0-based) a note's first wavetable call falls on, for
+# the build in progress -- set by `convert` (`onset_position_scope`) only where
+# it has established that the song runs gt2reloc's default startup row with
+# whole-frame rows (`default_onset_position`). None everywhere else, which is
+# every caller that has not said so: a position nobody knows is not assumed.
+_ONSET_POSITION: Optional[int] = None
+
+
+def onset_position() -> Optional[int]:
+    return _ONSET_POSITION
+
+
+@contextmanager
+def onset_position_scope(position: Optional[int]) -> Iterator[None]:
+    """Make `position` the build's `onset_position()`, then restore it."""
+    global _ONSET_POSITION
+    before, _ONSET_POSITION = _ONSET_POSITION, position
+    try:
+        yield
+    finally:
+        _ONSET_POSITION = before
+
+
+def default_onset_position(multiplier: int) -> int:
+    """Which call of its frame (0-based) a note's first wavetable call falls
+    on when the packed song starts on gt2reloc's default startup row and every
+    row is a whole number of frames.
+
+    The trace samples a frame after its LAST call (`heard.frames`); the packed
+    player spends `STARTUP_RESET_CALLS` calls resetting, then a startup row of
+    `default_startup_calls` (`6 * multiplier`), and a note's wavetable runs
+    from the call after its tick 0 (`ONSET_CALL`): so the first wavetable call
+    sits on call `(1 + 6m + 1) mod m` of its frame -- the LAST call of the
+    frame at `-S3` and at no other `-S`. That is the call a two-entry
+    wave-program opcode must not start on (`wave_program.PAIR_ENDS_FRAME`).
+    A startup record (`startup_phase`) shifts the lead by up to
+    `multiplier - 1` calls and so the position with it (ACE_II, Thundercats,
+    Chain_Reaction, Kings_of_the_Beach_intro: 17, 17, 17, 28 calls where the
+    default is 18, 18, 18, 30), and a row that is not a whole number of
+    frames puts each row on its own; `convert` passes neither of those on.
+    """
+    return ((STARTUP_RESET_CALLS + default_startup_calls(multiplier)
+             + ONSET_CALL) % max(1, multiplier))
 
 
 def startup_phase(sid: SidFile, det: Detection, multiplier: int,

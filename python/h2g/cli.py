@@ -219,11 +219,12 @@ def main(argv=None) -> int:
              "song. Off by default")
     parser.add_argument(
         "--drum-held", action="store_true",
-        help="give the bit-$01 drum notes whose first unit ends on the outer "
-             "gate's withheld call the second noise frame the original holds "
-             "there: a CMD_SETWAVEPTR on the note's row into a two-noise "
+        help="give the bit-$01 drum notes whose first unit holds the outer "
+             "gate's withheld call the extra noise frame the original holds "
+             "there: a CMD_SETWAVEPTR on the note's row into a longer-noise "
              "copy of the record's program, the pattern copied per spelling "
-             "(Spellbound, Warhawk, Proteus). Per song. Off by default")
+             "(speed gates 2 and 3: Spellbound, Warhawk, Proteus, "
+             "Bump_Set_Spike, International_Karate). Per song. Off by default")
     parser.add_argument(
         "--wobble-copy-depth", action="store_true",
         help="size a $68 waveform-state copy's vibrato depth on its own pitch "

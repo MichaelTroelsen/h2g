@@ -103,6 +103,11 @@ class Detection:
     # updates, so the oscillation's period is `2 * bound + 1` and not
     # `2 * bound`. See _find_vibrato_dwell().
     vibrato_dwell: bool = False
+    # Instrument-record offset of the per-record vibrato DELAY (record +14 in
+    # the six `$1003` files): frames the oscillator is silent after the note
+    # fetch, on top of the age gate. None elsewhere. See
+    # _find_vibrato_delay_offset().
+    vibrato_delay_offset: Optional[int] = None
     # 1 where the depth loop tests its count last, so the record's shift field
     # shifts `shift + 1` times; 0 where it shifts `shift` times. See
     # _find_vibrato_shift_extra().
@@ -2279,6 +2284,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log(f"Instrument vibrato......: record +{det.vibrato_offset} "
             "(bound $78>>3, depth shift $07, note-relative)")
         det.vibrato_gate = _find_vibrato_gate(sid, vib_site[1], det)
+        det.vibrato_delay_offset = _find_vibrato_delay_offset(
+            sid, det, vib_site[1])
         det.vibrato_dwell = _find_vibrato_dwell(sid, vib_site[1])
         det.vibrato_shift_extra = _find_vibrato_shift_extra(sid, vib_site[1])
         vg = det.vibrato_gate
@@ -3542,6 +3549,15 @@ def _patched_split_record_offset(sid: SidFile, det: Detection,
             break
     if cell is None:
         return None
+    return _patched_cell_record_offset(sid, det, cell)
+
+
+def _patched_cell_record_offset(sid: SidFile, det: Detection,
+                                cell: Tuple[int, int]) -> Optional[int]:
+    """Record offset the per-voice cell `cell` (low, high operand bytes) is
+    loaded from: its writer `LDA #imm / STA cell,X` is itself patched by
+    `LDA record+n,X / STA imm_operand`, which is the read wanted."""
+    data = sid.data
     for w in range(2, len(data) - 2):
         if (data[w] != 0x9D or (data[w + 1], data[w + 2]) != cell
                 or data[w - 2] != 0xA9):
@@ -3555,6 +3571,46 @@ def _patched_split_record_offset(sid: SidFile, det: Detection,
                 if 0 <= off < det.instr_stride:
                     return off
     return None
+
+
+# --- ...and the per-record vibrato DELAY the same six files carry -----------
+#
+# Ahead of the split's `LDA cell,X / BNE / JMP / STA imm` the `$1003` family
+# has a second per-voice countdown. Lion_Heart, with the table at $1B4B and
+# its 16-byte stride:
+#
+#     1486  BD 5E 1A  LDA $1A5E,X      ; the voice's vibrato delay
+#     1489  F0 06     BEQ $1491        ; 0 -> run the update
+#     148B  DE 5E 1A  DEC $1A5E,X      ; else count it down
+#     148E  4C 4A 15  JMP $154A        ; ...and skip the update AND the store
+#     1491  A9 00     LDA #imm         ; <- the vibrato byte (patched)
+#     1493  48        PHA              ; the split
+#
+# and the cell is written at every note fetch from a patched immediate
+# (`LDA #imm / STA $1A5E,X` at $1303, `LDA $1B59,X / STA $1304` at $12F3):
+# record +14. So the oscillator is silent for `delay + 1` frames from the
+# note, longer than the `$1ACE,X < 4` gate wherever the record says so
+# (Lion_Heart's records: 0, 5 and 13 frames; measured at v0.5.670, voice 1's
+# `$0FB9` first moves at frame 14, ours at 4). The update itself waits too, so
+# the oscillator's counter does not run during the delay.
+VIBRATO_DELAY_SHAPE = "BD ?? ?? F0 06 DE ?? ?? 4C ?? ?? A9 ?? 48"
+VIBRATO_DELAY_AT = 13           # the split's PHA is this far from the BD
+
+
+def _find_vibrato_delay_offset(sid: SidFile, det: Detection,
+                               at: int) -> Optional[int]:
+    """Record offset of the per-record vibrato delay for the split at data
+    index `at`, or None. Every link is an exact byte shape and must resolve
+    into the file (the rescue rule: an unfamiliar spelling is an under-read).
+    """
+    data = sid.data
+    k = at - VIBRATO_DELAY_AT
+    if k < 0 or not match_at(data, k, VIBRATO_DELAY_SHAPE):
+        return None
+    cell = (data[k + 1], data[k + 2])
+    if (data[k + 6], data[k + 7]) != cell:      # DEC must name the same cell
+        return None
+    return _patched_cell_record_offset(sid, det, cell)
 
 
 # --- The classic vibrato's gate --------------------------------------------

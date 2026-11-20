@@ -322,10 +322,12 @@ from .notes import (_drum_steps_safe, _phase_note, _pitch_seq_entries,
                     _pitch_seq_note_byte, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries,
                     _pitch_seq_steps)  # noqa: F401
-from .wave_program import (SLIDE_CUT_SHARE, SLIDE_SEMITONE_MAX_CENTS,
+from .wave_program import (PAIR_ENDS_FRAME, SLIDE_CUT_SHARE,
+                           SLIDE_SEMITONE_MAX_CENTS,
                            SLIDE_SEMITONE_SHARE, _cut_share,
                            _gated_slide_chain,
-                           _hold_wave_program_entry, _slide_goals,
+                           _hold_wave_program_entry, _shorten_hold,
+                           _slide_goals,
                            _slide_semitones, _wave_program_entries,
                            _wave_program_hold_travels,
                            _wave_program_record_vibrates,
@@ -397,13 +399,13 @@ from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
                         MIN_UNITS, DrumLongPlan, drum_long_plan,
                         drum_long_records)
-from .drum_held import (LOOP_VARIANT_ROWS, PATTERN_RESERVE,  # noqa: F401
-                        VARIANT_ROWS, ZERO_FILL, DrumHeldPlan,
-                        _INDEXED_REACH, _ZP_INDEXED, _ZP_WRITERS,
-                        _abs_outer_start, _apply, _drum_records, _group,
-                        _shape, _zp_outer_start, drum_held_plan, held_clock,
-                        held_rows, is_loop, variant, variant_rows,
-                        withheld_calls)
+from .drum_held import (HELD_GATES, LOOP_VARIANT_ROWS, OVERLAY,  # noqa: F401
+                        PATTERN_RESERVE, VARIANT_ROWS, ZERO_FILL,
+                        DrumHeldPlan, _INDEXED_REACH, _ZP_INDEXED,
+                        _ZP_WRITERS, _abs_outer_start, _apply, _drum_records,
+                        _group, _shape, _zp_outer_start, drum_held_plan,
+                        held_clock, held_rows, is_held, is_loop,
+                        overlay_key, variant, variant_rows, withheld_calls)
 from .lfo_wave import (LFO_END, LFO_HOLD, LFO_MAX_READS, LFO_SIGN,  # noqa: F401
                        LFO_SPEED_RELATIVE, LfoPhase, _byte, _note_walk,
                        _program, _spell, _step, _walk_reads, cycle_row,
@@ -424,7 +426,9 @@ from .call_phase import (best_startup, default_startup_calls, entry_gate,
                          _JMP_GATE_ENTRY_WINDOW, _JMP_GATE_FETCH,
                          _JMP_GATE_FETCH_WINDOW, _LDX_LENGTHS,
                          nibble_gate_step_lead, _new_song_test,
-                         ONSET_CALL, onset_mismatches, play_entry,
+                         default_onset_position, ONSET_CALL,
+                         onset_mismatches, onset_position,
+                         onset_position_scope, play_entry,
                          PLAY_ENTRY_JMPS, startup_horizon, startup_phase,
                          STARTUP_RESET_CALLS, StartupPhase,
                          GATE_OFF_FIRSTWAVE, zp_entry_gate,
@@ -454,11 +458,15 @@ from .dead_blocks import (DeadBlocks, dead_records, named_records, plan_dead_blo
                           _targets)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
                     _build_sng_split, _heard_splits, _RetryDeadBlocks,
-                    _RetrySplit, build_sng,
+                    _note_split_displaces, _RetrySplit, build_sng,
                     _phase_locked_ties, _pulse_sweeps, _record_numbers,
                     _restart_heard, _resolve_arp_pointers,
                     _TIE_BLOCK_KINDS, _block_residue_of,
                     _tie_block_source, _tie_blocks_wanted,
                     _tie_phase_verdicts)  # noqa: F401
+from .note_pitch_split import (ENABLED, MAJOR, MIN_PLAYS,  # noqa: F401
+                              MIN_SHARE, NotePitch, _same_shape,
+                              _transposes, _TRANSPOSE_ZERO, note_classes,
+                              note_pitch_split_plan, note_residues)
 from .drum_unit import (clock_cells, drum_first_units,  # noqa: F401
                         fetch_frames)

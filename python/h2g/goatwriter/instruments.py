@@ -205,7 +205,7 @@ def named_testbit_firstwave(waveform: int) -> int:
 
 
 def adopter_firstwave(data, base: int, det: Detection, sfx_drum: bool,
-                      named_firstwave: bool) -> int:
+                      named_firstwave: bool, two_stage: bool = False) -> int:
     """The firstwave byte of a `gate_off_firstwave_instruments` adopter's
     record at `base` -- the one decision `_write_instruments` and
     `park_free_running` must agree on."""
@@ -227,6 +227,17 @@ def adopter_firstwave(data, base: int, det: Detection, sfx_drum: bool,
         # `$08` is gate clear and test bit set -- silent exactly as
         # the original's `$00` is, and the oscillator is restarted,
         # which matters only when a neighbour syncs or rings off it.
+        firstwave = FIRSTWAVE_DRUM_INIT
+    elif (two_stage and firstwave == FIRSTWAVE_FREERUN
+            and det.effect_two_stage and data[base + 7] & 0x04):
+        # **A waveform-$00 two-stage record opens its gate on the init call
+        # `$01` makes, a frame before the original does.** The original's
+        # stage 1 writes gate, waveform and pitch in ONE call (Trans-Atlantic
+        # voice 1, record `AD$0A SR$F8` effect `$14`: `00 00 00 00 11 11 11
+        # 11 11 00`), and the wavetable's lead entry (`11`) is that call here,
+        # so the `$01` init frame before it is a bare gate edge one frame early
+        # -- `01:0000` -- on every note. The gate stays CLEAR as the drum-alone
+        # record's init does, for the same reason.
         firstwave = FIRSTWAVE_DRUM_INIT
     return firstwave
 
@@ -256,7 +267,8 @@ def park_free_running(sid: SidFile, det: Detection, instr_used: int,
                       no_test_restart: bool = False,
                       real_firstwave_instruments: tuple = (),
                       sfx_drum: bool = False,
-                      named_firstwave: bool = False) -> List[int]:
+                      named_firstwave: bool = False,
+                      two_stage: bool = False) -> List[int]:
     """Park a waveform-$00 record's voice at `$00`, as the original does.
 
     **`gate_off_firstwave` gives such a record the free-running `$01`
@@ -291,7 +303,7 @@ def park_free_running(sid: SidFile, det: Detection, instr_used: int,
                 or data[base + 2] != 0x00 or i + lead >= len(wave_starts)):
             continue
         if adopter_firstwave(data, base, det, sfx_drum,
-                             named_firstwave) != FIRSTWAVE_FREERUN:
+                             named_firstwave, two_stage) != FIRSTWAVE_FREERUN:
             continue
         at = wave_starts[i + lead] - 1
         if at < 0 or not _is_plain_zero_block(wave_entries[at:at + 5]):
@@ -324,7 +336,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        gate_clear_firstwave: bool = False,
                        named_firstwave: bool = False,
                        sfx_drum: bool = False,
-                       strike_entries: Optional[List[tuple]] = None) -> int:
+                       strike_entries: Optional[List[tuple]] = None,
+                       two_stage: bool = False) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -583,7 +596,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             firstwave = (data[base + 2] | 0x01) & 0xFF
         elif gt_number in gate_off_firstwave_instruments:
             firstwave = adopter_firstwave(data, base, det, sfx_drum,
-                                          named_firstwave)
+                                          named_firstwave, two_stage)
             own_gate_clear = (gate_clear_firstwave and data[base + 2] & 0xF0
                               and not data[base + 2] & 0x01
                               and data[base + 2] < 0xFE)

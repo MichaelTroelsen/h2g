@@ -17,8 +17,10 @@ from typing import (Dict, List, Optional)
 from ..detect import (decode_wave_program, Detection, wave_program_has_jump,
                       wave_program_set_stores_wave)
 from ..sidfile import (SidFile)
-from .constants import (FORMAT_GTS5, WAVE_NOTE_ABS, WAVE_NOTE_BASE,
-                        WAVE_NOTE_KEEP, WAVECMD_PORTADOWN, WAVECMD_PORTAUP)
+from .constants import (FORMAT_GTS5, WAVE_MAX_DELAY, WAVE_NOTE_ABS,
+                        WAVE_NOTE_BASE, WAVE_NOTE_KEEP, WAVECMD_PORTADOWN,
+                        WAVECMD_PORTAUP)
+from . import call_phase as _call_phase
 from .primitives import (_first_frame_lead, _note_freq, _sfx_note_byte,
                          _speed_index, _wave_byte, _wave_hold_byte)
 from .vibrato import (_classic_vibrato_entry, _table_vibrato_entry,
@@ -40,6 +42,14 @@ SLIDE_SEMITONE_SHARE = 0.75
 # one left, so a frame a note can end on is a frame whose pitch is the next
 # attack's name, and one note in a hundred is already a wrong name.
 SLIDE_CUT_SHARE = 0.0
+# A two-entry opcode (the waveform on the note, then the portamento carrying
+# the slides' travel) ends on the last play call of its frame instead of
+# starting there. The end-of-frame sample reads the register after the frame's
+# LAST call, and an entry runs on the call it is reached on: the pair used to
+# start on that last call, so the portamento ran on the NEXT frame's first and
+# the travel read a frame late (Lion_Heart `100d 0bbb` against our `1168 100e`,
+# -S3). The previous opcode's hold gives up one call to the waveform entry.
+PAIR_ENDS_FRAME = True
 
 
 def _cut_share(spans: Optional[Dict[int, int]], row_calls: int, first: int,
@@ -96,6 +106,25 @@ def _hold_wave_program_entry(left: List[int], right: List[int],
     if hold is not None:
         left.append(hold)
         right.append(WAVE_NOTE_KEEP)
+
+
+def _shorten_hold(left: List[int], right: List[int], start: int, calls: int,
+                  wave_byte: int, one_call_right: int) -> int:
+    """Rewrite the trailing hold that begins at entry `start`, which covers
+    `calls` extra play calls, so it covers one call fewer; returns the new
+    count. The shared `_wave_hold_byte` encoding: a repeat of the waveform for
+    one call, a delay of `n - 1` for more. See `_wave_program_entries`,
+    "the pair ends on the frame's last call"."""
+    del left[start:]
+    del right[start:]
+    n = calls - 1
+    if n == 1:
+        left.append(wave_byte)
+        right.append(one_call_right)
+    elif n > 1:
+        left.append(min(n - 1, WAVE_MAX_DELAY))
+        right.append(WAVE_NOTE_KEEP)
+    return n
 
 
 def _wave_program_travels(multiplier: int, fmt: str, running: int) -> bool:
@@ -604,7 +633,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     **`hold_travel`: the `$85` hold's travel at `-S1` too**
     (`_wave_program_hold_travels`), for a record the player does not
     vibrate (`_wave_program_record_vibrates`). The caller passes it only
-    where no instrument of the song writes a real or gate-off firstwave
+    where no instrument of the song writes a real (gate-ON) firstwave
     (`build_sng`), because the tail's pitch is still in the register when
     the voice's NEXT note opens: Goattracker's note-init call writes the
     waveform alone (`player.s` `jmp mt_loadregswaveonly`), so a real
@@ -686,6 +715,17 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     left: List[int] = list(lead_l)
     right: List[int] = list(lead_r)
     seed = len(left)
+    # **The pair ends on the frame's last call** (`PAIR_ENDS_FRAME`). The
+    # trailing hold -- where it starts, how many calls it covers, and the bytes
+    # that rewrite it shorter -- is what a two-entry opcode borrows one call
+    # from. Seeded with the lead's own hold (`_first_frame_lead`).
+    align = (PAIR_ENDS_FRAME and multiplier >= 2 and not written
+             and not (program and program[-1][0] == "jump")
+             and _call_phase.onset_position() == multiplier - 1)
+    hold_at: Optional[int] = 1 if (seed > 1) else None
+    hold_calls = max(1, multiplier) - 1
+    hold_wave = left[0] if left else 0
+    hold_right = 0x00
     # **The two opcode kinds write different cells, and the hold reverts to the
     # one the `< $80` opcodes own.** IK+ `$E348`: a `>= $80` opcode stores to
     # `$E5E7,X` -- the cell the per-frame writer copies to `$D404` -- while a
@@ -770,6 +810,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             left.append(_wave_byte(wave))
             right.append(_wave_set_note_byte(arg, None if vibrates else pitches,
                                              lo_run))
+            hold_at = len(left) if multiplier >= 2 else None
+            hold_calls, hold_wave, hold_right = (multiplier - 1,
+                                                 _wave_byte(wave),
+                                                 WAVE_NOTE_KEEP)
             _hold_wave_program_entry(left, right, wave, multiplier)
             carried = False     # an absolute pitch, not the accumulator
             quantised = False
@@ -851,6 +895,15 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             states.pop()
             cut = True
             break
+        # **The anchor and its travel end on the frame's last call**: the
+        # previous opcode's hold gives up one call, so this opcode's waveform
+        # entry sits on the frame's middle call and the portamento on its last
+        # -- the call the end-of-frame sample reads (`PAIR_ENDS_FRAME`).
+        shorten = int(bool(travel and align and hold_at is not None
+                           and hold_calls >= 1))
+        if shorten:
+            _shorten_hold(left, right, hold_at, hold_calls, hold_wave,
+                          hold_right)
         left.append(_wave_byte(wave))
         # **At `-S1`, where no portamento fits beside this entry, the note it
         # lands on is the quantised `note - sum`** (`_slide_semitones`) --
@@ -896,7 +949,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # and the hold has to cover the call the portamento did not take.
         moved = int(_wave_program_travel_entry(left, right, delta, speed_table,
                                                fmt, multiplier))
-        _hold_wave_program_entry(left, right, wave, multiplier - moved)
+        hold_calls = multiplier - moved + shorten - 1
+        hold_at = len(left) if hold_calls >= 1 else None
+        hold_wave, hold_right = _wave_byte(wave), WAVE_NOTE_KEEP
+        _hold_wave_program_entry(left, right, wave, multiplier - moved + shorten)
         running = (running + arg) & 0xFFFF
         lo_run = running
         # The frequency now matches the accumulator only if this entry actually
@@ -997,6 +1053,14 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                    else _wave_tail_wrapped_note_byte(pitches, running))
         if wrapped is not None:
             right_byte = wrapped
+    close_l: List[int] = []
+    close_r: List[int] = []
+    if not carried and not vibrates and right_byte == WAVE_NOTE_BASE:
+        if (_wave_program_travel_entry(close_l, close_r, running, speed_table,
+                                       fmt, multiplier, closing=closing)
+                and align and hold_at is not None and hold_calls >= 1):
+            _shorten_hold(left, right, hold_at, hold_calls, hold_wave,
+                          hold_right)
     left.append(_wave_byte(persist))
     right.append(right_byte)
     # **At `-S1` too, where `closing` says so** (`hold_travel`,
@@ -1006,9 +1070,8 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # **A record the player vibrates gets no closing travel at any `-S`**
     # (`_wave_program_record_vibrates`): the vibrato rewrites the pitch from
     # the note, so its tail is centred on the note, not the accumulator.
-    if not carried and not vibrates and right_byte == WAVE_NOTE_BASE:
-        _wave_program_travel_entry(left, right, running, speed_table,
-                                   fmt, multiplier, closing=closing)
+    left.extend(close_l)
+    right.extend(close_r)
     left.append(0xFF)
     right.append(0x00)
     return left, right

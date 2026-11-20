@@ -51,8 +51,13 @@ def _convert(name, free=True):
     # bytes and appends its clones after the variants; this file measures the
     # variants alone.
     import h2g.convert as _C
+    from h2g.goatwriter import note_pitch_split as _NPS
     real_split = _C.split_funk_gatetimers
     _C.split_funk_gatetimers = lambda blob, *a, **k: blob
+    # The per-note-pitch clones (`note_pitch_split`) are declined only where
+    # the free-note pass has work, so the pass-off conversion below would get
+    # clones the pass-on one cannot: this file measures the variants alone.
+    real_enabled, _NPS.ENABLED = _NPS.ENABLED, False
     if not free:
         NP.free_note_skips_two_stage = lambda sid, det: False
     try:
@@ -65,6 +70,7 @@ def _convert(name, free=True):
     finally:
         NP.free_note_skips_two_stage = real
         _C.split_funk_gatetimers = real_split
+        _NPS.ENABLED = real_enabled
     return sng, lines
 
 

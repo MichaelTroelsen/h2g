@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from corpus import CORPUS, needs_corpus          # noqa: E402
 import fidelity as F                             # noqa: E402
 from h2g.convert import convert                  # noqa: E402
+from h2g import vibrato_hold                    # noqa: E402
 from h2g.instrument_drop import (                # noqa: E402
     drop_unnamed_instruments, named_instruments)
 from songview import parse_sng                   # noqa: E402
@@ -357,7 +358,11 @@ def test_gts2_without_a_speed_table_is_rewritten_too():
 @needs_corpus
 @pytest.mark.parametrize("name", ["Knucklebusters.sid", "Lion_Heart.sid",
                                   "Sanxion.sid"])
-def test_the_drop_shrinks_the_pulse_table_and_keeps_every_program(name):
+def test_the_drop_shrinks_the_pulse_table_and_keeps_every_program(
+        name, monkeypatch):
+    # The held vibrato (`vibrato_hold.RECORD_HOLD`, Lion_Heart) takes the rows
+    # the table has left, and the off arm has fewer: not what is tested here.
+    monkeypatch.setattr(vibrato_hold, "RECORD_HOLD", {})
     off = _convert(name)
     on = _convert(name, drop_unnamed_instruments=True)
     a, b = parse_sng(off), parse_sng(on)

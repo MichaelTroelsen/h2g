@@ -58,6 +58,7 @@ from . import classic_filter_stop as _gw_classic_filter_stop
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
+from . import note_pitch_split as _gw_note_pitch_split
 from . import dead_blocks as _gw_dead_blocks
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
@@ -177,8 +178,51 @@ def _arp_phase_distinct(sid: SidFile, det: Detection, tracks, patterns,
                               eor_phases=eor_phases)
             blocks[(record, residue)] = probe[(record, residue)]
         return blocks[(record, residue)]
+
+    def many(keys) -> dict:
+        """`block` for several (record, residue) keys in one layout."""
+        keys = list(dict.fromkeys(keys))
+        todo = [k for k in keys if k not in blocks]
+        if todo:
+            probe = {k: None for k in todo}
+            _wavetable_layout(sid, det, instr_used, effects, fmt, list(table),
+                              multiplier, min_notes, lead, two_stage,
+                              sfx_drum, wave_program, pitch_seq, note_rows,
+                              row_calls, no_test_restart, voice_two_stage,
+                              instr_voices, gate_skip,
+                              real_firstwave_instruments, None,
+                              arp_phases=arp_phases,
+                              arp_tie_rows=arp_tie_rows,
+                              pitch_phases=pitch_phases,
+                              phase_block_probe=probe,
+                              arp_gate_phases=arp_gate_phases,
+                              wave_alternate=wave_alternate,
+                              instr_row_calls=instr_row_calls,
+                              eor_phases=eor_phases)
+            blocks.update(probe)
+        return {k: blocks[k] for k in keys}
     distinct.block = block
+    distinct.blocks = many
     return distinct
+
+
+def _note_split_displaces(sid: SidFile, det: Detection,
+                          patterns: List[List[int]], lead: int,
+                          instr_used: int, vibrato_command: bool) -> bool:
+    """Whether a pass that stands down beside any phase split reaches this
+    file: the past-table drum variants (`past_table_drum_plan`: a KEYOFF row
+    naming an instrument, in a file that reads past-table rests) and the
+    expanding vibrato's loops. The free-note reseed is
+    `_phase_split_displaces_passes`'."""
+    from ..patterns import past_table_rests
+    from .constants import GT_KEYOFF
+    if (vibrato_command and det.vibrato_offset is not None
+            and _expanding_vibrato_counter(sid, det) is not None):
+        return True
+    if not past_table_rests(sid, det):
+        return False
+    return any(pat[k] == GT_KEYOFF and lead < pat[k + 1] <= instr_used
+               for pat in patterns for k in range(0, len(pat) - 3, 4))
 
 
 def _record_numbers(lead: int, instr_used: int, duty_split, phase_split,
@@ -752,8 +796,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 wave_alternate=wave_alternate,
                 instr_row_calls=instr_row_calls,
                 hold_travel=not (no_test_restart
-                                 or real_firstwave_instruments
-                                 or gate_off_firstwave_instruments),
+                                 or real_firstwave_instruments),
                 tie_late=tie_late_pitch,
                 note_pitches=note_pitches, note_spans=stale_spans)
             failed = {(rec, res) for (rec, _c, res), at
@@ -825,8 +868,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     wave_alternate=wave_alternate,
                     instr_row_calls=instr_row_calls,
                     hold_travel=not (no_test_restart
-                                     or real_firstwave_instruments
-                                     or gate_off_firstwave_instruments),
+                                     or real_firstwave_instruments),
                     tie_late=tie_late_pitch,
                     note_pitches=note_pitches, note_spans=stale_spans)
                 failed = {(rec, res) for (rec, _c, res), at
@@ -887,8 +929,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 wave_alternate=wave_alternate,
                 instr_row_calls=instr_row_calls,
                 hold_travel=not (no_test_restart
-                                 or real_firstwave_instruments
-                                 or gate_off_firstwave_instruments),
+                                 or real_firstwave_instruments),
                 tie_late=tie_late_pitch,
                 note_pitches=note_pitches, note_spans=stale_spans)
             failed = {(rec, res) for (rec, _c, res), at
@@ -1019,6 +1060,41 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             bit7_rows(patterns) if known_bit7 is not None else None,
             no_test_restart=no_test_restart,
             real_firstwave=tuple(real_firstwave_instruments), log=log)
+    # A wave-program record's per-note pitch (`note_pitch_split`): the
+    # `>= $80` opcode's frequency low byte and a slide's target are the
+    # played note's, so a record played at notes whose blocks differ gets one
+    # clone per class, in the phase split's slot where no other plan took it.
+    # Planned LAST among the plans that copy patterns (the filter routing,
+    # the entry split, the tie plan), over the orderlists they leave, so none
+    # of them stands down for it; its instrument edits are written with the
+    # other splits' (`apply_tempo_duty_edits`).
+    if (phase_split is None and duty_split is None and eor_phases is None
+            and wave_program and fmt == FORMAT_GTS5 and note_pitches
+            and _gw_note_pitch_split.ENABLED
+            and not _phase_split_displaces_passes(tracks, patterns)
+            # The three passes below that stand down beside any phase split
+            # (`past_table_drum_plan`, the expanding vibrato's loops, the
+            # free-note reseed) keep their work: a file either reaches
+            # makes no clone (Mega_Apocalypse read 1326 slides against 709).
+            and not _note_split_displaces(sid, det, patterns, lead, instr_used,
+                                           vibrato_command)):
+        held_log: List[str] = []
+        phase_split = _gw_note_pitch_split.note_pitch_split_plan(
+            tracks, patterns, note_pitches, lead, instr_used,
+            instr_used + 1,
+            _arp_phase_distinct(
+                sid, det, tracks, patterns, instr_used, effects, fmt, table,
+                multiplier, min_notes, lead, two_stage, sfx_drum,
+                wave_program, pitch_seq, note_rows, row_calls,
+                no_test_restart, voice_two_stage, instr_voices, gate_skip,
+                real_firstwave_instruments, wave_alternate=wave_alternate,
+                instr_row_calls=instr_row_calls).blocks,
+            log=held_log.append if log else None)
+        if phase_split is not None:
+            tracks, patterns = phase_split.tracks, phase_split.patterns
+            if log:
+                for line in held_log:
+                    log(line)
     out.append((len(tracks) // 3) & 0xFF)
 
     # Where each orderlist's bytes start, for a late pass that repoints a
@@ -1357,10 +1433,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         wave_alternate=wave_alternate, log=log,
         instr_row_calls=instr_row_calls,
         # The byte-code program's `$85` travel at -S1 (`_wave_program_entries`
-        # `hold_travel`): only where every note opens on the test bit, so the
-        # tail's pitch the next note's init call inherits is never heard.
-        hold_travel=not (no_test_restart or real_firstwave_instruments
-                         or gate_off_firstwave_instruments),
+        # `hold_travel`): not where a note opens on a gate-ON firstwave, which
+        # sounds the tail's pitch the init call inherits. A gate-OFF firstwave
+        # (`gate_off_firstwave_instruments`) keeps it: the original's frame
+        # before an attack holds that same tail pitch with the gate clear
+        # (tests/test_gate_off_firstwave_hold_travel.py).
+        hold_travel=not (no_test_restart or real_firstwave_instruments),
         tie_late=tie_late_pitch,
         eor_phases=eor_phases, note_pitches=note_pitches,
         note_spans=stale_spans,
@@ -1545,15 +1623,40 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     if (effects and det.effect_drum and getattr(det, "drum_held", False)
             and det.note_rise is None and det.counter_fall is None):
         from . import drum_held as _gw_drum_held
+        split_edits = {}
+        split_starts = {}
+        for split, starts in ((duty_split, clone_starts),
+                              (phase_split, phase_clone_starts)):
+            if split is None:
+                continue
+            for pn, rows in getattr(split, "edits", {}).items():
+                split_edits.setdefault(pn, {}).update(rows)
+            for (_rec, clone, _x), at in zip(split.clones, starts):
+                if at:
+                    split_starts[clone] = at
         dheld = _gw_drum_held.drum_held_plan(
             sid, det, tracks, patterns, lead, instr_used, wave_entries,
-            wave_starts, log=log, reserve=wave_reserve)
+            wave_starts, log=log, reserve=wave_reserve,
+            multiplier=multiplier, edits=split_edits,
+            extra_starts=split_starts)
         if dheld is not None:
             patterns = dheld.patterns
             tracks = dheld.tracks
             # A copy plays its source's tie rows too.
             legato_rows |= {(c, r) for (p, r) in tuple(legato_rows)
                             for c, s in dheld.sources.items() if s == p}
+            # ... and its source's instrument edits (the split clones are
+            # written into the patterns last, by pattern number): a copy
+            # that missed them plays the record's own program where its
+            # source plays the phase clone's (Bump_Set_Spike, instrument 23
+            # for 2: the arpeggio's phase flipped on every held note).
+            for split in (duty_split, phase_split):
+                edits = getattr(split, "edits", None)
+                if edits:
+                    for c, s in dheld.sources.items():
+                        if s in edits and c not in edits:
+                            edits[c] = {k: tuple(v)
+                                        for k, v in edits[s].items()}
             for at, track in zip(track_at, tracks):
                 out[at:at + len(track)] = bytes(track)
             wave_entries = wave_entries + dheld.entries
@@ -1700,7 +1803,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         parked = _gw_instruments.park_free_running(
             sid, det, instr_used, wave_entries, wave_starts, lead,
             tuple(gate_off_firstwave_instruments), no_test_restart,
-            real_firstwave_instruments, sfx_drum, named_firstwave)
+            real_firstwave_instruments, sfx_drum, named_firstwave, two_stage)
         if parked and log:
             log(f"Free-running park.....: {len(parked)} waveform-$00 "
                 f"record(s) write $E0 (wave $00) after the init call")
@@ -1723,7 +1826,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        gate_clear_firstwave=effects,
                        named_firstwave=named_firstwave,
                        sfx_drum=sfx_drum,
-                       strike_entries=wave_entries if effects else None)
+                       strike_entries=wave_entries if effects else None,
+                       two_stage=two_stage)
     written_instr = instr_used
     if duty_split is not None:
         # Each clone is its record's finished bytes with its own wavetable

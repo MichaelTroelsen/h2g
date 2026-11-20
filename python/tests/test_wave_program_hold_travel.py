@@ -12,9 +12,10 @@ of the program's either (`_wave_program_hold_travels`).
 
 Two declines, each measured: a record the player vibrates keeps the note
 (its vibrato re-centres there -- Nemesis `$0B09`, `$0C5A`), and a song with
-any real or gate-off firstwave gets no -S1 travel at all, because the next
+any real (gate-ON) firstwave gets no -S1 travel at all, because the next
 note's init call opens at the tail's pitch (melody 0.99 -> 0.69 on
-Auf_Wiedersehen_Monty, identical named one frame in).
+Auf_Wiedersehen_Monty, identical named one frame in). A gate-OFF firstwave
+keeps it (tests/test_gate_off_firstwave_hold_travel.py).
 """
 import json
 import math
@@ -129,7 +130,7 @@ def _ins03_block(sng):
 
 
 @needs_corpus
-def test_the_conversion_carries_it_only_under_the_test_bit():
+def test_the_conversion_carries_it_unless_a_gate_on_firstwave_opens_notes():
     # At -S1 the closing hold is the restore entry itself on the slides'
     # semitone count (`$7A` = -6, the same byte as slide frame 3) rather
     # than the note followed by a portamento: it stands within a quarter-tone
@@ -138,11 +139,17 @@ def test_the_conversion_carries_it_only_under_the_test_bit():
     assert block[-2] == (0x40, 0x7A), block
     assert block[-1] == (JUMP, 0x00)
     for extra in ({"no_test_restart": True},
-                  {"real_firstwave_instruments": (3,)},
-                  {"gate_off_firstwave_instruments": (3,)}):
+                  {"real_firstwave_instruments": (3,)}):
         block, _st = _ins03_block(_mega(**extra)[2])
         assert block[-2] == (0x40, NOTE_BASE), extra
         assert block[-1] == (JUMP, 0x00)
+    # a gate-OFF firstwave keeps it: the original's frame before an attack
+    # holds the tail's pitch with the gate clear
+    # (tests/test_gate_off_firstwave_hold_travel.py)
+    block, _st = _ins03_block(
+        _mega(gate_off_firstwave_instruments=(3,))[2])
+    assert block[-2] == (0x40, 0x7A), block
+    assert block[-1] == (JUMP, 0x00)
 
 
 @needs_corpus

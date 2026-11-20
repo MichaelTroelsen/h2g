@@ -51,7 +51,7 @@ from .instrument_drop import (
 from .funk_gatetimers import split_funk_gatetimers
 from .pitch_lead import lead_ties
 from .unison_vibrato import chorus_doubled_notes
-from .vibrato_hold import hold_classic_vibrato
+from .vibrato_hold import hold_classic_vibrato, keyed_records
 from .prev_class_firstwave import prev_class_firstwave as _prev_class_firstwave
 from .rest_late_keyoff import rest_late_keyoff as _rest_late_keyoff
 from .goatwriter.hard_restart import _hard_restart_ticks
@@ -779,8 +779,9 @@ def convert(sid_path: str, log: Logger = print,
     gate's withheld call the noise frame the original holds there: a
     `CMD_SETWAVEPTR` on the note's row into a copy of the record's program
     with the noise twice, the pattern copied per distinct spelling
-    (`goatwriter/drum_held.py`; speed gate of two calls and a readable clock
-    only). Off by default: it moves the bytes of every file it reaches.
+    (`goatwriter/drum_held.py`; speed gate of two or three calls and a
+    readable clock only). Off by default: it moves the bytes of every file it
+    reaches.
 
     wobble_copy_depth sizes a `$68` waveform-state copy's vibrato depth on
     ITS OWN pitch instead of the pattern-wide majority (`patterns.
@@ -1687,11 +1688,32 @@ def convert(sid_path: str, log: Logger = print,
     # song is built a second time (below) from these copies.
     pristine = (copy.deepcopy(tracks), copy.deepcopy(new_patterns))
 
+    # Where a note's first wavetable call falls in its frame, if this song's
+    # startup row is gt2reloc's default (`call_phase.default_onset_position`):
+    # the case where `startup` below comes back None. Read BEFORE the build
+    # because the wave program lays two-entry opcodes out against it, so a
+    # JMP-form gate, whose rows `startup_phase` scores on the finished bytes
+    # (`onset_rows`), is predicted on every row and checked after: a song that
+    # does get a phase is built again without the position (below). None where
+    # a firstwave writes a waveform or an orderlist command moves the grid.
+    startup_possible = bool(skip_gate and group_tempos and not step_tempos
+                            and not no_test_restart
+                            and not real_firstwave_instruments)
+    onset_pos = None
+    if (multiplier >= 2 and group_tempos and not step_tempos
+            and not no_test_restart and not real_firstwave_instruments
+            and not (startup_possible and not _call_phase.jmp_gate(sid)
+                     and startup_phase(sid, det, multiplier, group_tempos,
+                                       None) is not None)):
+        onset_pos = _call_phase.default_onset_position(multiplier)
+    onset_holder = [onset_pos]
+
     def _build(tracks, new_patterns, gate_off, log, reserve):
         # Stairs spend pulse rows a compilation's merge needs (see
         # `pulse.STAIR_ENABLED`).
         with _gw_pulse_stair.stair_enabled(
-                not isinstance(sid, PlayerView) and len(det.players) < 2):
+                not isinstance(sid, PlayerView) and len(det.players) < 2), \
+                _call_phase.onset_position_scope(onset_holder[0]):
             return _build_sng(tracks, new_patterns, gate_off, log, reserve)
 
     def _build_sng(tracks, new_patterns, gate_off, log, reserve):
@@ -1836,10 +1858,14 @@ def convert(sid_path: str, log: Logger = print,
             # or renumbers an instrument column; before the startup record,
             # which keeps instrument 63.
             sng = chorus_doubled_notes(sng, sid, det, log)
-        if vibrato_hold:
+        if vibrato_hold or keyed_records(sid):
             # On the finished rows and records, after every pass that writes
             # or renumbers an instrument column; before the startup record.
-            sng = hold_classic_vibrato(sng, sid, det, multiplier, log)
+            # A song `RECORD_HOLD` names takes the held program on those
+            # records alone when the option is off.
+            sng = hold_classic_vibrato(
+                sng, sid, det, multiplier, log,
+                only=None if vibrato_hold else keyed_records(sid))
         if prev_class_firstwave:
             # Last of the record/row passes, before the startup record: the
             # clones are made from the records as every other pass left them.
@@ -1873,6 +1899,12 @@ def convert(sid_path: str, log: Logger = print,
                else None)
     if startup is None:
         return sng
+    if onset_holder[0] is not None:
+        # The position was predicted from the file alone and the scored phase
+        # disagrees (a JMP-form gate): build again without it.
+        onset_holder[0] = None
+        sng = _assemble(copy.deepcopy(pristine[0]), copy.deepcopy(pristine[1]),
+                        gate_off_firstwave_instruments, lambda message: None)
     # **Under the phase the note-init call is the one frame in m that can be
     # sampled, and it is sampled in the frame BEFORE the original's onset.**
     # `startup_phase` puts our onset (the call after the init) in the

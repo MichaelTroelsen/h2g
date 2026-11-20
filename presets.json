@@ -546,7 +546,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "drum_held": true
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -1740,7 +1741,8 @@
       "multiplier": 10,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "drum_held": true
     },
     "Kentilla.sid": {
       "max_rows": 94,

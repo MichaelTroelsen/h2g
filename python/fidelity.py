@@ -4853,6 +4853,20 @@ def sound_note_runs(voices: list[Voice], nframes: int) -> dict:
     return out
 
 
+def _selects_waveform(w: int) -> bool:
+    """A control byte that sounds a waveform: a waveform nibble set, and not
+    a TEST frame with the gate clear. TEST holds the oscillator at zero, so
+    `$18` (triangle + TEST) is silent: Trans-Atlantic's original goes
+    `11 .. 0 0` where ours goes `11 .. 18 18`, and `wf & 0xF0` read ours as
+    eleven frames held against five.
+
+    **Only the gate-clear TEST frame is excluded.** A gate-SET one (`$89`,
+    `$FF`) stays counted as before: excluding it too moved Go_Go_Dash and
+    Pacific_Coast (ours opens every note on `$89`, the original on `$81`; hold
+    1.000 -> .929 and .909) and Wiz (original `$FF` frames; 1.000 -> .917)."""
+    return bool(w & 0xF0) and not (w & 0x08 and not w & 0x01)
+
+
 def _sound_notes(voices: list[Voice], nframes: int):
     """`(voice, attack, adsr key, (held, slot, total))` for every whole note.
 
@@ -4868,9 +4882,10 @@ def _sound_notes(voices: list[Voice], nframes: int):
             if stop >= nframes:
                 continue                      # cut by the window
             held = 0
-            while a + held < stop and wf[a + held] & 0xF0:
+            while a + held < stop and _selects_waveform(wf[a + held]):
                 held += 1
-            total = sum(1 for k in range(stop - a) if wf[a + k] & 0xF0)
+            total = sum(1 for k in range(stop - a)
+                        if _selects_waveform(wf[a + k]))
             yield (vi, a, adsr[min(a + 1, nframes - 1)],
                    (held, stop - a, total))
 

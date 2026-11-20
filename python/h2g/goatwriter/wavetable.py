@@ -38,6 +38,7 @@ from .drums import (_arp_block, _chord_block, _arp_offsets, _sfx_drum_entries,
 from .notes import (_drum_steps_safe, _pitch_seq_entries, _pitch_seq_notes,
                     _pitch_seq_phase_notes, _pitch_seq_phased_entries)
 from .wave_program import (_wave_program_entries)
+from .note_pitch_split import NotePitch
 from .sfx_tick_voice import stray_drum_record
 from .stored_fall import stored_fall_offsets
 from .wave_eor import (EOR_STOP_PROGRAM, EorPhase, eor_library,
@@ -2316,6 +2317,11 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
         # record gets with no residue at all; the record's own block takes
         # its majority from `eor_phases` the same way.
         gt_number = i + lead + 1
+        # A `NotePitch` is `note_pitch_split`'s class: the record's own
+        # program laid out for that one note's pitch alone.
+        only = phase if isinstance(phase, NotePitch) else None
+        if only is not None:
+            phase = None
         eor = phase if isinstance(phase, EorPhase) else None
         if eor is not None:
             phase = None
@@ -2393,7 +2399,8 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                                       or phase is not None
                                       else arp_gate_phases.get(gt_number)),
                                   hold_travel=hold_travel,
-                                  pitches=(None if note_pitches is None
+                                  pitches=({only.note: 1} if only is not None
+                                           else None if note_pitches is None
                                            else note_pitches.get(gt_number)),
                                   spans=(None if note_spans is None
                                          else note_spans.get(gt_number)),

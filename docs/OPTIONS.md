@@ -3861,8 +3861,20 @@ only where the first two tail rows are plain waveform rows and the record's
 top-note row is not pinned by the past-table split. Off by default; shipped on
 Spellbound, Warhawk and Proteus at v0.5.666 (wave .984->.990, .985->.987,
 .985->.986, no printed column falling); the looping tails took them to .992,
-.989 and .988 at v0.5.667. Two-call outer gates only:
-Thrust's three-call gate and full wavetable keep it out.
+.989 and .988 at v0.5.667. **Speed gates of 2 and 3.** At a gate of 3 the
+noise is two frames and three where call s+2 or s+3 is withheld (Bump_Set_Spike
+346/346 and 703/703 plain, Thrust 239/239 at s+3; International_Karate's
+unit of four calls WITHOUT a withheld call between reads two, so the rule is
+the withheld call, not the unit's length). Its programs (`overlay_key`) are
+not the doubled-noise copies: a program that stops gets the frame put IN
+before the pulse row (its drum sweep starts a frame later on a held note, as
+the original's does), a looping one has the noise written over the rows
+that start inside the window `[noise start, noise start + gate x multiplier)`
+with the loop's timeline untouched. A note whose row a tempo-duty or phase
+split renames takes the clone's program. Not reached: Thrust (wavetable
+full), notes whose orderlist repeat visits land on different clock residues
+(the orderlist is laid before this pass; counted as `visits disagree` in the
+log).
 
 **`--sfx-drum-stage` (`sfx_drum_stage`) holds the attack waveform a bit-$04
 record sets after the drum's hit.** IK_plus' pulse+drum records read
