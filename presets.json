@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.672 presets.py",
+  "generator": "h2g 0.5.673 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -483,6 +483,7 @@
       "subtunes": 2,
       "rows": 18341,
       "multiplier": 3,
+      "drum_held": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -546,8 +547,7 @@
         60,
         61,
         62
-      ],
-      "drum_held": true
+      ]
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -1741,8 +1741,8 @@
       "multiplier": 10,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "hard_restart_frames": 3,
-      "drum_held": true
+      "drum_held": true,
+      "hard_restart_frames": 3
     },
     "Kentilla.sid": {
       "max_rows": 94,
@@ -2321,7 +2321,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21219,
+      "bytes": 21337,
       "subtunes": 1,
       "rows": 12348,
       "multiplier": 3,
