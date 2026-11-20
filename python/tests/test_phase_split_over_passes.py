@@ -142,3 +142,19 @@ def test_the_instrument_table_holds_the_clones_and_the_variants():
     assert n == 9, clones
     assert (len(songview.parse_sng(on).instruments)
             >= len(songview.parse_sng(off).instruments) + n)
+
+
+@needs_corpus
+def test_the_shipped_nineteen_conversion_runs_the_split():
+    """User, 2026-11-19: Nineteen takes the option too (heard instr 95.6 ->
+    97.8, pitch_cents .821 -> .848, tie_agreement .587 -> .608 against
+    tie_ratio 1.103 -> 1.108 and loud_ratio 1.045 -> 1.049)."""
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    for name in ("Nineteen.sid", "Shockway_Rider.sid", "Lightforce.sid"):
+        assert doc["songs"][name].get("phase_split_over_passes") is True, name
+    import fidelity as F
+    lines = []
+    convert(str(CORPUS / "Nineteen.sid"), log=lines.append,
+            **F._preset_opts(doc, "Nineteen.sid"))
+    assert not any(ln.startswith(STOOD_DOWN) for ln in lines), lines
+    assert _clones(lines), lines

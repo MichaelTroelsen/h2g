@@ -79,19 +79,22 @@ def _wrap_width(html: str) -> str:
     overrides `.wrap` on a page whose wrap carries the `wide` class."""
     import re
     base = re.search(r"\.wrap \{ max-width:([\d.]+rem)", html).group(1)
-    wide = re.search(r"\.wrap\.wide \{ max-width:([\d.]+rem)", html)
+    wide = re.search(r"\.wrap\.wide \{ max-width:([\d.]+rem|none)", html)
     if wide and re.search(r'class="wrap wide"', html):
         return wide.group(1)
     return base
 
 
-def test_song_pages_are_93rem_wide_and_the_index_keeps_96rem():
-    """User, 2026-10-30: each song's A/B page 50% wider (62rem -> 93rem),
-    the index unchanged."""
+def test_song_pages_are_93rem_wide_and_the_index_spans_the_window():
+    """User, 2026-10-30: each song's A/B page 50% wider (62rem -> 93rem).
+    User, 2026-11-20: the index wider so its 29-column table needs no
+    horizontal scroll bar (96rem -> no cap, cell padding 10px -> 5px: fits
+    a 1920 px window)."""
     page_got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=True)
     index_got = A.index(["A_Tune", "B_Tune"], {"A_Tune": ROW}, "v1")
     assert _wrap_width(page_got) == "93rem"
-    assert _wrap_width(index_got) == "96rem"
+    assert _wrap_width(index_got) == "none"
+    assert ".wrap.wide th, .wrap.wide td { padding-left:5px" in index_got
 
 
 def test_a_local_page_references_the_wavs_beside_it():

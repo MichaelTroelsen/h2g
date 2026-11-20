@@ -288,6 +288,28 @@ def _wave_byte(wave: int) -> int:
     return WAVE_SILENT_BASE | (wave & 0x0F)
 
 
+def _second_stage_base(wave: int) -> int:
+    """The record's own waveform with its gate bit cleared, as a wavetable
+    left byte, for a two-stage / pitch-seq second stage; the caller ORs the
+    gate bit back (`| wave & 1`).
+
+    A `+2` with no select bits is not written literally (`_wave_byte`). The
+    gate-alone byte `$01` went through `_wave_byte(0)`, i.e. `$18`, and the
+    caller's `| 1` made it `$19`: triangle with the TEST bit and the gate. That
+    is silent, but it is a *selected waveform* to anything that reads `$D404`:
+    Tarzan's record 05 (`+2 $01`, effect `$44`) plays `01` for its whole second
+    stage and ours wrote `$19` (`wave` 193 frames, `01` against `19`). `$E0` is
+    the base whose `| 1` is `$E1`, which the packed player writes as `$01` in a
+    song with wavetable delays and as the literal `$01` in one without
+    (`_wave_byte`). `$00` has no gate to carry and keeps the test-bit byte.
+    """
+    if wave & 0xF0:
+        return wave & 0xFE
+    if wave & 0x0F == 0x01:
+        return WAVE_SILENT_BASE
+    return _wave_byte(wave & 0xFE)
+
+
 def _speed_index(speed_table: List[tuple], entry: tuple) -> int:
     """1-based speed-table index for `entry`, appending it, or 0 if full."""
     if entry not in speed_table:

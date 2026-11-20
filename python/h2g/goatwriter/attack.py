@@ -10,7 +10,8 @@ from .constants import (EFFECT_FIXED_PITCH_MASK, EFFECT_NOTE_ALT_MASK,
                         WAVE_MAX_DELAY, WAVE_NOTE_BASE)
 from .primitives import (_counter_gate_call, _first_frame_entry,
                          _first_frame_lead, _fixed_pitch_yield_field,
-                         _freq_table_note, _gate_calls, _wave_byte)
+                         _freq_table_note, _gate_calls, _second_stage_base,
+                         _wave_byte)
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     """Absolute-note byte for effect bit $40's fixed attack pitch, or None.
 
@@ -484,7 +485,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     if attack == 0 or frames <= 0:
         return None
     calls = max(1, frames) * max(1, multiplier)
-    second = _wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE
+    second = _second_stage_base(wave)
     # `attack_note` is effect bit $40: the attack does not play the pattern's
     # note at all, it plays a fixed pitch out of the player's own note table
     # (detect._find_effect_bit40). Without it the attack sounded at whatever the
@@ -882,7 +883,7 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     # record it was written for: a `+2` selecting no waveform is silence, not
     # the attack released. Trans-Atlantic's `$0AF8` carries `$14`, so with
     # `--pitch-seq` on -- which its preset has -- it comes here.
-    second = _wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE
+    second = _second_stage_base(wave)
     tail = second | (wave & 0x01)
     loop = len(notes) * step
     if phases and phase_notes:

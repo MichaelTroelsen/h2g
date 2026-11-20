@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.671 — 2026-11-20
+
+- Adopt Tarzan second-stage gate-only fix and phase_split_over_passes on Nineteen
+
 ## 0.5.670 — 2026-11-17
 
 - Adopt 9 decided changes: Wiz wave_program, rest_wave_restart on W_A_R, Thundercats hi-hat voice, $50 rest two-stage, Hollywood start visit, Gremlins tie_late_pitch, Shockway/Lightforce phase split, Bangkok pitch_seq, Sun_Never_Shines arpeggio, Lion_Heart row hard restart; hold modal markers

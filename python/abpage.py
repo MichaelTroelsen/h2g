@@ -3640,7 +3640,8 @@ def abbrev_sidid(text: str) -> str:
 
 
 INDEX_CSS = """
-.wrap.wide { max-width:96rem; }
+.wrap.wide { max-width:none; }
+.wrap.wide th, .wrap.wide td { padding-left:5px; padding-right:5px; }
 .tools { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
   font-family:var(--mono); font-size:12.5px; margin:0 0 12px; }
 .tools input[type="search"] { font:inherit; padding:6px 10px; min-width:16em;

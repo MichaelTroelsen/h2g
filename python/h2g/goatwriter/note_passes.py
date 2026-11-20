@@ -25,7 +25,8 @@ from .constants import (CLASSIC_TIE_START_SHAPES, CLASSIC_TIE_START_WINDOW,
                         WAVECMD_PORTAUP, WAVECMD_PORTADOWN)
 from .attack import (fixed_attack_only)
 from .primitives import (_counter_gate_call, _fixed_pitch_yield_field,
-                         _note_freq, _speed_index, _wave_byte)
+                         _note_freq, _second_stage_base, _speed_index,
+                         _wave_byte)
 from .pulse import (packed_pattern_size, pattern_rows)
 from . import constants as _gw_constants
 from . import swell_phase as _gw_swell_phase
@@ -1226,7 +1227,7 @@ def free_note_wave_start(sid: SidFile, det: Detection, record: int,
     if not data[base + 7] & 0x04:
         return 0                      # the drum's prologue: no second stage
     wave = data[base + 2]
-    second = (_wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE)
+    second = _second_stage_base(wave)
     second |= wave & 0x01
     block = wave_entries[start - 1:start - 1 + _gw_constants.GT_MAX_TABLELEN]
     stop = next((k for k, (left, _r) in enumerate(block)

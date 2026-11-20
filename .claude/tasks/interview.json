@@ -1,313 +1,88 @@
 {
  "generated_from": {
-  "head": "2036237",
-  "plan_head": "2036237"
+  "head": "eb77524",
+  "plan_head": "eb77524"
  },
  "blockers": [
   {
-   "id": "adopt-gremlins-first-pitch-step-early",
+   "id": "land-v0-5-671-drum-prologue-test",
    "kind": "decision",
-   "title_at_research": "Take or refuse gremlins-first-pitch-step-early's patch: final.patch adds the default-off option tie_late_pitch: our plain wavetable program stepped the tied note's pitch at f+2 where Gremlins steps at f+3; only Greml",
-   "blocked_on_at_research": "take or refuse C:/t/gremlins-first-pitch-step-early/final.patch (and any presets.json key its finding names): final.patch adds the default-off option tie_late_pitch: our plain wavetable program stepped the tied note's pitch at f+2 where Gremlins steps at f+3; only Gremlins moves once a preset is written; not adopted.",
-   "current_behaviour": "No tie_late_pitch option at HEAD; final.patch applies. Gremlins heard instr .934 -> 1.000, travel .89 -> 1.05, no printed fall; default-off hash moved 0. Auto-adopt bar: FAILS -- no byte-hash recorded with the preset written (only default-off, moved 0); aud flat",
-   "sources": [
-    "runs.jsonl gremlins-first-pitch-step-early"
-   ],
+   "title_at_research": "Unblock the v0.5.671 landing: test_the_drum_fixed_pitch_prologue_is_an_attack fails under the Tarzan _second_stage_base change",
+   "blocked_on_at_research": "Choose: (a) the new 0 is right and the synthetic Pandora-record expectation (free_note_wave_start on block [(0x81,0),(0x19,0),(0xFF,0)] == 2) is updated, or (b) narrow the Tarzan fix so free_note_wave_start keeps returning 2 there; the cause is likely, not yet confirmed by reverting the hunk. Then land.py re-runs.",
+   "current_behaviour": "The writer (goatwriter/attack.py:488 and :886) and the reader (note_passes.py:1230 free_note_wave_start) both compute the second stage with primitives._second_stage_base, so a gate-only $01 record's second stage is $E1 on both sides. The test (tests/test_free_note_pulse_only.py:229) builds its block with a copy of the OLD inline formula, giving $19, a byte the converter no longer writes, so the reader correctly finds no second stage and returns 0.",
+   "sources": ["python/h2g/goatwriter/primitives.py _second_stage_base", "python/h2g/goatwriter/attack.py:488,886", "python/h2g/goatwriter/note_passes.py:1230", "python/tests/test_free_note_pulse_only.py:229"],
    "options": [
-    {
-     "label": "Take",
-     "consequence": "add the option, set it on Gremlins only"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "Gremlins keeps its early tie step"
-    }
+    {"label": "Update the test", "consequence": "build the block with _second_stage_base, as the emitter does; production code unchanged"},
+    {"label": "Narrow the fix", "consequence": "the reader would match a byte the writer never emits"}
    ],
+   "recommendation": "Update the test",
+   "why": "writer and reader agree; the test fixture re-implements the retired formula, so (b) is not a coherent option.",
+   "question": null,
+   "unblocked_by_research": true
+  },
+  {
+   "id": "drum-held-other-outer-gates",
+   "kind": "decision",
+   "title_at_research": "Wave W3 and instr: the drum noise run is one frame short where drum_held does not reach (4- and 6-call outer gates, Spellbound record 3)",
+   "blocked_on_at_research": "Adopt the gate-3 drum_held patch with drum_held on Bump_Set_Spike and International_Karate: wave .9860 -> .9891 and .9871 -> .9876, nothing else moving over .0005; shipped bytes unchanged until presets.json carries it (Thrust has no wavetable room).",
+   "current_behaviour": "drum_held reaches only the 2-call outer gate at HEAD. Patch (C:/t/drum-held-other-outer-gates final.patch) extends it to gate 3 behind the existing option; shipped hash moves 0; forced on, Bump_Set_Spike and International_Karate alone move. Auto-adopt bar: FAILS -- the source record is partial, not done.",
+   "sources": ["runs.jsonl drum-held-other-outer-gates"],
+   "options": [{"label": "Take", "consequence": "patch plus drum_held on both songs"}, {"label": "Leave", "consequence": "both stay as shipped"}],
    "recommendation": "Take",
-   "why": "every printed column holds and the target goes to 100%",
-   "question": "Gremlins tie_late_pitch: heard instr .934 -> 1.000, no printed column falls, only Gremlins moves. Take?",
+   "why": "wave rises on both, nothing else moves past .0005.",
+   "question": "drum_held at gate 3: Bump_Set_Spike wave .9860 -> .9891, International_Karate .9871 -> .9876, nothing else past .0005. Take?",
    "unblocked_by_research": false
   },
   {
-   "id": "adopt-wiz-wave-program-extra-attacks",
+   "id": "post-tick-pitch-fall-one-frame-late",
    "kind": "decision",
-   "title_at_research": "Take or refuse wiz-wave-program-extra-attacks's patch: Wiz wave_program writes a $0F waveform for `set $FF`, which siddump reads as a key-off and so prints extra attacks; final.patch spells test+gate waveforms liter",
-   "blocked_on_at_research": "take or refuse C:/t/wiz-wave-program-extra-attacks/final.patch (and any presets.json key its finding names): Wiz wave_program writes a $0F waveform for `set $FF`, which siddump reads as a key-off and so prints extra attacks; final.patch spells test+gate waveforms literally, making wave_program on Wiz a win except tie_ratio overshoot; not adopted.",
-   "current_behaviour": "Wiz ships without wave_program. Patch + wave_program on Wiz: wave .835 -> .985, gate .845 -> .994, ctrl .803 -> .982, aud .948 -> .966, travel .51 -> .94; tie_ratio .736 -> 1.112 (overshoots). Auto-adopt bar: FAILS -- a 75%-of-plays threshold picks the wrapped-note rule (refuse_re: tuned)",
-   "sources": [
-    "runs.jsonl wiz-wave-program-extra-attacks"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "patch + wave_program on Wiz"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "Wiz stays as shipped"
-    }
-   ],
+   "title_at_research": "Instr: the pitch fall after a drum tick lands one frame late on Chain_Reaction and ACE_II",
+   "blocked_on_at_research": "Take or leave: per-frame cents, tiefr and heard instr rise (instr up on 9 files, down on none) but eight whole-song ratio cells fall (Lion_Heart travel .983 -> .834, Chain_Reaction .733 -> .675, Star_Paws .438 -> .409, Shockway bend .729 -> .713, others small); same patch as star-paws-instr-86-0-92-5.",
+   "current_behaviour": "Three runs, same trade. Per-frame columns rise; whole-song travel/bend/tie ratio cells fall on 8 files, rise on 4. Auto-adopt bar: FAILS -- printed falls.",
+   "sources": ["runs.jsonl post-tick-pitch-fall-one-frame-late", "runs.jsonl star-paws-instr-86-0-92-5"],
+   "options": [{"label": "Leave", "consequence": "keep shipped bytes; Lion_Heart travel .983 is not given up"}, {"label": "Take", "consequence": "instr up on 9 files; Lion_Heart travel .983 -> .834 among 8 ratio falls"}],
+   "recommendation": "Leave",
+   "why": "Lion_Heart travel -.15 is too large to call noise.",
+   "question": "Post-tick pitch-fall patch: heard instr up on 9 files, down on none, but Lion_Heart travel .983 -> .834, Chain_Reaction .733 -> .675 and six smaller ratio falls. Take?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "hold-test-bit-not-a-waveform",
+   "kind": "decision",
+   "title_at_research": "Hold D: held counts a TEST-bit frame as a sounding waveform (Trans-Atlantic_Balloon_Challenge, Chain_Reaction)",
+   "blocked_on_at_research": "Take or leave the harness patch: hold rises on Trans-Atlantic and Chain_Reaction but Rasputin gate_nofetch falls .8618 -> .8541 (fetch/match bookkeeping shift); three runs, same coupling.",
+   "current_behaviour": "Harness-only patch; hold Trans-Atlantic .889 -> 1.0, Chain_Reaction .9 -> 1.0; Rasputin gate_nofetch .8618 -> .8541. Auto-adopt bar: FAILS -- printed fall.",
+   "sources": ["runs.jsonl hold-test-bit-not-a-waveform"],
+   "options": [{"label": "Take", "consequence": "the measurement reads TEST frames as silent; Rasputin's gate_nofetch reads .008 lower"}, {"label": "Leave", "consequence": "hold keeps reading TEST frames as sounding"}],
    "recommendation": "Take",
-   "why": "large gains across the board; tie_ratio moves closer to 1 in distance",
-   "question": "Wiz: the literal test+gate spelling plus wave_program lifts wave .835 -> .985, gate .845 -> .994, aud +.018; tie_ratio swings .736 -> 1.112. Take?",
+   "why": "a harness correction; the Rasputin move is bookkeeping, not a converter change.",
+   "question": "Harness: count a TEST-bit frame as not sounding. Hold Trans-Atlantic .889 -> 1.0, Chain_Reaction .90 -> 1.0; Rasputin gate_nofetch .862 -> .854. Take?",
    "unblocked_by_research": false
   },
   {
-   "id": "adopt-thundercats-hihat-tick-voice",
+   "id": "i-ball-cents-under-gate-off-firstwave",
    "kind": "decision",
-   "title_at_research": "Take or refuse thundercats-hihat-tick-voice's patch: The Thundercats hi-hat tick is the player's fixed voice-3 sfx drum fired from a voice-1 record; final.patch moves the tick to voice 3; not adopted.",
-   "blocked_on_at_research": "take or refuse C:/t/thundercats-hihat-tick-voice/final.patch (and any presets.json key its finding names): The Thundercats hi-hat tick is the player's fixed voice-3 sfx drum fired from a voice-1 record; final.patch moves the tick to voice 3; not adopted.",
-   "current_behaviour": "Patch changes Thundercats by default: wave .986 -> .996, sequence .971 -> .994, retrig .958 -> 1.000, ctrl .814 -> .868; falls onset_timing .9996 -> .9970, tie_ratio 1.009 -> .986, loud -.0006. Auto-adopt bar: FAILS -- printed falls (onset_timing, tie_ratio)",
-   "sources": [
-    "runs.jsonl thundercats-hihat-tick-voice"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "move the hi-hat tick to voice 3"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "tick stays on voice 1"
-    }
-   ],
+   "title_at_research": "Wave W1 (b): name what moves I_Ball's pitch cents .7635 -> .6962 under gate_off_firstwave_instruments",
+   "blocked_on_at_research": "Take or leave: agreement and sound columns hold or rise, but four count-ratio cells fall as spurious ours-only ties go (tie Monty .90 -> .88, Nemesis .96 -> .94, Pandora 1.00 -> .99; vib Nemesis .91 -> .89); I_Ball itself also needs a presets.json entry.",
+   "current_behaviour": "Three runs, same result. Agreement and sound columns hold or rise; four count-ratio cells fall. Auto-adopt bar: FAILS -- printed falls.",
+   "sources": ["runs.jsonl i-ball-cents-under-gate-off-firstwave"],
+   "options": [{"label": "Take", "consequence": "patch on the shipped songs; I_Ball needs its own preset after"}, {"label": "Leave", "consequence": "none"}],
    "recommendation": "Take",
-   "why": "the falls are below a point; the tick lands on the right voice",
-   "question": "Thundercats hi-hat on voice 3: wave .986 -> .996, sequence .971 -> .994, retrig -> 1.000; onset_timing -.0026 and tie_ratio 1.009 -> .986. Take?",
+   "why": "the falls are count ratios dropping as spurious ties go, while tie_agreement rises on the same songs.",
+   "question": "I_Ball cents patch: agreement and sound hold or rise; tie ratio Monty .90 -> .88, Nemesis .96 -> .94, Pandora 1.00 -> .99, vib Nemesis .91 -> .89. Take?",
    "unblocked_by_research": false
   },
   {
-   "id": "adopt-hollywood-84-frame-before-attack",
+   "id": "wave-program-window-pandora-trans-atlantic",
    "kind": "decision",
-   "title_at_research": "Take or refuse hollywood-84-frame-before-attack's patch: final.patch emits the $84 noise frame before each attack: Hollywood_or_Bust wave .9861 -> 1.000 with Chicken_Song byte-identical; byte-hash moves 5 prev_class_f",
-   "blocked_on_at_research": "take or refuse C:/t/hollywood-84-frame-before-attack/final.patch (and any presets.json key its finding names): final.patch emits the $84 noise frame before each attack: Hollywood_or_Bust wave .9861 -> 1.000 with Chicken_Song byte-identical; byte-hash moves 5 prev_class_firstwave files; not adopted.",
-   "current_behaviour": "Patch changes prev_class_firstwave voting; moves 5 files. Hollywood wave .986 -> 1.000, aud +.0016; others loud_ratio -.0003..-.0016, Human_Race loud -.0006. Auto-adopt bar: FAILS -- small loud_ratio falls on the moved files",
-   "sources": [
-    "runs.jsonl hollywood-84-frame-before-attack"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "emit the $84 frame"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "Hollywood stays at .986"
-    }
-   ],
+   "title_at_research": "Gate F and instr: a wave-program window sits a few frames off on Pandora voice 1 and Trans-Atlantic_Balloon_Challenge voice 1",
+   "blocked_on_at_research": "Take or leave the patch: gate and heard instr rise on Pandora/Trans-Atlantic, but Tarzan printed ctrl falls 84% -> 83% because the harness charges the $08 init frame; exempting $08 in the harness moves unpatched files (three runs, same trade).",
+   "current_behaviour": "Three runs, same trade. Gate and heard instr rise; Tarzan ctrl 84% -> 83%. Auto-adopt bar: FAILS -- printed fall.",
+   "sources": ["runs.jsonl wave-program-window-pandora-trans-atlantic"],
+   "options": [{"label": "Take", "consequence": "gate and instr up; Tarzan ctrl -1pp"}, {"label": "Leave", "consequence": "none"}],
    "recommendation": "Take",
-   "why": "the only falls are sub-print loudness moves",
-   "question": "Hollywood_or_Bust $84 noise frame: wave .986 -> 1.000; moves 5 files with only sub-print loudness falls. Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "adopt-pulse-wrap-50-frame",
-   "kind": "decision",
-   "title_at_research": "Take or refuse pulse-wrap-50-frame's patch: The $50 is a bit-6 rest replaying the two-stage attack gate-off, not a pulse wrap; final.patch emits it on the plain two-stage records (Chain_Reaction, Zoolook ",
-   "blocked_on_at_research": "take or refuse C:/t/pulse-wrap-50-frame/final.patch (and any presets.json key its finding names): The $50 is a bit-6 rest replaying the two-stage attack gate-off, not a pulse wrap; final.patch emits it on the plain two-stage records (Chain_Reaction, Zoolook and others); not adopted.",
-   "current_behaviour": "Patch emits the $50 rest flash on plain two-stage records; moves 8 files. Chain_Reaction wave .989 -> .994, Zoolook .988 -> .994, Flash_Gordon ctrl .966 -> .997; falls Zoolook aud -.0026, Deep_Strike bend -.0031, travel -.0025. Auto-adopt bar: FAILS -- a delay picked by sweep (REST_TWO_STAGE_DELAY=1) and printed falls",
-   "sources": [
-    "runs.jsonl pulse-wrap-50-frame"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "emit the $50 on 8 files"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "none"
-    }
-   ],
-   "recommendation": "Take",
-   "why": "every fall is under the .0095 aud floor and 0.4 pp",
-   "question": "Two-stage $50 rest flash: wave up on Chain_Reaction/Zoolook/Flash_Gordon, 8 files move, worst fall Deep_Strike bend -0.3pp. Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "adopt-rest-wave-restart-per-song-option",
-   "kind": "decision",
-   "title_at_research": "Take or refuse rest-wave-restart-per-song-option's patch: final.patch makes rest_wave_restart a default-off per-song option (off reproduces HEAD on 89/89): on W_A_R and W_A_R_Preview wave .9795 -> .9900 and .9834 -> .9",
-   "blocked_on_at_research": "take or refuse C:/t/rest-wave-restart-per-song-option/final.patch (and any presets.json key its finding names): final.patch makes rest_wave_restart a default-off per-song option (off reproduces HEAD on 89/89): on W_A_R and W_A_R_Preview wave .9795 -> .9900 and .9834 -> .9939 with only sub-print tie/loud moves; not adopted.",
-   "current_behaviour": "Option absent at HEAD. On W_A_R / W_A_R_Preview wave .9795 -> .9900 / .9834 -> .9939; tie -.0005, loud -.0003; Preview noise frames 3309 -> 3305 (orig 3339). Auto-adopt bar: FAILS -- Preview noise count moves away from the original; short-circuit test runs not recorded",
-   "sources": [
-    "runs.jsonl rest-wave-restart-per-song-option"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "add the option, set on both W_A_R files"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "none"
-    }
-   ],
-   "recommendation": "Take",
-   "why": "one point of wave for sub-print costs",
-   "question": "rest_wave_restart on W_A_R and W_A_R_Preview: wave +1.0pp each, only sub-print tie/loud falls. Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "adopt-hold-modal-and-ceiling-markers",
-   "kind": "decision",
-   "title_at_research": "Take or refuse hold-modal-and-ceiling-markers's patch: fix.patch (report-only, python/fidelity.py) marks hold cells that are a modal or a ceiling reading: six rows carry the (modal) signature, converter untouched (b",
-   "blocked_on_at_research": "take or refuse C:/t/hold-modal-and-ceiling-markers/fix.patch (and any presets.json key its finding names): fix.patch (report-only, python/fidelity.py) marks hold cells that are a modal or a ceiling reading: six rows carry the (modal) signature, converter untouched (byte-hash moved 0); not adopted.",
-   "current_behaviour": "Report-only marker in fidelity.py; converter bytes unchanged; marks 6 hold cells (modal). Auto-adopt bar: FAILS -- no target column rises (report-only)",
-   "sources": [
-    "runs.jsonl hold-modal-and-ceiling-markers"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "mark the six rows in FIDELITY.md"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "hold cells read as before"
-    }
-   ],
-   "recommendation": "Take",
-   "why": "no score changes; the report says why six hold cells are low",
-   "question": "Mark six hold cells as (modal) readings in FIDELITY.md (report only, no score changes). Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "revisit-the-leave-on-waveform-deselect-at",
-   "kind": "decision",
-   "title_at_research": "Revisit the Leave on waveform-deselect-at-note-end for Tarzan: the $E1 fix buys real oscillator fidelity against a tie_ratio fall",
-   "blocked_on_at_research": "take or keep refusing C:/t/waveform-deselect-at-note-end/fix.patch on Tarzan: wave .9764 -> .9885, ctrl .8413 -> .9447, only Tarzan moves; tie_ratio .8608 -> .8526; a render shows the $19 stand-in changes voice 0's sync/ring sound from 76.8 s",
-   "current_behaviour": "Ours writes TEST on voice 2 on 473 calls where the original writes it on 0; voice 2 feeds voice 0 sync/ring from 76.8 s. fix.patch emits $E1: wave .9764 -> .9885, ctrl .841 -> .945; tie_ratio .861 -> .853. Auto-adopt bar: FAILS -- the source diagnosis has no patch of its own; a user Leave being reopened",
-   "sources": [
-    "runs.jsonl heard-silent-against-silent-tarzan",
-    "C:/t/waveform-deselect-at-note-end/fix.patch"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "Tarzan stops writing a TEST the original never writes"
-    },
-    {
-     "label": "Keep refusing",
-     "consequence": "the TEST stays and keeps altering voice 0 sync/ring"
-    }
-   ],
-   "recommendation": "Take",
-   "why": "the sound change is toward the original, which never writes TEST there",
-   "question": "Tarzan $E1: the original never writes TEST on voice 2; ours does on 473 calls, altering voice 0 sync/ring from 76.8 s. Fix: wave +1.2pp, ctrl +10pp, tie_ratio -.008. Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "bangkok-knights-instr-87-0-98-6",
-   "kind": "decision",
-   "title_at_research": "Bangkok_Knights instr 87.0 -> 98.6 under pitch_seq: adopt the key (Pygmies_Revenge and Food_Feud judged separately)",
-   "blocked_on_at_research": "take or refuse pitch_seq: true on Bangkok_Knights (instr 87.0 -> 98.6, tie_ratio .692 -> 1.072, aud .9403 -> .9477, no printed column falls); Pygmies_Revenge (bend_ratio 1.018 -> .750) and Food_Feud (wave -.0019, oscillation -.040) are separate trades",
-   "current_behaviour": "presets.json: no pitch_seq on Bangkok_Knights. On: instr 87.0 -> 98.6, aud .940 -> .948, no printed fall. Pygmies_Revenge 77.8 -> 93.3 but bend 1.018 -> .750; Food_Feud 84.7 -> 96.0, wave -.0019, oscillation -.040. Auto-adopt bar: FAILS -- source diagnosis is partial",
-   "sources": [
-    "runs.jsonl bangkok-note-body-pitch-cycle"
-   ],
-   "options": [
-    {
-     "label": "Bangkok only",
-     "consequence": "instr +11.6, nothing falls"
-    },
-    {
-     "label": "Bangkok + Food_Feud",
-     "consequence": "adds instr +11.3 for wave -.0019"
-    },
-    {
-     "label": "All three",
-     "consequence": "adds Pygmies instr +15.5 for bend -.27"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "none"
-    }
-   ],
-   "recommendation": "Bangkok only",
-   "why": "it is the one song with no fall",
-   "question": "pitch_seq: Bangkok_Knights 87.0 -> 98.6 with nothing falling; Food_Feud 84.7 -> 96.0 (wave -.0019); Pygmies_Revenge 77.8 -> 93.3 (bend 1.02 -> .75). Which songs?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "adopt-shockway-rider-pulse-phase-1-625-our",
-   "kind": "decision",
-   "title_at_research": "Take or refuse shockway-rider-pulse-phase-1-625-our's patch: final.patch (on top of the phase_split_over_passes patch) lets the free-note respell run beside the pitch phase split, which removes the pulse_phase fall on Sho",
-   "blocked_on_at_research": "take or refuse the stacked pair C:/t/arpeggio-step-phase-i-ball-shockway/final.patch + C:/t/shockway-rider-pulse-phase-1-625-our/final.patch (phase_split_over_passes with the free-note respell beside it), and which songs get the option",
-   "current_behaviour": "cumulative.patch applies. Option on: Shockway_Rider instr .921 -> .979, pulse_phase holds, aud +.0069; Lightforce clean; Saboteur_II .873 -> .941 (tie -.014); Pandora .594 -> .710 (tie -.014); I_Ball 85 -> 97 (loud_ratio -.011); Star_Paws cents -.028. Auto-adopt bar: FAILS -- printed falls on several songs; per-song choice",
-   "sources": [
-    "runs.jsonl shockway-rider-pulse-phase-1-625-our",
-    "runs.jsonl arpeggio-step-phase-i-ball-shockway"
-   ],
-   "options": [
-    {
-     "label": "Shockway + Lightforce",
-     "consequence": "the two with no listed fall"
-    },
-    {
-     "label": "Add Saboteur, Pandora, I_Ball",
-     "consequence": "big instr gains for tie/loud falls"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "none"
-    }
-   ],
-   "recommendation": "Shockway + Lightforce",
-   "why": "take the clean songs; the rest are trades",
-   "question": "phase_split_over_passes: Shockway_Rider instr .921 -> .979 and Lightforce clean; Saboteur_II/Pandora/I_Ball gain more but lose tie or loud. Which songs?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "row-hard-restart-kentilla-lion-heart-trade",
-   "kind": "decision",
-   "title_at_research": "Gate C: row_hard_restart lifts Kentilla gate .898 -> .970 with bend .955 -> .872, and Lion_Heart .838 -> .888 with holdn .990 -> .981",
-   "blocked_on_at_research": null,
-   "current_behaviour": "Re-measured: Lion_Heart gate .8375 -> .8876, holdn .9904 -> .9809, melody .9944 -> .9913, sequence .9933 -> .9905; only Lion_Heart moves. Auto-adopt bar: FAILS -- printed falls outside the earlier answer",
-   "sources": [
-    "runs.jsonl row-hard-restart-kentilla-lion-heart-trade"
-   ],
-   "options": [
-    {
-     "label": "Take",
-     "consequence": "Lion_Heart gets row_hard_restart"
-    },
-    {
-     "label": "Refuse",
-     "consequence": "a Leave"
-    }
-   ],
-   "recommendation": "Take",
-   "why": "gate +5pp outweighs three sub-point falls",
-   "question": "Lion_Heart row_hard_restart also costs melody -0.3pp and sequence -0.3pp (beside holdn -1pp) for gate +5pp. Take?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "arpeggio-sun-never-shines-go-go-dash-trade",
-   "kind": "decision",
-   "title_at_research": "Instr: arpeggio lifts Sun_Never_Shines instr 86.5 -> 91.8 (melody -.0014, gate -.0025, 5 invented attacks) and Go_Go_Dash 91.5 -> 92.6 (travel_ratio .947 -> .898)",
-   "blocked_on_at_research": null,
-   "current_behaviour": "Re-measured at HEAD: Sun_Never_Shines instr .943 -> .996, melody -.0014, gate -.0024, 5 invented attacks, aud +.006; Go_Go_Dash .923 -> .934, travel .930 -> .881. Auto-adopt bar: FAILS -- user trade",
-   "sources": [
-    "runs.jsonl arpeggio-sun-never-shines-go-go-dash-trade"
-   ],
-   "options": [
-    {
-     "label": "Sun_Never_Shines only",
-     "consequence": "instr +5.3 for sub-point falls"
-    },
-    {
-     "label": "Both",
-     "consequence": "adds Go_Go_Dash +1.1 for travel -.049"
-    },
-    {
-     "label": "Neither",
-     "consequence": "a Leave"
-    }
-   ],
-   "recommendation": "Sun_Never_Shines only",
-   "why": "Go_Go_Dash buys one point for five of travel",
-   "question": "arpeggio (re-measured): Sun_Never_Shines instr .943 -> .996 (melody -.0014, gate -.0024, 5 invented attacks); Go_Go_Dash .923 -> .934 but travel .930 -> .881. Which songs?",
+   "why": "the Tarzan fall is the harness charging one init frame, not a sound change.",
+   "question": "Wave-program window patch: gate and heard instr up on Pandora and Trans-Atlantic; Tarzan ctrl 84% -> 83% (the harness charges the $08 init frame). Take?",
    "unblocked_by_research": false
   }
  ]

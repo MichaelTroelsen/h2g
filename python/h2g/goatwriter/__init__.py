@@ -101,7 +101,8 @@ from .primitives import (_arp_relative, _counter_gate_call, _first_frame_entry,
                          _first_frame_lead, _fixed_arp_block, fixed_arp_mask,
                          _fixed_pitch_yield_field, _freq_table_note,
                          _gate_calls, _note_freq, _rate_shift, _sfx_note_byte,
-                         _speed_index, _wave_byte, _wave_hold_byte)  # noqa: F401
+                         _second_stage_base, _speed_index, _wave_byte,
+                         _wave_hold_byte)  # noqa: F401
 from .tempo import (_adjacent_table_bound, derived_group_tempos,
                     effective_frames, file_multiplier, _find_outer_gate,
                     find_song_speeds, _gate_hits, init_song_remap,

@@ -28,7 +28,7 @@ from h2g.convert import convert
 from h2g.detect import detect
 from h2g.goatwriter import constants as C
 from h2g.goatwriter import note_passes as NP
-from h2g.goatwriter.primitives import _wave_byte
+from h2g.goatwriter.primitives import _second_stage_base
 from h2g.sidfile import load_sid
 from songview import parse_sng
 
@@ -226,8 +226,9 @@ def test_the_drum_fixed_pitch_prologue_is_an_attack():
     # record as a two-stage one, attack $81, then its second stage, stop).
     two = _with(sid, fx, 0xA4)
     wave = sid.data[det.instr_start + 8 * det.instr_stride + 2]
-    second = (_wave_byte(wave & 0xFE) if not wave & 0xF0
-              else wave & 0xFE) | (wave & 0x01)
+    # The second stage as the emitter writes it (attack.py), not a copy of
+    # the rule: a copy kept the pre-$E1 byte after the Tarzan fix moved it.
+    second = _second_stage_base(wave) | (wave & 0x01)
     block = [(0x81, 0x00), (second, 0x00), (C.GT_WAVE_JUMP, 0x00)]
     assert NP.free_note_wave_start(two, det, 8, block, 1) == 2
     assert NP.free_note_wave_start(drum, det, 8, block, 1) == 0

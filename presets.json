@@ -2622,7 +2622,8 @@
       "regrid_per_play": true,
       "regrid_unshare_rest": true,
       "rest_envelope_silence": true,
-      "sfx_drum_bandpass": true
+      "sfx_drum_bandpass": true,
+      "phase_split_over_passes": true
     },
     "Ninja.sid": {
       "max_rows": 128,
