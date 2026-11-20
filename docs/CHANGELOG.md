@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.672 — 2026-11-20
+
+- Finish the v0.5.671 landing: SURVEY/presets regenerated after b296dac
+
 ## 0.5.671 — 2026-11-20
 
 - Adopt Tarzan second-stage gate-only fix and phase_split_over_passes on Nineteen
