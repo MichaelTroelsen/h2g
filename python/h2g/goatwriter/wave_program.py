@@ -50,6 +50,14 @@ SLIDE_CUT_SHARE = 0.0
 # the travel read a frame late (Lion_Heart `100d 0bbb` against our `1168 100e`,
 # -S3). The previous opcode's hold gives up one call to the waveform entry.
 PAIR_ENDS_FRAME = True
+# Two `set` opcodes in a row on the same waveform whose absolute pitches differ
+# by less than a semitone quantise to the SAME note, so the second wrote nothing
+# the first had not, and the original's step between them was lost (Radio_ACE
+# `$1C71` frames 4-5, `set $80 $4D` then `set $80 $4C`: 19786 -> 19530, ours
+# 20008 -> 20008). The second is written as the player moves it -- the high
+# byte's difference as a portamento on the entry the waveform would have
+# taken. Off, every conversion is what it was.
+SUBSEMITONE_SET_STEP = True
 
 
 def _cut_share(spans: Optional[Dict[int, int]], row_calls: int, first: int,
@@ -417,6 +425,32 @@ def _wave_program_record_vibrates(sid: SidFile, det: Detection,
         return False
     at = det.instr_start + i * det.instr_stride + offset
     return 0 <= at < len(sid.data) and entry_of(sid.data[at]) is not None
+
+
+def _subsemitone_set_step(prev: Optional[tuple], wave: int, arg: int,
+                          note_byte: int, speed_table: List[tuple]
+                          ) -> Optional[tuple]:
+    """`(left, right)` of a portamento standing for a `set` opcode whose
+    pitch quantised onto the previous `set`'s note, or None.
+
+    `prev` is `(wave, arg, note byte)` of the opcode just before. The step is
+    only taken where the waveform is the same (a command entry writes no
+    waveform) and the notes coincide while the high bytes do not: where they
+    differ the plain entry already moves, a semitone for a fraction of one.
+    """
+    if not SUBSEMITONE_SET_STEP or prev is None:
+        return None
+    p_wave, p_arg, p_note = prev
+    if p_wave != wave or p_note != note_byte or p_arg == arg:
+        return None
+    if arg > p_arg:
+        cmd, speed = WAVECMD_PORTAUP, (arg - p_arg) << 8
+    else:
+        cmd, speed = WAVECMD_PORTADOWN, (p_arg - arg) << 8
+    if not 0 < speed < 0x8000:
+        return None
+    index = _speed_index(speed_table, ((speed >> 8) & 0xFF, speed & 0xFF))
+    return (cmd, index) if index else None
 
 
 def _wave_program_travel_entry(left: List[int], right: List[int],
@@ -789,6 +823,8 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     states: List[tuple] = []
     looped: Optional[int] = None
     cut = False
+    # The `set` opcode just before this one, `(wave, arg, note byte)`, or None.
+    prev_set: Optional[tuple] = None
     for kind, wave, arg in program:
         if kind == "hold":
             break
@@ -801,15 +837,25 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
             break
         starts.append(len(left))
         states.append((carried, quantised))
+        if kind != "set":
+            prev_set = None
         if kind == "set":
             if len(left) + per_opcode + tail(running) > budget:
                 starts.pop()
                 states.pop()
                 cut = True
                 break
-            left.append(_wave_byte(wave))
-            right.append(_wave_set_note_byte(arg, None if vibrates else pitches,
-                                             lo_run))
+            note_byte = _wave_set_note_byte(arg, None if vibrates else pitches,
+                                            lo_run)
+            step = _subsemitone_set_step(prev_set, wave, arg, note_byte,
+                                         speed_table)
+            if step:
+                left.append(step[0])
+                right.append(step[1])
+            else:
+                left.append(_wave_byte(wave))
+                right.append(note_byte)
+            prev_set = (wave, arg, note_byte)
             hold_at = len(left) if multiplier >= 2 else None
             hold_calls, hold_wave, hold_right = (multiplier - 1,
                                                  _wave_byte(wave),

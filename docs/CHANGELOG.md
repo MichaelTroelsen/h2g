@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.674 — 2026-11-21
+
+- Adopt SUBSEMITONE_SET_STEP: Radio_ACE keeps its second drum-fall step
+
 ## 0.5.673 — 2026-11-20
 
 - Adopt 6 decided changes: TEST-bit hold harness, gate-3 drum_held, gate-off firstwave hold_travel, note_pitch_split, wave-program window, Lion_Heart held vibrato
