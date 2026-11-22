@@ -1,5 +1,5 @@
 {
- "max_open": 60,
+ "max_open": 90,
  "max_opened_per_record": 1,
  "admit_re": "(\\d*\\.\\d+|\\d+)\\s*(->|→)\\s*(\\d*\\.\\d+|\\d+)",
  "chore_re": "^(\\[\\w+\\]\\s*)?(census|audit|optional|count |list every|record in|add a docs|docs/|correct the|update the|re-?(measure|take|check|grade|run)|check (whether|why)|measure (whether|how)|decide whether|pin |promote |fix the syntaxwarning|after (the )?(merge|merging|sibling))",

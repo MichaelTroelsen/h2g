@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.675 — 2026-11-22
+
+- Adopt pulse_phase on Commodore_64_Music_Examples, Crazy_Comets and Human_Race
+
 ## 0.5.674 — 2026-11-21
 
 - Adopt SUBSEMITONE_SET_STEP: Radio_ACE keeps its second drum-fall step

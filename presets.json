@@ -678,7 +678,8 @@
         61,
         62
       ],
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "pulse_phase": true
     },
     "Confuzion.sid": {
       "max_rows": 128,
@@ -835,7 +836,8 @@
       ],
       "keep_hard_restart": true,
       "pre_note_wave": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "pulse_phase": true
     },
     "Deep_Strike.sid": {
       "max_rows": 94,
@@ -1552,7 +1554,8 @@
         62
       ],
       "hard_restart_frames": 3,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "pulse_phase": true
     },
     "Hunter_Patrol.sid": {
       "max_rows": 128,
