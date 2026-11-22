@@ -92,3 +92,41 @@ def test_only_monty_ships_the_option():
     on = sorted(name for name in doc["songs"]
                 if fidelity._preset_opts(doc, name).get("wobble_copy_depth"))
     assert on == ["Monty_on_the_Run.sid"]
+
+
+def _unreferenced(blob):
+    """Patterns in the file no orderlist names."""
+    from songview import decode_orderlist
+    song = parse_sng(blob)
+    named = {int(what[1:], 16) for track in song.tracks
+             for kind, what, _note in decode_orderlist(track)
+             if kind == "pattern"}
+    return sorted(set(range(len(song.patterns))) - named)
+
+
+@needs_corpus
+def test_clone_reaches_the_orderlist_under_pulse_phase():
+    """`_wobble_clone` repoints orderlist positions at its copies; the bytes
+    already written must follow (`build._rewrite_orderlists`). Under
+    `pulse_phase` nothing later rewrote them on Monty_on_the_Run: voice 1
+    kept naming the SHARED pattern, which carries the B-6 voice's index
+    (134, 2) instead of the B-5 note's (132, 0) -- its sweep read narrow
+    (travel 1.05 -> 0.81, bend, tie and cents all fell) -- and the clone sat
+    in the file unnamed by any orderlist. Measured at d66e7a3, -t 180."""
+    blob = _convert(pulse_phase=True)
+    entry, idx, carried = _opening(blob)
+    assert entry == (0x84, 0x00)
+    assert carried == {idx}
+    assert _unreferenced(blob) == []
+
+
+@needs_corpus
+def test_orderlist_rewrite_is_what_carries_the_clone(monkeypatch):
+    import importlib
+    gw_build = importlib.import_module("h2g.goatwriter.build")
+    monkeypatch.setattr(gw_build, "_rewrite_orderlists",
+                        lambda out, track_at, tracks: None)
+    blob = _convert(pulse_phase=True)
+    _entry, idx, carried = _opening(blob)
+    assert carried != {idx}
+    assert _unreferenced(blob) != []

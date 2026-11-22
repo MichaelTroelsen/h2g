@@ -122,6 +122,8 @@ def main() -> int:
     ap.add_argument("--message-file", required=True)
     ap.add_argument("--push", action="store_true")
     ap.add_argument("--jobs", type=int, default=12)
+    # fidelity.py concurrency; size it to MEMORY (CLAUDE.md), lower it when RAM is short
+    ap.add_argument("--fidelity-jobs", type=int, default=16)
     ap.add_argument("--corpus", default=CORPUS)
     a = ap.parse_args()
 
@@ -167,7 +169,7 @@ def main() -> int:
 
     # 3. FIDELITY/QUEUE, output_sha, commit.
     run([sys.executable, "fidelity.py", a.corpus, "-t", "180", "--presets", "../presets.json", "--sound",
-         "--jobs", "16", "--census", "../build/onset_census.md", "--hold-census", "../build/hold_census.md",
+         "--jobs", str(a.fidelity_jobs), "--census", "../build/onset_census.md", "--hold-census", "../build/hold_census.md",
          "--depth-census", "../build/depth_census.md", "--json", "../build/fidelity.json",
          "-o", "../docs/FIDELITY.md"], cwd=PY)
     run([sys.executable, "fidelity_queue.py", "--from-json", "../build/fidelity.json",

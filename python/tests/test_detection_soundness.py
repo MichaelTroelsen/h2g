@@ -498,8 +498,9 @@ _TRIANGLE_START = {
     "Zoids.sid": (((1, 0), (1, 0), (1, 0)), (13, 4, 3), 1),
     # PULSE_TRI_STA_SHAPE: the operands sit three bytes later (pulse_tri_shift)
     "Commodore_64_Music_Examples.sid": (((1, 0), (1, 0), (-1, 0)), (1, 8, 6), 0),
-    # PULSE_TRI_MASKS_SHAPE: the speed counter cannot be read, so no start
-    "Mozart.sid": None,
+    # PULSE_TRI_MASKS_SHAPE: an outer gate and no inner one, so there is no speed
+    # counter to read (counter None) and the first working call fetches
+    "Mozart.sid": (((1, 0), (1, 0), (1, 0)), (1, 2, 3), None),
 }
 
 

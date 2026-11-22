@@ -63,6 +63,19 @@ from . import dead_blocks as _gw_dead_blocks
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 from . import tri_clock as _gw_tri_clock
+def _rewrite_orderlists(out: bytearray, track_at: List[int],
+                        tracks: List[List[int]]) -> None:
+    """Write `tracks` over the orderlist bytes already in `out` (same length,
+    same place): the step every pass that repoints a position at one of its
+    copies must take, or the repoint stays in memory and never reaches the
+    file. `_vibrato_command_pass`'s `_wobble_clone` is the one that did not
+    take it, and was saved only by whichever later pass happened to rewrite
+    the orderlists (Monty_on_the_Run's note-rise pass, until `pulse_phase`
+    changed what it copied: tests/test_wobble_copy_depth.py)."""
+    for at, track in zip(track_at, tracks):
+        out[at:at + len(track)] = bytes(track)
+
+
 def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
                           log=None) -> List[List[int]]:
     """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
@@ -1257,6 +1270,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
         vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log,
                                          tracks=tracks, table=table)
+        # `_wobble_clone` repoints orderlist positions at its appended
+        # copies IN `tracks`; same length, same place, so the bytes already
+        # written are written over. Without this the repoint reached the
+        # file only when a LATER pass happened to rewrite the orderlists:
+        # Monty_on_the_Run's note-rise pass did, until `pulse_phase`
+        # changed what it copied, and the continuation pattern then kept
+        # the other predecessor's wide-vibrato index.
+        _rewrite_orderlists(out, track_at, tracks)
     _gw_note_passes.strip_depth_marks(patterns)
     # The classic engine's age-growing variant, five files: the instrument
     # entry stays the shallow first-frames level and the hold rows carry the

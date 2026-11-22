@@ -1,4 +1,24 @@
 {
- "generated_from": {"head": "1c9d17c", "plan_head": "1c9d17c"},
- "blockers": []
+ "generated_from": {"head": "d66e7a3", "plan_head": "1c9d17c"},
+ "blockers": [
+  {"id": "adopt-master-of-magic-pulse-phase", "kind": "decision",
+   "title_at_research": "Adopt pulse_phase on Master_of_Magic (from listen-sub99-master-of-magic)",
+   "blocked_on_at_research": "not in the plan yet; opened by run listen-sub99-master-of-magic at d66e7a3",
+   "current_behaviour": "presets.json ships Master_of_Magic without pulse_phase; triangle pulse engine (pulse_tri_hi=0x0E) never reseeds, so pphase .50 (9 of 18 phases)",
+   "sources": ["runs.jsonl listen-sub99-master-of-magic", "C:/t/listen-sub99-master-of-magic/finding.md"],
+   "options": [{"label": "Adopt", "consequence": "pphase .50->.94, aud +.003, nothing falls; .sng 24->32 KB; pinned tests naming the song (test_pulse_phase.py:829/859, test_pre_note_wave.py:40, test_master_fade.py:74) unrun with the key and may need refreshing"},
+               {"label": "Leave", "consequence": "keeps pphase .50"}],
+   "recommendation": "Adopt", "why": "Clean on every printed column; auto-adopt bar fails only because there is no patch file (preset-only change).",
+   "question": "Adopt pulse_phase on Master_of_Magic?", "unblocked_by_research": false},
+  {"id": "adopt-mozart-firstwave-pulse-phase", "kind": "decision",
+   "title_at_research": "Adopt final.patch + gate_off_firstwave 1..62 + prev_class_firstwave + pulse_phase on Mozart",
+   "blocked_on_at_research": "not in the plan yet; opened by run listen-sub99-mozart at d66e7a3",
+   "current_behaviour": "Mozart staged as kept by the user in listen-current-builds-2026-10 over slides 1.31x",
+   "sources": ["runs.jsonl listen-sub99-mozart", "C:/t/listen-sub99-mozart/final.patch"],
+   "options": [{"label": "Stage for listening", "consequence": "build the candidate into build/listen so you can A/B it; no adoption until a verdict"},
+               {"label": "Adopt", "consequence": "wave .903->1.000, gate .353->.677, pphase .37->.83, aud +.008; cents -.0017, slides 1.31x->1.51x"},
+               {"label": "Leave", "consequence": "keep the current Mozart build"}],
+   "recommendation": "Stage for listening", "why": "The cost is in the slides figure you previously judged by ear, so the call is a listening one.",
+   "question": "Mozart candidate: stage, adopt or leave?", "unblocked_by_research": false}
+ ]
 }

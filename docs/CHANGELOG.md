@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.676 — 2026-11-22
+
+- Adopt pulse_phase on Master_of_Magic, Monty_on_the_Run and Mozart
+
 ## 0.5.675 — 2026-11-22
 
 - Adopt pulse_phase on Commodore_64_Music_Examples, Crazy_Comets and Human_Race

@@ -2113,7 +2113,10 @@ class TriangleStart:
       filled from (`LDA instr,X / ASL / ASL / ASL / TAY / STY idx`).
     * `counter` -- the image byte of the speed gate's counter, which no init
       writes (only the gate's own reload stores to it), so `prefetch` can
-      count the ticks the player sweeps before its first fetch.
+      count the ticks the player sweeps before its first fetch. None for a
+      player with an outer gate and no inner one (Mozart, `$0829`): every
+      working call advances the voice counters and the first one fetches, so
+      nothing sweeps before it (`prefetch` is 0).
 
     REPLACES `patterns.PULSE_PHASE_PREROLL = 7`, a fit: "seven calls
     reproduces every one of 5_Title_Tunes voice 3's 188 measured onsets".
@@ -2125,7 +2128,7 @@ class TriangleStart:
     """
     cells: Tuple[Tuple[int, int], ...]
     instruments: Tuple[int, ...]
-    counter: int
+    counter: Optional[int]
 
     def prefetch(self, frames: int) -> int:
         """Ticks the player sweeps before its first fetch, for a subtune of
@@ -2133,6 +2136,12 @@ class TriangleStart:
         counter reads the reload (`LDA counter / CMP reload / BNE`); the
         first DEC starts from the image byte. 5_Title_Tunes: counter 3,
         reload 3 -> 2, 1, 0, then -1 reloads to 3 and fetches: 3."""
+        if self.counter is None:
+            # No inner speed gate (Mozart: only the outer counter, `$0829`).
+            # Every working call advances the voice counters, and the
+            # counters `$083E` clears put the first one at -1, so the first
+            # tick fetches and none sweeps before it.
+            return 0
         reload, c = frames - 1, self.counter
         for n in range(0x100):
             c = (c - 1) & 0xFF
@@ -2205,8 +2214,14 @@ def triangle_start(sid: SidFile, det: Detection,
     ctr = image(ctr_op[0] | ctr_op[1] << 8)
     drn = image(dir_op[0] | dir_op[1] << 8)
     ins = image(cells[0][0] | cells[0][1] << 8)
-    counter = _speed_counter(sid, _gw_tempo.find_song_speeds(sid, det))
-    if ctr is None or drn is None or ins is None or counter is None:
+    speeds = _gw_tempo.find_song_speeds(sid, det)
+    counter = _speed_counter(sid, speeds)
+    # A player with an outer gate and no inner one has no counter to read:
+    # `find_song_speeds` returns `reload_addr == -1` for exactly that shape.
+    outer_only = (speeds is not None and speeds.reload_addr < 0
+                  and bool(speeds.skip))
+    if ctr is None or drn is None or ins is None or (
+            counter is None and not outer_only):
         return None
     # A counter byte past $80 goes negative on its first DEC, which a signed
     # count reaches by starting below zero.
@@ -2969,25 +2984,42 @@ def _build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         # rows its static width needed. Lay both layouts again holding back
         # every later record's static first (`reserve`), and ship the one
         # that silences fewest, then degrades fewest, then is shortest.
+        #
+        # Then once more holding back each later record's ORDINARY sweep, not
+        # its static width (`reserve="sweeps"`): that layout ships only where
+        # it ranks strictly better, so a file whose degraded records the
+        # width reserve already serves keeps its bytes. Mozart: 9 records
+        # fall to a width that never moves, 7 to their own sweep.
         trials = []
-        for share in (False, True):
-            trial_log: list = []
-            if share:
-                trial = _lay_attack_or_plain(sid, det, instr_used, pulse,
-                                             multiplier, phases,
-                                             trial_log.append, lead,
-                                             reserve=True, **ukw)
-            else:
-                trial = _lay_pulse_phase_table(sid, det, instr_used, pulse,
-                                               multiplier, phases,
-                                               trial_log.append, lead, share,
-                                               reserve=True, **ukw)
-            trials.append(((*_score(trial), len(trial[0])),
-                           share, trial, trial_log))
-        (rank, share, trial, trial_log) = min(trials, key=lambda t: t[:2])
+        placed_by_statics = 0
+        for mode in (True, "sweeps"):
+            for share in (False, True):
+                trial_log: list = []
+                if share:
+                    trial = _lay_attack_or_plain(sid, det, instr_used, pulse,
+                                                 multiplier, phases,
+                                                 trial_log.append, lead,
+                                                 reserve=mode, **ukw)
+                else:
+                    trial = _lay_pulse_phase_table(sid, det, instr_used,
+                                                   pulse, multiplier, phases,
+                                                   trial_log.append, lead,
+                                                   share, reserve=mode,
+                                                   **ukw)
+                if mode is not True and trial[6] <= placed_by_statics:
+                    continue
+                trials.append(((_cost(trial)[1], _stalled(trial),
+                                len(trial[0])),
+                               share, 0 if mode is True else 1, trial,
+                               trial_log))
+                if mode is True:
+                    placed_by_statics = max(placed_by_statics, trial[6])
+        (rank, share, mode_rank, trial, trial_log) = min(
+            trials, key=lambda t: t[:3])
         if rank[:2] < _score(chosen):
             trial_log.insert(0, (
-                f"Pulse phase.............: statics reserved -- "
+                f"Pulse phase.............: "
+                f"{'statics' if mode_rank == 0 else 'sweeps'} reserved -- "
                 f"{'shared ramps, ' if share else ''}{len(trial[0])} table "
                 f"row(s) place {trial[6]} of {trial[5]} phase-tracked "
                 f"record(s) and degrade {trial[3]} record(s), {trial[4]} to "
@@ -3035,6 +3067,14 @@ def _cost(t: tuple) -> tuple:
     sounded where the pass was given `usage`, records otherwise (an older
     seven-field layout carries only the counts)."""
     return (t[7], t[8]) if len(t) > 7 else (t[3], t[4])
+
+
+def _stalled(t: tuple) -> int:
+    """The weight of a layout's degraded records that play a width that never
+    moves: `_cost`'s `dropped` for a layout that keeps no sweeps (every
+    degraded record is one), less the records that fell back to their own
+    sweep (`_lay_pulse_phase_pass`'s `keep_sweeps`)."""
+    return t[9] if len(t) > 9 else _cost(t)[0]
 
 
 def _score(t: tuple) -> tuple:
@@ -3200,7 +3240,7 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
     starts = [1] * lead
     index: dict = {}
     dropped = silent = 0
-    dropped_w = silent_w = 0
+    dropped_w = silent_w = swept_w = 0
     attempted = placed = 0
 
     def hold_kw(want_set: set) -> dict:
@@ -3267,7 +3307,13 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
     # nothing either. So while the statics alone fit, a record can lose its
     # movement to the records ahead of it but never its width:
     # `_lay_out_pulse`'s `reserve_for`, over every record.
-    statics = ([_pulse_program(sid, det, j, False, multiplier)
+    #
+    # `reserve == "sweeps"` holds back each later record's ORDINARY sweep (the
+    # program it plays without `pulse_phase`) instead, and a record whose
+    # phase block does not fit falls back to that sweep, not to a width that
+    # never moves.
+    keep_sweeps = reserve == "sweeps"
+    statics = ([_pulse_program(sid, det, j, pulse and keep_sweeps, multiplier)
                 for j in range(nrec)] if reserve else [])
 
     def held_back(i: int, skip=(), laying=None) -> int:
@@ -3372,6 +3418,21 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
             program, loop = _pulse_program(sid, det, i, False, multiplier)
             dropped += 1
             dropped_w += weight(i)
+            if keep_sweeps and pulse:
+                # The later records' ordinary sweeps are already held back,
+                # so this record's own is laid in the rows that are left,
+                # ahead of a width that never moves.
+                swept, swept_loop = _pulse_program(sid, det, i, True,
+                                                   multiplier)
+                at = len(entries) + 1
+                swept_block = (swept if swept_loop is None
+                               else swept + [(0xFF, at + swept_loop)])
+                if (swept != program
+                        and len(entries) + len(swept_block)
+                        + held_back(i, laying=(swept, swept_loop))
+                        <= _gw_constants.GT_MAX_TABLELEN):
+                    program, loop = swept, swept_loop
+                    swept_w += weight(i)
             if reuse(program, loop):
                 continue
             start = len(entries) + 1
@@ -3395,8 +3456,10 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
         log(f"*** PULSE TABLE FULL UNDER --pulse-phase -- {dropped} "
             f"INSTRUMENT(S) LOSE THEIR PHASE ENTRIES"
             + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
+    # The tenth field: the weight of the degraded records that ended on a
+    # width that never moves (`_stalled`), not on their own sweep.
     return (entries, starts, index, dropped, silent, attempted, placed,
-            dropped_w, silent_w)
+            dropped_w, silent_w, dropped_w - swept_w)
 
 
 def packed_pattern_size(rows) -> int:
