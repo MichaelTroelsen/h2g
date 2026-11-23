@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.675 presets.py",
+  "generator": "h2g 0.5.676 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2502,8 +2502,8 @@
         61,
         62
       ],
-      "wobble_copy_depth": true,
-      "pulse_phase": true
+      "pulse_phase": true,
+      "wobble_copy_depth": true
     },
     "Mozart.sid": {
       "max_rows": 94,
