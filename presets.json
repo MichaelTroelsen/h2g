@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.677 presets.py",
+  "generator": "h2g 0.5.678 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1859,7 +1859,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 54049,
+      "bytes": 54089,
       "subtunes": 3,
       "rows": 62488,
       "multiplier": 3,
@@ -2252,7 +2252,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 19560,
+      "bytes": 19586,
       "subtunes": 1,
       "rows": 19006,
       "multiplier": 2,
@@ -3072,9 +3072,9 @@
       "aligned_firstwave": true,
       "arpeggio": true,
       "arpeggio_default": true,
+      "ilv_filter_resume": true,
       "prev_class_firstwave": true,
-      "row_hard_restart": true,
-      "ilv_filter_resume": true
+      "row_hard_restart": true
     },
     "Rasputin.sid": {
       "max_rows": 94,
