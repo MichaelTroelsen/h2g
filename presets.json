@@ -120,7 +120,8 @@
       "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "vibrato_phase": true
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -852,7 +853,8 @@
       "two_stage": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 3,
+      "vibrato_early_delay": true
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -2086,7 +2088,8 @@
         62
       ],
       "hard_restart_frames": 4,
-      "rest_late_keyoff": true
+      "rest_late_keyoff": true,
+      "vibrato_onset": true
     },
     "Last_V8.sid": {
       "max_rows": 94,
@@ -3070,7 +3073,8 @@
       "arpeggio": true,
       "arpeggio_default": true,
       "prev_class_firstwave": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "ilv_filter_resume": true
     },
     "Rasputin.sid": {
       "max_rows": 94,
@@ -3287,7 +3291,8 @@
       ],
       "master_fade": true,
       "regrid": true,
-      "regrid_phase": true
+      "regrid_phase": true,
+      "vibrato_early_delay": true
     },
     "Shockway_Rider.sid": {
       "max_rows": 94,
@@ -3385,7 +3390,8 @@
       "aligned_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "vibrato_early_delay": true
     },
     "Skate_or_Die_intro.sid": {
       "max_rows": 128,
@@ -3652,7 +3658,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "vibrato_early_delay": true
     },
     "Thanatos.sid": {
       "max_rows": 128,

@@ -575,6 +575,69 @@ def variant(key: tuple, c_row: int, wave_entries: List[tuple],
             (GT_WAVE_JUMP, c_row + 2)]
 
 
+def literal_runs(sid: SidFile, det: Detection, ti: int, track: List[int],
+                 patterns, lead: int = 0) -> Set[int]:
+    """Indices of `track` (one UNPACKED orderlist of the start subtune) that
+    sit in a run of one pattern whose plays disagree about which note rows
+    the outer gate holds.
+
+    The plays of a repeat count share one pattern cell, so `drum_held_plan`
+    cannot spell them apart and declines every row the plays disagree on
+    (`visits disagree`: Proteus 130 of its notes, Spellbound 107, International
+    Karate 592, Bump_Set_Spike 60). A run the orderlist writes step by step
+    has one position a play, so each is spelled for its own clock residue.
+    `patterns.pack_repeats(literal=...)` takes this set; the clock is
+    `held_rows`' and the rows are the ones a drum record plays (`lead` is
+    `build_sng`'s: GT instrument `g` is record `g - lead - 1`), the only ones
+    the spelling is about -- a run whose plays differ on no drum row stays a
+    repeat count, so a file the plan has nothing to say about keeps its bytes
+    (Warhawk). Empty where the plan would not run at all (another subtune, a
+    clock the file does not let us read).
+    """
+    idx = max(0, getattr(sid, "start_song", 1) - 1)
+    if not 3 * idx <= ti < 3 * idx + 3:
+        return set()
+    clock = held_clock(sid, det)
+    if clock is None:
+        return set()
+    gate, skip, outer0, inner0 = clock
+    total = sum(len(patterns[p]) // 4 for _pos, p, _k, _t in
+                _visits(track, patterns))
+    fetched = fetch_frames(outer0, inner0, gate, skip, total + 2)
+    if len(fetched) < total + 2:
+        return set()
+    withheld = withheld_calls(outer0, skip, fetched[-1] + 3)
+    drums = {i + lead + 1 for i in _drum_records(
+        sid, det, max(0, (len(sid.data) - det.instr_start) // max(
+            det.instr_stride, 1)))}
+    held_at: Dict[int, Tuple[int, ...]] = {}
+    row = 0
+    cur = 0
+    for pos, p, _k, _t in _visits(track, patterns):
+        pat = patterns[p]
+        flags: List[int] = []
+        for r in range(0, len(pat), 4):
+            if pat[r] == GT_END_PATTERN:
+                break
+            if pat[r + 1]:
+                cur = pat[r + 1]
+            if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE and cur in drums:
+                flags.append(int(is_held(fetched[row], gate, withheld)))
+            row += 1
+        held_at[pos] = tuple(flags)
+    out: Set[int] = set()
+    i = 0
+    while i < len(track):
+        j = i + 1
+        while j < len(track) and track[j] == track[i]:
+            j += 1
+        if (j - i > 1 and track[i] < len(patterns)
+                and len({held_at.get(k) for k in range(i, j)}) > 1):
+            out.update(range(i, j))
+        i = j
+    return out
+
+
 def drum_held_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                    instr_used: int, wave_entries: List[tuple],
                    wave_starts: List[int], log=None, reserve: int = 0,

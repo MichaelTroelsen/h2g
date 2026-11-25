@@ -456,6 +456,13 @@ def main(argv=None) -> int:
              "vibdelay on that call. Per song (a --presets entry's "
              "vibrato_onset); off leaves every conversion byte-identical.")
     parser.add_argument(
+        "--vibrato-early-delay", action="store_true",
+        help="start a classic vibrato's oscillator on the first call of "
+             "frame 1: the vibdelay floor loses the one effect call tick 0 "
+             "does not run. Per song (a --presets entry's "
+             "vibrato_early_delay); off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--lfo-wave", action="store_true",
         help="emit the command-table engine's LFO-table vibrato as a "
              "per-frame wave program (portamento steps by the table's own "
@@ -501,6 +508,17 @@ def main(argv=None) -> int:
              "frame, instead of the instrument vibrato's step on every "
              "call. Needs --format gts5. Off leaves every conversion "
              "byte-identical.")
+    parser.add_argument(
+        "--vibrato-phase", action="store_true",
+        help="at a multiplier above 1, start each vibrating note of the "
+             "first lap in the original's free-running triangle phase, as "
+             "far as the wavetable has room: an instrument clone per base, "
+             "a wavetable chain per (record, zero-speed steps, frame-4 "
+             "move) class started by CMD_SETWAVEPTR on the note's second "
+             "row, and a pattern copy per orderlist position. Reads only "
+             "the classic player whose row clock is two counted gates "
+             "(ACE_II, Saboteur_II). Needs --format gts5. Off leaves every "
+             "conversion byte-identical.")
     parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
@@ -985,12 +1003,14 @@ def main(argv=None) -> int:
                           ("--drum-gate-off", "drum_gate_off"),
                           ("--drum-fall", "drum_fall"),
                           ("--vibrato-onset", "vibrato_onset"),
+                          ("--vibrato-early-delay", "vibrato_early_delay"),
                           ("--lfo-wave", "lfo_wave"),
                           ("--tie-pulse-restart", "tie_pulse_restart"),
                           ("--tie-late-pitch", "tie_late_pitch"),
                           ("--voice-arp", "voice_arp"),
                           ("--unison-vibrato-phase", "unison_vibrato_phase"),
                           ("--vibrato-hold", "vibrato_hold"),
+                          ("--vibrato-phase", "vibrato_phase"),
                           ("--prev-class-firstwave", "prev_class_firstwave"),
                           ("--rest-late-keyoff", "rest_late_keyoff"),
                           ("--ilv-filter-resume", "ilv_filter_resume"),
@@ -1139,12 +1159,14 @@ def main(argv=None) -> int:
                       drum_gate_off=args.drum_gate_off,
                       drum_fall=args.drum_fall,
                       vibrato_onset=args.vibrato_onset,
+                      vibrato_early_delay=args.vibrato_early_delay,
                       lfo_wave=args.lfo_wave,
                       tie_pulse_restart=args.tie_pulse_restart,
                       tie_late_pitch=args.tie_late_pitch,
                       voice_arp=args.voice_arp,
                       unison_vibrato_phase=args.unison_vibrato_phase,
                       vibrato_hold=args.vibrato_hold,
+                      vibrato_phase=args.vibrato_phase,
                       prev_class_firstwave=args.prev_class_firstwave,
                       rest_late_keyoff=args.rest_late_keyoff,
                       ilv_filter_resume=args.ilv_filter_resume,

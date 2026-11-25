@@ -181,15 +181,18 @@ def test_bump_set_spike_tune_sweep_is_sized_by_its_own_rows():
                                             (4, 0x0A, 0x09),
                                             (10, 0x0F, 0x0F)])
 def test_rasputin_keeps_the_shortest_row(number, ad, sr):
-    """Declined, so its bytes stay: 8 steps of `$0080` on the 5-call row.
+    """6 steps of `$0080`: the original's `$0300`, three ticks at two calls.
 
-    (4 - 2) * 5 - 2 = 8. The start subtune's own 6-call row would give 10
-    and the original's `$0300` is 6 -- the row that would size it is the
-    gate's 4, which `convert` does not carry for a subtune an opening `$FE`
-    rewrote (an open follow-up, not a property worth pinning at 8).
+    Rasputin's outer gate is reloaded by the track, so the sweep is sized on
+    the record's own tick clock (`Detection.drum_tick_ratios`,
+    `wavetable._drum_duration_steps`): ((4 - 2) * 2 ticks a row - 1) * 2 calls
+    = 6. Until then it was 8 -- (4 - 2) * 5 wall-clock calls - 2, a row that
+    carries the outer gate's skipped frames -- which this test pinned while
+    its own docstring said the original's `$0300` is 6 (task
+    `listen-sub99-rasputin`; traced 3 ties on 221 of 221 `$0909` notes).
     """
     import songview
     s = songview.parse_sng(_converted("Rasputin"))
     got_ad, got_sr, steps = _sweep(s, number)
     assert (got_ad, got_sr) == (ad, sr)
-    assert len(steps) == 2 * 5 - 2, steps
+    assert len(steps) == ((4 - 2) * 2 - 1) * 2, steps

@@ -505,6 +505,12 @@ class Detection:
     # LFO-table vibrato is a wave program (`convert(lfo_wave=)`), set by
     # goatwriter.build_sng on every build -- empty everywhere else.
     lfo_wave_phases: Dict[int, int] = field(default_factory=dict)
+    # {record index: our calls per original tick / multiplier} for a player
+    # whose outer gate reloads from the track (`track_fe_command`), set by
+    # `build_sng` from `pulse.track_set_tick_ratios` before any wavetable is
+    # laid out; empty everywhere else. The bit-$01 drum block steps once per
+    # TICK, so its sweep is sized on this clock (`wavetable._drum_entries`).
+    drum_tick_ratios: Dict[int, object] = field(default_factory=dict)
     # {Goattracker instrument: the global counter's parity on its attack
     # frame} where `wave_alternate_arp` holds (`derived_arp_parities`), set
     # by goatwriter.build_sng on every build -- empty everywhere else.

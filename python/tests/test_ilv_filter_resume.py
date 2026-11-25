@@ -146,16 +146,16 @@ def _song(stem, **extra):
 
 @needs_corpus
 def test_the_option_is_inert_off():
-    """Off, the file is the shipped one wherever no song entry sets it
-    (Radio_ACE, which the option would move); Lion_Heart's entry sets it
-    (adopted v0.5.677), so its shipped file is the option-on one."""
-    shipped, _, _ = _song("Radio_ACE")
-    off, _, lines = _song("Radio_ACE", ilv_filter_resume=False)
-    assert shipped == off
-    assert not [m for m in lines if m.startswith("ILV filter resume")]
-    lh, _, _ = _song("Lion_Heart")
-    lh_on, _, _ = _song("Lion_Heart", ilv_filter_resume=True)
-    assert lh == lh_on
+    """Off, the option emits nothing. Lion_Heart (adopted v0.5.677) and
+    Radio_ACE (v0.5.678) are the two song entries that set it, so their
+    shipped files are the option-on ones and differ from off."""
+    for name in ("Radio_ACE", "Lion_Heart"):
+        shipped, _, _ = _song(name)
+        on, _, _ = _song(name, ilv_filter_resume=True)
+        off, _, lines = _song(name, ilv_filter_resume=False)
+        assert shipped == on, name
+        assert shipped != off, name
+        assert not [m for m in lines if m.startswith("ILV filter resume")], name
 
 
 @needs_corpus

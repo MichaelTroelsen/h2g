@@ -18,6 +18,7 @@ from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERCUTOFF,
 from ..detect import FILTER_SHAPE
 from ..search import search_file
 from .constants import GT_FIRST_NOTE, GT_KEYOFF, GT_LAST_NOTE, GT_REST
+from . import exact_step
 from .pulse import (packed_pattern_size, pattern_rows)
 
 
@@ -53,7 +54,8 @@ def _filter_step_per_call(step: int, multiplier: int) -> int:
 
 
 def _ilv_programs(sid: SidFile, det: Detection, instr_used: int,
-                  multiplier: int = 1, level: int = 0) -> dict:
+                  multiplier: int = 1, level: int = 0,
+                  hold: Optional[int] = None) -> dict:
     """record -> (passband, resonance, cutoff, sweep) for every interleaved
     record that gets a filter program, in record order. `sweep` is
     `_ilv_sweep`'s rows, which `level` 1 spends fewer of -- or, for a file
@@ -92,6 +94,12 @@ def _ilv_programs(sid: SidFile, det: Detection, instr_used: int,
     # the jumps the original makes land on every program's notes. See
     # `ilv_start_cutoff_records`.
     first_leg_only = bool(inherits & out.keys())
+    if first_leg_only and hold:
+        held = {i: _ilv_hold_sweep(prog, hold, multiplier, prog[0])
+                for i, (pb, res, cut, prog) in out.items()}
+        if all(h is not None for h in held.values()):
+            return {i: (pb, res, cut, held[i][0])
+                    for i, (pb, res, cut, prog) in out.items()}
     return {i: (pb, res, cut, _ilv_first_leg(prog, multiplier)
                 if first_leg_only else _ilv_sweep(prog, multiplier, level))
             for i, (pb, res, cut, prog) in out.items()}
@@ -148,6 +156,233 @@ def ilv_start_cutoff_records(sid: SidFile, det: Detection) -> frozenset:
                 continue
             j += 1
     return frozenset(found)
+
+
+def ilv_start_cutoffs(sid: SidFile, det: Detection) -> dict:
+    """record -> {high byte of the `$87` start cutoff} over the notes that
+    `$87` starts on that record (and no `$84` skips): the values
+    `ilv_filter_resume` makes a clone for. Walks the raw patterns as
+    `ilv_start_cutoff_records` does."""
+    filt = det.ilv_filter
+    if filt is None:
+        return {}
+    from ..patterns import (ILV_COMMAND_OPERANDS, ILV_END, ILV_NOFILTER,
+                            ILV_REST, ILV_STARTCUT)
+    data = sid.data
+    found: dict = {}
+    for p in range(det.pattern_used + 1):
+        st = p * det.table_stride
+        at = sid.to_offset(data[det.pattern_hi + st] * 256
+                           + data[det.pattern_lo + st])
+        j, rec = 0, None
+        cut = skip = None
+        while 1 < at + j < len(data):
+            b = data[at + j]
+            if b == ILV_END:
+                break
+            if b >= 0xC0:
+                j += 1
+                continue
+            if b >= 0x80:
+                n = ILV_COMMAND_OPERANDS.get(b)
+                if n is None:
+                    break
+                if b == 0x80 and at + j + 1 < len(data):
+                    rec = data[at + j + 1]
+                elif b == ILV_STARTCUT and at + j + 1 < len(data):
+                    cut = data[at + j + 1]
+                elif b == ILV_NOFILTER:
+                    skip = True
+                j += 1 + n
+                continue
+            if b != ILV_REST and cut is not None and not skip \
+                    and rec is not None:
+                found.setdefault(rec, set()).add(cut)
+            cut = skip = None
+            j += 1
+    return found
+
+
+def ilv_hold_period(sid: SidFile, det: Detection,
+                    multiplier: int) -> Optional[int]:
+    """Play calls between the note starts of the filtered records, or None.
+
+    **THE ORIGINAL'S SWEEP DOES NOT STEP ON A NOTE-START FRAME.** The note
+    start ends in `$13CA JMP $17B7`, past the effects block that holds the
+    sweep's step (`$15F9-$1661`), so on every frame a fetched note starts the
+    cutoff stays where it was: Radio_ACE's cutoff steps `$0295` a frame for
+    five frames and holds for the sixth (measured: frames 2318, 2324, 2330 of
+    its trace are the repeats). Goattracker's table steps every call, so a
+    sweep that runs on through a `$84` note overshoots by one step in the
+    period.
+
+    The period is the notes' own length -- `wait + 1` units of the song's
+    frames per unit, a call per frame at `-S1` -- and is only a period where
+    `ILV_HOLD_SHARE` of the notes on filter-enabled records have the same
+    wait (Radio_ACE: 298 of 300); any other file returns None and keeps the
+    unbroken sweep.
+    """
+    filt = det.ilv_filter
+    if filt is None or not ILV_HOLD_ENABLED:
+        return None
+    from fractions import Fraction
+    from ..patterns import (ILV_COMMAND_OPERANDS, ILV_END, ILV_REST)
+    from .tempo import effective_frames, find_song_speeds
+    speeds = find_song_speeds(sid)
+    unit = effective_frames(speeds, 0, True)
+    if unit is None:
+        return None
+    unit = Fraction(unit)
+    if unit.denominator != 1:
+        return None
+    data = sid.data
+    routed = _ilv_routed_records(sid, det, det.instr_used)
+    waits: Counter = Counter()
+    for p in range(det.pattern_used + 1):
+        st = p * det.table_stride
+        at = sid.to_offset(data[det.pattern_hi + st] * 256
+                           + data[det.pattern_lo + st])
+        j, rec, wait = 0, None, 0
+        while 1 < at + j < len(data):
+            b = data[at + j]
+            if b == ILV_END:
+                break
+            if b >= 0xC0:
+                wait = b & 0x1F
+                j += 1
+                continue
+            if b >= 0x80:
+                n = ILV_COMMAND_OPERANDS.get(b)
+                if n is None:
+                    break
+                if b == 0x80 and at + j + 1 < len(data):
+                    rec = data[at + j + 1]
+                j += 1 + n
+                continue
+            if b != ILV_REST and rec in routed:
+                waits[wait] += 1
+            j += 1
+    if not waits:
+        return None
+    wait, n = waits.most_common(1)[0]
+    if n < ILV_HOLD_SHARE * sum(waits.values()):
+        return None
+    return (wait + 1) * int(unit) * multiplier
+
+
+def _hi_trajectory(prog: bytes, v0: int, frames: int, period: int) -> list:
+    """The cutoff's high byte at frames 0..`frames`, as the player's sweep
+    (`$15F9-$1661`) moves it from `v0` with a hold on every `period`-th
+    frame: the 16-bit accumulator steps by the record's `+2/+3`, and a limit
+    pins the high byte, zeroes the low and turns the sweep round."""
+    step = prog[2] << 8 | prog[3]
+    upper, lower = prog[4], prog[5]
+    down = not prog[6] & 0x80
+    acc = v0 << 8 | (prog[1] if v0 == prog[0] else 0)
+    out = [acc >> 8]
+    for f in range(1, frames + 1):
+        if f % period:
+            if down:
+                acc -= step
+                if acc < 0 or acc >> 8 <= lower:
+                    acc, down = lower << 8, False
+            else:
+                acc += step
+                if acc > 0xFFFF or acc >> 8 >= upper:
+                    acc, down = upper << 8, True
+        out.append(acc >> 8)
+    return out
+
+
+# Switched off by `tests/test_ilv_filter_hold.py`, which proves the period is
+# what moves the bytes.
+ILV_HOLD_ENABLED = True
+
+# The share of a file's filtered notes that must have one length for
+# `ilv_hold_period` to call it a period.
+ILV_HOLD_SHARE = 0.95
+
+# Rows a hold sweep may spend (the rest of the 64-row table holds the
+# params/cutoff rows of the record's block, the clear block and the `$87`
+# clones' three-row blocks).
+ILV_HOLD_ROWS = 32
+
+
+def _ilv_hold_sweep(prog: bytes, period: int, multiplier: int,
+                    v0: int) -> Optional[tuple]:
+    """(rows, anchors) for a first-leg sweep that holds on each note start.
+
+    A note start is `period` calls apart; the call the table's set-cutoff row
+    sits on is the first of them, then each period is `period - m` stepping
+    calls and `m` holding ones (`m` = `multiplier`, calls a frame). The
+    sweep runs from `v0` to its first limit and stops there; the high byte
+    after each period is the player's own (`_hi_trajectory`), reached by
+    one run of an integer step per period with the rounding carried to the
+    next, so the sweep stays within a step or two of the player's.
+
+    `anchors` is `[(row offset, high byte)]` at the start of each period:
+    the rows a `$87` note's clone jumps to once it has set its own start.
+    None for a sweep this shape cannot say (no step, a start already past
+    its limit, or more periods than the table has rows for).
+    """
+    step = prog[2] << 8 | prog[3]
+    upper, lower = prog[4], prog[5]
+    if not step or upper <= lower or period % multiplier:
+        return None
+    frames = period // multiplier
+    if frames < 2:
+        return None
+    down = not prog[6] & 0x80
+    limit = lower if down else upper
+    if (down and v0 <= limit) or (not down and v0 >= limit):
+        return None
+    reach = -(-abs(v0 - limit) * 256 // step)       # stepping frames to it
+    n_periods = -(-reach // (frames - 1))
+    if 2 * n_periods + 1 > ILV_HOLD_ROWS:
+        return None
+    his = _hi_trajectory(prog, v0, n_periods * frames, frames)
+    calls = (frames - 1) * multiplier
+    rows: list = []
+    anchors: list = []
+    actual = v0
+    for u in range(n_periods):
+        anchors.append((len(rows), actual))
+        want = his[min((u + 1) * frames, len(his) - 1)]
+        per = max(-ILV_SWEEP_MAX_STEP,
+                  min(ILV_SWEEP_MAX_STEP, round((want - actual) / calls)))
+        rows.append((calls, per & 0xFF))
+        actual += per * calls
+        rows.append((multiplier, 0))
+    return tuple(rows) + ((FILT_STOP, 0x00),), anchors
+
+
+def ilv_hold_anchors(sid: SidFile, det: Detection, instr_used: int,
+                     multiplier: int, hold: Optional[int]) -> dict:
+    """record -> `_ilv_hold_sweep`'s anchors, for the records whose sweep
+    `_ilv_programs` emits that way (`hold` set, a `$87` in the file)."""
+    if not hold or det.ilv_filter is None:
+        return {}
+    if not ilv_start_cutoff_records(sid, det):
+        return {}
+    data = sid.data
+    filt = det.ilv_filter
+    out: dict = {}
+    for i in range(max(instr_used - 1, 0)):
+        rec = det.instr_start + i * det.instr_stride
+        if rec + filt.program_off >= len(data):
+            break
+        if not data[rec + filt.enable_off] & FILTER_ENABLE_BIT:
+            continue
+        base = filt.table + data[rec + filt.program_off] * filt.stride
+        if base + 7 >= len(data):
+            continue
+        prog = data[base:base + 8]
+        if not (prog[6] & 0x07):
+            continue
+        got = _ilv_hold_sweep(prog, hold, multiplier, prog[0])
+        if got is not None:
+            out[i] = got[1]
+    return out
 
 
 def _ilv_first_leg(prog: bytes, multiplier: int) -> tuple:
@@ -262,7 +497,8 @@ def _ilv_sweep_resolve(sweep: tuple, at: int) -> list:
 
 def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
                         multiplier: int = 1,
-                        clearing_instruments: set | None = None):
+                        clearing_instruments: set | None = None,
+                        hold: Optional[int] = None):
     """(entries, pointers) for the interleaved dialect's filter table.
 
     The same four rows the classic path emits -- set params, set cutoff,
@@ -297,9 +533,10 @@ def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
         return [], {}
     entries: List[tuple] = []
     pointers: dict = {}
-    programs = _ilv_programs(sid, det, instr_used, multiplier)
+    programs = _ilv_programs(sid, det, instr_used, multiplier, hold=hold)
     if sum(2 + len(s) for *_x, s in programs.values()) > ILV_SWEEP_BUDGET:
-        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1)
+        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1,
+                                 hold=hold)
     for i, (passband, res, cutoff, sweep) in programs.items():
         block = [(FILT_SET_PARAMS | passband, res | ILV_FILTER_ROUTING),
                  (FILT_SET_CUTOFF, cutoff)]
@@ -738,7 +975,8 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                             patterns: List[List[int]], instr_used: int,
                             multiplier: int, instr_base: int,
                             log=None,
-                            skip: Optional[dict] = None
+                            skip: Optional[dict] = None,
+                            hold: Optional[int] = None
                             ) -> Optional[IlvRouting]:
     """The interleaved dialect's routing as `B` commands, or None.
 
@@ -755,9 +993,10 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
     from ..patterns import MAX_PATTERNS, GT_FIRSTNOTE, GT_LASTNOTE
     if det.ilv_filter is None or len(tracks) < 3:
         return None
-    programs = _ilv_programs(sid, det, instr_used, multiplier)
+    programs = _ilv_programs(sid, det, instr_used, multiplier, hold=hold)
     if sum(2 + len(s) for *_x, s in programs.values()) > ILV_SWEEP_BUDGET:
-        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1)
+        programs = _ilv_programs(sid, det, instr_used, multiplier, level=1,
+                                 hold=hold)
     if not programs:
         return None
     routed = _ilv_routed_records(sid, det, instr_used)
@@ -1149,7 +1388,9 @@ def _sweep_rows(per_call: int, calls: Optional[int]) -> List[tuple]:
 
 def _classic_sweep_block(passband: int, resctl: int, cutoff: int,
                          per_call: int, multiplier: int,
-                         calls: Optional[int]) -> List[tuple]:
+                         calls: Optional[int],
+                         step: Optional[int] = None,
+                         window: int = 0) -> List[tuple]:
     """Set params, hold the strike frame, set the FIRST swept value, modulate.
 
     **THE PLAYER NEVER WRITES A NOTE'S START CUTOFF TO $D416.** A fetch frame
@@ -1172,6 +1413,14 @@ def _classic_sweep_block(passband: int, resctl: int, cutoff: int,
     (at least one)."""
     m = max(1, multiplier)
     block = [(FILT_SET_PARAMS | passband, resctl)] * (m + 1)
+    if window and step and calls and exact_step.fractional(step, m):
+        # The multiplier does not divide the player's per-frame step: the
+        # first swept value is one whole frame's step and the rows after it
+        # keep the frame's total (`exact_step.exact_step_rows`).
+        signed = step - 256 if step >= 0x80 else step
+        block.append((FILT_SET_CUTOFF, (cutoff + signed) & 0xFF))
+        return (block + exact_step.exact_step_rows(
+            step, m, max(1, calls - m), window) + [(FILT_STOP, 0x00)])
     block.append((FILT_SET_CUTOFF, (cutoff + per_call * m) & 0xFF))
     return block + _sweep_rows(per_call, max(1, calls - m) if calls else calls)
 
@@ -1775,6 +2024,29 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
     the costliest sizes given back (`_fit_sized_sweeps`), and only then
     without them, which is the table every earlier version wrote.
     """
+    if (exact_step.EXACT_FRAME_STEP and sweep_calls and multiplier > 1
+            and det.filter is not None and not det.filter.free_running
+            and not det.filter.clamp
+            and any(exact_step.wanted(
+                sweep_calls, i, sid.data[det.filter.offset
+                                         + i * det.instr_stride + 1],
+                multiplier, _filter_step_per_call(
+                    sid.data[det.filter.offset + i * det.instr_stride + 1],
+                    multiplier)) for i in sweep_calls
+                    if det.filter.offset + i * det.instr_stride + 1
+                    < len(sid.data))):
+        # A sized classic sweep keeps the player's per-frame step where the
+        # table affords it (`exact_step`): the first window that fits, truest
+        # first, shared or not. Where no window fits, the table is the one
+        # every earlier version wrote.
+        for share in (False, True):
+            for window in exact_step.EXACT_STEP_WINDOWS:
+                entries, pointers, overflowed = _filter_entries_once(
+                    sid, det, instr_used, lead, multiplier,
+                    clearing_instruments, sfx_blips, sweep_calls,
+                    share=share, exact_window=window)
+                if not overflowed:
+                    return entries, pointers
     entries, pointers, overflowed = _filter_entries_once(
         sid, det, instr_used, lead, multiplier, clearing_instruments,
         sfx_blips, sweep_calls)
@@ -1867,7 +2139,8 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
                          lead: int, multiplier: int,
                          clearing_instruments: set | None,
                          sfx_blips: dict | None,
-                         sweep_calls: dict | None, share: bool = False):
+                         sweep_calls: dict | None, share: bool = False,
+                         exact_window: int = 0):
     """(entries, pointers, overflowed): `_filter_entries`' one build.
 
     `share` gives a record whose block equals an earlier record's that
@@ -1942,7 +2215,9 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
             if per_call:
                 block = _classic_sweep_block(
                     filt.passband, resctl, filt.cutoff, per_call, multiplier,
-                    (sweep_calls or {}).get(i))
+                    (sweep_calls or {}).get(i), step,
+                    exact_window if exact_step.wanted(
+                        sweep_calls, i, step, multiplier, per_call) else 0)
             else:
                 block = [(FILT_SET_PARAMS | filt.passband, resctl),
                          (FILT_SET_CUTOFF, filt.cutoff), (FILT_STOP, 0x00)]

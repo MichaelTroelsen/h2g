@@ -155,9 +155,15 @@ def test_a_pattern_is_copied_per_distinct_spelling():
     plain = parse_sng(_convert(drum_held=False))
     held = parse_sng(_convert(drum_held=True))
     assert len(held.patterns) > len(plain.patterns)
-    # The same orderlist lengths: the copies repoint, they do not lengthen.
-    assert [len(t) for t in held.tracks[:3]] == [len(t) for t in
-                                                plain.tracks[:3]]
+    # The copies repoint positions, and the only thing that lengthens an
+    # orderlist is a run of one pattern written out step by step
+    # (`drum_held.literal_runs`, tests/test_drum_held_literal_runs.py): the
+    # same plays in the same order, in at least as many bytes.
+    from h2g.goatwriter.counter_fall import _visits
+    assert all(len(h) >= len(p) for h, p in zip(held.tracks[:3],
+                                                plain.tracks[:3]))
+    assert [len(list(_visits(t, held.patterns))) for t in held.tracks[:3]] \
+        == [len(list(_visits(t, plain.patterns))) for t in plain.tracks[:3]]
 
 
 # Spellbound's record 2 as the converter lays it: `A B C D` then the tail

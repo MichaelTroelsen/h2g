@@ -936,6 +936,14 @@ EXCLUDED_FROM_ALWAYS = {
     # (task formula-1-lead-vibrato, v0.5.583, 180 s, historical).
     # Not in FIDELITY_TOGGLES. A song entry `"vibrato_onset": true`.
     "vibrato_onset",
+    # `vibrato_early_delay`: a classic vibrato's `vibdelay` floor loses the one
+    # effect call tick 0 does not run (goatwriter.vibrato._vibrato_delay), so
+    # the oscillator starts on the first call of frame 1. Off by default and
+    # per song: it moves every classic-vibrato file whose delay is the floor
+    # (task listen-sub99-sigma-seven, v0.5.676, -t 180, historical: the
+    # per-file trade is in docs/OPTIONS.md). Not in FIDELITY_TOGGLES. A song
+    # entry `"vibrato_early_delay": true`.
+    "vibrato_early_delay",
     # `tie_pulse_restart`: a tie whose landing replays only the per-voice
     # pulse sweep is respelled as a legato clone. Off by default and per
     # song: it moved pitch the wrong way on International_Karate and
@@ -982,6 +990,13 @@ EXCLUDED_FROM_ALWAYS = {
     # `tiefr` 15% -> 72%, `tie` 0.31x -> 0.92x. Not in FIDELITY_TOGGLES. A
     # song entry `"vibrato_hold": true`.
     "vibrato_hold",
+    # `vibrato_phase`: each vibrating note of a classic-vibrato file the
+    # wavetable has room for starts in the original's free-running triangle
+    # phase (h2g.vibrato_phase): an instrument clone per (record, zero-speed
+    # steps, frame-4 move) and a pattern copy per orderlist position. Off by
+    # default and per song; not in FIDELITY_TOGGLES. A song entry
+    # `"vibrato_phase": true`. Only ACE_II's clock shape is read.
+    "vibrato_phase",
     # `prev_class_firstwave`: the note-init frame shows the previous note's
     # last waveform, as the original's does (h2g.prev_class_firstwave). Per
     # song and never a default; not in FIDELITY_TOGGLES. A song entry

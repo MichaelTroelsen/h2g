@@ -836,7 +836,8 @@ def _free_gate_calls(det: Detection, vib_ptrs: dict,
 
 def _vibrato_delay(det: Detection, multiplier: int,
                    commanded: bool = False, row_calls: int = 0,
-                   record: Optional[int] = None) -> int:
+                   record: Optional[int] = None,
+                   early: bool = False) -> int:
     """Goattracker `vibdelay` for this player's vibrato, in play calls.
 
     `vibdelay` is a countdown, not a flag: gplay.c:769-776 is a fallthrough
@@ -949,6 +950,15 @@ def _vibrato_delay(det: Detection, multiplier: int,
         # (tests/test_table_vibrato.py::test_the_entry_is_note_relative_and_starts_on_the_note).
         if det.vibrato_offset is not None:
             floor = max(VIBRATO_DELAY, multiplier + 1)
+            if early and row_calls >= 2:
+                # `vibdelay` counts EFFECT calls and the packed player runs
+                # none on tick 0 (`REALTIMEOPTIMIZATION`, see
+                # `_classic_vibrato_entry`), so effect call `k` is play call
+                # `k` of the row: a delay of `multiplier` already starts the
+                # oscillator on the first call of frame 1, and
+                # `multiplier + 1` starts it one effect call later (a frame
+                # and a half at three-call rows). `vibrato_early_delay`.
+                floor = max(VIBRATO_DELAY, multiplier)
             gate = _classic_gate_delay(det, multiplier, row_calls,
                                        record=record)
             return floor if gate is None else min(0xFF, max(floor, gate))
@@ -1203,8 +1213,13 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     gate_skip: Optional[int] = None,
                     instr_row_calls: Optional[dict] = None,
                     table_span: bool = False,
-                    skip: frozenset = frozenset()) -> dict:
+                    skip: frozenset = frozenset(),
+                    early_delay: bool = False) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    `early_delay` is `convert(vibrato_early_delay=)`: the classic
+    oscillator's `vibdelay` floor drops by the one effect call tick 0 does not
+    run (`_vibrato_delay`).
 
     `skip` names records (0-based) that get no entry: those whose vibrato is
     a wave program instead (`goatwriter.lfo_wave`, `convert(lfo_wave=)`).
@@ -1296,7 +1311,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     else:
         return {}
     delay = _vibrato_delay(det, mult, commanded=vibrato_command,
-                           row_calls=row_calls)
+                           row_calls=row_calls, early=early_delay)
     # A gate the player stores per instrument (detect.VibratoGate.table) is
     # a delay per record; every other file has one delay for all of them.
     per_record = (det.vibrato_gate is not None
@@ -1328,7 +1343,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
             speed_table.append(entry)
         out[i] = (speed_table.index(entry) + 1,
                   _vibrato_delay(det, mult, commanded=vibrato_command,
-                                 row_calls=row_calls, record=i)
+                                 row_calls=row_calls, record=i,
+                                 early=early_delay)
                   if per_record else delay)
     if log and out:
         log(f"Instrument vibrato......: {len(out)} of "

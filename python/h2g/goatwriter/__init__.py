@@ -200,8 +200,9 @@ from .pulse import (SPELLED_SPEED_MIN, _ramp_rows, _setrow, _tri_call_speed,
 from .pulse import (MIXED_SPEED_MIN_ERR, MIXED_CELL_ROW, _tri_exact_rate,
                     _tri_mixed_rate, _mixed_rows, _mixed_leg, _mixed_legs,
                     _mixed_trials)  # noqa: F401
-from .ilv_filter_resume import (RESUME_ENABLED, resume_plan,  # noqa: F401
-                                  _RESUME_RECORD_BYTES, _RESUME_FILTER_PTR)
+from .ilv_filter_resume import (RESUME_ENABLED, START_CLONES_ENABLED,  # noqa: F401
+                                  resume_plan, _RESUME_RECORD_BYTES,
+                                  _RESUME_FILTER_PTR)
 from .tri_clock import (clock_classes, CLOCK_BAND, CLOCK_TOLERANCE,
                         extra_programs, MAX_CLOCK_CLASSES,
                         tri_clock_clones, tri_clock_plan, tri_clock_split_plan,
@@ -220,12 +221,17 @@ from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _ilv_voice_rows, IlvRouting, _ilv_sweep,
                       _ilv_sweep_resolve, _leg_rows, ILV_SWEEP_BUDGET,
                       ilv_start_cutoff_records, _ilv_first_leg,
-                      ILV_SWEEP_MAX_STEP,
+                      ILV_SWEEP_MAX_STEP, ilv_start_cutoffs, ilv_hold_period,
+                      ilv_hold_anchors, _ilv_hold_sweep, _hi_trajectory,
+                      ILV_HOLD_ROWS, ILV_HOLD_ENABLED, ILV_HOLD_SHARE,
                       _instruments_named_per_voice, _run_length_rows,
                       _sfx_bandpass_block, sfx_bandpass_plan,
                       sfx_drum_hit_lattice, _write_filtertable)  # noqa: F401
 from .classic_filter_stop import (apply_stops, classic_filter_stops,
                                     SweepLengths, _stop_row)  # noqa: F401
+from .exact_step import (DRIFT_FLOOR, EXACT_FRAME_STEP,  # noqa: F401
+                         EXACT_STEP_WINDOWS, PHASE_GATE, exact_step_rows,
+                         fractional, phase_free, wanted)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass,
                           _duration_gate_pass,
@@ -411,7 +417,7 @@ from .drum_held import (HELD_GATES, LOOP_VARIANT_ROWS, OVERLAY,  # noqa: F401
                         DrumHeldPlan, _INDEXED_REACH, _ZP_INDEXED,
                         _ZP_WRITERS, _abs_outer_start, _apply, _drum_records,
                         _group, _shape, _zp_outer_start, drum_held_plan,
-                        held_clock, held_rows, is_held, is_loop,
+                        held_clock, held_rows, is_held, is_loop, literal_runs,
                         overlay_key, variant, variant_rows, withheld_calls)
 from .lfo_wave import (LFO_END, LFO_HOLD, LFO_MAX_READS, LFO_SIGN,  # noqa: F401
                        LFO_SPEED_RELATIVE, LfoPhase, _byte, _note_walk,

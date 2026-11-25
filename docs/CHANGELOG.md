@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.678 — 2026-11-25
+
+- Adopt 7 decided changes: Proteus drum_held runs, Rasputin drum tick clock, vibrato_early_delay on 4 songs, Knucklebusters exact filter step, Radio_ACE ilv_filter_resume, ACE_II vibrato_phase, Las_Vegas vibrato_onset
+
 ## 0.5.677 — 2026-11-25
 
 - Adopt 6 decided changes: Formula_1 drum_fall_loop, Lightforce drum_alt_fall, Bump_Set_Spike drum_split_tick, Tarzan drum-fall head, Knucklebusters multi-voice filter clear, Lion_Heart ilv_filter_resume

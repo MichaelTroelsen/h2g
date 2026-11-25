@@ -117,12 +117,12 @@ def test_a_successor_with_an_event_is_measured_as_before():
     assert median_played_durations([[0, 1]], pats) == {3: 3, 2: 1}
 
 
-def _converted(name):
+def _converted(name, **override):
     import fidelity
     from h2g.convert import convert
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     sng = convert(str(CORPUS / f"{name}.sid"), log=lambda m: None,
-                  **fidelity._preset_opts(doc, f"{name}.sid"))
+                  **{**fidelity._preset_opts(doc, f"{name}.sid"), **override})
     return sng[0] if isinstance(sng, tuple) else sng
 
 
@@ -147,5 +147,10 @@ def test_bump_set_spike_gt13_has_no_sweep_and_gives_its_entries_back():
     length, steps = _block(song, 13)
     assert steps == 0, "the original holds the frequency for the whole note"
     assert length <= 6, length
-    # It was 24 steps and 31 entries on a table that is full.
-    assert len(song.tables["WTBL"]) < 255
+    # It was 24 steps and 31 entries on a table that is full. Without
+    # `drum_held` the entries are back; with it the plan spends them on its
+    # second held program (`drum_held.literal_runs` let it spell the rows a
+    # repeat count's plays disagreed on), up to the table's end and no more.
+    plain = songview.parse_sng(_converted("Bump_Set_Spike", drum_held=False))
+    assert len(plain.tables["WTBL"]) < 255
+    assert len(song.tables["WTBL"]) <= 255

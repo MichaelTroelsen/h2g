@@ -2270,6 +2270,7 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # .976 -> .983. See tests/test_ilv_tie.py.
 ILV_ARP = 0x83
 ILV_NOFILTER = 0x84            # see _build_raw_pattern_ilv's `skip_rows`
+ILV_STARTCUT = 0x87            # `$87 nn mm`: the next note's start cutoff
 
 
 class IlvArps(list):
@@ -2360,6 +2361,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     tieflag = False                 # the last duration byte's `ILV_TIE`
     nexttie = False                 # that flag, carried to the NEXT note
     nofilter = False                # a `$84` waiting for its event
+    startcut: Optional[int] = None  # a `$87`'s high byte waiting for its event
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -2397,6 +2399,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                 instrument = record + instr_base
             elif b == ILV_NOFILTER:
                 nofilter = True
+            elif b == ILV_STARTCUT:
+                startcut = data[addr + i2 + 1]
             elif (b == ILV_ARP and arps is not None
                   and getattr(arps, 'commands', True)):
                 # Armed for the note that FOLLOWS, and dropped if none does:
@@ -2425,9 +2429,14 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         row = len(events) - 4
         if nofilter and b != ILV_REST and skip_rows is not None:
             skip_rows.append(row // 4)
+        elif startcut is not None and b != ILV_REST and skip_rows is not None:
+            # `(row, high byte)`: a `$87` note still loads its record's
+            # program but starts it at this cutoff (`$1335 LDA $1A63`).
+            skip_rows.append((row // 4, startcut))
         # The player clears the flag at every event fetch (`$1152`), a rest
         # included: it belongs to the one event that follows it.
         nofilter = False
+        startcut = None
         operand = armed
         if (operand is None and arps is not None and record is not None
                 and b != ILV_REST):
@@ -3442,6 +3451,18 @@ class TrackIndex(list):
         self.event_rows: Dict[int, Optional[frozenset]] = dict(event_rows or {})
 
 
+def _rebase_skip(entry_skip, base_row: int, data_rows: int) -> frozenset:
+    """The `filter_skip` entries (a row, or `(row, start cutoff)` for a `$87`
+    note) that fall in one slice, rebased to the slice's own row numbers."""
+    out = set()
+    for item in entry_skip:
+        r = item[0] if isinstance(item, tuple) else item
+        if base_row <= r < base_row + data_rows:
+            out.add((r - base_row, item[1]) if isinstance(item, tuple)
+                    else r - base_row)
+    return frozenset(out)
+
+
 def _filtered_skip_rows(sid: SidFile, det: Detection, events,
                         rows: List[int], instr_base: int) -> List[int]:
     """`rows` (the notes a `$84` precedes) narrowed to those on a record whose
@@ -3456,13 +3477,14 @@ def _filtered_skip_rows(sid: SidFile, det: Detection, events,
     from .detect import FILTER_ENABLE_BIT
     data = sid.data
     out = []
-    for r in rows:
+    for item in rows:
+        r = item[0] if isinstance(item, tuple) else item
         if 4 * r + 1 >= len(events):
             continue
         rec = events[4 * r + 1] - instr_base
         at = det.instr_start + rec * det.instr_stride + filt.enable_off
         if rec >= 0 and 0 <= at < len(data) and data[at] & FILTER_ENABLE_BIT:
-            out.append(r)
+            out.append(item)
     return out
 
 
@@ -3808,8 +3830,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 data_rows -= 1
             flags = frozenset(r - base_row for r in entry_free
                               if base_row <= r < base_row + data_rows)
-            skip_flags = frozenset(r - base_row for r in entry_skip
-                                   if base_row <= r < base_row + data_rows)
+            skip_flags = _rebase_skip(entry_skip, base_row, data_rows)
             entry_starts = starts.get(i)
             ev_rows = (None if entry_starts is None else
                        frozenset(r - base_row for r in entry_starts
@@ -3927,9 +3948,8 @@ def _new_slices(slices: List[List[int]], entry_free, terminate: bool,
             data_rows -= 1
         flags = frozenset(r - base_row for r in entry_free
                           if base_row <= r < base_row + data_rows)
-        skip_flags = (None if entry_skip is None else frozenset(
-            r - base_row for r in entry_skip
-            if base_row <= r < base_row + data_rows))
+        skip_flags = (None if entry_skip is None
+                      else _rebase_skip(entry_skip, base_row, data_rows))
         base_row += data_rows
         key = (bytes(s), flags) if free_rows else bytes(s)
         if skip_flags is not None:
@@ -4025,8 +4045,14 @@ def inherit_event_rows(patterns: List[List[int]],
     return out
 
 
-def pack_repeats(track: List[int]) -> List[int]:
+def pack_repeats(track: List[int],
+                 literal: Optional[Set[int]] = None) -> List[int]:
     """Collapse runs of one repeated pattern into REPEAT commands.
+
+    `literal` is a set of indices into `track`: a run holding one of them is
+    written out step by step (`drum_held.literal_runs`: the visits of a repeat
+    count share one pattern cell, so a run whose visits land on different
+    clock residues cannot be spelled per visit while it is a repeat).
 
     Hubbard orderlists hold long runs of a single pattern -- a drum bar held
     under a melody, a sustained intro -- and pattern slicing multiplies them,
@@ -4058,6 +4084,10 @@ def pack_repeats(track: List[int]) -> List[int]:
         run = 0
         while i + run < n and track[i + run] == b:
             run += 1
+        if literal and any(j in literal for j in range(i, i + run)):
+            out += [b] * run
+            i += run
+            continue
         i += run
 
         # Goattracker parses one orderlist step as [transpose][repeat][pattern]
@@ -8126,9 +8156,15 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    tempos: Optional[List[dict]] = None,
                    tempo_calls: Optional[List[dict]] = None,
                    tempo_clocks: Optional[List[dict]] = None,
-                   fades: Optional[List[dict]] = None
+                   fades: Optional[List[dict]] = None,
+                   keep_literal=None
                    ) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
+
+    `keep_literal(ti, track, patterns)` names the indices of `track` (the
+    unpacked orderlist) whose runs `pack` must write out step by step
+    (`pack_repeats(literal=...)`); the packed track is dropped back to the
+    ordinary packing where it would be over the length limit.
 
     The length check runs at the end of each track so that `pack` -- which only
     becomes possible once the final numbering is known -- gets to act before a
@@ -8257,6 +8293,12 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 log(f"Master fade.............: track {ti}: {n} of "
                     f"{len(fades[ti])} position(s) carry D0v")
         packed = pack_repeats(new_track) if pack else new_track
+        if pack and keep_literal is not None and patterns is not None:
+            lit = keep_literal(ti, new_track, patterns)
+            if lit:
+                spelled = pack_repeats(new_track, lit)
+                if len(spelled) < MAX_TRACK_LEN:
+                    packed = spelled
         # Merging is attempted only for a track that would otherwise cost its
         # subtune, so no track that already fits is rewritten and the fixture
         # cannot move.

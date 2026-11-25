@@ -52,6 +52,7 @@ from .funk_gatetimers import split_funk_gatetimers
 from .pitch_lead import lead_ties
 from .unison_vibrato import chorus_doubled_notes
 from .vibrato_hold import hold_classic_vibrato, keyed_records
+from .vibrato_phase import phase_classic_vibrato
 from .prev_class_firstwave import prev_class_firstwave as _prev_class_firstwave
 from .rest_late_keyoff import rest_late_keyoff as _rest_late_keyoff
 from .goatwriter.hard_restart import _hard_restart_ticks
@@ -358,12 +359,14 @@ def convert(sid_path: str, log: Logger = print,
             drum_gate_off: bool = False,
             drum_fall: bool = False,
             vibrato_onset: bool = False,
+            vibrato_early_delay: bool = False,
             tie_pulse_restart: bool = False,
             tie_late_pitch: bool = False,
             lfo_wave: bool = False,
             voice_arp: bool = False,
             unison_vibrato_phase: bool = False,
             vibrato_hold: bool = False,
+            vibrato_phase: bool = False,
             prev_class_firstwave: bool = False,
             rest_late_keyoff: bool = False,
             ilv_filter_resume: bool = False,
@@ -626,6 +629,15 @@ def convert(sid_path: str, log: Logger = print,
     update is stretched (outer gate, dwell, extra depth shift) keep the
     per-call entry.
 
+    vibrato_phase (multiplier > 1) starts each vibrating note of the first
+    lap, where the wavetable has room, in the original's free-running
+    triangle phase (`vibrato_phase`): the note's record is cloned per class
+    (zero-speed `$F4` steps, a frame-4 move) onto a held program, and the
+    patterns are copied per orderlist position. Notes whose class has no room
+    keep the record's per-call vibrato; a file whose clock, counter or age
+    gate it does not read is left byte for byte. Runs before `vibrato_hold`,
+    whose held records it would decline.
+
     pitch_lead_tie writes, on the command-free rest row before each note
     whose record's firstwave is a gated real waveform, that note with
     CMD_TONEPORTA $00, so the voice already holds the note's pitch when the
@@ -694,6 +706,17 @@ def convert(sid_path: str, log: Logger = print,
     1.002 -> 0.860, and Mozart's original moves on frame 2 or later on
     every note measured, not 1 (docs/OPTIONS.md).
 
+    vibrato_early_delay takes the one effect call tick 0 does not run off
+    a classic bound/shift vibrato's `vibdelay` floor (`multiplier + 1` ->
+    `multiplier`, where rows are 2 calls or longer), so the oscillator
+    starts on the first call of frame 1 and not one effect call after it.
+    Off by default and per song (presets.EXCLUDED_FROM_ALWAYS): it moves
+    every classic-vibrato file whose delay is the floor, and it trades --
+    Sigma_Seven tiefr .584 -> .595, bend .607 -> .648, travel .643 -> .677,
+    cents .969 -> .972 against aud .9552 -> .9545 (task
+    listen-sub99-sigma-seven, v0.5.676, -t 180, historical;
+    docs/OPTIONS.md).
+
     drop_unnamed_instruments removes, from the finished file, every
     instrument record no pattern row names, and renumbers the instrument
     columns to match; instrument 1 is always kept, because both players
@@ -713,7 +736,12 @@ def convert(sid_path: str, log: Logger = print,
     note names a clone of its instrument with no filter pointer instead
     (`goatwriter.ilv_filter_resume`). Needs `filters`; reaches only files
     with `det.ilv_filter` and a `$84` before a filtered record's note. Off by
-    default: it moves the bytes of the files it reaches.
+    default: it moves the bytes of the files it reaches. Where the file's
+    filter sweep is the first-leg-only one (a `$87` names start cutoffs) and
+    its filtered notes share one length, the sweep also holds on each note
+    start as the player's does and each `$87` note names a clone starting at
+    its own cutoff (`goatwriter.filters.ilv_hold_period`, `ilv_filter_resume`;
+    Radio_ACE).
 
     ilv_filter_routing writes the interleaved player's per-voice filter
     routing as CMD_SETFILTERCTRL (B) commands at every row where the union of
@@ -1232,7 +1260,22 @@ def convert(sid_path: str, log: Logger = print,
                                       floor, slides, status_bit6))
         elif not det.master_fade_fetch and det.read_track_version == 0:
             fades = _master_fade_positions(tracks, det.master_fade, floor)
+    # `drum_held` spells a note per play of its pattern cell, so a run of one
+    # pattern whose plays land on different clock residues stays written out
+    # (`drum_held.literal_runs`) instead of folding into a repeat count that
+    # the plan would have to decline. The conditions are `build_sng`'s own.
+    keep_literal = None
+    if (drum_held and effects and det.effect_drum and pack
+            and det.instr_start is not None and det.note_rise is None
+            and det.counter_fall is None):
+        from .goatwriter import drum_held as _gw_drum_held
+
+        def keep_literal(ti, track, pats):
+            return _gw_drum_held.literal_runs(
+                sid, det, ti, track, pats,
+                lead=0 if compact_instruments else 1)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
+                            keep_literal=keep_literal,
                             patterns=new_patterns, max_rows=max_rows,
                             tempos=step_tempos, tempo_calls=step_calls,
                             tempo_clocks=step_clocks, fades=fades)
@@ -1816,6 +1859,7 @@ def convert(sid_path: str, log: Logger = print,
                          named_firstwave=named_firstwave,
                          pitch_tie_phase=pitch_tie_phase,
                          vibrato_onset=vibrato_onset,
+                         vibrato_early_delay=vibrato_early_delay,
                          lfo_wave=lfo_wave,
                          arps=pattern_arps,
                          pulse_plan=pulse_plan,
@@ -1904,6 +1948,11 @@ def convert(sid_path: str, log: Logger = print,
             # or renumbers an instrument column; before the startup record,
             # which keeps instrument 63.
             sng = chorus_doubled_notes(sng, sid, det, log)
+        if vibrato_phase:
+            # On the finished rows and records, before the held program
+            # (which turns every record's vibrato into rows this reads as
+            # events) and before the startup record.
+            sng = phase_classic_vibrato(sng, sid, det, multiplier, log)
         if vibrato_hold or keyed_records(sid):
             # On the finished rows and records, after every pass that writes
             # or renumbers an instrument column; before the startup record.

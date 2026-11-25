@@ -1014,6 +1014,14 @@ NIBBLE_GATE_MAX_HALVES = 4
 #
 # It is a corpus-wide stand-in for the per-record number `_drum_duration_steps`
 # now derives, and the two are both applied: whichever is smaller wins.
+#
+# It is not applied where `Detection.drum_tick_ratios` sizes the sweep on the
+# record's own tick clock (Rasputin, whose `$C0A5` `$FE nn` reloads the outer
+# gate): its `$0A0B` record sweeps 11 ticks every note, 22 entries at -S2, which
+# the cap cut to 16 (`tests/test_drum_tick_ratio.py`). Measured on the 15 other
+# files whose duration bound exceeds the cap, lifting it too moves no printed
+# column down on 14 and costs Formula_1_Simulator (148 steps wanted) melody
+# 100% -> 98%: not done here.
 DRUM_MAX_SWEEP_STEPS = 8
 
 

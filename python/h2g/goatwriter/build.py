@@ -25,6 +25,7 @@ from .filters import (_classic_clearing_instruments, _filter_entries,
                       _highest_instrument_referenced,
                       _ilv_clearing_instruments, _ilv_filter_entries,
                       free_running_start, ilv_filter_routing_plan,
+                      ilv_hold_anchors, ilv_hold_period,
                       sfx_bandpass_plan, _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass, _duration_gate_pass,
@@ -614,6 +615,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               rest_program_stop: bool = False,
               drop_dead_blocks: bool = False,
               vibrato_onset: bool = False,
+              vibrato_early_delay: bool = False,
               lfo_wave: bool = False,
               master_volume: bool = False,
               pre_note_wave: bool = False,
@@ -1011,6 +1013,11 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # would miss its copies; and only where the classic reader finds no
     # table, the branch `_ilv_filter_entries` is consulted on below.
     ilv_routing = None
+    # The calls between a filtered note's starts, where `ilv_filter_resume`
+    # can model the sweep's hold on each of them (`ilv_hold_period`).
+    ilv_hold = (ilv_hold_period(sid, det, multiplier)
+                if ilv_filter_resume and filters
+                and det.ilv_filter is not None else None)
     if (ilv_filter_routing and filters and det.ilv_filter is not None
             and duty_split is None and phase_split is None):
         routing_base = 1 if compact_instruments else 2
@@ -1024,7 +1031,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 routing_base, log,
                 skip=(note_bit7_rows(patterns, skip_known, skip_decoded,
                                      skip_ghosts)
-                      if ilv_filter_resume and skip_known else None))
+                      if ilv_filter_resume and skip_known else None),
+                hold=ilv_hold)
         if ilv_routing is not None:
             tracks, patterns = ilv_routing.tracks, ilv_routing.patterns
     # A pattern entered holding two instruments gets a copy per instrument
@@ -1169,9 +1177,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 sid, det, instr_used, multiplier,
                 _ilv_clearing_instruments(
                     sid, det, tracks, patterns,
-                    1 if compact_instruments else 2))
+                    1 if compact_instruments else 2), hold=ilv_hold)
     else:
         filter_entries, filter_ptrs = [], {}
+    det.drum_tick_ratios = {}
     if pulse_plan is not None:
         # Precomputed by convert() under --pulse-phase: the phase entries had
         # to exist BEFORE the patterns were patched, because CMD_SETPULSEPTR
@@ -1188,6 +1197,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         tick_ratios = (_gw_pulse.track_set_tick_ratios(
             sid, det, tracks, patterns, lead, multiplier, log)
             if pulse else None)
+        # The bit-$01 drum block steps once per tick as well, so its sweep
+        # is sized on the same clock (`wavetable._drum_entries`).
+        det.drum_tick_ratios = dict(tick_ratios) if tick_ratios else {}
         pulse_entries, pulse_starts = _pulse_layout(
             sid, det, instr_used, pulse, multiplier, log, lead=lead,
             usage=_gw_pulse.pulse_usage(tracks, patterns, lead),
@@ -1223,7 +1235,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                               sid, dispatch=True)
                                           else None),
                                instr_row_calls=instr_row_calls,
-                               table_span=True)
+                               table_span=True,
+                               early_delay=vibrato_early_delay)
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.
@@ -2257,7 +2270,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, written_instr, resume_clones = (
             _gw_ilv_filter_resume.resume_plan(
                 patterns, skip_known, skip_decoded, skip_ghosts, out,
-                instr_at, written_instr, log))
+                instr_at, written_instr, log,
+                filter_entries=filter_entries,
+                anchors={filter_ptrs[rec]: ladder for rec, ladder in
+                         ilv_hold_anchors(sid, det, instr_used, multiplier,
+                                          ilv_hold).items()
+                         if rec in filter_ptrs}))
         stair_aliases.extend(resume_clones)
     # The bit-$80 drum's hit on a rest of its record (`sfx_rest_click`): the
     # player fires it unmasked one frame into the rest, a gate edge our KEYOFF

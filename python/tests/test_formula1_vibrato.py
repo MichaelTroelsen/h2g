@@ -150,8 +150,12 @@ def test_deep_strike_keeps_its_delay_under_the_onset():
     """Deep_Strike (duration gate 3, -S3): every vibrato record runs such a
     program, so `vibrato_onset` leaves its delays at the floor's 4."""
     path = CORPUS / "Deep_Strike.sid"
-    off = _vibrato_records(_song(path, vibrato_onset=False))
-    on = _vibrato_records(_song(path, vibrato_onset=True))
+    # Deep_Strike ships vibrato_early_delay (v0.5.678), one call earlier
+    # again (delay 3); this test reads vibrato_onset's floor alone.
+    off = _vibrato_records(_song(path, vibrato_onset=False,
+                                 vibrato_early_delay=False))
+    on = _vibrato_records(_song(path, vibrato_onset=True,
+                                vibrato_early_delay=False))
     assert off and {n: r.vib_delay for n, r in on.items()} == {
         n: r.vib_delay for n, r in off.items()} == {n: 4 for n in off}
 

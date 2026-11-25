@@ -180,12 +180,14 @@ def test_spellbound_plays_the_sweep_top_from_a_pinned_program():
                 assert 0x80 | 93 <= wave[data - 1][1] <= 0x80 | 95
                 entries.add(wave[data - 1][1] & 0x7F)
                 pointed += 1
-    # 20 since v0.5.666, 26 with the looping drum programs: Spellbound ships
+    # 20 since v0.5.666, 26 with the looping drum programs, 55 with the
+    # repeat counts written out (`drum_held.literal_runs`): Spellbound ships
     # `drum_held`, whose pattern copies include some of the four-top-row
-    # patterns (rows 0/16/32/48, entry 93); with `drum_held=False` the same
+    # patterns (rows 0/16/32/48, entry 93) and, once a run is one position a
+    # play, one copy per residue of each; with `drum_held=False` the same
     # 16 rows read as before.
-    assert pointed == 26 and 95 in entries
-    assert any("Past-table wave split" in m and "26 note row(s)" in m
+    assert pointed == 55 and 95 in entries
+    assert any("Past-table wave split" in m and "55 note row(s)" in m
                for m in lines)
     plain, _ = _convert("Spellbound.sid", drum_held=False)
     assert sum(1 for pat in _parse_song(plain).patterns

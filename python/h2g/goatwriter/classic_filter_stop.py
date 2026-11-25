@@ -40,6 +40,7 @@ class SweepLengths(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.free: set = set()
+        self.gaps: dict = {}
 
 
 def _stop_row(pattern: List[int], r: int) -> Optional[int]:
@@ -133,6 +134,7 @@ def classic_filter_stops(tracks: List[List[int]], patterns: List[List[int]],
             sites[key] = frozenset(agreed)
     lengths = SweepLengths()
     for rec, entries in per_record.items():
+        lengths.gaps[rec] = [g for g, _s, _a in entries]
         # a gap is a stop for the length only where its stop has no place
         gaps = [(g, stop and at not in agreed_rows)
                 for g, stop, at in entries]

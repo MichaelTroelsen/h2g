@@ -894,7 +894,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              tick_frames=_noise_tick_frames(sid, det),
                              note_rows=typical, row_calls=row_calls,
                              written=no_test_restart, gate_skip=gate_skip,
-                             sweep=not arp_overwrites_sweep)
+                             sweep=not arp_overwrites_sweep,
+                             tick_ratio=getattr(
+                                 det, "drum_tick_ratios", {}).get(i))
 
     if drum and not tick:
         if effects:
@@ -1538,7 +1540,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   row_calls: int = 0,
                   written: bool = False,
                   gate_skip: Optional[int] = None,
-                  sweep: bool = True) -> tuple:
+                  sweep: bool = True,
+                  tick_ratio=None) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1717,7 +1720,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # `budget` is how many entries this record may occupy in total; the
         # caller shrinks it when the 255-entry table is running out. Below the
         # fixed five it changes nothing, so a file with room behaves as it did.
-        want = _drum_max_steps(min_note, multiplier, gate_skip)
+        want = _drum_max_steps(min_note, multiplier, gate_skip,
+                               capped=tick_ratio is None)
         prefix = left[:-1] if left[-1] == 0xFF else list(left)
         # strip the padding the tick block added, keeping the tick itself
         while len(prefix) > 1 and prefix[-1] == 0xFF:
@@ -1742,7 +1746,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # whose notes are long enough -- or one with no measured note at
         # all -- is written exactly as it was.
         held = _drum_duration_steps(note_rows, row_calls, multiplier,
-                                    gate_skip)
+                                    gate_skip, tick_ratio)
         if held is not None:
             steps = min(steps, held)
         if not steps:
@@ -1786,7 +1790,8 @@ def _drum_sweep_hold(tail: int, multiplier: int = 1,
 
 def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
                          multiplier: int = 1,
-                         gate_skip: Optional[int] = None) -> Optional[int]:
+                         gate_skip: Optional[int] = None,
+                         tick_ratio=None) -> Optional[int]:
     """Sweep steps a note of `note_rows` rows leaves the player room for.
 
     Read off the block in `_drum_entries`, in the units its two guards count
@@ -1837,6 +1842,20 @@ def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
     """
     if note_rows is None or row_calls <= 0:
         return None
+    if tick_ratio is not None:
+        # An outer gate the TRACK reloads (Rasputin's `$FE nn`) is no `O`
+        # `_gate_calls` can see, and our row's calls carry its skipped
+        # frames: `row_calls` is `ticks_per_row * multiplier * c`, rounded
+        # to a whole call. The block sweeps per TICK, a decrement of a
+        # tick's whole `$0100` that `_drum_speed` spreads over `multiplier`
+        # calls, so the travel is the player's `(note_rows - 2) *
+        # ticks_per_row - 1` ticks and takes that many x `multiplier`
+        # entries -- not the wall-clock count the row carries. The row's
+        # ticks are recovered by rounding, because `c` is the record's
+        # time-weighted mean and `row_calls` the song's one value.
+        m = max(1, multiplier)
+        ticks_per_row = max(1, round(row_calls / (m * tick_ratio)))
+        return max(0, ((note_rows - 2) * ticks_per_row - 1) * m)
     return max(0, (note_rows - 2) * row_calls
                - _gate_calls(max(1, multiplier), gate_skip))
 
@@ -1933,7 +1952,8 @@ def _real_unit_frames(speeds, idx: int, gate: int) -> int:
 
 
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
-                    gate_skip: Optional[int] = None) -> int:
+                    gate_skip: Optional[int] = None,
+                    capped: bool = True) -> int:
     """Deepest sweep this record can take without wrapping, in wavetable steps.
 
     This is the block's *first* exit -- `LDA freqhi,X / BEQ out`, the frequency
@@ -1962,6 +1982,8 @@ def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
     if step <= 0:
         return 0
     room = _note_freq(min_note) - DRUM_DEEPEN_MARGIN
+    if not capped:
+        return max(0, room // step)
     return max(0, min(room // step, DRUM_MAX_SWEEP_STEPS
                       * _gate_calls(max(1, multiplier), gate_skip)))
 

@@ -2942,6 +2942,45 @@ reversals go 1.002 -> 0.860, and Mozart's original moves on frame 2 or later
 on every note measured, so it goes early (onset exact 14 -> 0). `aud` moves
 on no file beyond its noise.
 
+## `--vibrato-early-delay` (the classic oscillator starts on the first call of frame 1)
+
+A classic `$78/$07` vibrato's `vibdelay` is `max(1, multiplier + 1)` where the
+player has no gate of its own (`goatwriter.vibrato._vibrato_delay`): the
+oscillator waits out frame 0 so the attack keeps the note's own pitch.
+`vibdelay` counts EFFECT calls, and the packed player runs none on tick 0
+(`REALTIMEOPTIMIZATION`, `player.s:982-987`), so effect call `k` of a row is
+play call `k` and `multiplier` of them already end frame 0. The floor is one
+effect call late: a frame and a half at Sigma_Seven's three-call rows. The
+option takes it to `multiplier` where rows are two calls or longer.
+
+Sigma_Seven (v0.5.676, `-t 180`, historical): the original's vibrato moves on
+frame 1 of 109 of 140 sampled notes and frame 2 of the other 31; ours first
+moved on frame 6 of 111 and on frames 2-5 of the rest. Notes there are 12 to
+25 frames long, so a quarter of a note was without vibrato. Forced on, the
+first move is frame 4 on 122 of 140 (the 4-row waveform program re-pitches the
+note on calls 1-3 and each re-pitch zeroes `vibtime`, gplay.c:722-723, so
+frame 4 is the earliest an unrewritten program allows).
+
+**A trade, per song, off by default.** It moves bytes on 25 of the 89
+converting corpus files (the ones whose delay is the floor) and the A/B at
+`-t 180` is mixed, so no song entry sets it yet. Forced on, deterministic
+deltas beyond 0.005 (ratio columns scored `min(v, 1/v)`; `aud` within its
+0.0095 floor on every file):
+
+* all up, none down: Sigma_Seven (tiefr .584 -> .595, bend .607 -> .648,
+  travel .643 -> .677, reversals .877 -> .920, cents .969 -> .972), Sanxion
+  (tiefr .783 -> .791, bend, travel .700 -> .755, reversals), Tarzan (bend
+  .314 -> .373, travel .829 -> .872), Deep_Strike (bend .492 -> .512),
+  Formula_1_Simulator (depth .874 -> .994), Knucklebusters_3 (depth).
+* a column down: depth on Chain_Reaction, Delta (also reversals .991 ->
+  .920), Lightforce, Mozart, Samantha_Fox_Strip_Poker, Zoolook; bend and
+  travel on Delta_13; bend on W_A_R (.956 -> .883).
+
+Frames 1-3 are not reachable by this option: respelling the program's `/00`
+steps `/80` (the `vibrato_onset` route) put the first move on frame 1 and cost
+Sigma_Seven melody 1.000 -> .975 and cents .969 -> .943, the swing renaming
+attacks (forced as a scratch experiment, not shipped).
+
 ## `--lfo-wave` (the LFO-table vibrato as a per-frame program)
 
 The command-table player's vibrato (Hollywood or Bust, Chicken Song;
@@ -3112,6 +3151,32 @@ that. Not adopted in any preset; Sun_Never_Shines' 79 `$84` notes sit in
 patterns no orderlist reaches and Pacific_Coast and Go_Go_Dash carry theirs
 before unfiltered records, so neither moves.
 
+**The hold and the `$87` starts (Radio_ACE, listen-sub99-radio-ace).** The
+note start ends in `$13CA JMP $17B7`, past the block that steps the sweep
+(`$15F9-$1661`), so on each frame a note starts the cutoff stays put:
+Radio_ACE steps `$0295` on five frames of six and holds on the sixth (frames
+2318, 2324, 2330 of its trace repeat the value; the note period is
+`(wait + 1) * 3` frames, wait 1 on 298 of its 300 filtered notes). Where a
+file's sweep is the first-leg-only one (a `$87` names start cutoffs in it) and
+`filters.ilv_hold_period` finds that period, the record's sweep is emitted as
+periods of `period - 1` stepping calls and one hold, each period's step
+rounded so the cumulative high byte follows the player's own within a step or
+two (`filters._ilv_hold_sweep`); the sweep stops at its first limit. `$87 nn
+mm` writes the cutoff cell at the command and sets `$1A63`, so the note loads
+its record's program but starts it at `nn` (`$1335 LDA $1A63 / BNE $1346`);
+each such note names a clone whose filter pointer is a three-row block of its
+own (the record's params row, `set cutoff nn`, a jump into the sweep at the
+period whose cutoff is nearest `nn`), at most as many as the 64-row table has
+room for. Radio_ACE has 7 distinct values; the clones are not made in a file
+the hold cannot read.
+Radio_ACE, forced on over the shipped presets (`-t 180 --presets --sound`):
+`cfrm` .1766 -> .9670, `cut` 1.133 -> 1.010 (the `$84` clones alone: .418 and
+1.285), `aud` .94992 -> .94988, `loud` .97825 -> .97840; every other printed
+column identical. What is left of `cfrm` (88 of 2688 frames) is the sweep's
+resumption after an unfiltered note: the original keeps its cutoff cell through
+the gap and carries on from it, ours stops the table there (the clear block)
+and holds a stale value for the first notes of 4 of its 64 runs (20 frames).
+
 ## `--vibrato-hold` (the classic vibrato moves once a frame)
 
 At `-S2` and above Goattracker's instrument vibrato steps on every play call,
@@ -3146,6 +3211,42 @@ A/B at f3d8987 (-t 180 --presets --sound): `aud` .9440 -> .9482, `loud`
 .9854 -> .9877, `tiefr` 15% -> 72%, tie .31 -> .92, bend .69 -> 1.07, travel
 .66 -> 1.05, depth .86 -> 1.05; nothing printed falls, and the corpus
 byte-hash moves only Thanatos.
+
+## `--vibrato-phase` (each note in the original's free-running vibrato phase)
+
+The classic `$78/$07` counter is per voice and nothing resets it at a note, so
+a note's swing starts wherever the voice's history left the triangle (ACE_II
+voice 0: all eight phases), while Goattracker restarts `vibtime` at every
+pitch write. `--vibrato-hold` therefore swings every note in ONE phase, which
+is what costs ACE_II `tiefr` .806 -> .749 and `cents` .959 -> .936 when its
+depth is corrected. The option (`h2g/vibrato_phase.py`) starts a note in the
+original's phase: zero-speed `$F4` steps advance `vibtime` without moving the
+pitch, one `$F1`/`$F2` puts the swing where the original already is on its
+first active frame (age 4), and the held program's steps follow from frame 5.
+The original's triangle is simulated per voice over the rows from the player's
+own clock (two counted gates; a fetch where the outer counter is non-zero and
+the speed counter holds its reload), which reproduces the 107 voice-0 attacks
+of ACE_II's first 60 s and 59 of 60 measured note phases.
+
+A class `(record, nulls, move)` is a wavetable chain; the note's base clone
+carries the record's events and `CMD_SETWAVEPTR chain` sits on the note's
+second row, because the whole class table (38 classes in ACE_II's first minute,
+361 rows) does not fit the 255-row wavetable (126 in use). The classes are
+taken by frames covered per row and chains share their common row suffix; a
+note whose class is left, or whose second row is a fetch or has a command,
+keeps its per-call vibrato. Only the first lap of the orderlist is walked.
+Reads only the update whose row clock is two counted gates and whose swing
+waits for age 4: ACE_II and Saboteur_II (forced on, the corpus byte-hash moves
+exactly those two; 89 convert, 6 refuse as always).
+
+Forced on, ACE_II at `-t 180 --presets --sound` (historical; shipped in
+brackets): `depth` 1.05 (.52), `travel` .93 (.62), `bend` .94 (.73), `tiefr` 89%
+(81%), `cents` 97% (96%), `aud` .9468 (.9451), `loud` .9774 (.9771); `vib` falls
+1.00 -> 0.97 and `ctrl` .8610 -> .8605. Saboteur_II: `bend` .66 -> .81,
+`travel` .70 -> .78, `vib` .96 -> .99, every other column within 0.001.
+The oracle that bounds it (a stub PSID substituting the original's offsets for
+voice 0's vibrating notes, 60 s): `tiefr` .749 -> .934, `cents` .958 -> .981.
+Per song, off by default (`presets.EXCLUDED_FROM_ALWAYS`); not in any preset.
 
 ## `--pitch-lead-tie` (drum attacks open on their own pitch)
 
