@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.676 presets.py",
+  "generator": "h2g 0.5.677 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -484,6 +484,7 @@
       "rows": 18341,
       "multiplier": 3,
       "drum_held": true,
+      "drum_split_tick": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -547,8 +548,7 @@
         60,
         61,
         62
-      ],
-      "drum_split_tick": true
+      ]
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -1019,6 +1019,7 @@
       "subtunes": 1,
       "rows": 16023,
       "multiplier": 2,
+      "drum_fall_loop": true,
       "drum_long": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -1083,8 +1084,7 @@
         60,
         61,
         62
-      ],
-      "drum_fall_loop": true
+      ]
     },
     "Dragons_Lair_Part_II.sid": {
       "max_rows": 94,
@@ -1201,6 +1201,7 @@
       "rows": 12912,
       "multiplier": 2,
       "max_hard_restart": true,
+      "drum_fall_loop": true,
       "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -1267,8 +1268,7 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true,
-      "drum_fall_loop": true
+      "prev_class_firstwave": true
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -1857,7 +1857,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 54304,
+      "bytes": 54049,
       "subtunes": 3,
       "rows": 62488,
       "multiplier": 3,
@@ -2098,6 +2098,7 @@
       "rows": 12260,
       "multiplier": 2,
       "no_test_restart": false,
+      "drum_fall_loop": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -2163,8 +2164,7 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true,
-      "drum_fall_loop": true
+      "prev_class_firstwave": true
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
@@ -2175,6 +2175,7 @@
       "subtunes": 3,
       "rows": 12260,
       "multiplier": 2,
+      "drum_fall_loop": true,
       "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -2241,21 +2242,21 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true,
-      "drum_fall_loop": true
+      "prev_class_firstwave": true
     },
     "Lightforce.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 19554,
+      "bytes": 19560,
       "subtunes": 1,
       "rows": 19006,
       "multiplier": 2,
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
+      "drum_alt_fall": true,
       "drum_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
@@ -2322,8 +2323,7 @@
         62
       ],
       "hard_restart_frames": 3,
-      "phase_split_over_passes": true,
-      "drum_alt_fall": true
+      "phase_split_over_passes": true
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2338,8 +2338,8 @@
       "wave_program": true,
       "max_hard_restart": true,
       "arpeggio": true,
-      "row_hard_restart": true,
-      "ilv_filter_resume": true
+      "ilv_filter_resume": true,
+      "row_hard_restart": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -2443,6 +2443,7 @@
       "subtunes": 3,
       "rows": 32320,
       "multiplier": 2,
+      "drum_fall_loop": true,
       "drum_gate_off": true,
       "drum_long": true,
       "gate_off_firstwave_instruments": [
@@ -2510,8 +2511,7 @@
         62
       ],
       "pulse_phase": true,
-      "wobble_copy_depth": true,
-      "drum_fall_loop": true
+      "wobble_copy_depth": true
     },
     "Mozart.sid": {
       "max_rows": 94,
@@ -3677,6 +3677,7 @@
       "subtunes": 1,
       "rows": 17381,
       "multiplier": 2,
+      "drum_fall_loop": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -3741,8 +3742,7 @@
         61,
         62
       ],
-      "prev_class_firstwave": true,
-      "drum_fall_loop": true
+      "prev_class_firstwave": true
     },
     "Thrust.sid": {
       "max_rows": 94,
