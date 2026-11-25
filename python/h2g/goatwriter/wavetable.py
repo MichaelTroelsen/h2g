@@ -8,7 +8,7 @@ from typing import (List, Optional)
 
 from ..detect import (Detection)
 from ..sidfile import (SidFile)
-from .constants import (DEFAULT_FORMAT, DRUM_DEEPEN_MARGIN,
+from .constants import (DEFAULT_FORMAT, DRUM_ALT_FALL_STEP, DRUM_DEEPEN_MARGIN,
                         DRUM_MAX_SWEEP_STEPS, _drum_speed,
                         EFFECT_PITCH_SEQ_MASK, EFFECT_SFX_DRUM_MASK,
                         FIXED_ARP_PARITY_MASK, FORMAT_GTS5, NOISE_TICK_FRAMES,
@@ -655,6 +655,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 wave, alt_byte, multiplier, start, budget,
                 written=no_test_restart, alt_first=alt_first,
                 alt_note=_note_alternate_note(sid, det, i),
+                sweep=_alt_drum_sweep(det, i, lead, fmt, speed_table,
+                                      multiplier, row_calls, note_rows,
+                                      min_notes, arp_style, drum and not arp),
                 # The drum block's gate-off, where the record runs it
                 # (`drum`, after the one-row rule above) or where only its
                 # sustain rule cleared it (`tick`): the player masks the gate
@@ -1031,7 +1034,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 noise, tail, _arp_relative(arp_fixed, arp_note, arp_up), half,
                 first_up, first_calls,
                 base_entry,
-                budget)
+                budget,
+                split_tick=det.drum_split_tick, multiplier=multiplier)
             if shaped is not None:
                 return shaped
         if tick and (hold is not None or arp_half is not None):
@@ -1960,6 +1964,57 @@ def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
     room = _note_freq(min_note) - DRUM_DEEPEN_MARGIN
     return max(0, min(room // step, DRUM_MAX_SWEEP_STEPS
                       * _gate_calls(max(1, multiplier), gate_skip)))
+
+
+def _alt_drum_sweep(det: Detection, i: int, lead: int,
+                    fmt: str, speed_table: List[tuple], multiplier: int,
+                    row_calls: int,
+                    note_rows: Optional[dict], min_notes: Optional[dict],
+                    arp_style: int, drum: bool) -> Optional[tuple]:
+    """`(resolve, frames)` for `_wave_alternate_entries(sweep=)`, or None.
+
+    `convert(drum_alt_fall=...)`: a record that sets bits $01 and $02 gets the
+    drum's fall beside the alternation. The block is the one `_drum_entries`
+    reads -- the sweep runs `(note_rows - 2)` duration units after the first,
+    and a unit is a converted row -- so a note of `rows` rows falls
+    `(rows - 2) * row_calls` calls, `multiplier` to the frame, and not past
+    the lowest pitch the record is played at (the player's own
+    `LDA freqhi / BEQ out`, `_drum_max_steps`' bound in whole `$0100` steps).
+    The first sweeping frame reaches the chip where the decrement is spelt
+    `DEC shadow,X` (`detect.DRUM_SHADOW_DEC_SHAPE`), so the count is not
+    reduced by one as `_drum_duration_steps` does for Warhawk's spelling.
+    A record whose notes are not all one length keeps the median's fall: Lightforce's
+    two records are played only at six rows (48 notes of 48, `-t 180`).
+    **An outer gate does not decline it.** Lightforce's reload-6 counter
+    (`gate_skip` 6) paces its duration units, not the effect blocks: the
+    emulated player decrements the high byte on 14 consecutive frames of a
+    six-row note (`$1068 .. $0368`), so the step is a whole `$0100` per REAL
+    frame and the count is `(rows - 2) * row_calls / multiplier` real frames.
+    Declined for GTS2 (no speed table) and one call a frame.
+    """
+    if (not det.drum_alt_fall or not det.drum_shadow_dec or not drum
+            or not (arp_style & 0x01) or fmt != FORMAT_GTS5
+            or multiplier < 2 or row_calls <= 0
+            or not note_rows or min_notes is None):
+        return None
+    rows = note_rows.get(i + 1 + lead)
+    lowest = min_notes.get(i + 1 + lead)
+    if not rows or rows < 3 or lowest is None:
+        return None
+    frames = ((rows - 2) * row_calls) // multiplier
+    room = (_note_freq(lowest) - DRUM_DEEPEN_MARGIN) // DRUM_ALT_FALL_STEP
+    frames = min(frames, room)
+    if frames < 1:
+        return None
+    entry = (DRUM_ALT_FALL_STEP >> 8, DRUM_ALT_FALL_STEP & 0xFF)
+
+    def resolve() -> int:
+        if entry not in speed_table:
+            if len(speed_table) >= _gw_constants.GT_MAX_TABLELEN:
+                return 0
+            speed_table.append(entry)
+        return speed_table.index(entry) + 1
+    return resolve, frames
 
 
 def _drum_speed_index(fmt: str, speed_table: List[tuple],

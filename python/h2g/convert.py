@@ -366,6 +366,7 @@ def convert(sid_path: str, log: Logger = print,
             vibrato_hold: bool = False,
             prev_class_firstwave: bool = False,
             rest_late_keyoff: bool = False,
+            ilv_filter_resume: bool = False,
             master_volume: bool = False,
             pre_note_wave: bool = False,
             rest_wave_restart: bool = False,
@@ -374,9 +375,12 @@ def convert(sid_path: str, log: Logger = print,
             drum_sustain_gate_off: bool = False,
             release_held_stored_wave: bool = False,
             drum_long: bool = False,
+            drum_fall_loop: bool = False,
             drum_held: bool = False,
+            drum_split_tick: bool = False,
             wobble_copy_depth: bool = False,
-            phase_split_over_passes: bool = False) -> bytes:
+            phase_split_over_passes: bool = False,
+            drum_alt_fall: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -702,6 +706,15 @@ def convert(sid_path: str, log: Logger = print,
     fixture carries one such record (its instrument 13). See
     instrument_drop.
 
+    ilv_filter_resume keeps a running filter sweep running through the notes
+    the interleaved player's `$84` precedes: those notes do not restart their
+    record's filter program (`$1324 BNE $1389`), and Goattracker restarts it
+    on every note that names an instrument with a filter pointer. Each such
+    note names a clone of its instrument with no filter pointer instead
+    (`goatwriter.ilv_filter_resume`). Needs `filters`; reaches only files
+    with `det.ilv_filter` and a `$84` before a filtered record's note. Off by
+    default: it moves the bytes of the files it reaches.
+
     ilv_filter_routing writes the interleaved player's per-voice filter
     routing as CMD_SETFILTERCTRL (B) commands at every row where the union of
     the voices' routed bits changes, instead of routing all three voices from
@@ -775,6 +788,21 @@ def convert(sid_path: str, log: Logger = print,
     -S2 and above only). Off by default: it moves the bytes of every file with
     such a record (Monty_on_the_Run, Devils_Galop, International_Karate).
 
+    drum_fall_loop carries the bit-$01 drum's high-byte fall on a note whose
+    fall is longer than the record's own program can hold
+    (`_drum_max_steps`' `DRUM_MAX_SWEEP_STEPS` frames), where the record is
+    played long enough to carry a sweep at all (`drum_long` declines those). A
+    chain of the whole fall is a wavetable entry per play call (216 on
+    Formula_1_Simulator's E-6, against 56 free), so the fall is a two-entry
+    loop and its LENGTH is a second `CMD_SETWAVEPTR` on the row where it
+    ends (`goatwriter/drum_long.py`, -S2 and above only). Off by default: it
+    moves the bytes of every file with such a note.
+    drum_split_tick writes the second and later noise frames of a ticked
+    nibble-arpeggio record gate-off above -S1, as the player's `LDA #$80 /
+    STA $D404,Y` does; the first frame stays gated, so the SID's ADSR delay
+    still lets the attack start (`ticked_nibble_arp_entries`). Costs no
+    wavetable entry. Off by default and per song.
+
     drum_held gives the bit-$01 drum notes whose first unit ends on the outer
     gate's withheld call the noise frame the original holds there: a
     `CMD_SETWAVEPTR` on the note's row into a copy of the record's program
@@ -782,6 +810,19 @@ def convert(sid_path: str, log: Logger = print,
     (`goatwriter/drum_held.py`; speed gate of two or three calls and a
     readable clock only). Off by default: it moves the bytes of every file it
     reaches.
+
+    drum_alt_fall puts the bit-$01 drum's high-byte fall inside the bit-$02
+    alternation program of a record that sets both (Lightforce records 2 and
+    16, effect `$23`: `-$0100` a frame for `(rows - 2) * frame-per-row` frames
+    from the first ungated frame, the alternation going on beside it). The
+    plain drum shape carries the sweep (`_drum_entries`) and `drum_long` the
+    long notes' (`goatwriter/drum_long.py`), but both decline a record that
+    alternates, so its fall never reached the chip. Players whose drum block
+    is `detect.DRUM_SHADOW_DEC_SHAPE` only, `-S2` and above, and only where
+    the record's wavetable budget leaves `attack.ALT_FALL_HEADROOM` entries
+    beside the program (W_A_R's table is full and loses its record 10's
+    arpeggio otherwise). Off by default: it moves the bytes of every file
+    with such a record (Lightforce, Deep_Strike).
 
     wobble_copy_depth sizes a `$68` waveform-state copy's vibrato depth on
     ITS OWN pitch instead of the pattern-wide majority (`patterns.
@@ -943,9 +984,12 @@ def convert(sid_path: str, log: Logger = print,
     det.drum_sustain_gate_off = drum_sustain_gate_off
     det.release_held_stored_wave = release_held_stored_wave
     det.drum_long = drum_long
+    det.drum_fall_loop = drum_fall_loop
     det.drum_held = drum_held
+    det.drum_split_tick = drum_split_tick
     det.wobble_copy_depth = wobble_copy_depth
     det.phase_split_over_passes = phase_split_over_passes
+    det.drum_alt_fall = drum_alt_fall
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1
@@ -1149,6 +1193,7 @@ def convert(sid_path: str, log: Logger = print,
         # `event_rows`). Unlike `free_rows` the request moves no byte -- the
         # dedup key is left alone -- so it is made wherever that walk can run.
         event_rows=want_event_rows, top_cols=top_cols,
+        filter_skip=bool(ilv_filter_resume and filters),
         free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
@@ -1775,6 +1820,7 @@ def convert(sid_path: str, log: Logger = print,
                          arps=pattern_arps,
                          pulse_plan=pulse_plan,
                          ilv_filter_routing=ilv_filter_routing,
+                         ilv_filter_resume=ilv_filter_resume,
                          tie_restart=tie_restart,
                          tie_pulse_restart=tie_pulse_restart,
                          tie_late_pitch=tie_late_pitch,

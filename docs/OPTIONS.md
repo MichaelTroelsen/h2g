@@ -3065,6 +3065,53 @@ Two depth ratios move: Spellbound 1.012 -> 1.043 (a 3-instrument median set by
 a record with 138 of the original's 1945 oscillating frames) and Thrust .714
 -> .707. Not adopted in any preset.
 
+## `--ilv-filter-resume` (a `$84` note leaves the filter sweep running)
+
+The interleaved player restarts a record's filter program on every filtered
+note except the ones a `$84` precedes: `$11E7 LDA #$01 / STA $1A86` sets a
+flag the note-start loader tests (`$1321 LDA $1A86 / BNE $1389`) and skips its
+whole program load -- program index, start cutoff, step, both limits,
+direction, resonance. The fetch pass zeroes the flag again (`$1152`), so it is
+the one following event's. Goattracker restarts a filter table on every note
+that names an instrument with a filter pointer (gplay.c:386-391), so every
+`$84` note jumped the cutoff back to the record's start. Lion_Heart's record 4
+(`4E 03 03 A7 72 1D 03 30`) sweeps a triangle `$1D00`-`$7200` at 928 a frame
+and is restarted to `$4E00` by 148 of its 184 pattern notes; the other 36 follow a
+`$84`.
+
+Goattracker's filter pointer is the instrument's, not the note's, so each such
+note names a CLONE of its instrument with the filter pointer cleared
+(`h2g/goatwriter/ilv_filter_resume.py`): pointer 0 leaves the running table
+alone (gplay.c:386), and every other column of the record -- wave, pulse,
+vibrato, envelope -- is the finished record's own, which is what the original
+still loads. The rows come from the decoder (`patterns._build_raw_pattern_ilv`'s
+`skip_rows`, narrowed to records whose filter-enable bit is set and carried to
+the finished patterns as `patterns.SkipList`, attributed to a pass's copies by
+note column as `note_bit7_rows` does), and `ilv_filter_routing_plan` is told
+the same rows so its walk does not credit a `$84` note with a params row that
+no longer runs. Needs `--filter`; reaches only the interleaved files with a
+filtered record behind a `$84`. Off leaves every conversion byte-identical
+(89 of 89 compared files, 2026-11-22); a song entry
+`"ilv_filter_resume": true`.
+
+**The mechanism is measured, not read off the code alone.** In a copy of
+Lion_Heart whose `$11EA STA $1A86` stores to `$0200` instead (so the player
+restarts on every note), `cfrm` against our conversion reads .884 and `cut`
+1.015; the real original reads .7985 and 1.068. The gap is these notes.
+
+Forced on over the shipped presets (1c9d17c + the change, `-t 180 --presets
+--sound`), 2 of 89 compared files move, Lion_Heart (39 rows, 36 notes) and
+Radio_ACE (164 rows). **Lion_Heart** `cfrm` .7985 -> .8480, `cut` 1.068 ->
+1.021, `aud` .92852 -> .92846, `loud` .96956 -> .96943; every other printed
+column identical. **Radio_ACE** `cfrm` .1766 -> .4182, `aud` .94992 -> .95018,
+`loud` .97825 -> .97856, but `cut` 1.133 -> 1.285 (travel 3.48M -> 3.95M
+against the original's 3.07M): the original's cutoff changes on 2252 of its
+2688 filtered frames, ours on 2640, so it HOLDS the sweep on frames where ours
+steps, and a sweep that no longer restarts every note has nothing to cancel
+that. Not adopted in any preset; Sun_Never_Shines' 79 `$84` notes sit in
+patterns no orderlist reaches and Pacific_Coast and Go_Go_Dash carry theirs
+before unfiltered records, so neither moves.
+
 ## `--vibrato-hold` (the classic vibrato moves once a frame)
 
 At `-S2` and above Goattracker's instrument vibrato steps on every play call,
@@ -3214,6 +3261,35 @@ inside the 0.0095 noise floor everywhere. Heard 2026-10-25: Spellbound
 other five movers (Commando, Geoff_Capes, International_Karate,
 Phantoms_of_the_Asteroid, and Last_V8_C128_version, approved by ear) were
 not heard with it. `tests/test_drum_sustain_gate_off.py`.
+
+## `--drum-split-tick` (the second noise frame gate-off, for a ticked nibble record)
+
+The player's drum block writes its noise as `LDA #$80 / STA $D404,Y`: gate
+clear on every tick frame (Bump_Set_Spike's `$090A` records read `41 80 80 40`
+from each onset). Above -S1 the conversion writes the whole tick gated
+(`_drum_tick_noise`), because a gate-off FIRST frame releases the voice before
+the SID's ADSR delay (up to 520 lines) has let its attack start: forced on
+Bump_Set_Spike it costs loud .977 -> .946 (loud_ratio 1.009 -> .804), and
+`--keep-hard-restart` buys back .003 of it (task listen-sub99-bump-set-spike,
+v0.5.674, historical).
+
+The option keeps the first tick frame gated -- lead plus one frame is `2m`
+calls, past 520 lines at every -S >= 2 -- and writes the noise runs that start
+at call `multiplier` or later gate-off (`ticked_nibble_arp_entries`,
+`split_tick`). It adds no wavetable entry: the alternation already puts each
+tick frame on its own row. A run straddling the frame boundary stays gated and
+a one-frame tick (Game_Killer, Warhawk, Proteus) has nothing to split.
+
+Off by default and per song, none adopted. Forced on all 95 files (presets,
+v0.5.674) it changes bytes on 4: Bump_Set_Spike (gate .728 -> .767, heard
+instr .390 -> .613), International_Karate (gate .897 -> .928), Thrust (gate
+.869 -> .879) and Kentilla (no printed column moves); aud and loud move by at
+most .0002 on all four, and loud_ratio drifts up by .0002-.0068. The
+rest of the `$090A` gap is the first tick frame itself, which `heard.py`
+exempts as `gated_tick` but `gate` still charges, and the two-frame drum
+records of `_drum_entries`, whose split would cost two wavetable rows each in
+Bump_Set_Spike's 248-of-255-row table (records 18 and 21 would lose their
+tick; both are played after the 180 s window). `tests/test_drum_split_tick.py`.
 
 ## `--keep-hard-restart` (Goattracker's hard restart, for one song)
 

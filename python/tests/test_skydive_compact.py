@@ -250,9 +250,11 @@ def test_every_instrument_still_plays_the_program_it_had(
             out.append(prog)
         return out, len(wt)
 
-    shared, size = programs(M._converted("Last_V8")[0])
+    # drum_fall_loop (on for Last_V8 since v0.5.677) adds 14 loop rows to
+    # this table; the sizes below are the skydive layout's, measured without.
+    shared, size = programs(M._converted("Last_V8", drum_fall_loop=False)[0])
     monkeypatch.setattr(S, "compact_wave_tail", lambda *a, **k: None)
-    unshared, plain_size = programs(M._converted("Last_V8")[0])
+    unshared, plain_size = programs(M._converted("Last_V8", drum_fall_loop=False)[0])
     assert shared == unshared
     assert plain_size == 217 and size == 217 - 60 + 95
 

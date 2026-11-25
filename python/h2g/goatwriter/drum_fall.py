@@ -25,6 +25,17 @@ frame on, and its first frame is one step high. The head enters the chain
 through $0000 into a squeal. A shorter note is cut off by its next note,
 which reloads the instrument's table. Heads are shared by (waveform, calls).
 
+A note of ONE rest row on a 3-call row (Tarzan's $0407, `SHORT_HEAD`) gets a
+shorter head instead: the player gates off on that call by itself (the next
+row is fetched `gatetimer` = 2 calls early), so the head keeps the gate for the
+row's call and spends the next two on single steps, then stops -- the original's
+frame 3 and 4 values, where the gate-off head left frame 3 one step high and
+fell once by two steps (a tie to siddump, no bend). Frame 5 -- the third step
+-- is the next note's first call, which runs no wavetable entry. Only a pattern
+every subtune of which runs 3-call rows (`short_head_patterns`): at 4 the
+player's own gate-off lands a frame late and the original keeps falling for
+the longer second tick.
+
 Declined, and counted in the log line: a note whose next row is not free
 (a note, or a command already there), a note of one row (its fall starts on
 frame 1, inside the note's own row), a tie (`CMD_TONEPORTA`), a row whose
@@ -67,6 +78,19 @@ DRUM_FALL_FLOOR = 0x100
 # Longest note a row is assumed to hold, in frames per row, for the chain
 # length only: an over-long chain costs table rows, never pitch.
 DRUM_FALL_ROW_FRAMES = 8
+# `ask` marker for a note the next row ends: the row after it is the last one
+# the voice has before its next note, and the head is a keep-the-gate call
+# and two steps (see `drum_fall_plan`).
+SHORT_HEAD = -1
+# The row length, in play calls, a SHORT_HEAD is valid at. The head's gate-off
+# is not an entry of its own there: Goattracker fetches the next row
+# `gatetimer & $3F` calls early and gates off on that fetch (player.s
+# `mt_gatetimer`; Tarzan's instruments carry 2), the next note's first call
+# is the row after next, so the fetch lands `2 * calls - 1 - 2` calls after the
+# note's own call -- the original's gate-off frame (`calls`) only at 3 calls a
+# row. At 4 the gate would go off a frame late and the fall would stop after
+# two steps, so those subtunes keep the gate-off head.
+SHORT_HEAD_ROW_CALLS = 3
 
 
 @dataclass
@@ -125,11 +149,28 @@ def fall_steps(freq: int, step: int) -> int:
     return (freq - DRUM_FALL_FLOOR) // step + 1
 
 
+def short_head_patterns(tracks: List[List[int]], patterns: List[List[int]],
+                        subtune_row_calls: tuple) -> Set[int]:
+    """Patterns every subtune that plays them runs at `SHORT_HEAD_ROW_CALLS`
+    a row. A pattern is shared between subtunes at different tempos, and a
+    head is a property of the pattern, so one subtune off the row length
+    disqualifies it."""
+    reach: Dict[int, Set[int]] = {}
+    for ti, track in enumerate(tracks):
+        for _pos, p, _k, _trans in _visits(track, patterns):
+            reach.setdefault(p, set()).add(ti // 3)
+    return {p for p, groups in reach.items()
+            if all(g < len(subtune_row_calls)
+                   and subtune_row_calls[g] == SHORT_HEAD_ROW_CALLS
+                   for g in groups)}
+
+
 def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
                    patterns: List[List[int]], lead: int, instr_used: int,
                    fmt: str, multiplier: int, gate_skip: Optional[int],
                    speed_table: List[tuple], wave_used: int,
-                   log=None) -> Optional[DrumFallPlan]:
+                   log=None, subtune_row_calls: tuple = ()
+                   ) -> Optional[DrumFallPlan]:
     if not det.drum_fall_step:
         return None
     records = drum_fall_records(sid, det, max(instr_used - lead, 0))
@@ -156,6 +197,9 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     for track in tracks:
         for _pos, p, _k, trans in _visits(track, patterns):
             low[p] = min(low.get(p, trans), trans)
+
+    shorts = (short_head_patterns(tracks, patterns, subtune_row_calls)
+              if m == 1 else set())
 
     declined: Dict[str, int] = {}
 
@@ -207,6 +251,9 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             if k < 2:
                 no("no fall at this pitch")
                 continue
+            if p in shorts and end - r == 2 and k >= 3:
+                asks.append((p, r + 1, gate_off[cur], SHORT_HEAD))
+                continue
             asks.append((p, r + 1, gate_off[cur], k))
     if not asks:
         if log and declined:
@@ -234,7 +281,7 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
     # the player holds it to frame 3); why the packed player applies it
     # there was not traced.
     heads = sorted({(w, k) for _p, _r, w, k in asks})
-    chain = max([k for _w, k in heads] + [2]) - 2
+    chain = max([k for _w, k in heads if k > 0] + [2]) - 2
     room = GT_MAX_TABLELEN - wave_used - 4 * len(heads) - 1
     if room < 0:
         if log:
@@ -260,6 +307,12 @@ def drum_fall_plan(sid: SidFile, det: Detection, tracks: List[List[int]],
             # (Tarzan subtune 5: aud .7962 -> .7876 against no head).
             entries += [(w | 0x01, DRUM_GATE_HEAD_NOTE),
                         (w, DRUM_GATE_HEAD_NOTE),
+                        (GT_WAVE_JUMP, 0x00)]
+            continue
+        if k == SHORT_HEAD:
+            entries += [(w | 0x01, GT_WAVE_NO_NOTE),
+                        (WAVECMD_PORTADOWN, one),
+                        (WAVECMD_PORTADOWN, one),
                         (GT_WAVE_JUMP, 0x00)]
             continue
         entries += [(w | 0x01, GT_WAVE_NO_NOTE), (w, GT_WAVE_NO_NOTE),

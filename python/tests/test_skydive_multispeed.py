@@ -79,12 +79,12 @@ def test_the_holding_programs_still_frames_are_delays_counted_in_calls():
                    (0xF2, 0x41), (0xF2, 0x41), (0xFF, 0x00)]
 
 
-def _converted(name):
+def _converted(name, **extra):
     import h2g.convert as C
     doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
     lines = []
     sng = C.convert(str(CORPUS / f"{name}.sid"), log=lines.append,
-                    **fidelity._preset_opts(doc, f"{name}.sid"))
+                    **{**fidelity._preset_opts(doc, f"{name}.sid"), **extra})
     return sng, lines
 
 

@@ -38,7 +38,10 @@ def _doc() -> dict:
 
 def _convert(**kw):
     opts = fidelity._preset_opts(_doc(), MONTY.name)
-    return convert(str(MONTY), log=lambda m: None, **{**opts, **kw})
+    # drum_fall_loop (on for Monty since v0.5.677) writes loop heads of the
+    # same shape `_heads` reads; these tests measure drum_long alone.
+    return convert(str(MONTY), log=lambda m: None,
+                   **{**opts, "drum_fall_loop": False, **kw})
 
 
 def _heads(blob):

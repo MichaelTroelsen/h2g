@@ -242,10 +242,13 @@ CLASSIC_CLEARS = {
     "Nemesis_the_Warlock": {9},
     # Mask $2; records 8 and 9 each play on two voices, and clear from both.
     "Food_Feud": {8, 9},
-    # $F4 | $F1 | $F3 = mask $7: the ONE-VOICE half refuses record 2.
-    "Lightforce": set(),
-    # $F4 | $F2 = mask $6: two voices route.
-    "Knucklebusters": set(),
+    # $F4 | $F1 | $F3 = mask $7, the one-voice half refuses -- but record 2 is
+    # named on voice 1 only, which also names routed records 1/4/15/16: the
+    # sweeping voice's own clear (`tests/test_classic_clear_multi_voice.py`).
+    "Lightforce": {2},
+    # $F4 | $F2 = mask $6: record 0 is named on all three voices, each of
+    # which also names a routed record -- the clear ends voice 3's sweep.
+    "Knucklebusters": {0},
 }
 
 

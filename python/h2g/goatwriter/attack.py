@@ -6,8 +6,9 @@ from typing import (List, Optional, Tuple)
 from ..detect import (Detection, EFFECT_BIT40_MASK)
 from ..sidfile import (SidFile)
 from .constants import (EFFECT_FIXED_PITCH_MASK, EFFECT_NOTE_ALT_MASK,
-                        GT_WAVE_LAST_DELAY, WAVE_ENTRIES_PER_INSTR,
-                        WAVE_MAX_DELAY, WAVE_NOTE_BASE)
+                        GT_WAVE_LAST_DELAY, WAVECMD_PORTADOWN,
+                        WAVE_ENTRIES_PER_INSTR, WAVE_MAX_DELAY,
+                        WAVE_NOTE_BASE, WAVE_NOTE_KEEP)
 from .primitives import (_counter_gate_call, _first_frame_entry,
                          _first_frame_lead, _fixed_pitch_yield_field,
                          _freq_table_note, _gate_calls, _second_stage_base,
@@ -204,6 +205,11 @@ def _two_stage_frames(frames: int, effect: int) -> int:
     return frames
 
 
+# Entries `drum_alt_fall` leaves free in a record's budget (see the sweep
+# branch of `_wave_alternate_entries`).
+ALT_FALL_HEADROOM = 20
+
+
 def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             start: Optional[int] = None,
                             budget: int = WAVE_ENTRIES_PER_INSTR,
@@ -212,7 +218,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             alt_note: Optional[int] = None,
                             gate_frames: Optional[int] = None,
                             own_note: Optional[int] = None,
-                            fall: Optional[dict] = None) -> Optional[tuple]:
+                            fall: Optional[dict] = None,
+                            sweep: Optional[tuple] = None) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -258,6 +265,24 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     alternation's counter (`detect.WAVE_ALT_ARP_SHAPE`), so a mask-$01 record
     sounds its note lowered by the nibble on the record's own waveform's
     frames: the caller passes that relative byte here.
+
+    **`sweep` is bit $01's high-byte fall beside the alternation**
+    (`convert(drum_alt_fall=...)`): `(resolve, frames)`, `resolve()` claiming
+    and returning the 1-based speed-table index of the `$0100` step (0 where
+    the table is full), called only once the program is known to fit. Lightforce records 2 and 16
+    (effect `$23`, `$F3C4`): from the first frame the drum's gate is off the
+    voice's frequency high byte falls one a frame while the duration counter
+    is in `1 .. W-1`, and the waveform goes on alternating beside it (siddump:
+    `4456 -> 4200 -> 3944 ...`, `40 80 40 80` across the fall, 48 notes of 48).
+    Each frame of the fall is the waveform entry, written with the pitch left
+    alone (`$80`: the `$00` of the other halves re-asserts the note and would
+    undo the fall), then one `CMD_PORTADOWN` of the whole frame's step, then
+    the frame's remaining calls held. The fall stops where the counter reaches
+    zero and the voice holds the frequency it reached, so the loop after it
+    keeps the pitch alone too. Needs a gated alternation (`gate_frames`),
+    `multiplier >= 2` (a one-call frame cannot write the waveform and step the
+    pitch) and declines, returning the plain program, where it does not fit
+    `budget`.
     """
     if (alt <= WAVE_MAX_DELAY
             or (alt == wave and alt_note is None and own_note is None)
@@ -383,6 +408,49 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
             f_right.append(fall[last])
         if len(f_left) + 1 <= budget:
             return f_left + [0xFF], f_right + [(start + loop) & 0xFF]
+    if (sweep is not None and gate_frames is not None and gate_frames >= 1
+            and multiplier >= 2 and alt_note is None
+            and own_note == WAVE_NOTE_BASE):
+        resolve, frames = sweep
+        pair = [(first, first_r), (second, second_r)]
+        left, right = list(lead), list(lead_r)
+        for k in range(1, gate_frames):
+            w, n = pair[(k - 1) % 2]
+            h_l, h_r = half(w, n)
+            left += h_l
+            right += h_r
+        rest = multiplier - 2
+        for k in range(gate_frames, gate_frames + frames):
+            w, _n = pair[(k - 1) % 2]
+            left += [w & 0xFE, WAVECMD_PORTADOWN]
+            right += [WAVE_NOTE_KEEP, 0]
+            if rest == 1:
+                left.append(w & 0xFE)
+                right.append(WAVE_NOTE_KEEP)
+            elif rest > 1:
+                left.append(min(rest - 1, WAVE_MAX_DELAY))
+                right.append(WAVE_NOTE_KEEP)
+        loop = len(left)
+        for k in (gate_frames + frames, gate_frames + frames + 1):
+            w, _n = pair[(k - 1) % 2]
+            h_l, h_r = half(w & 0xFE, WAVE_NOTE_KEEP)
+            left += h_l
+            right += h_r
+        # The speed-table entry is claimed only once the program is known to
+        # fit: a layout that declines must not leave a `$0100` entry behind.
+        # **And it must leave `ALT_FALL_HEADROOM` entries for what is laid
+        # after it**: the table is filled record by record, so a fall that
+        # takes the room of a later record's arpeggio or of the phase clones
+        # costs more than it gains. W_A_R's records 8 and 25 fit with 10-16
+        # entries to spare of a 254-entry table and its record 10 (`$14`) then
+        # lost its arpeggio and its past-table split stood down (pitch 100% ->
+        # 96%); Lightforce and Deep_Strike spare 51 and 147.
+        if len(left) + 1 + ALT_FALL_HEADROOM <= budget:
+            index = resolve()
+            if index:
+                right = [index if b == WAVECMD_PORTADOWN else r
+                         for b, r in zip(left, right)]
+                return left + [0xFF], right + [(start + loop) & 0xFF]
     if gate_frames is not None and gate_frames >= 1:
         # **`gate_frames`: the drum block's gate mask under the alternation**
         # (`convert(drum_gate_off=...)`). A record setting bit $01 beside $02

@@ -1,0 +1,150 @@
+"""drum_split_tick: a ticked nibble-arpeggio record's noise frames after the first.
+
+The player's drum block writes its noise as `LDA #$80 / STA $D404,Y`, gate
+clear on every tick frame: Bump_Set_Spike's original reads `41 80 80 40` from
+each `$090A` onset. Above -S1 the conversion writes the whole tick gated
+(`_drum_tick_noise`), because a gate-off first frame releases the voice before
+the SID's ADSR delay has let the attack start (loud_ratio 1.009 -> .804 on
+Bump_Set_Spike). `drum_split_tick` keeps the first tick frame gated -- which
+carries the gate past 520 lines at every -S >= 2 -- and writes the noise runs
+that start at call `multiplier` or later gate-off, without adding an entry.
+
+Measured at v0.5.674 (task listen-sub99-bump-set-spike, -t 180 --presets
+--sound, option forced on): Bump_Set_Spike gate .728 -> .767, heard instr
+.390 -> .613, International_Karate gate .897 -> .928, Thrust .869 -> .879,
+Kentilla unmoved; no printed column falls on any of the four.
+"""
+import contextlib
+import io
+import json
+from pathlib import Path
+
+import pytest
+
+from corpus import CORPUS, needs_corpus
+from h2g.convert import convert
+from h2g.goatwriter import _first_frame_lead
+from h2g.goatwriter.arpeggio import ticked_nibble_arp_entries
+from h2g.goatwriter.constants import WAVE_NOISE_GATEOFF
+
+REPO = Path(__file__).resolve().parents[2]
+WAVE, NOISE, ALT = 0x41, 0x81, 0x74
+
+
+def _entries(m, tick, half, up, first_calls, **kw):
+    frame0, frame0_r = _first_frame_lead(WAVE, m, force=True)
+    return ticked_nibble_arp_entries(frame0, frame0_r, tick, NOISE, WAVE, ALT,
+                                     half, up, first_calls, 6, 255,
+                                     multiplier=m, **kw)
+
+
+def test_the_option_off_is_the_old_shape_whatever_the_multiplier():
+    """SABOTAGE TARGET: dropping the `split_tick and` guard rewrites every
+    default conversion's tick."""
+    for m in (2, 3, 10):
+        assert _entries(m, 2 * m, m, False, m) == _entries(
+            m, 2 * m, m, False, m, split_tick=False)
+        left, _ = _entries(m, 2 * m, m, False, m)
+        assert WAVE_NOISE_GATEOFF not in left
+
+
+@pytest.mark.parametrize("m, half", [(3, 3), (2, 2), (10, 10), (7, 7)])
+def test_the_second_tick_frame_loses_the_gate_and_the_first_keeps_it(m, half):
+    """Per call: the first `m` noise calls are `$81`, the rest of the tick
+    `$80`. SABOTAGE TARGET: dropping the `lo >= multiplier` bound writes the
+    first frame gate-off too (the arm that costs Bump_Set_Spike .20 of
+    loud_ratio), and dropping `wave == noise` would rewrite the tail."""
+    from test_call_rate import wave_timeline
+    tick = 2 * m
+    left, right = _entries(m, tick, half, False, half, split_tick=True)
+    plain_l, plain_r = _entries(m, tick, half, False, half)
+    assert len(left) == len(plain_l), "no entry may be added"
+    assert right == plain_r
+    calls = wave_timeline(left, right, first=6, calls=m + tick + 4 * half)
+    waves = [w for _, w, _ in calls]
+    assert waves[:m] == [WAVE] * m                      # the lead
+    assert waves[m:2 * m][0] == NOISE                   # first tick frame: gated
+    assert all(w & 1 for w in waves[m:m + min(m, half)])
+    assert set(waves[2 * m:m + tick]) <= {WAVE_NOISE_GATEOFF}
+    assert set(waves[m + tick:]) == {WAVE}              # the tail is untouched
+
+
+def test_a_run_straddling_the_frame_boundary_stays_gated():
+    """A first run longer than a frame starts at call 0 < `multiplier`, so it
+    is one noise row and keeps the gate for all of it (a split would need an
+    extra entry, which the option does not spend)."""
+    from test_call_rate import wave_timeline
+    m, half = 7, 8
+    left, right = _entries(m, 2 * m, half, False, half, split_tick=True)
+    calls = wave_timeline(left, right, first=6, calls=m + 2 * m)
+    waves = [w for _, w, _ in calls]
+    assert waves[m:m + half] == [NOISE] * half, waves
+    assert set(waves[m + half:m + 2 * m]) == {WAVE_NOISE_GATEOFF}, waves
+
+
+def test_a_one_frame_tick_has_nothing_to_split():
+    """The tick of Game_Killer, Warhawk and Proteus is one frame: the whole
+    tick is the frame that must stay gated, so the option leaves it alone."""
+    for m in (3, 7):
+        assert _entries(m, m, m, False, m, split_tick=True) == _entries(
+            m, m, m, False, m)
+
+
+def test_it_is_inert_at_one_call_a_frame():
+    frame0, frame0_r = _first_frame_lead(WAVE, 1, force=True)
+    a = ticked_nibble_arp_entries(frame0, frame0_r, 2, NOISE, WAVE, ALT, 2,
+                                  False, 2, 6, 255, split_tick=True,
+                                  multiplier=1)
+    b = ticked_nibble_arp_entries(frame0, frame0_r, 2, NOISE, WAVE, ALT, 2,
+                                  False, 2, 6, 255)
+    assert a == b
+
+
+def _song(stem, **over):
+    import fidelity as F
+    from songview import parse_sng
+    doc = json.loads((REPO / "presets.json").read_text("utf-8"))
+    opts = dict(F._preset_opts(doc, f"{stem}.sid"), **over)
+    with contextlib.redirect_stdout(io.StringIO()):
+        return parse_sng(convert(str(CORPUS / f"{stem}.sid"),
+                                 log=lambda m: None, **opts))
+
+
+def _program(song, ad, sr, nth=0):
+    ins = [i for i in song.instruments if (i.ad, i.sr) == (ad, sr)]
+    assert len(ins) > nth, f"no instrument {ad:02X}{sr:02X}: the test is blind"
+    rows, p = [], ins[nth].wave_ptr - 1
+    while song.tables["WTBL"][p][0] != 0xFF:
+        rows.append(tuple(song.tables["WTBL"][p]))
+        p += 1
+    return rows
+
+
+@needs_corpus
+def test_bump_set_spike_090a_writes_noise_gated_then_gate_off():
+    """Instrument 2 (`$090A`, effect `$C5`) is the record behind 498 of the
+    original's 499 voice-1 `$090A` notes. Off, both noise frames are `$81`;
+    on, the first stays `$81` and the second is `$80`, in the same number of
+    rows. SABOTAGE TARGET: dropping `split_tick=det.drum_split_tick` at the
+    wavetable call site fails the second half."""
+    off = _program(_song("Bump_Set_Spike", drum_split_tick=False), 0x09, 0x0A)
+    on = _program(_song("Bump_Set_Spike", drum_split_tick=True), 0x09, 0x0A)
+    assert len(on) == len(off), (on, off)
+    lefts_off = [l for l, _ in off]
+    lefts_on = [l for l, _ in on]
+    assert WAVE_NOISE_GATEOFF not in lefts_off[:6], off
+    assert lefts_off[:6].count(NOISE) == 2, off
+    assert lefts_on[:6].count(NOISE) == 1, on
+    assert lefts_on[:6].count(WAVE_NOISE_GATEOFF) == 1, on
+    assert [r for _, r in on] == [r for _, r in off]
+
+
+@needs_corpus
+def test_the_shipped_conversion_of_bump_set_spike_carries_the_split_tick():
+    """presets.json sets the option on Bump_Set_Spike (adopted v0.5.677), so
+    the shipped tables are the option-on ones and differ from option off."""
+    a = _song("Bump_Set_Spike")
+    b = _song("Bump_Set_Spike", drum_split_tick=True)
+    c = _song("Bump_Set_Spike", drum_split_tick=False)
+    assert a.tables == b.tables
+    assert a.tables != c.tables

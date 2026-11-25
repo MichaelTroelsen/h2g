@@ -116,6 +116,9 @@ VIBRATO_DELAY = 0x01
 EFFECT_PER_FRAME = 0x01
 
 DRUM_SPEED_PER_FRAME = 0x0100
+# The whole frame's step of `drum_alt_fall`, taken on one call of the frame
+# (`attack._wave_alternate_entries(sweep=)`): not divided by the multiplier.
+DRUM_ALT_FALL_STEP = 0x0100
 
 
 def _drum_speed(multiplier: int = 1, gate_skip: int | None = None) -> tuple:

@@ -278,6 +278,20 @@ class Detection:
     # `convert(drum_sustain_gate_off=...)`, the same carriage: a sustaining
     # drum record keeps the drum shape (gate-off and fall). False by default.
     drum_sustain_gate_off: bool = False
+    # `convert(drum_alt_fall=...)`, the same carriage: a bit-$01 drum record
+    # that also alternates its waveform (bit $02) carries the drum's
+    # high-byte fall inside the alternation program. False by default.
+    drum_alt_fall: bool = False
+    # The drum block spells its decrement `DEC shadow,X` straight after the
+    # duration compare (`DRUM_SHADOW_DEC_SHAPE`, Lightforce `$F3E5`), so the
+    # FIRST sweeping frame already reaches the chip. Warhawk's spelling stores
+    # the value it loaded and decrements after. Set by `_find_drum_shadow_dec`
+    # where `effect_drum` matched, False elsewhere.
+    drum_shadow_dec: bool = False
+    # `convert(drum_split_tick=...)`, the same carriage: the second and later
+    # noise frames of a ticked nibble-arpeggio record are written gate-off
+    # above -S1 (`ticked_nibble_arp_entries`). False by default.
+    drum_split_tick: bool = False
     # `{Goattracker instrument: frames its drum notes hold the gate}` for the
     # records the bit-$02 alternation emitter writes under `drum_gate_off`
     # (`goatwriter.drum_unit.drum_first_units`), set by `convert` just before
@@ -2357,6 +2371,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
+    det.drum_shadow_dec = _find_drum_shadow_dec(sid, det)
     if not det.effect_drum:
         # A fallback spelling of bit $01, consulted only where Warhawk's
         # drum matched nothing.
@@ -5883,6 +5898,38 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # PULSE_LO_SHAPES for the zero-page dialect (Samantha Fox, Spellbound).
     pulse_lo = _pulse_lo_block(sid.data, load) is not None
     return rise, arp, drum, pulse_lo, arp_up
+
+
+# Bit $01's block where the decrement is `DEC freqhi_shadow,X` straight after
+# the duration compare, the chip write coming later from that shadow
+# (Lightforce `$F3C4`; the same bytes in ten corpus files):
+#
+#     AD F2 F5  LDA effect / AND #$01 / BEQ out
+#     BD E6 F5  LDA freqhi,X / BEQ out
+#     BD C2 F5  LDA remaining,X / BEQ out
+#     BD C5 F5  LDA dur,X / AND #$1F / SEC / SBC #$01
+#     DD C2 F5  CMP remaining,X / BCC noise
+#     DE E6 F5  DEC freqhi,X
+#
+# Siddump of Lightforce's record 2: the register steps `$1168 -> $1068` on the
+# note's first sweeping frame, so a sweep of N frames is N decrements on the
+# chip, where Warhawk's `LDA freqhi / DEC freqhi / STA $D401` shows N - 1.
+DRUM_SHADOW_DEC_SHAPE = ("29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0 ?? BD ?? ?? "
+                         "29 1F 38 E9 01 DD ?? ?? 90 ?? DE ?? ??")
+
+
+def _find_drum_shadow_dec(sid: SidFile, det: Detection) -> bool:
+    """True where `effect_drum`'s block is `DRUM_SHADOW_DEC_SHAPE`, read on
+    the resolved effect byte's own load. The zero-page spelling is not
+    searched: no corpus file has it, so it reads False."""
+    found = _effect_byte_address(sid, det)
+    if not found or not det.effect_drum:
+        return False
+    addr, zp = found
+    if zp:
+        return False
+    load = f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    return search_file(sid.data, f"{load} {DRUM_SHADOW_DEC_SHAPE}") >= 1
 
 
 # Bit $01 in Tarzan's dialect: a drum whose fall is a 16-bit subtract rather

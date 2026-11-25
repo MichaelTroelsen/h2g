@@ -21,7 +21,7 @@ from .constants import (BEQ, BNE, CMD_SETTEMPO, CMD_TONEPORTA,
                         OUTER_GATE, OUTER_GATE_PAL, OUTER_GATE_RTS, SPEED_GATE,
                         SPEED_GATE_IMM, SPEED_GATE_ZP,
                         TEMPO_DUTY_MAX_CLONE, WAVE_JUMP, WAVE_MAX_DELAY,
-                        WAVE_NOTE_BASE)
+                        WAVE_NOISE_GATEOFF, WAVE_NOTE_BASE)
 from .primitives import (_fixed_arp_block, _gate_calls, _wave_hold_byte)
 from .note_passes import (clone_number_ceiling, _entry_instruments)
 from .tempo import (outer_gate_skip)
@@ -3583,7 +3583,9 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
                               tick_calls: int, noise: int, tail: int,
                               arp_rel: int, half_calls: int,
                               first_up: bool, first_calls: int,
-                              start: int, budget: int) -> Optional[tuple]:
+                              start: int, budget: int,
+                              split_tick: bool = False,
+                              multiplier: int = 1) -> Optional[tuple]:
     """The nibble dialect's ticked arpeggio with the alternation THROUGH the tick.
 
     **The original's alternation does not wait for the noise tick.** The drum
@@ -3605,6 +3607,20 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
     begins at or after the tick's end; from there it is
     `ticked_arp_entries`' two-half loop, entered on the half that falls
     there. None over `budget` -- the caller then keeps the unphased shape.
+
+    **`split_tick` writes the tick as the player does, from its second frame.**
+    The player's drum block writes the noise as `LDA #$80 / STA $D404,Y`, gate
+    clear on every tick frame (Bump_Set_Spike's original reads `41 80 80 40`);
+    above -S1 the tick is written gated because a gate-off first frame
+    releases the voice before the SID's ADSR delay (up to 520 lines) has let
+    its attack start (`_drum_tick_noise`; measured -3.2 pp loud, loud_ratio
+    1.009 -> .804 on Bump_Set_Spike). The first tick frame keeps the gate,
+    which carries it past 520 lines at every -S >= 2 (lead + one frame is
+    2m calls), so the frames after it can read as the player writes them: a
+    noise run that starts at call `multiplier` or later takes `$80`. A run
+    that straddles the frame boundary is left gated, and a one-frame tick has
+    no run to move. No entry is added: the alternation already puts each
+    tick frame on its own row.
     """
     # `half_calls` may be a `nibble_arp_half_cycle`: the halves after the
     # first run take its lengths in turn, and the loop is all of them.
@@ -3619,6 +3635,9 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
                              (tick_calls, t + run, tail)):
             if hi <= lo:
                 continue
+            if (split_tick and wave == noise and multiplier > 1
+                    and lo >= multiplier):
+                wave = WAVE_NOISE_GATEOFF
             holds = _hold_run(hi - lo - 1, wave)
             left += [wave] + holds
             right += [note[up] if lo == t else 0x80] + [0x80] * len(holds)

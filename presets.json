@@ -547,7 +547,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "drum_split_tick": true
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -1082,7 +1083,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "drum_fall_loop": true
     },
     "Dragons_Lair_Part_II.sid": {
       "max_rows": 94,
@@ -1265,7 +1267,8 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "drum_fall_loop": true
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -2160,7 +2163,8 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "drum_fall_loop": true
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
@@ -2237,7 +2241,8 @@
         62
       ],
       "pre_note_wave": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "drum_fall_loop": true
     },
     "Lightforce.sid": {
       "max_rows": 94,
@@ -2317,7 +2322,8 @@
         62
       ],
       "hard_restart_frames": 3,
-      "phase_split_over_passes": true
+      "phase_split_over_passes": true,
+      "drum_alt_fall": true
     },
     "Lion_Heart.sid": {
       "max_rows": 94,
@@ -2332,7 +2338,8 @@
       "wave_program": true,
       "max_hard_restart": true,
       "arpeggio": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "ilv_filter_resume": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -2503,7 +2510,8 @@
         62
       ],
       "pulse_phase": true,
-      "wobble_copy_depth": true
+      "wobble_copy_depth": true,
+      "drum_fall_loop": true
     },
     "Mozart.sid": {
       "max_rows": 94,
@@ -3733,7 +3741,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "drum_fall_loop": true
     },
     "Thrust.sid": {
       "max_rows": 94,

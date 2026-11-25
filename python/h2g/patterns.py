@@ -2269,6 +2269,7 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # .884 -> .911, Lakers .887 -> .919, Lion_Heart .900 -> .929, Pacific_Coast
 # .976 -> .983. See tests/test_ilv_tie.py.
 ILV_ARP = 0x83
+ILV_NOFILTER = 0x84            # see _build_raw_pattern_ilv's `skip_rows`
 
 
 class IlvArps(list):
@@ -2310,8 +2311,15 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            arps: Optional[List[tuple]] = None,
                            tie: bool = False,
                            exits_tied: Optional[List[bool]] = None,
+                           skip_rows: Optional[List[int]] = None,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
+
+    With `skip_rows` (a list the caller owns), the row of every note that
+    follows a `$84` is appended: the player's `$11E7 LDA #$01 / STA $1A86`
+    makes the note-start loader skip its filter-program load (`$1324 BNE
+    $1389`), so a running sweep carries on through that note instead of
+    restarting. See `goatwriter.ilv_filter_resume`.
 
     With `tie`, the duration byte's `ILV_TIE` bit becomes `CMD_TONEPORTA 0`
     on the next note (opt-in like every tie emitter:
@@ -2351,6 +2359,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     armed: Optional[int] = None     # a `$83` operand waiting for its note
     tieflag = False                 # the last duration byte's `ILV_TIE`
     nexttie = False                 # that flag, carried to the NEXT note
+    nofilter = False                # a `$84` waiting for its event
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -2386,6 +2395,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             if b == 0x80:
                 record = data[addr + i2 + 1]
                 instrument = record + instr_base
+            elif b == ILV_NOFILTER:
+                nofilter = True
             elif (b == ILV_ARP and arps is not None
                   and getattr(arps, 'commands', True)):
                 # Armed for the note that FOLLOWS, and dropped if none does:
@@ -2412,6 +2423,11 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
         row = len(events) - 4
+        if nofilter and b != ILV_REST and skip_rows is not None:
+            skip_rows.append(row // 4)
+        # The player clears the flag at every event fetch (`$1152`), a rest
+        # included: it belongs to the one event that follows it.
+        nofilter = False
         operand = armed
         if (operand is None and arps is not None and record is not None
                 and b != ILV_REST):
@@ -2763,7 +2779,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  top_rows: Optional[Dict[int, int]] = None,
                  record_exit: Optional[List[tuple]] = None,
                  entry_record: Optional[int] = None,
-                 event_span: Optional[List[tuple]] = None
+                 event_span: Optional[List[tuple]] = None,
+                 skip_rows: Optional[List[int]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -2795,6 +2812,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     event's first row. Classic grammar only, like `free_rows`; on the other
     dialects the list stays EMPTY, which does not mean "no event starts" --
     `convert_patterns` records such an entry as unknown (None).
+
+    `skip_rows` is `_build_raw_pattern_ilv`'s out-parameter of that name, the
+    rows of the notes a `$84` precedes. The interleaved dialect only.
     """
     data = sid.data
     step = i * det.table_stride
@@ -2812,7 +2832,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
                                       slides=slides, steps=steps, arps=arps,
-                                      tie=tie, exits_tied=exits_tied)
+                                      tie=tie, exits_tied=exits_tied,
+                                      skip_rows=skip_rows)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -3116,12 +3137,14 @@ def drop_unplayed_patterns(tracks: List[List[int]],
                 new[at] = remap[b]
         out_tracks.append(new)
     kept = [patterns[i] for i in range(n) if i in refs]
+    kept = _carry_filter_skip(patterns, kept, remap, drop)
     bit7 = getattr(patterns, "note_bit7", None)
     decoded = getattr(patterns, "decoded", None)
     if bit7 is None or decoded is None:
         return out_tracks, kept, drop
     out = PatternList(kept, {remap[i]: f for i, f in bit7.items()
                              if i in remap})
+    out = _carry_filter_skip(patterns, out, remap, drop)
     out.decoded = sum(1 for i in remap if i < decoded)
     # A dropped DECODED pattern was a candidate in `note_bit7_rows`' match by
     # note column, so it is remembered there rather than letting its absence
@@ -3131,6 +3154,26 @@ def drop_unplayed_patterns(tracks: List[List[int]],
          bit7.get(i))
         for i in drop if i < decoded)
     return out_tracks, out, drop
+
+
+def _carry_filter_skip(old: List[List[int]], new: List[List[int]],
+                       remap: Dict[int, int], drop: List[int]):
+    """`new`, the table `drop_unplayed_patterns` kept, with `old`'s
+    `filter_skip` carried over: rekeyed, and the decoded patterns dropped
+    left behind as `(note column, rows)` ghosts. `new` itself where `old`
+    carries none."""
+    skip = getattr(old, "filter_skip", None)
+    if skip is None:
+        return new
+    decoded = getattr(old, "skip_decoded", 0)
+    if not isinstance(new, (PatternList, SkipList)):
+        new = SkipList(new)
+    new.filter_skip = {remap[i]: f for i, f in skip.items() if i in remap}
+    new.skip_decoded = sum(1 for i in remap if i < decoded)
+    new.skip_ghosts = tuple(getattr(old, "skip_ghosts", ())) + tuple(
+        (tuple(old[i][4 * r] for r in range(len(old[i]) // 4)), skip.get(i))
+        for i in drop if i < decoded)
+    return new
 
 
 def _overlap(a_start: int, a_len: int, b_start: int, b_len: int) -> bool:
@@ -3319,6 +3362,39 @@ class PatternList(list):
         self.ghosts: tuple = ()
 
 
+class SkipList(list):
+    """The pattern list `convert_patterns` returns under `filter_skip`: the
+    plain list, with `filter_skip` -- per pattern, the rows of the notes
+    the player does not restart a filter program on (`ILV_NOFILTER`).
+
+    Its own class and not a field of `PatternList`, because the presence of
+    a `PatternList.note_bit7` is what switches the legato passes on, and an
+    interleaved file has none. `skip_decoded` and `skip_ghosts` are
+    `PatternList.decoded` / `ghosts` for this table: later passes append
+    copies to the same object, which `goatwriter.skip_rows` attributes by
+    note column, and `drop_unplayed_patterns` leaves the dropped ones'
+    columns behind as ghosts."""
+
+    def __init__(self, items=(), filter_skip=None):
+        super().__init__(items)
+        self.filter_skip: Dict[int, frozenset] = dict(filter_skip or {})
+        self.skip_decoded = len(self)
+        self.skip_ghosts: tuple = ()
+
+
+def attach_filter_skip(patterns: List[List[int]],
+                       skip: Dict[int, frozenset]) -> List[List[int]]:
+    """The list with `skip` attached: `patterns` itself where it is a
+    `PatternList` (its attributes are set in place, so `note_bit7` still
+    reads as it did), else a `SkipList` of it."""
+    if isinstance(patterns, PatternList):
+        patterns.filter_skip = dict(skip)
+        patterns.skip_decoded = len(patterns)
+        patterns.skip_ghosts = ()
+        return patterns
+    return SkipList(patterns, skip)
+
+
 class TrackIndex(list):
     """The per-entry slice lists, with each entry's exit tie state attached.
 
@@ -3366,6 +3442,30 @@ class TrackIndex(list):
         self.event_rows: Dict[int, Optional[frozenset]] = dict(event_rows or {})
 
 
+def _filtered_skip_rows(sid: SidFile, det: Detection, events,
+                        rows: List[int], instr_base: int) -> List[int]:
+    """`rows` (the notes a `$84` precedes) narrowed to those on a record whose
+    filter-enable bit is set: a `$84` before any other note skips a load that
+    would not have happened, and the dedup key carries these rows, so keeping
+    the others would split patterns for nothing and move bytes the option
+    has no effect on (Pacific_Coast carries 300 of them before unfiltered
+    records)."""
+    filt = getattr(det, "ilv_filter", None)
+    if not rows or filt is None or not events:
+        return []
+    from .detect import FILTER_ENABLE_BIT
+    data = sid.data
+    out = []
+    for r in rows:
+        if 4 * r + 1 >= len(events):
+            continue
+        rec = events[4 * r + 1] - instr_base
+        at = det.instr_start + rec * det.instr_stride + filt.enable_off
+        if rec >= 0 and 0 <= at < len(data) and data[at] & FILTER_ENABLE_BIT:
+            out.append(r)
+    return out
+
+
 def convert_patterns(sid: SidFile, det: Detection, log,
                      max_rows: int = GT_DEFAULT_ROWS,
                      terminate_patterns: bool = False,
@@ -3388,8 +3488,15 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_copies: Optional[List[tuple]] = None,
                      exempt_copies: Optional[List[tuple]] = None,
                      event_rows: bool = False,
-                     top_cols: Optional[dict] = None):
+                     top_cols: Optional[dict] = None,
+                     filter_skip: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
+
+    `filter_skip` (interleaved dialect only) asks for `SkipList.filter_skip`:
+    per output pattern, the rows of the notes a `$84` precedes -- the notes
+    on which the player does not restart a record's filter program. The
+    dedup key then carries the rows, so two patterns that differ only in
+    them stay two. See `goatwriter.ilv_filter_resume`.
 
     `top_cols`, when given a dict, receives `note_column_top_rows`' record of
     the note rows that sounded an entry 93-95 (`_build_raw_pattern`'s
@@ -3491,6 +3598,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     tops: Dict[int, Optional[Dict[int, int]]] = {}
     want_top = top_cols is not None and det.pattern_dialect in ("classic",
                                                                "cmdtable")
+    want_skip = filter_skip and det.pattern_dialect == "ilv"
+    skips: Dict[int, List[int]] = {}
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -3512,6 +3621,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         fr: List[int] = []
         ev: List[int] = []
         tr: Dict[int, int] = {}
+        sk: List[int] = []
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -3521,9 +3631,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               free_rows=fr if collect else None,
                               wave_notes=(wave_notes or {}).get(i),
                               event_rows=ev if want_ev else None,
-                              top_rows=tr if want_top else None)
+                              top_rows=tr if want_top else None,
+                              skip_rows=sk if want_skip else None)
         exits[i] = bool(ex and ex[0])
         free[i] = fr
+        skips[i] = _filtered_skip_rows(sid, det, events, sk, instr_base)
         tops[i] = tr if want_top else None
         starts[i] = ev if want_ev and events is not None else None
         if events is None:
@@ -3539,6 +3651,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             ex = []
             fr = []
             ev = []
+            sk = []
             # A variant is a transposition of a pattern the loop above
             # already decoded, so `arps` has already collected whatever it
             # arms; passing the list again would append the same pairs a
@@ -3558,9 +3671,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                                 rest_envelope=rest_envelope, rest_ring=rest_ring,
                                 exits_tied=ex, arps=arps,
                                 free_rows=fr if collect else None,
-                                event_rows=ev if want_ev else None)
+                                event_rows=ev if want_ev else None,
+                                skip_rows=sk if want_skip else None)
             exits[src] = bool(ex and ex[0])
             free[src] = fr
+            skips[src] = _filtered_skip_rows(sid, det, base, sk, instr_base)
             starts[src] = ev if want_ev and base is not None else None
         # A variant is the source's own event stream with its notes shifted, so
         # it ends on the source's status byte and leaves the gate exactly as
@@ -3568,6 +3683,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         # source's, row for row, since shift_notes moves no row.
         exits[len(raw_patterns)] = exits.get(src, False)
         free[len(raw_patterns)] = list(free.get(src, ()))
+        skips[len(raw_patterns)] = list(skips.get(src, ()))
         tops[len(raw_patterns)] = None
         starts[len(raw_patterns)] = (None if base is None
                                      else starts.get(src))
@@ -3596,6 +3712,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         fr = []
         ev = []
         tr = {}
+        sk = []
         events = decode_entry(sid, det, src, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -3605,9 +3722,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               free_rows=fr if collect else None,
                               wave_notes=notes, entry_record=record,
                               event_rows=ev if want_ev else None,
-                              top_rows=tr if want_top else None)
+                              top_rows=tr if want_top else None,
+                              skip_rows=sk if want_skip else None)
         exits[n] = bool(ex and ex[0])
         free[n] = fr
+        skips[n] = _filtered_skip_rows(sid, det, events, sk, instr_base)
         tops[n] = tr if want_top else None
         starts[n] = ev if want_ev and events is not None else None
         if events is None:
@@ -3625,6 +3744,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         fr = []
         ev = []
         tr = {}
+        sk = []
         events = decode_entry(sid, det, src, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
@@ -3634,9 +3754,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               free_rows=fr if collect else None,
                               wave_notes=(wave_notes or {}).get(src),
                               event_rows=ev if want_ev else None,
-                              top_rows=tr if want_top else None)
+                              top_rows=tr if want_top else None,
+                              skip_rows=sk if want_skip else None)
         exits[n] = bool(ex and ex[0])
         free[n] = fr
+        skips[n] = _filtered_skip_rows(sid, det, events, sk, instr_base)
         tops[n] = tr if want_top else None
         starts[n] = ev if want_ev and events is not None else None
         if events is None:
@@ -3655,6 +3777,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     reused = 0
 
     pattern_free: Dict[int, frozenset] = {}
+    pattern_skip: Dict[int, frozenset] = {}
     note_bit7: Dict[int, Optional[frozenset]] = {}
     pattern_starts: Dict[int, Optional[frozenset]] = {}
 
@@ -3667,9 +3790,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         slices = _slice_pattern(events, max_len, terminate_patterns)
         indices: List[int] = []
         entry_free = free.get(i, ())
+        entry_skip = skips.get(i, ()) if want_skip else ()
         if i in copy_from and len(new_patterns) + _new_slices(
                 slices, entry_free, terminate_patterns, dedup, free_rows,
-                seen) >= MAX_PATTERNS:
+                seen, entry_skip if want_skip else None) >= MAX_PATTERNS:
             # The copy does not fit: its positions play the source.
             copies_dropped += 1
             track_index.append(list(track_index[copy_from[i]]))
@@ -3684,6 +3808,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 data_rows -= 1
             flags = frozenset(r - base_row for r in entry_free
                               if base_row <= r < base_row + data_rows)
+            skip_flags = frozenset(r - base_row for r in entry_skip
+                                   if base_row <= r < base_row + data_rows)
             entry_starts = starts.get(i)
             ev_rows = (None if entry_starts is None else
                        frozenset(r - base_row for r in entry_starts
@@ -3699,6 +3825,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 # where every source has it (`_merge_ring_markers`).
                 kb = _ring_key(s) if rest_ring else bytes(s)
                 key = (kb, flags) if free_rows else kb
+                if want_skip:
+                    key = (key, skip_flags)
             if key is not None and key in seen:
                 idx = seen[key]
                 reused += 1
@@ -3715,6 +3843,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                     seen[key] = idx
                 if free_rows:
                     pattern_free[idx] = flags
+                if want_skip:
+                    pattern_skip[idx] = skip_flags
                 if want_bit7:
                     note_bit7[idx] = flags
                 if event_rows:
@@ -3749,6 +3879,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     if want_bit7:
         new_patterns = PatternList(new_patterns, note_bit7)
+    if want_skip:
+        new_patterns = attach_filter_skip(new_patterns, pattern_skip)
     return new_patterns, TrackIndex(
         track_index,
         [exits.get(i, False) for i in range(len(raw_patterns))],
@@ -3780,7 +3912,8 @@ def _merge_ring_markers(kept: List[int], other: List[int]) -> None:
 
 
 def _new_slices(slices: List[List[int]], entry_free, terminate: bool,
-                dedup: bool, free_rows: bool, seen: dict) -> int:
+                dedup: bool, free_rows: bool, seen: dict,
+                entry_skip=None) -> int:
     """How many output patterns `convert_patterns`' slice loop would add
     for these slices: their distinct dedup keys not yet in `seen`, keyed
     exactly as that loop keys them, or every slice without dedup."""
@@ -3794,8 +3927,13 @@ def _new_slices(slices: List[List[int]], entry_free, terminate: bool,
             data_rows -= 1
         flags = frozenset(r - base_row for r in entry_free
                           if base_row <= r < base_row + data_rows)
+        skip_flags = (None if entry_skip is None else frozenset(
+            r - base_row for r in entry_skip
+            if base_row <= r < base_row + data_rows))
         base_row += data_rows
         key = (bytes(s), flags) if free_rows else bytes(s)
+        if skip_flags is not None:
+            key = (key, skip_flags)
         if key not in seen:
             keys.add(key)
     return len(keys)

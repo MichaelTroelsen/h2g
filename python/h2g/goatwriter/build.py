@@ -63,6 +63,7 @@ from . import dead_blocks as _gw_dead_blocks
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 from . import tri_clock as _gw_tri_clock
+from . import ilv_filter_resume as _gw_ilv_filter_resume
 def _rewrite_orderlists(out: bytearray, track_at: List[int],
                         tracks: List[List[int]]) -> None:
     """Write `tracks` over the orderlist bytes already in `out` (same length,
@@ -599,6 +600,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               arps: Optional[List[tuple]] = None,
               wave_alternate: bool = False,
               ilv_filter_routing: bool = False,
+              ilv_filter_resume: bool = False,
               gate_off_firstwave_instruments: tuple = (),
               gatetimer_trim: int = 0,
               tie_restart: bool = False,
@@ -647,6 +649,11 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     legato = known_bit7 is not None and _gw_note_passes.legato_tie_family(sid, det)
     decoded = getattr(patterns, "decoded", 0)
     ghosts = getattr(patterns, "ghosts", ())
+    # The `$84` note rows (`patterns.SkipList`), read here for the same
+    # reason: `ilv_filter_resume` renames them near the end.
+    skip_known = getattr(patterns, "filter_skip", None)
+    skip_decoded = getattr(patterns, "skip_decoded", 0)
+    skip_ghosts = getattr(patterns, "skip_ghosts", ())
     # The classic players with no legato marker restart the instrument on
     # EVERY tie landing (`classic_tie_restart_family`), so every tie row is
     # one -- behind `tie_restart`, because Commando is one of them.
@@ -1014,7 +1021,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if not classic:
             ilv_routing = ilv_filter_routing_plan(
                 sid, det, tracks, patterns, instr_used, multiplier,
-                routing_base, log)
+                routing_base, log,
+                skip=(note_bit7_rows(patterns, skip_known, skip_decoded,
+                                     skip_ghosts)
+                      if ilv_filter_resume and skip_known else None))
         if ilv_routing is not None:
             tracks, patterns = ilv_routing.tracks, ilv_routing.patterns
     # A pattern entered holding two instruments gets a copy per instrument
@@ -1620,20 +1630,26 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         dfall = _gw_drum_fall.drum_fall_plan(sid, det, tracks, patterns, lead,
                                              instr_used, fmt, multiplier,
                                              gate_skip, table,
-                                             len(wave_entries), log=log)
+                                             len(wave_entries), log=log,
+                                             subtune_row_calls=(
+                                                 subtune_row_calls))
         if dfall is not None:
             patterns = dfall.patterns
             wave_entries = wave_entries + dfall.entries
     # `drum_long` (convert option): the bit-$01 sweep on the drum notes longer
     # than their record's median, which `_drum_entries`' one depth per record
     # cannot carry (`goatwriter/drum_long.py`).
+    # `drum_fall_loop` (convert option) is its second half, on the notes
+    # whose fall a record that does carry a sweep cannot finish.
     if (effects and det.effect_drum and not det.drum_fall_step
-            and getattr(det, "drum_long", False)):
+            and (getattr(det, "drum_long", False)
+                 or getattr(det, "drum_fall_loop", False))):
         from . import drum_long as _gw_drum_long
         dlong = _gw_drum_long.drum_long_plan(
             sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
             gate_skip, table, len(wave_entries), row_calls, note_rows,
-            log=log)
+            log=log, plain=getattr(det, "drum_long", False),
+            loop=getattr(det, "drum_fall_loop", False))
         if dlong is not None:
             patterns = dlong.patterns
             wave_entries = wave_entries + dlong.entries
@@ -2232,6 +2248,17 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         stair_aliases.extend(tri_clones)
         for at, track in zip(track_at, tracks):
             out[at:at + len(track)] = bytes(track)
+    # The notes a `$84` precedes do not restart their record's filter
+    # program in the player; each names a filter-less clone of its
+    # instrument here (`ilv_filter_resume`). After every pass that appends
+    # or renames an instrument -- the clone is made from the finished
+    # record and numbered after the last one.
+    if ilv_filter_resume and filters and filter_ptrs:
+        patterns, written_instr, resume_clones = (
+            _gw_ilv_filter_resume.resume_plan(
+                patterns, skip_known, skip_decoded, skip_ghosts, out,
+                instr_at, written_instr, log))
+        stair_aliases.extend(resume_clones)
     # The bit-$80 drum's hit on a rest of its record (`sfx_rest_click`): the
     # player fires it unmasked one frame into the rest, a gate edge our KEYOFF
     # masks. After every pass that names an instrument (the clone is made from

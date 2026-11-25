@@ -457,11 +457,23 @@ EXCLUDED_FROM_ALWAYS = {
     # ship it (A/B at v0.5.653: Monty bend .88 -> 1.09 alone, Devils .78 ->
     # .97), International_Karate moved within noise and stays off.
     "drum_long",
+    # Per song and never a default: the bit-$01 drum's fall on a note that
+    # outlasts the record's own sweep, as a loop stopped on a row
+    # (`goatwriter/drum_long.py::_long_fall`). Reaches the files whose drum
+    # record is played long (Formula_1_Simulator's E-6 falls 115 frames).
+    "drum_fall_loop",
     # Per song and never a default: the second noise frame the outer gate's
     # withheld call holds on a drum note (`goatwriter/drum_held.py`). Reaches
     # the players with a two-call speed gate and an outer gate whose clock
     # the file reads (Spellbound, ...).
     "drum_held",
+    # Per song and never a default: the second and later noise frames of a
+    # ticked nibble-arpeggio record written gate-off above -S1, the first
+    # frame kept gated (`ticked_nibble_arp_entries`; zero wavetable
+    # entries). Bump_Set_Spike gate .728 -> .767, heard instr .390 -> .613,
+    # no other printed column moving; forced on it also moves other nibble
+    # drum songs, none adopted (task listen-sub99-bump-set-spike).
+    "drum_split_tick",
     # Per song and never a default: bit $10's per-note phase clones on a file
     # where the entry-instrument split or the free-note respell would stand
     # down beside them (`build._phase_split_displaces_passes`); the entry
@@ -470,6 +482,11 @@ EXCLUDED_FROM_ALWAYS = {
     # Nineteen, Pandora, Saboteur_II and Star_Paws. A trade (instr up on all
     # seven, a pulse/loudness column down on some): adopt it per song.
     "phase_split_over_passes",
+    # Per song and never a default: the bit-$01 drum's high-byte fall inside
+    # the bit-$02 alternation program of a record that sets both
+    # (`goatwriter.attack._wave_alternate_entries`, `drum_alt_fall`). Reaches
+    # Lightforce (records 2 and 16) and Deep_Strike.
+    "drum_alt_fall",
     # Per song and never a default: a `$68` waveform-state copy's vibrato
     # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
     # constant). Reaches Monty_on_the_Run alone, which ships it with
@@ -975,6 +992,11 @@ EXCLUDED_FROM_ALWAYS = {
     # a default; not in FIDELITY_TOGGLES. A song entry
     # `"rest_late_keyoff": true`.
     "rest_late_keyoff",
+    # `ilv_filter_resume`: the interleaved player's `$84` notes do not restart
+    # their record's filter program (h2g.goatwriter.ilv_filter_resume). Per
+    # song and never a default; not in FIDELITY_TOGGLES. A song entry
+    # `"ilv_filter_resume": true`.
+    "ilv_filter_resume",
 }
 
 

@@ -218,6 +218,13 @@ def main(argv=None) -> int:
              "program cannot (Monty_on_the_Run's G-5). -S2 and above. Per "
              "song. Off by default")
     parser.add_argument(
+        "--drum-fall-loop", action="store_true",
+        help="carry the bit-$01 drum's high-byte fall on a note that falls "
+             "for longer than the record's own program holds, as a two-entry "
+             "loop stopped on the row the original's fall ends on "
+             "(Formula_1_Simulator's E-6: 115 frames against 8). -S2 and "
+             "above. Per song. Off by default")
+    parser.add_argument(
         "--drum-held", action="store_true",
         help="give the bit-$01 drum notes whose first unit holds the outer "
              "gate's withheld call the extra noise frame the original holds "
@@ -225,6 +232,14 @@ def main(argv=None) -> int:
              "copy of the record's program, the pattern copied per spelling "
              "(speed gates 2 and 3: Spellbound, Warhawk, Proteus, "
              "Bump_Set_Spike, International_Karate). Per song. Off by default")
+    parser.add_argument(
+        "--drum-split-tick", action="store_true",
+        help="write the second and later noise frames of a ticked "
+             "nibble-arpeggio record gate-off, as the player's drum block "
+             "does, and keep the first frame gated so the SID's ADSR delay "
+             "still lets the attack start (-S2 and above; no wavetable entry "
+             "added; Bump_Set_Spike's $090A records). Per song. Off by "
+             "default")
     parser.add_argument(
         "--wobble-copy-depth", action="store_true",
         help="size a $68 waveform-state copy's vibrato depth on its own pitch "
@@ -239,6 +254,15 @@ def main(argv=None) -> int:
              "then does not run, the free-note respell runs on the clones. "
              "Moves 7 corpus files (I_Ball, Shockway_Rider, ...). Per song. "
              "Off by default")
+    parser.add_argument(
+        "--drum-alt-fall", action="store_true",
+        help="carry the bit-$01 drum's high-byte fall inside the bit-$02 "
+             "alternation program of a record that sets both (Lightforce "
+             "records 2 and 16): -$0100 a frame for (rows - 2) units from "
+             "the first ungated frame, the waveform alternation going on "
+             "beside it. -S2 and above, drum blocks spelled `DEC shadow,X` "
+             "only, and only where the wavetable has room to spare "
+             "(Lightforce, Deep_Strike). Per song. Off by default")
     parser.add_argument(
         "--release-held-stored-wave", action="store_true",
         help="lift Commando's by-name hold on the $68 stored-waveform pitch, "
@@ -455,6 +479,13 @@ def main(argv=None) -> int:
              "record's own: clones a record whose firstwave is a gate-off "
              "real waveform per predecessor class. Off leaves every "
              "conversion byte-identical.")
+    parser.add_argument(
+        "--ilv-filter-resume", action="store_true",
+        help="the interleaved player's `$84` notes do not restart their "
+             "record's filter program, so a running sweep carries on through "
+             "them: name a clone of the instrument with no filter pointer on "
+             "those notes. Needs --filter. Off leaves every conversion "
+             "byte-identical.")
     parser.add_argument(
         "--rest-late-keyoff", action="store_true",
         help="put the KEYOFF of a ringing rest (one entered with the gate "
@@ -917,10 +948,13 @@ def main(argv=None) -> int:
                           ("--release-held-stored-wave",
                            "release_held_stored_wave"),
                           ("--drum-long", "drum_long"),
+                          ("--drum-fall-loop", "drum_fall_loop"),
                           ("--drum-held", "drum_held"),
+                          ("--drum-split-tick", "drum_split_tick"),
                           ("--wobble-copy-depth", "wobble_copy_depth"),
                           ("--phase-split-over-passes",
                            "phase_split_over_passes"),
+                          ("--drum-alt-fall", "drum_alt_fall"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -959,6 +993,7 @@ def main(argv=None) -> int:
                           ("--vibrato-hold", "vibrato_hold"),
                           ("--prev-class-firstwave", "prev_class_firstwave"),
                           ("--rest-late-keyoff", "rest_late_keyoff"),
+                          ("--ilv-filter-resume", "ilv_filter_resume"),
                           ("--pitch-seq", "pitch_seq"),
                           ("--arpeggio", "arpeggio"),
                           ("--arpeggio-default", "arpeggio_default"),
@@ -1054,9 +1089,12 @@ def main(argv=None) -> int:
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
                       release_held_stored_wave=args.release_held_stored_wave,
                       drum_long=args.drum_long,
+                      drum_fall_loop=args.drum_fall_loop,
                       drum_held=args.drum_held,
+                      drum_split_tick=args.drum_split_tick,
                       wobble_copy_depth=args.wobble_copy_depth,
                       phase_split_over_passes=args.phase_split_over_passes,
+                      drum_alt_fall=args.drum_alt_fall,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(
@@ -1109,6 +1147,7 @@ def main(argv=None) -> int:
                       vibrato_hold=args.vibrato_hold,
                       prev_class_firstwave=args.prev_class_firstwave,
                       rest_late_keyoff=args.rest_late_keyoff,
+                      ilv_filter_resume=args.ilv_filter_resume,
                       pitch_seq=args.pitch_seq,
                       arpeggio=args.arpeggio,
                       arpeggio_default=args.arpeggio_default,

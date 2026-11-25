@@ -91,7 +91,16 @@ def _convert(name, **extra):
 
 @needs_corpus
 def test_lion_heart_takes_its_three_2b_records_without_the_option():
+    # ilv_filter_resume is on for Lion_Heart in presets.json (v0.5.677): its
+    # filter-less clone of record 06 is a fourth held record with the same
+    # name, so the shipped log counts 4 and option-off counts the 3 originals.
     sng, lines = _convert("Lion_Heart")
+    assert any("Frame-held vibrato" in m and "4 record(s)" in m
+               for m in lines)
+    held = [i.name for i in _records(sng) if not i.vib_ptr
+            and i.name.split(":")[1].startswith("2B")]
+    assert sorted(held) == ["06:2B-10-20", "06:2B-10-20", "09:2B-44-04", "10:2B-10-20"]
+    sng, lines = _convert("Lion_Heart", ilv_filter_resume=False)
     assert any("Frame-held vibrato" in m and "3 record(s)" in m
                for m in lines)
     held = {i.name for i in _records(sng) if not i.vib_ptr

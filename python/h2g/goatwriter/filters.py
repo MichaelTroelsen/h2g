@@ -538,10 +538,17 @@ def _ilv_voice_rows(track: List[int], patterns: List[List[int]],
         seq = loop
 
 
+def _skipped(skip: Optional[dict], p: int, r: int) -> bool:
+    """Whether row `r` of pattern `p` is a note the player starts no filter
+    program on (`ilv_filter_resume`'s `$84` rows)."""
+    return bool(skip) and r in (skip.get(p) or ())
+
+
 def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                       instr_base: int, routed: set, programs: dict,
                       mode: str, params: dict, init_row: dict,
-                      restore: Optional[dict] = None) -> tuple:
+                      restore: Optional[dict] = None,
+                      skip: Optional[dict] = None) -> tuple:
     """One walk of every subtune on Goattracker's row clock.
 
     Returns (plan, stats): plan maps (track index, orderlist position) to
@@ -555,6 +562,10 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
     index the first restore block may take (`next`), each majority
     program's block length (`len`), and `blocks`, (program, $D417 value) ->
     index, which this walk fills in first-use order.
+
+    `skip` ({pattern: rows}, `ilv_filter_resume`) names the notes the player
+    does not start a program on: they arm their voice's routing bit as any
+    filtered note does, but load no program, so no params row runs there.
     """
     from ..patterns import GT_FIRSTNOTE, GT_LASTNOTE
     plan: dict = {}
@@ -602,7 +613,7 @@ def _ilv_routing_walk(groups: list, patterns: List[List[int]],
                     rec = live[v] - instr_base
                     bits[v] = rec in routed
                     noted.append(v)
-                    if rec in programs:
+                    if rec in programs and not _skipped(skip, p, r):
                         # The pointer is loaded in channel order, so the
                         # last channel's program is the one that runs.
                         started = rec
@@ -726,7 +737,9 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                             tracks: List[List[int]],
                             patterns: List[List[int]], instr_used: int,
                             multiplier: int, instr_base: int,
-                            log=None) -> Optional[IlvRouting]:
+                            log=None,
+                            skip: Optional[dict] = None
+                            ) -> Optional[IlvRouting]:
     """The interleaved dialect's routing as `B` commands, or None.
 
     None -- and the caller keeps `_ilv_filter_entries` -- where the file has
@@ -734,6 +747,10 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
     block comment above `CMD_SETFILTERPTR` for the model and its two
     spellings; both are walked and the one leaving fewer rows wrong is kept
     (ties to "params", which writes no `CMD_SETFILTERPTR`).
+
+    `skip` is `{pattern: rows}` of the notes that start no program
+    (`ilv_filter_resume`); None leaves every filtered note starting its
+    record's.
     """
     from ..patterns import MAX_PATTERNS, GT_FIRSTNOTE, GT_LASTNOTE
     if det.ilv_filter is None or len(tracks) < 3:
@@ -769,7 +786,7 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                 if GT_FIRSTNOTE <= note <= GT_LASTNOTE and cmd != CMD_TONEPORTA:
                     rec = live[v] - instr_base
                     bits[v] = rec in routed
-                    if rec in programs:
+                    if rec in programs and not _skipped(skip, p, r):
                         started = rec
             if started is not None:
                 mask = sum(1 << v for v in range(3) if bits[v])
@@ -780,7 +797,7 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
               for i, (_pb, res, _c, _s) in programs.items()}
     candidates = [("params", _ilv_routing_walk(
         groups, patterns, instr_base, routed, programs, "params", params,
-        {}))]
+        {}, None, skip))]
 
     # "shared": one passband for every program, set once per subtune by a
     # CMD_SETFILTERPTR on the last free non-zero row before its first routed
@@ -826,7 +843,7 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
         if feasible:
             candidates.append(("shared", _ilv_routing_walk(
                 groups, patterns, instr_base, routed, programs, "shared", {},
-                init_row)))
+                init_row, None, skip)))
     # "restore": where the programs need different passbands, the MAJORITY
     # passband's programs open at CUTOFF -- so a `B` on their note rows is
     # never overwritten -- and keep the minority's params rows. A majority
@@ -850,7 +867,7 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
                        "blocks": {}}
             candidates.append(("restore", _ilv_routing_walk(
                 groups, patterns, instr_base, routed, programs, "restore",
-                params, {}, restore)))
+                params, {}, restore, skip)))
     mode, (plan, stats) = min(
         candidates, key=lambda c: (c[1][1]["late_rows"]
                                    + c[1][1]["passband_late"],
@@ -953,6 +970,11 @@ def ilv_filter_routing_plan(sid: SidFile, det: Detection,
     return result
 
 
+# Off, a routed-record union naming more than one voice refuses the clear, as
+# before. Read at call time, so a test can short-circuit it.
+CLASSIC_CLEAR_MULTI_VOICE = True
+
+
 def _classic_clearing_instruments(sid: SidFile, det: Detection,
                                   tracks: List[List[int]],
                                   patterns: List[List[int]],
@@ -999,11 +1021,27 @@ def _classic_clearing_instruments(sid: SidFile, det: Detection,
     Saboteur_II {5} unchanged (8725/8730, 7132/7133, 4696/4699 at v0.5.487).
     Auf_Wiedersehen_Monty's clear 14 and Nemesis' 9 change bytes and no
     register in the window: 14 is never struck in 900 s on either side, 9
-    first at frame 13162. Refused: Lightforce ($7), Knucklebusters ($6),
-    Dragons_Lair_Part_II and Delta_Mix-E-Load_loader ($3) and
-    Bangkok_Knights ($5) route more than one voice; Pandora's,
-    Thundercats' and Bangkok_Knights' 14 and Delta_Mix's 23 are never named.
+    first at frame 13162. Dragons_Lair_Part_II and
+    Delta_Mix-E-Load_loader ($3) and Bangkok_Knights ($5) route more than one
+    voice and stay refused; Pandora's, Thundercats' and Bangkok_Knights' 14
+    and Delta_Mix's 23 are never named.
     `tests/test_classic_clear_mask.py` pins the corpus sets.
+
+    **A MULTI-VOICE UNION IS ADMITTED WHERE THE CLEAR IS THE SWEEPING VOICE'S
+    OWN.** Knucklebusters ($6) and Lightforce ($7) route more than one voice
+    and were refused wholesale as a cross-voice race. The race needs the clear
+    played on a voice the routed records never touch: Knucklebusters' record 1
+    sweeps voice 3 for 48 frames and the clear (record 0) is that voice's next
+    note, so the original's `$D417` goes `$F4 -> $00` at frame 481 and back at
+    529 (96-frame cycle) where ours kept routing for the 48 in between (3025
+    of 8563 filtered frames the original does not have). So a union naming
+    several voices clears with the records named on voices that ALSO name a
+    routed record (`sweeping`), and on no other: Dragons_Lair_Part_II's clear
+    23 is named on voice 3, which names no routed record, and admitted it
+    dropped `band` 94% -> 32% (measured at 1c9d17c, `-t 180`). Knucklebusters_1
+    `band` 65% -> 98%, `cut` 0.86 -> 1.00, filtered frames 8563 -> 5539 against
+    5543, Lightforce `band` 98% -> 100%; the other subtunes do not move.
+    `tests/test_classic_clear_multi_voice.py` pins it.
     """
     filt = det.filter
     if filt is None or not tracks:
@@ -1023,9 +1061,23 @@ def _classic_clearing_instruments(sid: SidFile, det: Detection,
     mask = 0
     for i in routed:
         mask |= data[filt.offset + i * det.instr_stride] & 0x07
-    if mask not in (0x01, 0x02, 0x04):
+    if not mask:
         return set()
     per_voice = _instruments_named_per_voice(tracks, patterns, instr_base)
+    if mask not in (0x01, 0x02, 0x04):
+        # Records routing more than one voice: a clear is the END of the
+        # sweep of the voice that plays it only where that voice also plays
+        # a routed record. One played on a voice that never names a routed
+        # record clears another voice's circuit (the original lets that
+        # voice's own writes win the frame).
+        if not CLASSIC_CLEAR_MULTI_VOICE:
+            return set()
+        sweeping = {v for v in range(3)
+                    if any(i in per_voice[v] for i in routed)}
+        return {i for i in unrouted
+                if any(i in per_voice[v] for v in range(3))
+                and all(v in sweeping for v in range(3)
+                        if i in per_voice[v])}
     return {i for i in unrouted if any(i in per_voice[v] for v in range(3))}
 
 
