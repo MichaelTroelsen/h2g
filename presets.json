@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.679 presets.py",
+  "generator": "h2g 0.5.680 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1189,10 +1189,10 @@
       "rows": 14221,
       "multiplier": 3,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
       "hard_restart_frames": 3,
-      "pitch_seq": true,
       "pulse_phase": true
     },
     "Formula_1_Simulator.sid": {
@@ -1279,7 +1279,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12854,
+      "bytes": 12862,
       "subtunes": 1,
       "rows": 8132,
       "multiplier": 9,
@@ -1655,11 +1655,6 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "regrid": true,
-      "regrid_full_debt": true,
-      "regrid_phase": true,
-      "vibrato_hold": true,
-      "phase_split_over_passes": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1723,7 +1718,12 @@
         60,
         61,
         62
-      ]
+      ],
+      "phase_split_over_passes": true,
+      "regrid": true,
+      "regrid_full_debt": true,
+      "regrid_phase": true,
+      "vibrato_hold": true
     },
     "IK_plus.sid": {
       "max_rows": 94,
@@ -2510,7 +2510,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 44283,
+      "bytes": 44293,
       "subtunes": 3,
       "rows": 32320,
       "multiplier": 2,
