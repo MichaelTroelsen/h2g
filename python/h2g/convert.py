@@ -9,6 +9,7 @@ from .detect import (Detection, PlayerView, detect, player_view,
                      wave_program_set_stores_wave as _wave_program_set_stores,
                      rest_wave_rewrite_records, wave_program_rest_bypass)
 from .goatwriter import call_phase as _call_phase
+from .goatwriter import filters as _gw_filters
 from .goatwriter import drum_unit as _gw_drum_unit
 from .goatwriter import note_passes as _gw_note_passes
 from .goatwriter import pulse as _gw_pulse_stair
@@ -61,6 +62,9 @@ from .vibrato_hold import hold_classic_vibrato, keyed_records
 from .vibrato_phase import phase_classic_vibrato
 from .prev_class_firstwave import prev_class_firstwave as _prev_class_firstwave
 from .rest_late_keyoff import rest_late_keyoff as _rest_late_keyoff
+from .goatwriter.release_row import (
+    release_calls as _release_calls,
+    release_row_keyoffs as _release_row_keyoffs)
 from .goatwriter.hard_restart import _hard_restart_ticks
 from . import past_table_wave as _past_table_wave
 from .past_table_wave import pin_past_table_wave_notes, wave_rows_short
@@ -307,6 +311,12 @@ def _master_fade_positions(tracks: List[List[int]], fade: tuple,
     return out
 
 
+# Wavetable rows the plain conversion must leave free before `drum_alt_sweep`
+# is taken (see `convert`). A measured threshold: W_A_R leaves 1, W_A_R_Preview
+# 114. Only these two were measured.
+DRUM_ALT_SWEEP_ROOM = 32
+
+
 def convert(sid_path: str, log: Logger = print,
             max_rows: int = GT_DEFAULT_ROWS,
             terminate_patterns: bool = False,
@@ -378,6 +388,7 @@ def convert(sid_path: str, log: Logger = print,
             drum_fall: bool = False,
             vibrato_onset: bool = False,
             vibrato_early_delay: bool = False,
+            vibrato_round_up: bool = False,
             tie_pulse_restart: bool = False,
             tie_late_pitch: bool = False,
             lfo_wave: bool = False,
@@ -391,6 +402,7 @@ def convert(sid_path: str, log: Logger = print,
             master_volume: bool = False,
             pre_note_wave: bool = False,
             rest_wave_restart: bool = False,
+            release_row: bool = False,
             master_fade: bool = False,
             park_wave: bool = False,
             keep_hard_restart: bool = False,
@@ -402,7 +414,9 @@ def convert(sid_path: str, log: Logger = print,
             drum_split_tick: bool = False,
             wobble_copy_depth: bool = False,
             phase_split_over_passes: bool = False,
-            drum_alt_fall: bool = False) -> bytes:
+            drum_alt_fall: bool = False,
+            ilv_start_cutoff: bool = False,
+            drum_alt_sweep: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -649,11 +663,15 @@ def convert(sid_path: str, log: Logger = print,
     update is stretched (outer gate, dwell, extra depth shift) keep the
     per-call entry.
 
-    vibrato_phase (multiplier > 1) starts each vibrating note of the first
+    vibrato_phase starts each vibrating note of the first
     lap, where the wavetable has room, in the original's free-running
     triangle phase (`vibrato_phase`): the note's record is cloned per class
     (zero-speed `$F4` steps, a frame-4 move) onto a held program, and the
-    patterns are copied per orderlist position. Notes whose class has no room
+    patterns are copied per orderlist position. At -S1 a class is a jump into
+    an explicit up/down cycle instead (no free call for a zero-speed step) and
+    the program is stopped, `CMD_SETWAVEPTR 0`, on the row before a tie or
+    slide that follows it, so it cannot starve that slide; a note with a
+    pitch command on any of its own rows is left out. Notes whose class has no room
     keep the record's per-call vibrato; a file whose clock, counter or age
     gate it does not read is left byte for byte. Runs before `vibrato_hold`,
     whose held records it would decline.
@@ -725,6 +743,15 @@ def convert(sid_path: str, log: Logger = print,
     subtune 2 melody 0.657 -> 0.630, v0.5.583), Formula_1's reversals
     1.002 -> 0.860, and Mozart's original moves on frame 2 or later on
     every note measured, not 1 (docs/OPTIONS.md).
+
+    vibrato_round_up rounds a classic bound/shift vibrato's tick-0-
+    compensated half-period UP instead of to nearest. The swing is `(cmp +
+    2) * speed` and `speed` is a whole shift, so the fraction `round` drops
+    cannot be paid back there; this buys it from the rate. Off by default
+    and per song (presets.EXCLUDED_FROM_ALWAYS): Delta subtune 11 depth
+    .761 -> .932, travel .739 -> .805, bend .649 -> .706, reversals 1.009
+    -> .927 (v0.5.674, -t 180, historical; docs/OPTIONS.md). Byte-inert
+    unset, and on every file with no classic entry.
 
     vibrato_early_delay takes the one effect call tick 0 does not run off
     a classic bound/shift vibrato's `vibdelay` floor (`multiplier + 1` ->
@@ -817,6 +844,14 @@ def convert(sid_path: str, log: Logger = print,
     the toggle the wrong way (Knucklebusters tie_ratio .898 -> .866,
     Zoolook tie_agreement 85 -> 82).
 
+    release_row gives a gate lead longer than one row: a KEYOFF on the rest
+    row before each note plus a short gatetimer, a lead of one row and that
+    gatetimer (`goatwriter/release_row.py`). The lead is `hard_restart_frames`
+    (frames x multiplier calls) and must lie between one row and two, which
+    no gatetimer reaches alone (`gplay.c:334`). W_A_R: the original clears the
+    gate 3 frames before every note, ours 2 (gate 77%). Per song, off by
+    default: set it with `hard_restart_frames` the original's lead.
+
     master_fade reproduces a volume the play routine derives from a voice's
     orderlist POSITION (`LDA #base / SEC / SBC pos / ... STA $D418`,
     `Detection.master_fade`; Sanxion's fade to silence over its last 15
@@ -852,11 +887,10 @@ def convert(sid_path: str, log: Logger = print,
     loop and its LENGTH is a second `CMD_SETWAVEPTR` on the row where it
     ends (`goatwriter/drum_long.py`, -S2 and above only). Off by default: it
     moves the bytes of every file with such a note.
-    drum_split_tick writes the second and later noise frames of a ticked
-    nibble-arpeggio record gate-off above -S1, as the player's `LDA #$80 /
-    STA $D404,Y` does; the first frame stays gated, so the SID's ADSR delay
-    still lets the attack start (`ticked_nibble_arp_entries`). Costs no
-    wavetable entry. Off by default and per song.
+    drum_split_tick is INERT: the second and later noise frames of a ticked
+    nibble-arpeggio record are always written gate-off above -S1, the first
+    frame kept gated (`ticked_nibble_arp_entries`). It stays in the signature
+    so a presets.json entry naming it (Bump_Set_Spike) still loads.
 
     drum_held gives the bit-$01 drum notes whose first unit ends on the outer
     gate's withheld call the noise frame the original holds there: a
@@ -885,6 +919,15 @@ def convert(sid_path: str, log: Logger = print,
     note-free pattern after it per carried index (`note_passes._wobble_clone`).
     Off by default: it moves Monty_on_the_Run alone, and its extra depth is a
     measured constant, not a derived one (see `stored_wave.COPY_DEPTH_EXTRA`).
+
+    ilv_start_cutoff gives the interleaved record whose EVERY note starts on a
+    `$87 nn mm` (Sun_Never_Shines' voice-0 filter record: 621 notes in 180 s,
+    71 start values) its start cutoff per note: `CMD_SETFILTERCUTOFF nn` on the
+    note's own row where the command column is free, and no cutoff row in the
+    record's filter table, which would overwrite it a tick later. The file's
+    other filtered records, which reload their own start at every note, keep
+    the full ping-pong sweep rather than the one-row first leg a `$87` file
+    otherwise gets. Per song and off by default.
 
     phase_split_over_passes lets bit $10's per-note phase clones
     (`arpeggio.pitch_seq_phase_split_plan`) run on a file where the
@@ -1016,6 +1059,20 @@ def convert(sid_path: str, log: Logger = print,
             set(gate_off_firstwave_instruments)
             | set(range(1, GT_TEMPO_INSTRUMENT))))
     opts = {k: v for k, v in locals().items() if k not in ("sid_path", "log")}
+    if drum_alt_sweep:
+        # `drum_alt_sweep` is `drum_alt_fall` without the wavetable headroom
+        # `attack.ALT_FALL_HEADROOM` holds back, so it is taken only where the
+        # plain conversion leaves `DRUM_ALT_SWEEP_ROOM` rows free: W_A_R's
+        # table is at 254 of 255 rows plain, and with the fall the five note
+        # rows past it lost their pinned copy (pitch 100% -> 96%, two A-7
+        # notes sounding G#7). W_A_R_Preview leaves 114.
+        plain_opts = dict(opts, drum_alt_sweep=False)
+        plain = convert(sid_path, log=lambda _m: None, **plain_opts)
+        if GT_MAX_TABLELEN - len(_parse_song(plain).tables[0]) \
+                < DRUM_ALT_SWEEP_ROOM:
+            log(f"Drum alt sweep..........: declined, the plain wavetable "
+                f"leaves under {DRUM_ALT_SWEEP_ROOM} rows")
+            return convert(sid_path, log=log, **plain_opts)
     if (_gw_skydive.CARRY_VIBRATO and _gw_skydive.CARRY_BUDGET is None
             and not isinstance(sid_path, SidFile)):
         again = _convert_with_carry_room(sid_path, log, opts)
@@ -1045,6 +1102,7 @@ def convert(sid_path: str, log: Logger = print,
     det.wobble_copy_depth = wobble_copy_depth
     det.phase_split_over_passes = phase_split_over_passes
     det.drum_alt_fall = drum_alt_fall
+    det.drum_alt_sweep = drum_alt_sweep
     if not voice_arp:
         # The reading stays in the log; only its emission is per song.
         det.voice_arp_interval = det.voice_arp_mask = -1
@@ -1121,10 +1179,18 @@ def convert(sid_path: str, log: Logger = print,
     # but filled by the player from the record's own byte +10 at every note
     # start (ilv_arp_default.py), so it needs no command in the pattern.
     pattern_arps: list | None = None
-    if (arpeggio or arpeggio_default) and det.pattern_dialect == "ilv":
+    if ilv_start_cutoff and filters and det.pattern_dialect == "ilv":
+        det.ilv_cutoff_cmd = _gw_filters.ilv_start_cutoff_command_records(
+            sid, det, played)
+        if det.ilv_cutoff_cmd:
+            log(f"ILV start cutoffs.......: record(s) "
+                f"{sorted(det.ilv_cutoff_cmd)} start every note on $87")
+    if ((arpeggio or arpeggio_default or det.ilv_cutoff_cmd)
+            and det.pattern_dialect == "ilv"):
         pattern_arps = IlvArps(
             commands=arpeggio,
-            defaults=ilv_default_arps(sid, det) if arpeggio_default else None)
+            defaults=ilv_default_arps(sid, det) if arpeggio_default else None,
+            start_cutoff=det.ilv_cutoff_cmd)
     # The command-table engine's `$82` chord (h2g/cmd_chord.py): read per
     # note by walking the three orderlists in the player's own frame order,
     # because the counter it steps is global. It rides on `effects`, the
@@ -1159,7 +1225,9 @@ def convert(sid_path: str, log: Logger = print,
     phase_lead = 0 if compact_instruments else 1
     bounds_sims = (pulse_bounds_sims(sid, det, phase_lead)
                    if pulse_phase and pulse and det.pulse_bounds >= 0
-                   and det.pulse_tri_hi < 0 and pulse_reseed_gated(sid)
+                   and det.pulse_tri_hi < 0
+                   and (pulse_reseed_gated(sid)
+                        or det.pattern_dialect == "ilv")
                    else {})
     # A note byte past the table that lands on the per-voice stored-waveform
     # cells sounds what voices 0 and 1 hold at that moment -- read by walking
@@ -1946,6 +2014,7 @@ def convert(sid_path: str, log: Logger = print,
                          pitch_tie_phase=pitch_tie_phase,
                          vibrato_onset=vibrato_onset,
                          vibrato_early_delay=vibrato_early_delay,
+                         vibrato_round_up=vibrato_round_up,
                          lfo_wave=lfo_wave,
                          arps=pattern_arps,
                          pulse_plan=pulse_plan,
@@ -1960,9 +2029,18 @@ def convert(sid_path: str, log: Logger = print,
                          master_volume=master_volume,
                          pre_note_wave=pre_note_wave,
                          rest_wave_restart=rest_wave_restart,
+                         release_row=release_row,
                          drum_fall=drum_fall,
                          rest_program_stop=(program_stop
-                                            and not rest_wave_silence))
+                                            and not rest_wave_silence),
+                         # Where the patterns carry both rest families the
+                         # park program zeroes SR and AD on the park's call
+                         # (`goatwriter.rest_park.REST_PARK_ENV_PROGRAM`).
+                         rest_envelope_park=bool(
+                             (rest_wave_silence or program_stop)
+                             and rest_envelope_silence
+                             and rest_keyoff and det.rest_silence_envelope
+                             and det.rest_silence_kind == "testbit"))
 
     def _assemble(tracks, new_patterns, gate_off, log):
         # Every pass that settles which instrument a row plays walks the
@@ -2060,6 +2138,13 @@ def convert(sid_path: str, log: Logger = print,
             # On the finished rows and records: the gatetimer each rest's
             # held instrument carries is final here.
             sng = _rest_late_keyoff(sng, group_tempos, multiplier, log)
+        if release_row:
+            # Last: later passes key rows by pattern number, and the records'
+            # written gatetimers say which instruments the KEYOFF releases
+            # (goatwriter.release_row).
+            sng = _release_row_keyoffs(
+                sng, group_tempos,
+                _release_calls(multiplier, hard_restart_frames), log)
         return sng
 
     sng = _assemble(tracks, new_patterns,

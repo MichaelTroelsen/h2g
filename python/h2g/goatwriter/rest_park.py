@@ -62,7 +62,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .constants import (CMD_SETAD, CMD_SETSR, CMD_SETTEMPO, CMD_SETWAVEPTR,
                         GT_KEYOFF, GT_MAX_TABLELEN, GT_REST, GT_WAVE_JUMP,
-                        GT_WAVE_NO_NOTE)
+                        GT_WAVE_NO_NOTE, WAVECMD_BASE)
 
 # gcommon.h CMD_SETWAVE; `patterns.CMD_SETWAVE`. Local, as `goatwriter` does
 # not import `patterns` (patterns imports it).
@@ -74,6 +74,38 @@ WAVE_SILENT_BASE = 0xE0
 
 REST_PARK_PROGRAM: Tuple[Tuple[int, int], Tuple[int, int]] = (
     (WAVE_SILENT_BASE | REST_SILENT_WAVE, GT_WAVE_NO_NOTE),
+    (GT_WAVE_JUMP, 0x00),
+)
+
+# The park with the bit-6 rest's other half (`--rest-wave-silence` beside
+# `--rest-envelope-silence`): the original's rest handler writes the stored
+# waveform `$08` AND zeroes SR and AD on ONE call (Thundercats `$EE38`:
+# `STA $D406,Y / STA $D405,Y / LDA #$08 / JMP`, Auf_Wiedersehen_Monty
+# `$E543`), so the three writes land on the same frame. Pattern rows carry
+# one command each and a row is `tempo + 1` calls, so the pattern spelling
+# lands them 3 rows apart; a wavetable program runs one row per CALL
+# (gplay.c:520-540, a `$Fx` command row executes `CMD_SETSR`/`CMD_SETAD` from
+# the table, gplay.c:545-585), which at `-S3` is the same frame.
+REST_PARK_ENV_PROGRAM: Tuple[Tuple[int, int], ...] = (
+    (WAVECMD_BASE | CMD_SETSR, 0x00),
+    (WAVE_SILENT_BASE | REST_SILENT_WAVE, GT_WAVE_NO_NOTE),
+    (GT_WAVE_JUMP, 0x00),
+)
+
+# The same program with the AD as a THIRD row: SR on the row's own call, the
+# park on the next, the AD on the one after -- one call behind the park
+# instead of a whole pattern row (the hold-row AD, 4 frames at IK_plus). Used
+# only for a rest whose live instrument has NO vibrato pointer: a `$Fx` row
+# on a tick-N call skips that call's tick-N effects (gplay.c:711-712, `goto
+# PULSEEXEC`) and the instrument's vibrato is one of them, so the second
+# command row costs a vibrato step. SR alone in the program is the call-0
+# row, whose tick-N effects are skipped anyway (`optimizerealtime`,
+# gplay.c:731). Measured 2026-11-16 (`vibrato_instruments`; the tests'
+# header has the figures).
+REST_PARK_ENV_FULL_PROGRAM: Tuple[Tuple[int, int], ...] = (
+    (WAVECMD_BASE | CMD_SETSR, 0x00),
+    (WAVE_SILENT_BASE | REST_SILENT_WAVE, GT_WAVE_NO_NOTE),
+    (WAVECMD_BASE | CMD_SETAD, 0x00),
     (GT_WAVE_JUMP, 0x00),
 )
 
@@ -170,10 +202,29 @@ def lagged_instruments(out, instr_at: int, written: int) -> frozenset:
     return frozenset(found)
 
 
+def vibrato_instruments(out, instr_at: int, written: int) -> frozenset:
+    """The instrument numbers (1-based) whose record carries a vibrato table
+    pointer (`+5`, gplay.c:353 `cptr->cmddata = iptr->ptr[STBL]`)."""
+    return frozenset(g for g in range(1, written + 1)
+                     if out[instr_at + 1 + (g - 1) * 25 + 5])
+
+
+def _hold_sr_to_ad(copy: List[int], r: int, full: bool = False) -> None:
+    """The park program zeroes SR itself; the rest's first hold row then
+    carries the AD half instead of a second SETSR. Where the program holds
+    the AD too (`full`) the hold row carries nothing."""
+    n1 = r + 4
+    if (n1 + 3 < len(copy) and copy[n1] == GT_REST
+            and copy[n1 + 2] == CMD_SETSR and copy[n1 + 3] == 0):
+        copy[n1 + 2] = 0 if full else CMD_SETAD
+
+
 def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                    programmed: frozenset, park: int, log=None,
                    only: Optional[frozenset] = None,
-                   late_park: int = 0, lagged: frozenset = frozenset()
+                   late_park: int = 0, lagged: frozenset = frozenset(),
+                   envelope: bool = False,
+                   vib: Optional[frozenset] = None, free_park: int = 0
                    ) -> List[List[int]]:
     """`CMD_SETWAVE $08` -> `CMD_SETWAVEPTR park` on each rest whose live
     instrument has a wavetable program (`programmed`), or is not known (a
@@ -182,13 +233,19 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
 
     Declined, and counted: **no program** -- the live instrument has no
     wavetable pointer, so nothing can overwrite the park and `CMD_SETWAVE`
-    already holds. Changed patterns are COPIES."""
+    already holds. Changed patterns are COPIES.
+
+    `free_park` (with `vib`, the instruments carrying a vibrato pointer): the
+    pointer of the program that also holds the AD, taken by a rest whose live
+    instruments are all KNOWN and none has vibrato; every other rest takes
+    `park` (see `REST_PARK_ENV_FULL_PROGRAM`). Only the non-`only` path uses
+    it: `--rest-program-stop` keeps the two-row program."""
     from .note_passes import _entry_instruments
-    if only is None and (not park or not programmed):
+    if only is None and (not (park or free_park) or not programmed):
         return patterns
     entry = _entry_instruments(tracks, patterns)
     out: List[List[int]] = []
-    placed = stopping = unknown = cleared = 0
+    placed = stopping = unknown = cleared = nfull = 0
     for number, pat in enumerate(patterns):
         cands = set(entry.get(number, ()))
         copy: Optional[List[int]] = None
@@ -213,65 +270,77 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                     copy[r + 2] = CMD_SETWAVEPTR
                     copy[r + 3] = to & 0xFF
                     placed += 1
+                    if envelope:
+                        _hold_sr_to_ad(copy, r)
                 else:
                     copy[r + 2] = 0
                     copy[r + 3] = 0
                     cleared += 1
                     # `--rest-envelope-silence` beside it: the pattern stage
-                    # put the SETWAVE on hold row 0 and pushed the envelope's
-                    # `CMD_SETAD $00` to hold row 1 (dropping it altogether
-                    # on a one-hold-row rest). This rest keeps no SETWAVE, so
-                    # the AD goes back to hold row 0, where the envelope
-                    # option alone has it: a rest this option does not stop
-                    # is the conversion it would be without it.
-                    if (pat[r] == GT_REST and r >= 4
-                            and pat[r - 4] == GT_KEYOFF
-                            and pat[r - 2] == CMD_SETSR and pat[r - 1] == 0):
-                        copy[r + 2] = CMD_SETAD
-                        nxt = r + 4
-                        if (nxt + 3 < len(copy) and copy[nxt] == GT_REST
-                                and copy[nxt + 2] == CMD_SETAD
-                                and copy[nxt + 3] == 0):
-                            copy[nxt + 2] = 0
+                    # spelt the rest as KEYOFF + `CMD_SETWAVE $08` on row 0,
+                    # `CMD_SETSR $00` on hold row 0 and `CMD_SETAD $00` on
+                    # hold row 1 (the SETSR alone on a rest with one hold
+                    # row, nothing on a rest with none). This rest keeps no
+                    # SETWAVE, so it goes back to the envelope option's own
+                    # spelling -- SETSR on row 0, AD on hold row 0: a rest
+                    # this option does not stop is the conversion it would be
+                    # without it.
+                    if pat[r] == GT_KEYOFF:
+                        # `envelope`: the envelope option is on, so even a
+                        # rest with no hold row (its SETSR dropped for the
+                        # SETWAVE) gets the SETSR back on row 0.
+                        if envelope:
+                            copy[r + 2], copy[r + 3] = CMD_SETSR, 0
+                        n1 = r + 4
+                        if (n1 + 3 < len(copy) and copy[n1] == GT_REST
+                                and copy[n1 + 2] == CMD_SETSR
+                                and copy[n1 + 3] == 0):
+                            copy[r + 2], copy[r + 3] = CMD_SETSR, 0
+                            copy[n1 + 2] = CMD_SETAD
+                            n2 = n1 + 4
+                            if (n2 + 3 < len(copy) and copy[n2] == GT_REST
+                                    and copy[n2 + 2] == CMD_SETAD
+                                    and copy[n2 + 3] == 0):
+                                copy[n2 + 2] = 0
                     # ...and a pattern opening on a rest, whose row 0 the
-                    # tempo took: the envelope's SETSR went to hold row 0 and
-                    # its AD to hold row 1, and the SETWAVE displaced the
-                    # SETSR. Give the SETSR back; the AD stays where it is.
+                    # tempo took: the SETWAVE moved to hold row 0 (the
+                    # SETSR to hold row 1, the AD to hold row 2). Without
+                    # the SETWAVE the envelope option alone has SETSR on
+                    # hold row 0 and AD on hold row 1: give the SETSR this
+                    # row back and shift the AD up.
                     elif (pat[r] == GT_REST and r >= 4
                           and pat[r - 4] == GT_KEYOFF
-                          and pat[r - 2] == CMD_SETTEMPO
-                          and r + 7 < len(copy) and copy[r + 4] == GT_REST
-                          and copy[r + 6] == CMD_SETAD and copy[r + 7] == 0):
-                        copy[r + 2] = CMD_SETSR
-                    # ...and the same pattern when BOTH families were spelt
-                    # (`_move_rest_silence_off_row0`'s combined branch): the
-                    # SETSR sits on hold row 0, this SETWAVE on hold row 1
-                    # and the AD on hold row 2 (or dropped). Without the
-                    # SETWAVE the envelope option alone has SETSR on hold
-                    # row 0 and AD on hold row 1: give the AD this row back
-                    # and clear the one the move placed on the row after.
-                    elif (pat[r] == GT_REST and r >= 8
-                          and pat[r - 4] == GT_REST
-                          and pat[r - 2] == CMD_SETSR and pat[r - 1] == 0
-                          and pat[r - 8] == GT_KEYOFF
-                          and pat[r - 6] == CMD_SETTEMPO):
-                        copy[r + 2] = CMD_SETAD
-                        nxt = r + 4
-                        if (nxt + 3 < len(copy) and copy[nxt] == GT_REST
-                                and copy[nxt + 2] == CMD_SETAD
-                                and copy[nxt + 3] == 0):
-                            copy[nxt + 2] = 0
+                          and pat[r - 2] == CMD_SETTEMPO):
+                        n1 = r + 4
+                        if (n1 + 3 < len(copy) and copy[n1] == GT_REST
+                                and copy[n1 + 2] == CMD_SETSR
+                                and copy[n1 + 3] == 0):
+                            copy[r + 2] = CMD_SETSR
+                            copy[n1 + 2] = CMD_SETAD
+                            n2 = n1 + 4
+                            if (n2 + 3 < len(copy) and copy[n2] == GT_REST
+                                    and copy[n2 + 2] == CMD_SETAD
+                                    and copy[n2 + 3] == 0):
+                                copy[n2 + 2] = 0
                 continue
             if cands and not (cands & programmed):
                 stopping += 1
                 continue
             if len(cands) != 1:
                 unknown += 1
+            full = bool(free_park and vib is not None and cands
+                        and not (cands & vib))
+            to = free_park if full else park
+            if not to:
+                continue
             if copy is None:
                 copy = list(pat)
             copy[r + 2] = CMD_SETWAVEPTR
-            copy[r + 3] = park & 0xFF
+            copy[r + 3] = to & 0xFF
             placed += 1
+            nfull += full
+            if envelope:
+                _hold_sr_to_ad(copy, r, full)
         out.append(pat if copy is None else copy)
     if log and only is not None and (placed or cleared):
         log(f"Rest program stop.......: {placed} rest(s) of a wave-program "
@@ -279,7 +348,7 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
     elif log and (placed or stopping):
         log(f"Rest park...............: {placed} rest(s) point the wavetable "
             f"at the parked waveform ({unknown} of an instrument not yet "
-            f"named)"
+            f"named)" + (f", {nfull} with the AD in the program" if nfull else "")
             + (f", {stopping} on an instrument with no program"
                if stopping else ""))
     return out
@@ -289,7 +358,9 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
                    wave_entries: List[Tuple[int, int]],
                    starts: Dict[int, int], log=None,
                    only: Optional[frozenset] = None,
-                   lagged: frozenset = frozenset()
+                   lagged: frozenset = frozenset(),
+                   envelope: bool = False,
+                   vib: Optional[frozenset] = None
                    ) -> Tuple[List[List[int]], List[Tuple[int, int]]]:
     """(patterns, wave_entries) with the park program appended and the rests
     of looping instruments pointed at it. Unchanged where the patterns hold
@@ -307,10 +378,11 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
         # The delayed entry sits one row before the plain park and falls
         # through into it: [delay, E8 80, FF 00], the plain pointer one row
         # in. Without a lagged rest the delay row is not written at all.
+        base_prog = REST_PARK_ENV_PROGRAM if envelope else REST_PARK_PROGRAM
         late = len(wave_entries) + 1 if lagged else 0
         park = len(wave_entries) + 1 + (1 if lagged else 0)
-        rows = len(REST_PARK_PROGRAM) + (1 if lagged else 0)
-        if (park + len(REST_PARK_PROGRAM) - 1 > GT_MAX_TABLELEN
+        rows = len(base_prog) + (1 if lagged else 0)
+        if (park + len(base_prog) - 1 > GT_MAX_TABLELEN
                 or late + rows - 1 > GT_MAX_TABLELEN or park > 0xFF):
             if only and log:
                 log("Rest program stop.......: no room in the wavetable for "
@@ -318,7 +390,8 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
             park = late = 0
         # Quiet while the layout is still undecided: one log line, not two.
         new = rest_park_pass(patterns, tracks, programmed,
-                             park if only else 0, None, only, late, lagged)
+                             park if only else 0, None, only, late, lagged,
+                             envelope)
 
         def _points(to):
             return bool(to and only) and any(
@@ -330,25 +403,61 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
             park = len(wave_entries) + 1
             late = 0
             new = rest_park_pass(patterns, tracks, programmed, park, None,
-                                 only)
+                                 only, envelope=envelope)
         used = _points(park) or _points(late)
         new = rest_park_pass(patterns, tracks, programmed,
-                             park if only else 0, log, only, late, lagged)
+                             park if only else 0, log, only, late, lagged,
+                             envelope)
         if not used:
             return new, wave_entries
-        prog = list(REST_PARK_PROGRAM)
+        prog = list(base_prog)
         if late:
             prog = [REST_PARK_DELAY] + prog
         return new, wave_entries + prog
     if not programmed:
         return patterns, wave_entries
+    if envelope and vib is not None:
+        # `vib`: the instruments with a vibrato pointer. A rest that cannot be
+        # on one takes the full program (the AD on the park's frame), the
+        # others the two-row program and the hold-row AD; only the programs a
+        # rest points at are appended, the full one after the other.
+        base, full = REST_PARK_ENV_PROGRAM, REST_PARK_ENV_FULL_PROGRAM
+        p0 = len(wave_entries) + 1
+        f0 = p0 + len(base)
+        if (f0 + len(full) - 1 <= GT_MAX_TABLELEN and f0 <= 0xFF):
+            new = rest_park_pass(patterns, tracks, programmed, p0, None,
+                                 envelope=True, vib=vib, free_park=f0)
+
+            def _pts(to):
+                return any(pat[r + 2] == CMD_SETWAVEPTR
+                           and pat[r + 3] == (to & 0xFF)
+                           for pat in new for r in range(0, len(pat) - 3, 4)
+                           if pat[r] != 0xFF)
+            up, uf = _pts(p0), _pts(f0)
+            if not (up or uf):
+                return patterns, wave_entries
+            if up and uf:
+                new = rest_park_pass(patterns, tracks, programmed, p0, log,
+                                     envelope=True, vib=vib, free_park=f0)
+                return new, wave_entries + list(base) + list(full)
+            if uf:
+                new = rest_park_pass(patterns, tracks, programmed, 0, log,
+                                     envelope=True, vib=vib, free_park=p0)
+                return new, wave_entries + list(full)
+            new = rest_park_pass(patterns, tracks, programmed, p0, log,
+                                 envelope=True)
+            return new, wave_entries + list(base)
+    # `envelope`: the rests also zero SR and AD (`--rest-envelope-silence`),
+    # which the program then does on the same call as the park.
+    program = REST_PARK_ENV_PROGRAM if envelope else REST_PARK_PROGRAM
     park = len(wave_entries) + 1
-    if park + len(REST_PARK_PROGRAM) - 1 > GT_MAX_TABLELEN or park > 0xFF:
+    if park + len(program) - 1 > GT_MAX_TABLELEN or park > 0xFF:
         if log:
             log("Rest park...............: no room in the wavetable for the "
                 "parked program; rests keep CMD_SETWAVE")
         return patterns, wave_entries
-    new = rest_park_pass(patterns, tracks, programmed, park, log)
+    new = rest_park_pass(patterns, tracks, programmed, park, log,
+                         envelope=envelope)
     if new is patterns or all(a is b for a, b in zip(new, patterns)):
         return patterns, wave_entries
-    return new, wave_entries + list(REST_PARK_PROGRAM)
+    return new, wave_entries + list(program)

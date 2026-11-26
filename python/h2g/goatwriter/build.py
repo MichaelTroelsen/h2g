@@ -26,6 +26,7 @@ from .filters import (_classic_clearing_instruments, _filter_entries,
                       _ilv_clearing_instruments, _ilv_filter_entries,
                       free_running_start, ilv_filter_routing_plan,
                       ilv_hold_anchors, ilv_hold_period,
+                      ilv_filter_voice_mute,
                       sfx_bandpass_plan, _write_filtertable)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass, _duration_gate_pass,
@@ -49,6 +50,7 @@ from . import pulse as _gw_pulse
 from . import note_passes as _gw_note_passes
 from . import rest_reseed as _gw_rest_reseed
 from . import rest_wave_restart as _gw_rest_wave_restart
+from . import release_row as _gw_release_row
 from . import rest_two_stage as _gw_rest_two_stage
 from . import rest_park as _gw_rest_park
 from . import sfx_rest_click as _gw_sfx_rest_click
@@ -56,6 +58,7 @@ from . import sfx_tick_voice as _gw_sfx_tick_voice
 from . import rest_ring as _gw_rest_ring
 from . import filters as _gw_filters
 from . import classic_filter_stop as _gw_classic_filter_stop
+from . import fetch_restart as _gw_fetch_restart
 from . import skydive as _gw_skydive
 from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
@@ -613,13 +616,16 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               named_firstwave: bool = False,
               pitch_tie_phase: bool = False,
               rest_program_stop: bool = False,
+              rest_envelope_park: bool = False,
               drop_dead_blocks: bool = False,
               vibrato_onset: bool = False,
               vibrato_early_delay: bool = False,
+              vibrato_round_up: bool = False,
               lfo_wave: bool = False,
               master_volume: bool = False,
               pre_note_wave: bool = False,
               rest_wave_restart: bool = False,
+              release_row: bool = False,
               _split_only: Optional[frozenset] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
@@ -1040,7 +1046,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 skip=(note_bit7_rows(patterns, skip_known, skip_decoded,
                                      skip_ghosts)
                       if ilv_filter_resume and skip_known else None),
-                hold=ilv_hold)
+                hold=ilv_hold,
+                mute=ilv_filter_voice_mute(sid, det, tracks, patterns,
+                                           routing_base))
         if ilv_routing is not None:
             tracks, patterns = ilv_routing.tracks, ilv_routing.patterns
     # A pattern entered holding two instruments gets a copy per instrument
@@ -1185,7 +1193,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 sid, det, instr_used, multiplier,
                 _ilv_clearing_instruments(
                     sid, det, tracks, patterns,
-                    1 if compact_instruments else 2), hold=ilv_hold)
+                    1 if compact_instruments else 2), hold=ilv_hold,
+                mute=ilv_filter_voice_mute(
+                    sid, det, tracks, patterns,
+                    1 if compact_instruments else 2))
     else:
         filter_entries, filter_ptrs = [], {}
     det.drum_tick_ratios = {}
@@ -1244,7 +1255,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                           else None),
                                instr_row_calls=instr_row_calls,
                                table_span=True,
-                               early_delay=vibrato_early_delay)
+                               early_delay=vibrato_early_delay,
+                               round_up=vibrato_round_up)
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.
@@ -1670,7 +1682,9 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
             gate_skip, table, len(wave_entries), row_calls, note_rows,
             log=log, plain=getattr(det, "drum_long", False),
-            loop=getattr(det, "drum_fall_loop", False))
+            loop=getattr(det, "drum_fall_loop", False),
+            wave_entries=wave_entries, wave_starts=wave_starts,
+            play_groups=getattr(instr_row_calls, "play_groups", None))
         if dlong is not None:
             patterns = dlong.patterns
             wave_entries = wave_entries + dlong.entries
@@ -1865,6 +1879,21 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         if parked and log:
             log(f"Free-running park.....: {len(parked)} waveform-$00 "
                 f"record(s) write $E0 (wave $00) after the init call")
+    # Opt-in, per song (`release_row`, off by default): the original's gate
+    # lead is longer than a row, which no gatetimer reaches
+    # (`hard_restart._hard_restart_ticks`). The lead is one row plus a short
+    # gatetimer, the row carried by a KEYOFF on the rest row before each note
+    # (`goatwriter.release_row`, placed after every other pattern pass).
+    # Needs the gate lead (`hard_restart_frames`) between one row and two.
+    release_map = None
+    release_lead = 0
+    if release_row:
+        release_lead = _gw_release_row.release_calls(multiplier,
+                                                     hard_restart_frames)
+        release_map = _gw_release_row.instrument_release_ticks(
+            instr_row_calls, row_calls, max(instr_used - lead, 0),
+            release_lead, wave_entries if effects else None, wave_starts,
+            lead)
     instr_at = len(out)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
@@ -1885,7 +1914,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        named_firstwave=named_firstwave,
                        sfx_drum=sfx_drum,
                        strike_entries=wave_entries if effects else None,
-                       two_stage=two_stage)
+                       two_stage=two_stage,
+                       release_ticks=release_map)
     written_instr = instr_used
     if duty_split is not None:
         # Each clone is its record's finished bytes with its own wavetable
@@ -2347,10 +2377,14 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         patterns, tracks, wave_entries,
         {g: out[instr_at + 1 + (g - 1) * 25 + 2]
          for g in range(1, written_instr + 1)}, log,
-        **({} if program_only is None else {
+        **({"envelope": True, "vib": _gw_rest_park.vibrato_instruments(
+                out, instr_at, written_instr)}
+           if rest_envelope_park and program_only is None
+           else {} if program_only is None else {
             "only": program_only,
             "lagged": _gw_rest_park.lagged_instruments(
-                out, instr_at, written_instr)}))
+                out, instr_at, written_instr),
+            "envelope": rest_envelope_park}))
     if dead_dropped:
         # A record dropped as unnamed, named after all by a pass that ran
         # later: its pointer is 0 and it would play nothing. Never ship that.
@@ -2439,6 +2473,22 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             tracks, patterns, stop_sites, log=log)
         for at, track in zip(track_at, tracks):
             out[at:at + len(track)] = bytes(track)
+    # The classic sweep's restarts: the player resets the cutoff accumulator
+    # on every event a voice fetches, a KEYOFF or tie as well as a note
+    # (`fetch_restart`). After the stops, so it takes only what is left.
+    if (_gw_fetch_restart.ENABLED and filters and filter_entries and filter_ptrs
+            and det.filter is not None and not det.filter.free_running
+            and not det.filter.clamp and ilv_routing is None):
+        untrue = _gw_fetch_restart.untrue_slope_pointers(
+            sid, det, filter_ptrs, multiplier)
+        ptr_of = {g: out[instr_at + 1 + (g - 1) * 25 + 4]
+                  for g in range(1, written_instr + 1)}
+        ptr_of = {g: (0 if ptr in untrue else ptr)
+                  for g, ptr in ptr_of.items()}
+        patterns, tracks, _restarted = _gw_fetch_restart.classic_fetch_restarts(
+            tracks, patterns, ptr_of, log=log)
+        for at, track in zip(track_at, tracks):
+            out[at:at + len(track)] = bytes(track)
     if fmt == FORMAT_GTS5:
         # Fourth table (STBL), stored only in GTS3+. A GTS2 file has none: its
         # loader builds one while reading, both from each instrument's vibrato
@@ -2489,6 +2539,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                     section += bytes(track)
                 out[first:last] = section
                 tracks = new_tracks
+
+    # The `$87` start cutoffs no other pass displaced, as commands -- LAST,
+    # so they take only the columns nobody else wanted
+    # (`filters.finalize_start_cutoffs`).
+    if det.ilv_cutoff_cmd:
+        patterns = _gw_filters.finalize_start_cutoffs(patterns)
 
     out.append(len(patterns) & 0xFF)
     for pattern in patterns:

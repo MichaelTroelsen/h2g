@@ -67,13 +67,18 @@ def test_the_composed_block_carries_both_mechanisms():
     # The sustain stage is `$18` -- the test bit -- because this record's `+2`
     # selects no waveform at all and the original goes silent there; see
     # test_two_stage.py's `..._goes_silent` and goatwriter._wave_byte.
-    assert left == [0x11, 0x11, 0x11, 0x11, 0x11, 0x18, 0x18, 0x18, 0xFF]
-    assert right == [0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x06]
+    #
+    # **The note's silent frame 0 is the first entry** (`$00`, the note on the
+    # right): this record's `+2` selects no waveform, so the original's first
+    # frame writes the pitch with the gate clear and the attack opens on the
+    # next one (`attack.ZERO_WAVE_LEAD`, tests/test_two_stage_zero_lead.py).
+    assert left == [0x00, 0x11, 0x11, 0x11, 0x11, 0x11, 0x18, 0x18, 0x18, 0xFF]
+    assert right == [0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x07]
     # `+24` is the record's own step: the note, two octaves up.
-    assert right[2] == 0x18
-    # The jump targets the sustain stage (start 1 + 5 attack calls), not the
-    # block -- the attack runs once per note.
-    assert right[-1] == 1 + 5
+    assert right[3] == 0x18
+    # The jump targets the sustain stage (start 1 + the lead + 5 attack
+    # calls), not the block -- the attack runs once per note.
+    assert right[-1] == 1 + 1 + 5
 
 
 def test_the_arpeggio_phase_is_continuous_across_the_jump():
@@ -81,12 +86,12 @@ def test_the_arpeggio_phase_is_continuous_across_the_jump():
     if not CORPUS.is_dir():
         return
     left, right = _block("Trans-Atlantic_Balloon_Challenge", 3)
-    calls, steps = 5, 3
-    body = right[:-1]
+    calls, steps, lead = 5, 3, 1
+    body = right[lead:-1]
     for k in range(len(body)):
         assert body[k] == body[k % steps], k
     # ...and re-entering at `calls` lands on the phase the block left off on.
-    assert (right[-1] - 1) % steps == calls % steps
+    assert (right[-1] - 1 - lead) % steps == calls % steps
 
 
 def test_the_attack_frame_sounds_the_pattern_note():
@@ -193,9 +198,9 @@ def test_a_block_that_will_not_fit_falls_back():
     notes = G._pitch_seq_notes(sid, det, 3)
     assert notes is not None
     assert G._two_stage_pitch_seq_entries(0x00, attack, frames, notes, 1,
-                                          1, budget=8) is None
+                                          1, budget=9) is None
     assert G._two_stage_pitch_seq_entries(0x00, attack, frames, notes, 1,
-                                          1, budget=9) is not None
+                                          1, budget=10) is not None
     # ...and the caller then emits the shape it always did.
     left, right = _block("Trans-Atlantic_Balloon_Challenge", 3)
     tight = G._wavetable_entries(sid, det, 3, True, G.FORMAT_GTS5,

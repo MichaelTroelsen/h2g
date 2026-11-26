@@ -50,4 +50,7 @@ def test_hunter_patrol_enters_the_records_block_instead_of_cloning_it(
     blob =convert(str(CORPUS / "Hunter_Patrol.sid"), log=lambda s: None, **opts)
     # 23532 before the drop of the pulse and filter rows only a dropped record
     # reaches (instrument_drop._drop_dead_blocks) took 68 bytes (23532 - 23464) of table rows.
-    assert len(blob) == 23464
+    # ... plus the -S1 drum sweep no longer cut at DRUM_MAX_SWEEP_STEPS
+    # (tests/test_drum_sweep_uncap_s1.py): Hunter_Patrol's drum records take
+    # 3 more wavetable rows, 6 bytes (23470 with it).
+    assert len(blob) == 23470

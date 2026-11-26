@@ -447,6 +447,10 @@ EXCLUDED_FROM_ALWAYS = {
     # costs Knucklebusters tie_ratio and Zoolook tie_agreement, so it is a
     # measured per-song choice.
     "rest_wave_restart",
+    # Per song and never a default: a KEYOFF on the rest row before each note
+    # plus a short gatetimer, for a gate lead between one row and two
+    # (`goatwriter/release_row.py`); the lead is `hard_restart_frames`.
+    "release_row",
     # Per song and never a default: reproduces a $D418 volume the player
     # derives from a voice's orderlist position (`detect.find_master_fade`),
     # one pattern copy per fading position. Reaches Sanxion.sid alone.
@@ -491,6 +495,15 @@ EXCLUDED_FROM_ALWAYS = {
     # (`goatwriter.attack._wave_alternate_entries`, `drum_alt_fall`). Reaches
     # Lightforce (records 2 and 16) and Deep_Strike.
     "drum_alt_fall",
+    # Per song and never a default: the interleaved filter record whose every
+    # note starts on a `$87 nn mm` gets that start as a per-note
+    # `CMD_SETFILTERCUTOFF` (`goatwriter.filters.
+    # ilv_start_cutoff_command_records`). Reaches Sun_Never_Shines alone.
+    "ilv_start_cutoff",
+    # Per song and never a default: `drum_alt_fall` with no wavetable headroom
+    # held back (`attack._wave_alternate_entries(sweep_headroom=)`), for
+    # W_A_R_Preview's record, whose short per-record budget declined the fall.
+    "drum_alt_sweep",
     # Per song and never a default: a `$68` waveform-state copy's vibrato
     # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
     # constant). Reaches Monty_on_the_Run alone, which ships it with
@@ -948,6 +961,15 @@ EXCLUDED_FROM_ALWAYS = {
     # per-file trade is in docs/OPTIONS.md). Not in FIDELITY_TOGGLES. A song
     # entry `"vibrato_early_delay": true`.
     "vibrato_early_delay",
+    # `vibrato_round_up`: a classic vibrato's tick-0-compensated half-period
+    # rounds up instead of to nearest (goatwriter.vibrato
+    # `_classic_vibrato_entry`). Off by default and per song: it trades the
+    # oscillation RATE for the swing -- Delta subtune 11 (task
+    # listen-sub99-delta, v0.5.674, -t 180, historical) depth .761 -> .932,
+    # travel .739 -> .805, bend .649 -> .706, reversals 1.009 -> .927, aud
+    # .9511 -> .9480 (inside the 0.0095 floor). Not in FIDELITY_TOGGLES. A
+    # song entry `"vibrato_round_up": true`.
+    "vibrato_round_up",
     # `tie_pulse_restart`: a tie whose landing replays only the per-voice
     # pulse sweep is respelled as a legato clone. Off by default and per
     # song: it moved pitch the wrong way on International_Karate and
@@ -999,7 +1021,12 @@ EXCLUDED_FROM_ALWAYS = {
     # phase (h2g.vibrato_phase): an instrument clone per (record, zero-speed
     # steps, frame-4 move) and a pattern copy per orderlist position. Off by
     # default and per song; not in FIDELITY_TOGGLES. A song entry
-    # `"vibrato_phase": true`. Only ACE_II's clock shape is read.
+    # `"vibrato_phase": true`. Only ACE_II's clock shape is read; at -S1 the
+    # pass also reads Trans-Atlantic_Balloon_Challenge, Bangkok_Knights,
+    # IK_plus, Nineteen and Pandora (task listen-sub99-trans-atlantic-balloon-
+    # challenge, v0.5.678, historical: Trans-Atlantic depth .72 -> .85, bend
+    # .73 -> .81, Nineteen depth .80 -> 1.05; IK_plus travel .98 -> .96 and
+    # Bangkok_Knights aud -.001, so those two stay off; docs/OPTIONS.md).
     "vibrato_phase",
     # `prev_class_firstwave`: the note-init frame shows the previous note's
     # last waveform, as the original's does (h2g.prev_class_firstwave). Per

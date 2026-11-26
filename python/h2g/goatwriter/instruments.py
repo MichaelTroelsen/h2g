@@ -337,7 +337,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        named_firstwave: bool = False,
                        sfx_drum: bool = False,
                        strike_entries: Optional[List[tuple]] = None,
-                       two_stage: bool = False) -> int:
+                       two_stage: bool = False,
+                       release_ticks: Optional[dict] = None) -> int:
     out.append(instr_used)
     # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
     # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
@@ -488,6 +489,11 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         if (i + lead + 1) in getattr(instr_row_calls, "single_row", ()):
             hr_ticks = min(hr_ticks,
                            _gw_hard_restart.SINGLE_ROW_HARD_RESTART_TICKS)
+        # `release_row`: the lead is one row PLUS this gatetimer, the rest
+        # carried by a KEYOFF on the row before the note (goatwriter.
+        # release_row). Only the records that module released.
+        if release_ticks and (i + lead + 1) in release_ticks:
+            hr_ticks = release_ticks[i + lead + 1] & 0x3F
         gatetimer = (0x80 if no_hard_restart else 0) | hr_ticks
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file

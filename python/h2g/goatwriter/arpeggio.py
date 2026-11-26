@@ -3607,7 +3607,6 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
                               arp_rel: int, half_calls: int,
                               first_up: bool, first_calls: int,
                               start: int, budget: int,
-                              split_tick: bool = False,
                               multiplier: int = 1) -> Optional[tuple]:
     """The nibble dialect's ticked arpeggio with the alternation THROUGH the tick.
 
@@ -3631,7 +3630,7 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
     `ticked_arp_entries`' two-half loop, entered on the half that falls
     there. None over `budget` -- the caller then keeps the unphased shape.
 
-    **`split_tick` writes the tick as the player does, from its second frame.**
+    **The tick is written as the player does, from its second frame.**
     The player's drum block writes the noise as `LDA #$80 / STA $D404,Y`, gate
     clear on every tick frame (Bump_Set_Spike's original reads `41 80 80 40`);
     above -S1 the tick is written gated because a gate-off first frame
@@ -3643,7 +3642,10 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
     noise run that starts at call `multiplier` or later takes `$80`. A run
     that straddles the frame boundary is left gated, and a one-frame tick has
     no run to move. No entry is added: the alternation already puts each
-    tick frame on its own row.
+    tick frame on its own row. Unconditional since the Thrust decision
+    (task decide-thrust-unconditional-split-tick; it was `convert(
+    drum_split_tick=...)` on Bump_Set_Spike alone, v0.5.677): Thrust,
+    International_Karate and Kentilla move with it.
     """
     # `half_calls` may be a `nibble_arp_half_cycle`: the halves after the
     # first run take its lengths in turn, and the loop is all of them.
@@ -3658,8 +3660,7 @@ def ticked_nibble_arp_entries(frame0: List[int], frame0_r: List[int],
                              (tick_calls, t + run, tail)):
             if hi <= lo:
                 continue
-            if (split_tick and wave == noise and multiplier > 1
-                    and lo >= multiplier):
+            if wave == noise and multiplier > 1 and lo >= multiplier:
                 wave = WAVE_NOISE_GATEOFF
             holds = _hold_run(hi - lo - 1, wave)
             left += [wave] + holds

@@ -76,7 +76,11 @@ def _layout_diffs(name: str, clone: bool, tmp_path: Path):
         for tag, extra in (("presets", {}),
                            ("perturbed", {"pulse_phase": True,
                                           "compact_instruments": False})):
-            kw = dict(fidelity._preset_opts(doc, name), **extra)
+            # vibrato_phase (shipped on Saboteur_II since v0.5.683) builds
+            # clones of its own whose layout this perturbation moves; held
+            # off so the check measures the past-table clone alone.
+            kw = dict(fidelity._preset_opts(doc, name), vibrato_phase=False,
+                      **extra)
             blob = C.convert(str(corpus / name), log=lambda m: None, **kw)
             wd = tmp_path / f"{name}_{'clone' if clone else 'noclone'}_{tag}"
             wd.mkdir(parents=True)

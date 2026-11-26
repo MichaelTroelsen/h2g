@@ -90,10 +90,13 @@ def test_short_circuited_plan_emits_nothing(monkeypatch):
     assert _heads(_convert(drum_long=True)) == []
 
 
-def test_only_monty_and_devils_galop_ship_the_option():
+def test_only_monty_devils_galop_and_geoff_ship_the_option():
     doc = _doc()
     on = sorted(name for name in doc["songs"]
                 if fidelity._preset_opts(doc, name).get("drum_long"))
     # International_Karate also carries such a record but moved within noise
     # on every column at 1ee1557, so it stays off until measured on its own.
-    assert on == ["Devils_Galop.sid", "Monty_on_the_Run.sid"]
+    # Geoff_Capes_Strongman_Challenge is the -S1 adoption (`own_sweep`;
+    # test_drum_long_s1.py): travel .78 -> .90, tie .82 -> .92, tiefr 76 -> 85%.
+    assert on == ["Devils_Galop.sid", "Geoff_Capes_Strongman_Challenge.sid",
+                  "Monty_on_the_Run.sid"]

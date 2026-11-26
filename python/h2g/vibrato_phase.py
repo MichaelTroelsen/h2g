@@ -84,7 +84,37 @@ keep the per-call vibrato. The pass reads the classic update whose row clock is
 two counted gates and whose swing waits for age 4: ACE_II and Saboteur_II
 (Saboteur_II: `bend` .66 -> .81, `travel` .70 -> .78, nothing else beyond
 +-0.001).
+
+**At -S1** (`multiplier == 1`; Trans-Atlantic_Balloon_Challenge, whose clock
+`_clock_cells` reads: outer 109, inner 2, three frames a row, the outer gate
+skipping one call in 113) the packed player runs one call a frame, a wavetable
+command row takes the whole call, and the zero-speed steps of the multispeed
+design have no free calls to sit on (the row is three calls, the swing starts
+on the fifth). The class is then `(record, j, A)`: `j` the row of an explicit
+cycle (`bound` `$F1` ups, `bound` `$F2` downs, one depth each, no `vibtime`)
+the chain jumps into (`cycle_rotation`), `A` the move on frame 4 as before.
+Two things follow from the call being the program's:
+
+* a program that loops past its note starves the pattern effect of whatever
+  follows: Trans-Atlantic voice 0's tied notes slide on their rest rows, and
+  an endless program held 11897 where the original slid 10000 -> 11380 (the
+  held-vibrato probe, `vibrato_hold` forced at -S1: `cents` .973 -> .885,
+  voices 0 and 1 `$0879`, 817 and 784 of 1249 frames over 50 cents). A next
+  NOTE row that is no tie restarts the wavetable and ends the program by
+  itself (stopping it on the row before cost a short note its last three
+  frames: travel .64 against .79 without); where a pitch command sits on or
+  between the note's rows and that next note, the program is stopped,
+  `CMD_SETWAVEPTR 0`, on the row before it, which must be a free row two or
+  more after the note's, and a note that needs the stop and cannot have it
+  keeps the record's per-call vibrato;
+* a note with a pitch command on any of its rows is left out (`note_phases(
+  slides=True)`), and the record-level held program (`vibrato_hold`) stays
+  multispeed-only for the same reason.
+
+Not recovered: a tied note's slide and vibrato cannot both run on one call at
+-S1, so the original's vibrato under a slide stays unsounded.
 """
+from fractions import Fraction
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import unison_vibrato as _uv
@@ -109,6 +139,11 @@ from .vibrato_hold import (_NAME_AT, _PLAIN_WAVE_LAST, _STBL_AT, _VIBDELAY_AT,
                            _held_rows, _program, _read_tables,
                            _record_delay_frames, effective_gate_skip)
 
+# The pass at -S1 (module docstring, "At -S1"). `ALLOW_S1` False restores the
+# `multiplier > 1` gate; `STOP_AT_FETCH` False leaves a note's program running
+# past its note (tests/test_vibrato_phase_s1.py pins both).
+ALLOW_S1 = True
+STOP_AT_FETCH = True
 # The age at which the classic update starts to write the swing: `$E289
 # LDA $E587,X / CMP #$04 / BCC` in ACE_II. The update runs from frame 1.
 FIRST_ACTIVE = 4
@@ -244,12 +279,18 @@ def _age_load(window: bytes) -> bool:
     return at >= 3 and window[at - 3] == 0xBD      # LDA abs,X
 
 
-def note_phases(blob: bytes, sid: SidFile, det: Detection) -> list:
+def note_phases(blob: bytes, sid: SidFile, det: Detection,
+                slides: bool = False) -> list:
     """Every vibrating note of the first lap, with the original's triangle:
     `{place, record, byte, bound, shift, life, frame, offsets}` where `place`
     is `(track, orderlist index, play, row)` and `offsets[j]` (j = 1 .. life
     - 1) the swing, in depths about the note, on frame `j` after the fetch.
-    Empty where the clock, the counter or the age gate is not read."""
+    Empty where the clock, the counter or the age gate is not read.
+
+    `slides` leaves out a note any of whose rows, up to the next fetch, carries
+    a pitch command: a wavetable command row takes the whole play call, so at
+    -S1 a program that steps every call starves a pattern slide (Trans-Atlantic
+    voice 0's `$0879` notes slide on their rest rows)."""
     cells_at = _uv.counter_cells(sid, det)
     speeds = _gw_tempo.find_song_speeds(sid, det)
     clock = _clock_cells(sid, 0)
@@ -323,6 +364,9 @@ def note_phases(blob: bytes, sid: SidFile, det: Detection) -> list:
             end_row = nxt.get(idx)
             if end_row is None:
                 continue
+            if slides and any(lane[r][3] in _PITCH_COMMANDS
+                              for r in range(idx, end_row)):
+                continue
             life = frames[end_row] - f0
             if life < MIN_LIFE:
                 continue
@@ -334,9 +378,24 @@ def note_phases(blob: bytes, sid: SidFile, det: Detection) -> list:
     return out
 
 
-def classify(note: dict) -> Optional[Tuple[int, int]]:
+def cycle_rotation(bound: int, dirs: List[int]) -> Optional[int]:
+    """The least `j` in 0 .. 2 * bound - 1 whose step of the explicit cycle
+    (`bound` ups, then `bound` downs: the player's triangle) starts `dirs`
+    when entered at row `j`, or None."""
+    cyc = [1] * bound + [-1] * bound
+    for j in range(2 * bound):
+        if all(cyc[(j + i) % (2 * bound)] == d for i, d in enumerate(dirs)):
+            return j
+    return None
+
+
+def classify(note: dict, explicit: bool = False) -> Optional[Tuple[int, int]]:
     """`(n, A)` for a note: the null count whose direction sequence matches
-    the original's from frame 5 on, and the offset it is at on frame 4."""
+    the original's from frame 5 on, and the offset it is at on frame 4.
+
+    `explicit` (-S1, `phase_classic_vibrato`): `n` is instead the row of the
+    explicit up/down cycle the note's program jumps into (`cycle_rotation`),
+    which takes no null steps to set the phase."""
     offs, bound, life = note["offsets"], note["bound"], note["life"]
     if FIRST_ACTIVE not in offs:
         return None
@@ -344,7 +403,8 @@ def classify(note: dict) -> Optional[Tuple[int, int]]:
             if j in offs and j - 1 in offs][:2 * bound]
     if any(x not in (-1, 1) for x in dirs):
         return None
-    n = rotation(bound, dirs)
+    n = (cycle_rotation(bound, dirs) if explicit
+         else rotation(bound, dirs))
     return None if n is None else (n, offs[FIRST_ACTIVE])
 
 
@@ -538,6 +598,19 @@ def respell(body: bytearray, nrows: int, mapping: Dict[int, tuple],
     return out, (eff if live else None)
 
 
+def _quiet_to_note(rows: Optional[list]) -> Optional[bool]:
+    """Whether the rows reach their first NOTE with no pitch command on or
+    before it (True), meet one (False), or hold no note (None)."""
+    if rows is None:
+        return None
+    for n, _k, c in rows:
+        if c in _PITCH_COMMANDS:
+            return False
+        if GT_FIRST_NOTE <= n <= GT_LAST_NOTE:
+            return True
+    return None
+
+
 def _entry(stbl: List[tuple], entry: tuple) -> int:
     """The 1-based speed-table row of `entry`, added where absent."""
     if entry not in stbl:
@@ -554,7 +627,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     Unchanged where the player's clock, counter or age gate is not read, a
     pattern commands a vibrato of its own, or nothing fits."""
     m = multiplier
-    if (m < 2 or det.vibrato_offset is None or det.triangle_vibrato is not None
+    if (m < (1 if ALLOW_S1 else 2) or det.vibrato_offset is None
+            or det.triangle_vibrato is not None
             or det.table_vibrato is not None or det.vibrato_dwell
             or det.vibrato_shift_extra or effective_gate_skip(sid)):
         return blob
@@ -564,7 +638,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         return blob
     if bytes(blob[:4]) != b"GTS5":
         return blob
-    notes = note_phases(blob, sid, det)
+    notes = note_phases(blob, sid, det, slides=(m == 1))
     if not notes:
         return blob
     wtbl, ptbl, ftbl, stbl = _read_tables(blob, tables_at, patt_at)
@@ -607,14 +681,19 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             continue
         if _record_delay_frames(sid, det, rec) is not None:
             continue
-        taken[k] = dict(kept=_kept_events(events), end_t=end_t, bound=bound,
+        kept_ev = _kept_events(events)
+        if m == 1 and (end_t > t_l or any(t >= t_l for t in kept_ev)):
+            # The explicit cycle is a bare loop: an event after frame 4
+            # would have to be merged into it.
+            continue
+        taken[k] = dict(kept=kept_ev, end_t=end_t, bound=bound,
                         shift=shift, byte=byte, wptr=wptr)
 
     # Every class, its weight in frames and its notes.
     classes: Dict[tuple, dict] = {}
     for note in notes:
         k = note["record"]
-        cls = classify(note) if k in taken else None
+        cls = classify(note, explicit=(m == 1)) if k in taken else None
         if cls is None or note["byte"] != taken[k]["byte"]:
             continue
         key = (k, cls[0], cls[1])
@@ -627,6 +706,13 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     # on it takes effect at (`t_row`), the row clock in calls.
     speeds = _gw_tempo.find_song_speeds(sid, det)
     row_len = speeds.exact_row(0) if speeds is not None else None
+    if (m == 1 and speeds is not None and speeds.frames_for(0)
+            and row_len is not None and row_len.denominator != 1):
+        # At -S1 our row is the whole number of calls the tempo says; the
+        # outer gate's rare skipped call is the original's, which the
+        # re-grid (`regrid_phase`) takes up, so the corrected row's fraction
+        # is no part of where OUR second pattern row falls.
+        row_len = Fraction(speeds.frames_for(0))
     if row_len is None or (row_len * m).denominator != 1:
         return blob
     # The note's call 0 runs no wavetable row: program time is the call - 1.
@@ -643,6 +729,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         and the chain the rest."""
         k, n, a = key
         info = taken[k]
+        if m == 1:
+            return 0, 0
         cap = len(free_calls(info["kept"], t_row, t_a))
         if n <= cap:
             return 0, n
@@ -683,13 +771,21 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
                 out.append((left, right))
         return out
 
+    def entry_row(key):
+        """The row of the shared loop a class's chain jumps to: its cycle
+        rotation at -S1, the loop's first row otherwise."""
+        return key[1] if m == 1 else 0
+
     def loop_key(info):
         tail = tuple(sorted((t - t_l, row) for t, row in info["kept"].items()
                             if t >= t_l))
         return (tail, max(0, info["end_t"] - t_l), info["bound"], info["shift"])
 
     def loop_rows_for(lkey, first_row):
-        tail, end, _b, _s = lkey
+        tail, end, bnd, _s = lkey
+        if m == 1:
+            return ([(_SYM_UP, 1)] * bnd + [(_SYM_DOWN, 1)] * bnd
+                    + [(GT_WAVE_JUMP, first_row)])
         return _held_rows(dict(tail), end, (_SYM_STEP, 0), 0, m, first_row)
 
     def calls_of(row):
@@ -718,7 +814,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     for key in classes:
         try:
             split(key)
-            pending[key] = chain_spec(key) + [(GT_WAVE_JUMP, ("L", None))]
+            pending[key] = chain_spec(key) + [(GT_WAVE_JUMP,
+                                               ("L", None, entry_row(key)))]
         except _Unsupported:
             continue
     loops: Dict[tuple, int] = {}
@@ -733,7 +830,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             info = taken[key[0]]
             nb, _n2 = split(key)
             lkey = loop_key(info)
-            shared = share(rows[:-1] + [(GT_WAVE_JUMP, ("L", lkey))], lkey)
+            shared = share(rows[:-1] + [(GT_WAVE_JUMP,
+                                         ("L", lkey, entry_row(key)))], lkey)
             extra = 0
             if lkey not in loops:
                 try:
@@ -781,7 +879,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         rows_c = []
         for left, right in shared:
             if left == GT_WAVE_JUMP and isinstance(right, tuple):
-                right = loops[lkey] if right[0] == "L" else right[1]
+                right = (loops[lkey] + right[2]
+                         if right[0] == "L" else right[1])
             rows_c.append((left, right))
         wtbl.extend(concrete(rows_c, info))
         programs.setdefault(lkey, []).append(dict(rows=shared, at=at))
@@ -815,6 +914,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
                 first_named[p] = bool(blob[start + r * 4 + 1])
                 break
     plans = []
+    stop_rows: Dict[Tuple[int, int], Dict[int, int]] = {}
     forced: Dict[Tuple[int, int], int] = {}
     lost = {"repeat": 0, "next row": 0, "live at the end": 0}
     for ti, (off, order) in enumerate(tracks):
@@ -827,10 +927,44 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             if not maps[0] and (ti, e) not in forced:
                 continue
             mapping = {}
+            stops: Dict[int, int] = {}
             for r, val in (maps[0] or {}).items():
                 nxt = rows[r + 1] if r + 1 < len(rows) else None
                 if (nxt is not None and nxt[2] == 0
                         and not GT_FIRST_NOTE <= nxt[0] <= GT_LAST_NOTE):
+                    if m == 1 and STOP_AT_FETCH:
+                        # At -S1 the program steps on every call and so
+                        # starves the pattern effect of whatever follows (a
+                        # tie's slide, a slide on a rest row). A next NOTE
+                        # row that is no tie restarts the wavetable and ends
+                        # the program by itself; where a pitch command is in
+                        # the way the program is stopped, `CMD_SETWAVEPTR 0`,
+                        # on the row before that note, which must be free.
+                        note_at = next((q for q in range(r + 1, len(rows))
+                                        if GT_FIRST_NOTE <= rows[q][0]
+                                        <= GT_LAST_NOTE), None)
+                        if note_at is None:
+                            # The note runs to the pattern's end: what
+                            # follows is the pattern again (a repeat) and
+                            # the next entry; both must reach a note
+                            # with no pitch command on the way.
+                            follow = [entries[e + 1][4]
+                                      if e + 1 < len(entries) else None]
+                            if repeat > 1:
+                                follow.append(rows)
+                            if any(_quiet_to_note(f) is not True
+                                   for f in follow):
+                                lost["next row"] += 1
+                                continue
+                        elif any(rows[q][2] in _PITCH_COMMANDS
+                                 for q in range(r + 1, note_at + 1)):
+                            stop = note_at - 1
+                            if (stop < r + 2 or rows[stop][2]
+                                    or stop in stops.values()
+                                    or stop in {x + 1 for x in mapping}):
+                                lost["next row"] += 1
+                                continue
+                            stops[r] = stop
                     mapping[r] = val
                 else:
                     lost["next row"] += 1
@@ -849,6 +983,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
                     continue
                 if not first_named.get(entries[nxt_e][1], False):
                     forced[(ti, nxt_e)] = live
+            stop_rows[(ti, i)] = stops
             plans.append((off + i, p, mapping, body, nrows, (ti, i, repeat)))
     if not plans:
         return blob
@@ -864,6 +999,9 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             body[r * 4 + 1] = clone_of[(k, nb)]
             body[(r + 1) * 4 + 2] = CMD_SETWAVEPTR
             body[(r + 1) * 4 + 3] = chain
+        for stop in stop_rows.get(_t[:2], {}).values():
+            body[stop * 4 + 2] = CMD_SETWAVEPTR
+            body[stop * 4 + 3] = 0
         raw = bytes([nrows]) + bytes(body)
         if raw not in bodies:
             bodies[raw] = len(pats) + len(new_patterns)

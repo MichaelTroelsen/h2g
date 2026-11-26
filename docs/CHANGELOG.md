@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.683 — 2026-11-26
+
+- Adopt 15 decided changes: drum sweep uncap, Sun ilv_start_cutoff, Pacific filter mute, W_A_R_Preview drum_alt_sweep, Thrust split tick, Dragons fractional filter step, Kentilla drum rise, Geoff drum_long, W_A_R release_row, Auf rest_wave_silence, Delta vibrato_round_up, fetch_restart, Trans-Atlantic/Saboteur_II vibrato_phase, Go_Go_Dash pulse_phase
+
 ## 0.5.682 — 2026-11-26
 
 - Adopt 10 decided changes: Bangkok tie_late_pitch, Delta-13 filter addend, Pandora slide goal, Phantoms note-rise JSR, Shockway vibrato trim, 5 Title Tunes stair parity, Kings park_wave, IK_plus pitch_seq bandpass, Gremlins pulse_phase, Pygmies pitch_seq

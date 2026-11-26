@@ -3137,7 +3137,107 @@ def _build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                              resume: bool = False) -> tuple:
     """`build_pulse_phase_table`'s one pass: ((entries, starts, index) or
     None, the chosen layout tuple), `resume` laying a hold that ends as the
-    hold and the sweep it hands over to (`_phase_block`'s `resume`)."""
+    hold and the sweep it hands over to (`_phase_block`'s `resume`).
+
+    **Where the layout degraded a record, the planned phases of LESS-PLAYED
+    records are shed one at a time** (`_shed_for_played`) while that moves
+    the note-weighted cost down. The pass lays records in instrument order
+    and the first ones take the rows, so a lightly played record laid early
+    can leave a heavily played one on a static width. Go_Go_Dash under forced
+    `pulse_phase`: instrument 5 (85 notes) asks its 27 phases' rows first and
+    instrument 6 (737 notes, the voice-1 workhorse) then needs 107 where the
+    table has 6 left, so its sweep is cut to a standing width -- pulse
+    changes 18583 -> 13158 against the original's 18077 -- while shedding
+    instrument 5's phases lets 6 keep all 25 and the changes stay at 18573.
+    A shed record is not dropped: it lays as the ordinary `--pulse` block
+    (its sweep, opened on the record's own width) and costs its weight in the
+    comparison. Consulted only where the pass degraded something, a
+    `usage` is given AND the player is the interleaved dialect: under the
+    legacy bound-to-bound lattice the same rescue re-lays Last_V8 (237 rows,
+    none degraded, where `tests/test_pulse_phase_reserve.py` pins 223 with
+    instrument 9 degraded), and nothing measured says the classic and
+    triangle engines want it. Widening it is a measurement of its own.
+    """
+    if usage is None or getattr(det, "pattern_dialect", None) != "ilv":
+        return _build_pulse_phase_table_once(
+            sid, det, instr_used, pulse, multiplier, phases, log, lead,
+            prefer_short, usage, resume)
+    table, chosen = _build_pulse_phase_table_once(
+        sid, det, instr_used, pulse, multiplier, phases, None, lead,
+        prefer_short, usage, resume)
+    if not (chosen[3] or chosen[4]):
+        return _build_pulse_phase_table_once(
+            sid, det, instr_used, pulse, multiplier, phases, log, lead,
+            prefer_short, usage, resume)
+    shed = _shed_for_played(sid, det, instr_used, pulse, multiplier, phases,
+                            lead, prefer_short, usage, resume, chosen)
+    if not shed:
+        return _build_pulse_phase_table_once(
+            sid, det, instr_used, pulse, multiplier, phases, log, lead,
+            prefer_short, usage, resume)
+    kept = {k: v for k, v in phases.items() if k not in shed}
+    if log:
+        log("Pulse phase.............: table full -- phases of instrument "
+            + ", ".join(str(n) for n in sorted(shed))
+            + " shed so the more-played records keep theirs")
+    return _build_pulse_phase_table_once(
+        sid, det, instr_used, pulse, multiplier, kept, log, lead,
+        prefer_short, usage, resume)
+
+
+def _shed_for_played(sid: SidFile, det: Detection, instr_used: int,
+                     pulse: bool, multiplier: int, phases: dict, lead: int,
+                     prefer_short: bool, usage: List[int], resume: bool,
+                     chosen: tuple) -> set:
+    """The instrument bytes whose phase plans to leave out so the table
+    places the played records, or an empty set where that gains nothing.
+
+    Greedy over the CHEAPEST record first: drop one placed record's phases,
+    re-lay, and keep it only where the note-weighted cost -- (notes on
+    pointer 0, notes degraded to a static width, the shed records' own notes
+    counted as degraded) -- falls strictly. Stops when no single further shed
+    does. A trial that leaves nothing placed (`None`) is not taken.
+    """
+    def weight(num: int) -> int:
+        j = num - 1 - lead
+        return usage[j] if 0 <= j < len(usage) else 0
+
+    def cost(t: tuple, shed: set) -> tuple:
+        return (t[8], t[7] + sum(weight(n) for n in shed))
+
+    shed: set = set()
+    best = chosen
+    best_cost = cost(chosen, shed)
+    while True:
+        placed = {k[0] for k in best[2]}
+        trial_best = None
+        for num in sorted(placed - shed, key=lambda n: (weight(n), n)):
+            kept = {k: v for k, v in phases.items()
+                    if k not in shed and k != num}
+            if not kept:
+                continue
+            table, t = _build_pulse_phase_table_once(
+                sid, det, instr_used, pulse, multiplier, kept, None, lead,
+                prefer_short, usage, resume)
+            if table is None:
+                continue
+            c = cost(t, shed | {num})
+            if c < best_cost and (trial_best is None or c < trial_best[0]):
+                trial_best = (c, num, t)
+        if trial_best is None:
+            return shed
+        best_cost, num, best = trial_best
+        shed.add(num)
+
+
+def _build_pulse_phase_table_once(sid: SidFile, det: Detection,
+                                  instr_used: int, pulse: bool,
+                                  multiplier: int, phases: dict, log=None,
+                                  lead: int = 1,
+                                  prefer_short: bool = False,
+                                  usage: Optional[List[int]] = None,
+                                  resume: bool = False) -> tuple:
+    """`_build_pulse_phase_table` without the shed rescue: one layout choice."""
     ukw = {} if usage is None else {"usage": usage}
     ukw.update({"resume": True} if resume else {})
     first_log: list = []
@@ -3539,6 +3639,21 @@ def _lay_pulse_phase_pass(sid: SidFile, det: Detection, instr_used: int,
             # Not phase-tracked (no plan, or a record that does not sweep
             # under either engine): the ordinary --pulse-phase block.
             program, loop = _pulse_program(sid, det, i, pulse, multiplier)
+            if pulse and det.pulse_bounds >= 0:
+                # `_pulse_layout`'s record-by-record spelling of a rate over
+                # `SPELLED_SPEED_MIN`, kept where the table still has the
+                # rows: without it a phase table clamps the record to 127 a
+                # call (Pacific_Coast's record $0D, rate 149, swept 127).
+                spelled = _pulse_program(sid, det, i, pulse, multiplier,
+                                         spell=True)
+                s_block = (spelled[0] if spelled[1] is None
+                           else spelled[0] + [(0xFF, len(entries) + 1
+                                               + spelled[1])])
+                if (spelled != (program, loop)
+                        and len(entries) + len(s_block)
+                        + held_back(i, laying=spelled)
+                        <= _gw_constants.GT_MAX_TABLELEN):
+                    program, loop = spelled
             if reuse(program, loop):
                 continue
             start = len(entries) + 1

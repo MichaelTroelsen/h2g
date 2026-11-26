@@ -974,8 +974,10 @@ def test_the_unticked_records_carry_the_residue_in_the_sng():
     sng, _, _ = _converted("Hunter_Patrol")
     assert _wavetable_of(sng, 9) == [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00),
                                      (0xFF, 0x2E)]
+    # $53 -> $56: the -S1 drum sweep lift (tests/test_drum_sweep_uncap_s1.py)
+    # gives Hunter_Patrol's drum records three more rows ahead of this one.
     assert _wavetable_of(sng, 14) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
-                                      (0xFF, 0x53)]
+                                      (0xFF, 0x56)]
 
 
 # --- Rasputin's duty follows its tempo (v0.5.494+, `tempo_duty_split_plan`) --

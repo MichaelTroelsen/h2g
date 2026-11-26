@@ -170,6 +170,13 @@ def _filter_stop_only_diff(kept, undropped):
             for r in range(0, len(x), 4):
                 if x[r:r + 4] != y[r:r + 4]:
                     assert (x[r], x[r + 1]) == (y[r], y[r + 1]), (x[r:r + 4], y[r:r + 4])
+                    if x[r + 2] == CMD_SETFILTERPTR and x[r + 3]:
+                        # a restart (`fetch_restart`): the kept arm has room
+                        # for the pattern copy the capped arm declined, or
+                        # takes the row a declined stop left free. Not a
+                        # stop, so not counted.
+                        assert y[r + 2:r + 4] in ((0, 0), (CMD_SETFILTERPTR, 0)),                             y[r:r + 4]
+                        continue
                     assert x[r + 2:r + 4] == (CMD_SETFILTERPTR, 0), x[r:r + 4]
                     assert y[r + 2:r + 4] == (0, 0), y[r:r + 4]
                     n += 1

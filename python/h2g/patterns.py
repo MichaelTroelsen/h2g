@@ -938,6 +938,9 @@ def _build_raw_pattern(data: bytes, addr: int,
         # THREE writes -- see the rest branch below -- and a row has
         # one command column.
         hold_cmds: list = []
+        # The combined rest's SETWAVE is row 0's one-shot: the data byte it
+        # leaves behind would print on the filler hold rows as `00 $08`.
+        scrub_cmd2 = False
         # For `event_log`: the instrument record this event's operand named,
         # and the table entry its note fetch reads.
         log_record = None
@@ -1062,9 +1065,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                 rests_unnamed += 1
             park_wave = rest_wave and rest_record not in rest_wave_exempt
             if park_wave and rest_envelope and rest_keyoff:
-                cmd1, cmd2 = CMD_SETSR, 0x00
-                hold_cmds = [(CMD_SETWAVE, REST_SILENT_WAVE),
-                             (CMD_SETAD, 0x00)]
+                cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
+                hold_cmds = [(CMD_SETSR, 0x00)]
+                scrub_cmd2 = True
             elif park_wave:
                 cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
             # ...and the half of that branch **both** families share: the
@@ -1715,6 +1718,8 @@ def _build_raw_pattern(data: bytes, addr: int,
         ordinal += 1
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
+            if scrub_cmd2:
+                cmd2 = 0
         for h in range(wait):
             if h < len(hold_cmds):
                 events += [GT_NO_NOTE, 0x00, hold_cmds[h][0], hold_cmds[h][1]]
@@ -2286,13 +2291,19 @@ class IlvArps(list):
     set, so the +10 copy is skipped).
     """
 
-    def __init__(self, commands: bool = True, defaults=None):
+    def __init__(self, commands: bool = True, defaults=None,
+                 start_cutoff=None):
         super().__init__()
         self.commands = commands
         self.defaults = dict(defaults or {})
+        # Records whose notes ALL start on a `$87 nn mm`
+        # (`filters.ilv_start_cutoff_command_records`): the note's own row
+        # carries the cutoff in its data byte (a marker; see the decoder).
+        self.start_cutoff = frozenset(start_cutoff or ())
 
 ILV_SLIDE = 0x82
 ILV_TIE = 0x20                  # of a $C0-$FF duration byte; see above
+ILV_NO_RESEED = 0x88            # no operand: $1A64 = 1, the note keeps its pulse
 # A tied note that also carries a `$82` slide: tie on the row, slide on the
 # hold rows (see _build_raw_pattern_ilv). False restores the slide-wins row.
 TIE_UNDER_SLIDE = True
@@ -2313,6 +2324,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            tie: bool = False,
                            exits_tied: Optional[List[bool]] = None,
                            skip_rows: Optional[List[int]] = None,
+                           free_rows: Optional[List[int]] = None,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
 
@@ -2321,6 +2333,15 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     makes the note-start loader skip its filter-program load (`$1324 BNE
     $1389`), so a running sweep carries on through that note instead of
     restarting. See `goatwriter.ilv_filter_resume`.
+
+    With `free_rows` given (a list the caller owns), it receives the row of
+    every note whose pulse accumulator the player does NOT reseed from the
+    record at the note start: an event carrying command `$88` (`$11DE`
+    `STA $1A64`, which `$12C9 LDA $1A64 / BNE $12E8` skips the two
+    `$D402/$D403` stores on), and, under `tie`, a note the previous
+    duration byte tied (`$12C1 LDA $1AC3 / BEQ / JMP $13B5` skips the whole
+    instrument load). The same meaning the classic decoder's `free_rows`
+    carries for a bit-7 note, so `collect_pulse_phases` reads both alike.
 
     With `tie`, the duration byte's `ILV_TIE` bit becomes `CMD_TONEPORTA 0`
     on the next note (opt-in like every tie emitter:
@@ -2358,10 +2379,14 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     i2 = 0
     pending: Optional[tuple] = None
     armed: Optional[int] = None     # a `$83` operand waiting for its note
+    cutoff_at: Optional[int] = None  # a `$87` start cutoff waiting for its note
+    start_cutoff = getattr(arps, 'start_cutoff', ())
     tieflag = False                 # the last duration byte's `ILV_TIE`
     nexttie = False                 # that flag, carried to the NEXT note
     nofilter = False                # a `$84` waiting for its event
     startcut: Optional[int] = None  # a `$87`'s high byte waiting for its event
+    durtie = False                  # `nexttie` without the one-row tie
+    noreseed = False                # a `$88` waiting for its note
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -2401,11 +2426,17 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                 nofilter = True
             elif b == ILV_STARTCUT:
                 startcut = data[addr + i2 + 1]
+                if start_cutoff:
+                    # `ilv_start_cutoff`: the same `$87 nn mm`, read for the
+                    # per-note command instead of `ilv_filter_resume`'s rows.
+                    cutoff_at = startcut
             elif (b == ILV_ARP and arps is not None
                   and getattr(arps, 'commands', True)):
                 # Armed for the note that FOLLOWS, and dropped if none does:
                 # the player's own flag is cleared at the next note start.
                 armed = data[addr + i2 + 1]
+            elif b == ILV_NO_RESEED:
+                noreseed = True
             elif b == ILV_SLIDE and slides:
                 # First operand high, second low, and the pair is signed: the
                 # player has one CLC/ADC and no direction test.
@@ -2437,6 +2468,9 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         # included: it belongs to the one event that follows it.
         nofilter = False
         startcut = None
+        if free_rows is not None and b != ILV_REST and (
+                noreseed or (tie and durtie)):
+            free_rows.append(row // 4)
         operand = armed
         if (operand is None and arps is not None and record is not None
                 and b != ILV_REST):
@@ -2466,6 +2500,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                 # hold row, so there the slide keeps the row.
                 tie_cmd = cmd = (CMD_TONEPORTA, 0)
         nexttie = tieflag or (ONEROW_TIE and wait == 0 and b != ILV_REST)
+        durtie = tieflag
+        noreseed = False
         tieflag = False
         if cmd is not None:
             events[-2], events[-1] = cmd
@@ -2481,6 +2517,18 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                 arps.append(key)
             events[row + 2] = CMD_SETWAVEPTR
             events[row + 3] = arps.index(key) + 1
+        if (cutoff_at and b != ILV_REST and record in start_cutoff
+                and not events[row + 2]):
+            # A MARKER, not a command: the cutoff rides in the DATA byte of a
+            # row whose command is still 0, so every pass that fills a free
+            # command column (the routing's `B`, the tie, the tempo) sees the
+            # column as free and, writing both bytes, displaces it.
+            # `goatwriter.filters.finalize_start_cutoffs` turns what is left
+            # into `CMD_SETFILTERCUTOFF` as the last act of `build_sng`.
+            # Lowest precedence also against the slide, the arpeggio and the
+            # tie, which hold the column here. One-shot: no hold row.
+            events[row + 3] = cutoff_at
+        cutoff_at = None            # the player clears `$1A63` per event
         armed = None
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
@@ -2842,7 +2890,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                                       instr_base=instr_base,
                                       slides=slides, steps=steps, arps=arps,
                                       tie=tie, exits_tied=exits_tied,
-                                      skip_rows=skip_rows)
+                                      skip_rows=skip_rows,
+                                      free_rows=free_rows)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -5796,20 +5845,22 @@ def _move_rest_silence_off_row0(pattern: List[int]) -> None:
     exactly that pair is left alone, and so is every pattern whose row 0 is
     not a KEYOFF + SETSR, so the move is inert on anything but this spelling.
     """
-    if (len(pattern) < 8 or pattern[0] != GT_KEYOFF
-            or pattern[2] != CMD_SETSR or pattern[3] != 0):
+    if len(pattern) < 8 or pattern[0] != GT_KEYOFF:
         return
-    if pattern[4:8] == [GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE]:
-        # Both families at once (`rest_wave` + `rest_envelope`): hold row 0
-        # carries the parked waveform and hold row 1 the AD half. The SETSR
-        # takes row 1, the park slides to row 2 in the AD half's place, and
-        # the (inaudible) AD half goes to row 3 where that row is empty.
-        if len(pattern) < 12 or pattern[8:12] != [GT_NO_NOTE, 0, CMD_SETAD, 0]:
+    if pattern[2:4] == [CMD_SETWAVE, REST_SILENT_WAVE]:
+        # Both families at once (`rest_wave` + `rest_envelope`): row 0 carries
+        # the parked waveform, hold row 0 the SETSR and hold row 1 the AD
+        # half. The park takes hold row 0, the SETSR slides to hold row 1
+        # in the AD half's place, and the (inaudible) AD half goes to hold
+        # row 2 where that row is empty.
+        if (len(pattern) < 12
+                or pattern[4:8] != [GT_NO_NOTE, 0, CMD_SETSR, 0]):
             return
-        pattern[6], pattern[7] = CMD_SETSR, 0
-        pattern[10], pattern[11] = CMD_SETWAVE, REST_SILENT_WAVE
-        if len(pattern) >= 16 and pattern[12:16] == [GT_NO_NOTE, 0, 0, 0]:
-            pattern[14], pattern[15] = CMD_SETAD, 0
+        pattern[6], pattern[7] = CMD_SETWAVE, REST_SILENT_WAVE
+        if pattern[8:12] == [GT_NO_NOTE, 0, 0, 0]:
+            pattern[10], pattern[11] = CMD_SETSR, 0
+        return
+    if pattern[2] != CMD_SETSR or pattern[3] != 0:
         return
     if pattern[4:8] != [GT_NO_NOTE, 0, CMD_SETAD, 0]:
         return

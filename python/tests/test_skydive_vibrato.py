@@ -401,8 +401,12 @@ def test_carrying_never_costs_a_note_row_program_its_place(monkeypatch):
     # dropped the blocks of the records no pattern names (that arm: see
     # test_dead_blocks.py).
     import h2g.goatwriter.dead_blocks as DB
+    import h2g.goatwriter.wavetable as WT
     monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     monkeypatch.setattr(S, "SKYDIVE_TIE_NEXT_COMMANDS", frozenset())
+    # ... with the drum sweep at its old length: 252 rows is Zoids' table
+    # before the -S1 sweep lift (5 more rows), which this is about.
+    monkeypatch.setattr(WT, "DRUM_SWEEP_UNCAP_S1", False)
     real = S.skydive_program
 
     def padded(phase, writes, alt, speed_index, multiplier=1, vib=None,

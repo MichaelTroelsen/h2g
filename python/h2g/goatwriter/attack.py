@@ -13,6 +13,13 @@ from .primitives import (_counter_gate_call, _first_frame_entry,
                          _first_frame_lead, _fixed_pitch_yield_field,
                          _freq_table_note, _gate_calls, _second_stage_base,
                          _wave_byte)
+
+# `_two_stage_pitch_seq_entries` writes an entry for the note's silent frame 0
+# when the record's `+2` selects no waveform. Kept as a module constant so a
+# test can turn the change off and show it is what moves the bytes.
+ZERO_WAVE_LEAD = True
+
+
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     """Absolute-note byte for effect bit $40's fixed attack pitch, or None.
 
@@ -219,7 +226,9 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             gate_frames: Optional[int] = None,
                             own_note: Optional[int] = None,
                             fall: Optional[dict] = None,
-                            sweep: Optional[tuple] = None) -> Optional[tuple]:
+                            sweep: Optional[tuple] = None,
+                            sweep_headroom: int = ALT_FALL_HEADROOM
+                            ) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -279,7 +288,10 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     undo the fall), then one `CMD_PORTADOWN` of the whole frame's step, then
     the frame's remaining calls held. The fall stops where the counter reaches
     zero and the voice holds the frequency it reached, so the loop after it
-    keeps the pitch alone too. Needs a gated alternation (`gate_frames`),
+    keeps the pitch alone too. `sweep_headroom` is the entries the program
+    must leave free in `budget` (`ALT_FALL_HEADROOM`; 0 under
+    `convert(drum_alt_sweep=...)`, which `convert` takes only where the
+    whole wavetable has room). Needs a gated alternation (`gate_frames`),
     `multiplier >= 2` (a one-call frame cannot write the waveform and step the
     pitch) and declines, returning the plain program, where it does not fit
     `budget`.
@@ -445,7 +457,7 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
         # entries to spare of a 254-entry table and its record 10 (`$14`) then
         # lost its arpeggio and its past-table split stood down (pitch 100% ->
         # 96%); Lightforce and Deep_Strike spare 51 and 147.
-        if len(left) + 1 + ALT_FALL_HEADROOM <= budget:
+        if len(left) + 1 + sweep_headroom <= budget:
             index = resolve()
             if index:
                 right = [index if b == WAVECMD_PORTADOWN else r
@@ -965,9 +977,21 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     # other frame out for the same reason (a delay entry's right side is read
     # only on its last call, and the note base has to be current from the first).
     lead = hold if _first_frame_entry(wave, written) else 0
+    # A record with no waveform (`+2` $00) has a frame 0 that is silent and
+    # gateless but still writes the note and the ADSR, and the attack opens on
+    # frame 1 (Trans-Atlantic voice 1, record `0AF8` effect `$14`: `00 11 11
+    # ...` -- ctrl $00 with the note's pitch on the row's frame, the gate on the
+    # next). The init call here writes only the firstwave, so without an entry
+    # for that frame the attack lands ON the row's frame, one early, and the
+    # `phases` below (read from frames 1, 2, ... after the attack) name steps
+    # for frames one later than the entries sit at.
+    zero_lead = (not lead and not written and not wave & 0xF0
+                 and ZERO_WAVE_LEAD)
+    if zero_lead:
+        lead = hold
     if lead + calls + loop + 1 > budget:
         return None
-    left: List[int] = [wave] * lead
+    left: List[int] = [0x00 if zero_lead else wave] * lead
     right: List[int] = [WAVE_NOTE_BASE] * lead
     for c in range(calls + loop):
         left.append(attack if c < calls else tail)

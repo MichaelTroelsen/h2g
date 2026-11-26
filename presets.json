@@ -304,7 +304,8 @@
       "regrid": true,
       "regrid_per_play": true,
       "regrid_phase": true,
-      "rest_envelope_silence": true
+      "rest_envelope_silence": true,
+      "rest_wave_silence": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -935,7 +936,8 @@
         62
       ],
       "prev_class_firstwave": true,
-      "regrid": true
+      "regrid": true,
+      "vibrato_round_up": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -1366,7 +1368,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "drum_long": true
     },
     "Gerry_the_Germ.sid": {
       "max_rows": 128,
@@ -1394,7 +1397,8 @@
       "max_hard_restart": true,
       "arpeggio": false,
       "arpeggio_default": true,
-      "hard_restart_frames": 4
+      "hard_restart_frames": 4,
+      "pulse_phase": true
     },
     "Gremlins.sid": {
       "max_rows": 94,
@@ -3278,7 +3282,8 @@
       "multiplier": 3,
       "two_stage": true,
       "wave_program": true,
-      "pitch_seq": true
+      "pitch_seq": true,
+      "vibrato_phase": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -3660,7 +3665,8 @@
         62
       ],
       "hard_restart_frames": 4,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "ilv_start_cutoff": true
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -3942,7 +3948,8 @@
       ],
       "regrid": true,
       "regrid_phase": true,
-      "rest_program_stop": true
+      "rest_program_stop": true,
+      "vibrato_phase": true
     },
     "W_A_R.sid": {
       "max_rows": 128,
@@ -3957,7 +3964,9 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "rest_wave_restart": true
+      "rest_wave_restart": true,
+      "release_row": true,
+      "hard_restart_frames": 3
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -3972,7 +3981,8 @@
       "pitch_seq": true,
       "max_hard_restart": true,
       "drum_gate_off": true,
-      "rest_wave_restart": true
+      "rest_wave_restart": true,
+      "drum_alt_sweep": true
     },
     "Warhawk.sid": {
       "max_rows": 94,

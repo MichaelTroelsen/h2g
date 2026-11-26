@@ -223,10 +223,11 @@ def _entry_calls(name):
     real = vibrato_mod._classic_vibrato_entry
 
     def spy(byte, multiplier, row_calls=0, gate_skip=None, dwell=False,
-            depth_extra=0):
+            depth_extra=0, round_up=False):
         seen.append((gate_skip, dwell, depth_extra))
         return real(byte, multiplier, row_calls, gate_skip=gate_skip,
-                    dwell=dwell, depth_extra=depth_extra)
+                    dwell=dwell, depth_extra=depth_extra,
+                    round_up=round_up)
 
     vibrato_mod._classic_vibrato_entry = spy
     try:

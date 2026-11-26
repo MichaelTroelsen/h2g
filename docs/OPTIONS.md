@@ -2998,6 +2998,30 @@ steps `/80` (the `vibrato_onset` route) put the first move on frame 1 and cost
 Sigma_Seven melody 1.000 -> .975 and cents .969 -> .943, the swing renaming
 attacks (forced as a scratch experiment, not shipped).
 
+## `--vibrato-round-up` (a classic vibrato's swing, bought from its rate)
+
+The classic `$78/$07` vibrato entry is `($80 | cmp, rshift)` with `cmp + 2`
+Goattracker calls of half-period. Under `REALTIMEOPTIMIZATION` the packed
+player skips the effects on tick 0, so the entry scales the player's half
+period (`bound * multiplier`) by `(row_calls - 1) / row_calls` to keep the
+RATE, and `round` takes the result to a whole call. The swing is `(cmp + 2) *
+speed` with `speed` a whole shift of the note interval, so the fraction `round`
+drops comes off the swing and no shift pays it back. Delta's `$23` (bound 4,
+shift 3) at -S2 over 5-call rows asks 6.4 calls and gets 6: traced a call at a
+time, 6 steps of `$2C` up, the tick-0 hold, 6 down, against the original's 4
+steps of `$53` a frame (peak-to-peak 264 against 332, 0.80x). The option
+rounds UP instead (7 calls, 0.93x the swing, 0.91x the rate).
+
+**A trade, per song, off by default** (task listen-sub99-delta, v0.5.674,
+-t 180 under presets, Delta subtune 11, historical): depth .761 -> .932,
+travel .739 -> .805, bend .649 -> .706, reversals 1.009 -> .927, `aud` .9511 ->
+.9480 (the floor is 0.0095), `cents` .9979 -> .9964; melody, gate, wave,
+adsr, tie unchanged. It moves bytes on the 46 of 89 converting corpus files
+that carry a classic entry with a fractional half-period. Shipped on Delta
+only (user decision, task adopt-delta-vibrato-round-up, v0.5.681: `presets.json`
+`Delta.sid` sets `vibrato_round_up`); forced corpus-wide it drops bend on
+several files, so it is not a default.
+
 ## `--lfo-wave` (the LFO-table vibrato as a per-frame program)
 
 The command-table player's vibrato (Hollywood or Bust, Chicken Song;
@@ -3282,6 +3306,41 @@ The oracle that bounds it (a stub PSID substituting the original's offsets for
 voice 0's vibrating notes, 60 s): `tiefr` .749 -> .934, `cents` .958 -> .981.
 Per song, off by default (`presets.EXCLUDED_FROM_ALWAYS`); not in any preset.
 
+**At -S1** (task `listen-sub99-trans-atlantic-balloon-challenge`, v0.5.678;
+figures historical). The pass also runs at one play call a frame, where the
+multispeed design has no free call for a zero-speed step (a three-call row, the
+swing starting on the fifth call), so a class is `(record, j, A)`: `j` the row
+of an explicit cycle (`bound` `$F1` ups then `bound` `$F2` downs, one depth
+each, no `vibtime`) the chain jumps into, `A` the frame-4 move as before
+(`vibrato_phase.cycle_rotation`). Two limits follow from the call being the
+program's. A wavetable command row takes the whole call, so a program that
+outlives its note starves the pattern effect of what follows: with the
+record-level held program forced on at -S1 (`vibrato_hold`) Trans-Atlantic
+voice 0 held 11897 where the original slid 10000 -> 11380 and `cents` fell
+.973 -> .885 (817 and 784 of 1249 `$0879` frames over 50 cents). So a
+program with a tie or a slide ahead of the next note is stopped, `CMD_SETWAVEPTR
+0`, on the row before it (`vibrato_phase.STOP_AT_FETCH`; a next note that is no
+tie restarts the wavetable by itself, and stopping those too cost short notes
+their last three frames, travel .64 against .79), a note that needs the stop
+and cannot have it keeps the per-call vibrato, and a note with a pitch command
+on any of its own rows is left out;
+the original's vibrato UNDER a tied note's slide stays unsounded, one call
+cannot be both. The pass reads Trans-Atlantic's clock (outer 109, inner 2,
+three frames a row, the outer gate skipping one call in 113: at -S1 our row is
+the tempo's whole three calls, the fraction is the re-grid's) and the same
+shape in Bangkok_Knights, IK_plus, Nineteen and Pandora: with the option forced
+on those five are the only files whose bytes this change moves (corpus
+byte-hash against the tree without it, 89 convert, 6 refuse; ACE_II and
+Saboteur_II byte-identical). Forced on, `-t 180 --presets
+--sound`: Trans-Atlantic (with `ZERO_WAVE_LEAD`, which is not this option)
+`depth` .72 -> .85, `bend` .73 -> .81, `travel` .61 -> .64, `tiefr` 78% -> 82%,
+`cents` 95% -> 97%, `aud` .9415 -> .9432, `vib` 1.01 -> 0.97, 185 of 301
+vibrating notes (141 of 166 in the first 9000 frames) phased, the rest keeping
+the per-call vibrato; Nineteen `depth` .80 -> 1.05, `bend` .64 -> .67, `cents`
+.848 -> .853; Pandora `tiefr` 66% -> 69%, `bend` .60 -> .62, `cents` 85% ->
+86%; but IK_plus `travel` .98 -> .96 and Bangkok_Knights `aud` .9481 -> .9471,
+so those two stay off. `tests/test_vibrato_phase_s1.py`.
+
 ## `--pitch-lead-tie` (drum attacks open on their own pitch)
 
 Goattracker's packed player writes only `$D404` when a new note starts
@@ -3397,7 +3456,9 @@ other five movers (Commando, Geoff_Capes, International_Karate,
 Phantoms_of_the_Asteroid, and Last_V8_C128_version, approved by ear) were
 not heard with it. `tests/test_drum_sustain_gate_off.py`.
 
-## `--drum-split-tick` (the second noise frame gate-off, for a ticked nibble record)
+## `--drum-split-tick` (INERT: the split tick is unconditional)
+
+**Unconditional since the Thrust decision (task decide-thrust-unconditional-split-tick).** The flag and the `convert()` parameter are kept so presets.json's Bump_Set_Spike key still loads; nothing reads them. Moved relative to the option-off conversion: International_Karate (gate .897 -> .928), Kentilla (no printed column) and Thrust (gate .869 -> .879), plus Bump_Set_Spike as before; aud/loud within .0002. The text below is the option's history.
 
 The player's drum block writes its noise as `LDA #$80 / STA $D404,Y`: gate
 clear on every tick frame (Bump_Set_Spike's `$090A` records read `41 80 80 40`
@@ -3408,14 +3469,14 @@ Bump_Set_Spike it costs loud .977 -> .946 (loud_ratio 1.009 -> .804), and
 `--keep-hard-restart` buys back .003 of it (task listen-sub99-bump-set-spike,
 v0.5.674, historical).
 
-The option keeps the first tick frame gated -- lead plus one frame is `2m`
+The split keeps the first tick frame gated -- lead plus one frame is `2m`
 calls, past 520 lines at every -S >= 2 -- and writes the noise runs that start
 at call `multiplier` or later gate-off (`ticked_nibble_arp_entries`,
 `split_tick`). It adds no wavetable entry: the alternation already puts each
 tick frame on its own row. A run straddling the frame boundary stays gated and
 a one-frame tick (Game_Killer, Warhawk, Proteus) has nothing to split.
 
-Off by default and per song, none adopted. Forced on all 95 files (presets,
+Forced on all 95 files (presets,
 v0.5.674) it changes bytes on 4: Bump_Set_Spike (gate .728 -> .767, heard
 instr .390 -> .613), International_Karate (gate .897 -> .928), Thrust (gate
 .869 -> .879) and Kentilla (no printed column moves); aud and loud move by at
@@ -4126,6 +4187,38 @@ stays 1.0 on all three (before the respell ran beside the split it fell to
 by the respell change). Off by default and per song; nothing is adopted.
 `tests/test_phase_split_over_passes.py` pins it.
 
+**`--ilv-start-cutoff` (`ilv_start_cutoff`) gives a filter record whose every
+note starts on a `$87 nn mm` its start cutoff per note.** The player's `$87`
+writes the voice's cutoff cell and sets `$1A63`, which makes the note-start
+loader skip its two start loads (`$1335 LDA $1A63 / BNE $1346`); step, limits
+and direction are still loaded from the record. Sun_Never_Shines' voice-0
+filter record (record 8, program `24 91 00 AE 4F 06 03 80`) takes it on all of
+its notes (621 in 180 s, 71 distinct values, 83% of them nowhere near the
+record's own `$24`), so a table row, one value per instrument, started 515 of
+them on the wrong cutoff and `cfrm` read 25%. Under the option the value is
+the data byte of the note's row, a marker (command 0) that every pass wanting
+the command column displaces; `goatwriter.filters.finalize_start_cutoffs`
+turns what survives into `CMD_SETFILTERCUTOFF` as the last act of `build_sng`.
+The routing's `CMD_SETFILTERCTRL` takes a note row before the cutoff does and
+moves the cutoff to the note's first hold row when that is free (a row late,
+not lost): writing the cutoff first moved 594 `B` rows onto voice 1's hold
+rows, where a command silences the instrument vibrato (travel .983 -> .970,
+route .988 -> .984). The record's table loses its cutoff row (it would
+overwrite the command a tick later) and runs the first leg at the player's
+fractional step: `$00AE` is 0.68 of a high-byte step a frame, which the
+one-row leg rounded to 1 (`cut` 1.02 -> 1.05 with the starts alone); a cycle of
+two stepping calls in three gives 0.667 (`_ilv_first_leg_fractional`). The
+file's other filtered record reloads its own start at every note and so keeps
+the full ping-pong the `$87` rule had withheld from the whole file. Measured at
+v0.5.676 (a3792d2), `-t 180 --presets --sound`, Sun_Never_Shines: `cfrm`
+.2527 -> .8575, `cut` 1.02 -> 1.00, `aud` .9112 -> .9364, `loud` .9769 -> .979;
+every voice register of the 180 s trace is byte-identical, so every pitch,
+gate and wave column is unmoved. Corpus byte-hash: option off moves none of
+89 converted files, forced on moves Sun_Never_Shines alone. What is left of
+`cfrm` is the cutoffs a `B` displaced, one row late (about 2 frames of 10).
+Off by default and per song; nothing is adopted. `tests/test_ilv_start_cutoff.py`
+pins it.
+
 **Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
 *what* is played, so a tune playing the right music 0.78% fast forever scores
 perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is
@@ -4452,6 +4545,59 @@ there — see [`--pace`](MEASURING.md#timing-one-file----pace), which is now the
 use before saying anything about speed. `--calls-per-frame 1` reproduces the
 old numbers. See `python/tools/siddump-rt/README.md`.
 
+## `--release-row` (a gate lead longer than one row)
+
+Goattracker clears the gate `gatetimer` calls before the next row, and
+`gplay.c:334` stops the song when the gatetimer exceeds the channel's tick, so
+no gatetimer reaches a lead of one row (`row_hard_restart` takes it to the row
+itself). W_A_R's player clears the gate on the last tick of every note, 12
+calls (3 frames at -S4) before the next note; its rows are 9 calls, so the
+gatetimer stops at 8 and `gate` read 77%.
+
+The lead is one row **plus** the gatetimer once a KEYOFF stands on the rest row
+before the note: that KEYOFF is fetched `gatetimer` calls before its own row
+and clears the gate there. `--release-row` writes the KEYOFF on the rest row
+before each note and sets the gatetimer of the instruments it releases to
+`lead - row`, where the lead is `--hard-restart-frames` x multiplier calls and
+must lie strictly between one row and two. Only a free REST row before a
+non-tied note is taken, only where the track's own row is the instrument's, and
+a pattern its positions want differently is copied (`goatwriter/release_row.py`,
+run on the finished song).
+
+Per song, off by default, and **a measured choice, not a default**: at
+`-t 180` W_A_R `gate` 77% -> 99% with `--hard-restart-frames 3`, and Lion_Heart
+88.8% -> 93.9% and Dragons_Lair_Part_II 48.7% -> 55.1% likewise, but the same
+option costs ACE_II, Deep_Strike, Food_Feud, Go_Go_Dash,
+Kings_of_the_Beach_ingame, Las_Vegas_Video_Poker, Lightforce, Shockway_Rider
+and Thanatos 8-16 points of the `gate` they already had, and Saboteur_II's
+`melody` falls 100% -> 83% (v0.5.676, historical; the cause on those files is
+not isolated).
+
 [`presets.json`](../presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.
+
+## `--drum-alt-sweep` (`--drum-alt-fall` for a record whose budget declined it)
+
+W_A_R_Preview's `$0A09` record (`00 08 41 0A 09 00 00 03`, voice 2, 96 hits in
+180 s) sets bit $01 (the drum) and bit $02 (the every-other-frame waveform),
+so the player runs both blocks: the waveform alternates `40 / 80` while the
+frequency high byte falls `$106E -> $0F6E -> $0E6E -> $0D6E -> $0C6E`, one
+`$0100` a frame for four frames on every hit. Ours held `$106E`: voice 2's whole
+travel (98,304 of the original's 481,870 against 0 of ours), 60% of the file's
+`travel` 0.66x (`--diagnose`, `-t 180`).
+
+`--drum-alt-fall` already emits exactly this shape
+(`attack._wave_alternate_entries(sweep=)`), but holds
+`attack.ALT_FALL_HEADROOM` (20) entries back in the record's budget, and this
+record's budget is 36-42 entries, so it declined. `--drum-alt-sweep` is the
+same mechanism with the headroom set to 0 (`sweep_headroom`): one mechanism,
+not a second emitter. The headroom guarded W_A_R, whose whole wavetable is at
+254 of 255 rows, so `convert` takes the option only where the plain conversion
+leaves `DRUM_ALT_SWEEP_ROOM` (32) rows free (W_A_R_Preview: 114) and returns
+the plain bytes otherwise. Per song, off by default; W_A_R_Preview ships it.
+
+Measured at v0.5.681, `-t 180 --presets --sound`: travel .66 -> .87 (voice 2 now
+98,304, the original's), tie .95 -> .97, tiefr 91% -> 93%, cents 95% -> 96%,
+aud 92% -> 93%; no printed column falls. Corpus byte-hash: 1 of 89 moved
+(W_A_R_Preview), Lightforce's bytes unchanged. `tests/test_drum_alt_sweep.py`.
 

@@ -145,6 +145,10 @@ def _sun(**over):
     from songview import parse_sng
     doc = json.loads((REPO / "presets.json").read_text("utf-8"))
     opts = F._preset_opts(doc, "Sun_Never_Shines.sid")
+    # Sun ships with `ilv_start_cutoff` on, which drops record 8's cutoff row
+    # (tests/test_ilv_start_cutoff.py pins that); this file's table-layout
+    # claims are about the routing without it.
+    opts["ilv_start_cutoff"] = False
     opts.update(over)
     assert opts.get("ilv_filter_routing"), opts
     lines = []

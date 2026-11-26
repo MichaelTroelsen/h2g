@@ -372,16 +372,28 @@ def test_a_note_too_short_to_sweep_gets_no_sweep():
 
 
 def test_the_duration_bound_only_ever_shortens_the_sweep():
-    # A long note leaves more room than the pitch bound allows, so the record
-    # is written exactly as it was -- and so is one with no measured note.
+    # A record with no measured note is written exactly as it was, capped at
+    # DRUM_MAX_SWEEP_STEPS.
     plain = _entries(DRUM, effects=True, drum=True, wave=0x41,
                      min_notes={2: 44}, budget=64)
-    for kw in ({"note_rows": {2: 40}, "row_calls": 3},   # far more room
-               {"note_rows": {}, "row_calls": 3},        # nothing measured
+    for kw in ({"note_rows": {}, "row_calls": 3},        # nothing measured
                {"note_rows": {3: 2}, "row_calls": 3},    # another instrument
                {"note_rows": {2: 4}, "row_calls": 0}):   # no tempo known
         assert _entries(DRUM, effects=True, drum=True, wave=0x41,
                         min_notes={2: 44}, budget=64, **kw) == plain
+    # A long note leaves more room than the pitch bound allows. At -S1 the
+    # record then keeps the pitch bound, past the cap (the cap stands in for
+    # the measured number, `test_drum_sweep_uncap_s1.py`); above -S1 it is
+    # written exactly as it was.
+    long_note = {"note_rows": {2: 40}, "row_calls": 3}
+    assert _entries(DRUM, effects=True, drum=True, wave=0x41,
+                    min_notes={2: 44}, budget=64, multiplier=2,
+                    **{"note_rows": {2: 40}, "row_calls": 6}) == _entries(
+        DRUM, effects=True, drum=True, wave=0x41, min_notes={2: 44},
+        budget=64, multiplier=2)
+    deep = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                    min_notes={2: 44}, budget=64, **long_note)[0]
+    assert deep.count(WAVECMD_PORTADOWN) > plain[0].count(WAVECMD_PORTADOWN)
 
 
 def test_the_duration_bound_is_in_calls_so_it_scales_with_the_multiplier():

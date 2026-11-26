@@ -118,6 +118,7 @@ Each option's behaviour, and the measurement behind it, is in
 - [`--no-test-restart` (the silent frame on every note)](docs/OPTIONS.md#--no-test-restart-the-silent-frame-on-every-note)
 - [`--aligned-firstwave` (the init call's gate on the pitch's frame)](docs/OPTIONS.md#--aligned-firstwave-the-init-calls-gate-on-the-pitchs-frame)
 - [`--rest-wave-silence` (the rest that parks a waveform)](docs/OPTIONS.md#--rest-wave-silence-the-rest-that-parks-a-waveform)
+- [`--release-row` (a gate lead longer than one row)](docs/OPTIONS.md#--release-row-a-gate-lead-longer-than-one-row)
 - [`--rest-envelope-silence` (the rest that zeroes the envelope)](docs/OPTIONS.md#--rest-envelope-silence-the-rest-that-zeroes-the-envelope)
 - [One subtune's tempo reaching another's clock (fixed v0.5.330)](docs/OPTIONS.md#one-subtunes-tempo-reaching-anothers-clock-fixed-v05330)
 - [`--wide-hard-restart` (two thirds of the row, not half)](docs/OPTIONS.md#--wide-hard-restart-two-thirds-of-the-row-not-half)

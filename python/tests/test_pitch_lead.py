@@ -162,11 +162,15 @@ def _unled_row0(blob: bytes) -> list:
 
 
 @needs_corpus
-def test_monty_every_row0_drum_is_led():
+def test_monty_every_row0_drum_is_led(monkeypatch):
     """Monty's residue after the in-place row-0 lead was 26 patterns followed
     by different row-0 notes and a repeat (voice 2, `$D7 02`: pattern 2 eight
     times, ending `BD 17 00 00`) into its own row-0 drum (the 0:38 hit). The
     copies and the split lead every one, within MAX_PATTERNS."""
+    # The lead's 52 copies (154 -> 206 patterns) are this test's subject;
+    # `fetch_restart`'s three would take them past the 208 cap.
+    from h2g.goatwriter import fetch_restart
+    monkeypatch.setattr(fetch_restart, "ENABLED", False)
     opts = _monty_opts()
     plain = _quiet(CORPUS / MONTY, **opts)
     got = _quiet(CORPUS / MONTY, **dict(opts, pitch_lead_tie=True))

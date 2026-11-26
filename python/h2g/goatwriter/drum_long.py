@@ -17,6 +17,26 @@ waveform with the gate bit cleared, held for the `multiplier` calls of the
 player's first sweeping frame (it stores the value it loaded: no change) --
 then a jump into one shared chain of `CMD_PORTADOWN` steps ending in a stop,
 entered `(L - 2) * row_calls - multiplier` entries before the stop.
+
+**-S1** (Geoff_Capes_Strongman_Challenge, rows of 3 calls): the same plan with
+two differences. The decline is not the record's MEDIAN but its own program's
+sweep -- the `CMD_PORTADOWN` entries `_drum_entries` laid, two at most on the
+five-entry layout (`own_sweep`) -- against what THIS note leaves the player
+room for (`(L - 2) * row_calls - 1` frames: a four-row note is Commando's five
+steps, an eight-row one runs to the high byte's floor); Geoff's records are
+played at four rows and eight, so every note after the first two steps went
+unswept. And the head opens on the noise the row's first call lands in: the
+row after the drum note starts `row_calls - 1` frames after the attack's
+visible frame (the init call writes only `$D404`), the noise tick runs
+`_noise_tick_frames` frames from the one after it, so the first `tick -
+(row_calls - 2)` calls of the head are still the noise. `drum_fall_loop` is
+not planned at -S1.
+
+Not calibrated for rows that are not a whole number of frames, and off by
+default per song for that reason: forced on (v0.5.674, `-t 180`, presets,
+`--sound`) Crazy_Comets (-S1, rows of 2.75 frames) reads depth .767 -> .673,
+travel .991 -> 1.084, aud .9251 -> .9240; Human_Race aud .9193 -> .9185;
+Chimera tie .756 -> .745. Geoff_Capes is the file it was built for.
 """
 from __future__ import annotations
 
@@ -32,9 +52,12 @@ from .counter_fall import _visits
 from .drum_fall import DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR
 from .constants import DRUM_MAX_SWEEP_STEPS
 from .primitives import _gate_calls, _note_freq
-from .wavetable import _drum_speed, _drum_speed_index
+from .wavetable import (_drum_speed, _drum_speed_index, _drum_tick_noise,
+                        _noise_tick_frames)
 
 GT_END_PATTERN = 0xFF
+# Where a record's own program stops reading for `own_sweep`.
+OWN_SWEEP_WINDOW = 24
 # The arpeggio block runs after the drum and rewrites the frequency.
 DRUM_LONG_EXCLUDED = DRUM_FALL_EXCLUDED | 0x04
 MIN_UNITS = 3
@@ -77,19 +100,40 @@ def drum_long_records(sid: SidFile, det: Detection, records: int) -> Set[int]:
     return out
 
 
+def own_sweep(entries: List[tuple], start: int) -> int:
+    """`CMD_PORTADOWN` steps the record's own wavetable program (laid by
+    `_drum_entries`) takes from wavetable row `start`, 1-based, until its stop
+    or jump; 0 where the program is unknown."""
+    if not entries or start < 1:
+        return 0
+    n = 0
+    for left, _right in entries[start - 1:start - 1 + OWN_SWEEP_WINDOW]:
+        if left == WAVECMD_PORTADOWN:
+            n += 1
+        elif left == GT_END_PATTERN or left == GT_WAVE_JUMP:
+            break
+    return n
+
+
 def drum_long_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                    instr_used: int, fmt: str, multiplier: int,
                    gate_skip: Optional[int], speed_table: List[tuple],
                    wave_used: int, row_calls: int,
                    note_rows: Optional[dict], log=None,
-                   plain: bool = True, loop: bool = False
+                   plain: bool = True, loop: bool = False,
+                   wave_entries: Optional[List[tuple]] = None,
+                   wave_starts: Optional[List[int]] = None,
+                   play_groups: Optional[dict] = None
                    ) -> Optional[DrumLongPlan]:
-    # Calibrated at -S2 and above only: HOLD_EXTRA is a call, and at -S1 a call
-    # is a whole frame -- Crazy_Comets (-S1, rows of 2.75 frames) lost 12 noise
-    # frames to a head entered a frame early.
+    # -S1 needs the record's own program (`own_sweep`), so it is planned only
+    # where the caller hands the table over, and without the loop half.
     if (not det.effect_drum or fmt != FORMAT_GTS5 or not note_rows
-            or multiplier < 2):
+            or multiplier < 1
+            or (multiplier < 2 and (wave_entries is None
+                                    or wave_starts is None))):
         return None
+    if multiplier < 2:
+        loop = False
     records = drum_long_records(sid, det, max(instr_used - lead, 0))
     if not records:
         return None
@@ -112,6 +156,20 @@ def drum_long_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
     data = sid.data
     gate_off = {i + lead + 1: (data[det.instr_start + i * det.instr_stride + 2]
                                & 0xFE) or 0x80 for i in records}
+    noise = {i + lead + 1: _drum_tick_noise(
+        data[det.instr_start + i * det.instr_stride + 2], multiplier)
+        for i in records}
+    # -S1: how many of the head's calls are still the noise tick, per record
+    # (its own subtunes' speed gate, as the table's tick is sized).
+    lead_noise: Dict[int, int] = {}
+    own: Dict[int, int] = {}
+    if multiplier < 2:
+        for g in numbers:
+            tick = _noise_tick_frames(sid, det, (play_groups or {}).get(g))
+            lead_noise[gate_off[g]] = max(
+                0, min(tick - (row_calls - 2), m + HOLD_EXTRA - 1))
+            own[g] = (own_sweep(wave_entries, wave_starts[g - 1])
+                      if 0 < g <= len(wave_starts) else 0)
     asks: List[Tuple[int, int, int, int]] = []   # (pattern, row, wave, steps)
     # (pattern, head row, stop row or None, calls, wave): a note the record's
     # own program cannot carry the whole fall of (`_long_fall`).
@@ -159,8 +217,12 @@ def drum_long_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
             if length < MIN_UNITS:
                 no("shorter than three rows")
                 continue
-            if med is None or med >= MIN_UNITS or length <= med:
-                no("the record's own program already sweeps")
+            if multiplier >= 2:
+                if med is None or med >= MIN_UNITS or length <= med:
+                    no("the record's own program already sweeps")
+                    continue
+            elif med is None:
+                no("record's length unmeasured")
                 continue
             nxt = rows[r + 1]
             if nxt[2] or nxt[3]:
@@ -176,11 +238,15 @@ def drum_long_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
             if calls < 1:
                 no("no fall at this pitch")
                 continue
+            if multiplier < 2 and calls <= own.get(cur, 0):
+                no("the record's own program already sweeps")
+                continue
             asks.append((p, r + 1, gate_off[cur], calls))
     if not asks and not loops:
         if log and declined:
             log(f"Drum long sweep.........: 0 rows ({declined})")
         return None
+    noise_of = {gate_off[g]: noise[g] for g in numbers if g in noise}
     entries: List[Tuple[int, int]] = []
     first = wave_used + 1
     at_head: Dict[Tuple[int, int], int] = {}
@@ -198,7 +264,9 @@ def drum_long_plan(sid: SidFile, det: Detection, tracks, patterns, lead: int,
                    + [(GT_WAVE_JUMP, 0x00)])
         for w, k in heads:
             at_head[(w, k)] = first + len(entries)
-            entries += [(w, GT_WAVE_NO_NOTE)] * (m + HOLD_EXTRA)
+            ln = lead_noise.get(w, 0)
+            entries += [(noise_of.get(w, w), GT_WAVE_NO_NOTE)] * ln
+            entries += [(w, GT_WAVE_NO_NOTE)] * (m + HOLD_EXTRA - ln)
             entries += [(GT_WAVE_JUMP, stop - min(k, chain))]
     out = [list(pat) for pat in patterns]
     for p, row, w, k in asks:

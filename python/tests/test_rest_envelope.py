@@ -183,15 +183,24 @@ def test_both_options_share_the_event_instead_of_competing():
     rest_envelope: SETSR`, so a conversion asking for both got the waveform
     park and the envelope write was dropped without a word -- measured
     byte-identical to wave-only on ACE_II, Monty, Thundercats and
-    Shockway_Rider. A row has one command column, so the three writes are
-    spread by audibility: the release rate on the rest row, the parked
-    waveform and then the AD half on the hold rows.
+    Shockway_Rider. A row has one command column, so the writes are spread
+    over TWO rows, the park first: the original's rest handler writes the
+    stored waveform, SR and AD on ONE call, the park (`$08`, TEST) is what
+    silences the oscillator whatever the release rate then is, and it is the
+    write the `hold` column reads (Thundercats hold 0.91 -> 1.00, Auf_
+    Wiedersehen_Monty ctrl 0.67 -> 0.99; note-end-08-write-auf-thundercats).
+    The AD half is NOT spelt in the pattern: a third command row pushed the
+    regrid tempo pair one row later (Auf_Wiedersehen_Monty pattern 168: rows
+    3/4 -> 4/5) and one attack arrived a frame early (onset_timing_early
+    0 -> 1, cutoff_frame .99898 -> .99721); the park program (or, for a rest
+    that takes it, the SETSR's row turned into SETAD) carries it
+    (thundercats-wave-9865-9848-and-auf-wiedersehen).
     """
     rows = _rows(_decode([0x42], rest_keyoff=True, rest_wave=True,
                          rest_envelope=True))
-    assert rows[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00), "the audible half, row 0"
-    assert rows[1] == (GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE), rows[1]
-    assert rows[2] == (GT_NO_NOTE, 0, CMD_SETAD, 0x00), rows[2]
+    assert rows[0] == (GT_KEYOFF, 0, CMD_SETWAVE, REST_SILENT_WAVE), "the park, row 0"
+    assert rows[1] == (GT_NO_NOTE, 0, CMD_SETSR, 0x00), rows[1]
+    assert rows[2] == (GT_NO_NOTE, 0, 0, 0), "no third command row"
 
 
 def test_a_short_rest_drops_from_the_end_not_from_the_front():
@@ -200,13 +209,13 @@ def test_a_short_rest_drops_from_the_end_not_from_the_front():
     rest, while the parked waveform and the release rate are both audible."""
     one = _rows(_decode([0x41], rest_keyoff=True, rest_wave=True,
                         rest_envelope=True))
-    assert one[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00)
-    assert one[1] == (GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE), one[1]
+    assert one[0] == (GT_KEYOFF, 0, CMD_SETWAVE, REST_SILENT_WAVE)
+    assert one[1] == (GT_NO_NOTE, 0, CMD_SETSR, 0x00), one[1]
     assert one[2][0] == 0xFF, "no second hold row, so no AD"
 
     none = _rows(_decode([0x40], rest_keyoff=True, rest_wave=True,
                          rest_envelope=True))
-    assert none[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00)
+    assert none[0] == (GT_KEYOFF, 0, CMD_SETWAVE, REST_SILENT_WAVE)
     assert none[1][0] == 0xFF, "no hold row at all"
 
 

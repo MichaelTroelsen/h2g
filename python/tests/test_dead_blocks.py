@@ -329,12 +329,16 @@ def test_the_last_v8s_skydive_fits_compact_without_sharing_any_tail(name,
     # table is 2 rows shorter, W_A_R_Preview frees 2 fewer; the passes still
     # spend what is freed). W_A_R_Preview 134 -> 132 at v0.5.661, when
     # `goatwriter.drum_unit` gave its drum records the original's 3-frame
-    # first unit (one more gate row each, so 2 fewer rows free).
-    ("Hunter_Patrol", "17 record(s)", "85 of 180 rows freed",
+    # first unit (one more gate row each, so 2 fewer rows free). 132 of 255
+    # -> 119 of 254 at `drum_alt_sweep` (v0.5.681 + the swept fall: the
+    # table is a row shorter and 13 fewer rows free).
+    # Hunter_Patrol 180 -> 183 when the -S1 drum sweep stopped being cut at
+    # DRUM_MAX_SWEEP_STEPS (tests/test_drum_sweep_uncap_s1.py): three more rows.
+    ("Hunter_Patrol", "17 record(s)", "85 of 183 rows freed",
      ("Skydive (bit $02)", "5 program(s)")),
     ("Gremlins", "11 record(s)", "55 of 174 rows freed",
      ("Skydive (bit $02)", "7 program(s)")),
-    ("W_A_R_Preview", "20 record(s)", "132 of 255 rows freed",
+    ("W_A_R_Preview", "20 record(s)", "119 of 254 rows freed",
      ("Past-table wave split", "play one of 1 pinned copy(ies)")),
     # 2 merged before the swell's phase plan (`goatwriter.swell_phase`),
     # whose phasers and prefixes take blocks of their own: 19 since.
@@ -411,15 +415,17 @@ def test_a_cut_note_block_moves_with_the_rows_dropped_before_it(monkeypatch):
     go: they relocate like every other start. No corpus file has both a cut
     block and a dead record, so the first record of Auf_Wiedersehen_Monty is
     declared dead (and the revival check silenced) and every pointer command
-    must still land on the program it landed on."""
+    must still land on the program it landed on. `rest_wave_silence` is
+    shipped on for Monty; it is passed False here so the pointer set under
+    comparison is the cut-note pass's alone, as when this was written."""
     name = "Auf_Wiedersehen_Monty"
-    plain, _ = _convert(name)
+    plain, _ = _convert(name, rest_wave_silence=False)
     ref = songview.parse_sng(plain)
     _progs, ref_ptrs, _named = _plays(ref)
     assert ref_ptrs, "the cut-note pass wrote no pointer command here"
     monkeypatch.setattr(D, "dead_records", lambda *a, **k: [0])
     monkeypatch.setattr(D, "named_records", lambda *a, **k: frozenset())
-    sng, lines = _convert(name)
+    sng, lines = _convert(name, rest_wave_silence=False)
     (msg,) = [m for m in lines if m.startswith("Dead wavetable blocks")]
     assert "1 record(s)" in msg
     song = songview.parse_sng(sng)

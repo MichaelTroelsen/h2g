@@ -171,10 +171,11 @@ from .attack import (_counter_gate_restore_call, _fixed_attack_note,
                      _two_stage_pitch_seq_entries, _voice_two_stage_entries,
                      _wave_alternate_entries, _wave_block_calls,
                      ALT_FALL_HEADROOM, CHAIN_USED, TWO_STAGE_CHAIN, TWO_STAGE_CHAIN_MAX,
-                     _stage_delay_chain)  # noqa: F401
+                     ZERO_WAVE_LEAD, _stage_delay_chain)  # noqa: F401
 from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     build_pulse_phase_table, _chained_phases, _lay_out_pulse,
                     _build_pulse_phase_table, _rest_rows,
+                    _build_pulse_phase_table_once, _shed_for_played,
                     _lay_attack_or_plain, _lay_pulse_phase_pass,
                     _lay_pulse_phase_table, _cost, _score, _stalled,
                     _leg_ramps, HOLD, HOLD_THEN, HOLD_WAIT, hold_direction, hold_steps, hold_then, hold_wait, hold_rest, is_hold, resume_phase,
@@ -220,6 +221,8 @@ from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       _classic_clearing_instruments, _filter_entries,
                       CLASSIC_CLEAR_MULTI_VOICE,
                       _filter_step_per_call, _highest_instrument_referenced,
+                      _fractional_period_rows, _fractional_sweep_applies,
+                      FRACTIONAL_SWEEP_TOLERANCE,
                       _ilv_clearing_instruments, _ilv_filter_entries,
                       _ilv_filter_passband, ilv_filter_routing_plan, _skipped,
                       _ilv_programs, _ilv_routed_records, _ilv_routing_walk,
@@ -229,6 +232,11 @@ from .filters import (_clamp_frames, _clamped_block, _free_running_block,
                       ILV_SWEEP_MAX_STEP, ilv_start_cutoffs, ilv_hold_period,
                       ilv_hold_anchors, _ilv_hold_sweep, _hi_trajectory,
                       ILV_HOLD_ROWS, ILV_HOLD_ENABLED, ILV_HOLD_SHARE,
+                      ilv_filter_voices, ilv_filter_voice_mute,
+                      ilv_start_cutoff_command_records, _cutoff_rows,
+                      strip_start_cutoff_markers, finalize_start_cutoffs,
+                      _marker_note, START_CUTOFF_ENABLED,
+                      _ilv_first_leg_fractional,
                       _instruments_named_per_voice, _run_length_rows,
                       _sfx_bandpass_block, sfx_bandpass_plan,
                       sfx_drum_hit_lattice, _write_filtertable)  # noqa: F401
@@ -237,6 +245,8 @@ from .classic_filter_stop import (apply_stops, classic_filter_stops,
 from .exact_step import (DRIFT_FLOOR, EXACT_FRAME_STEP,  # noqa: F401
                          EXACT_STEP_WINDOWS, PHASE_GATE, exact_step_rows,
                          fractional, phase_free, wanted)
+from .fetch_restart import (SLOPE_TOLERANCE, TIES, classic_fetch_restarts,  # noqa: F401
+                            slope_true, untrue_slope_pointers)
 from .note_passes import (_attack_hold_pass, _attack_hold_records,
                           _cut_durations, _cut_note_pass,
                           _duration_gate_pass,
@@ -291,6 +301,9 @@ from .swell_phase import (SWELL_TRIANGLE_SHAPE, SWELL_PREFIXES,  # noqa: F401
                           plan_gate)
 from .rest_reseed import (_rest_reseed_pattern, _rest_reseed_plan,
                           rest_pulse_reseeds)  # noqa: F401
+from .release_row import (instrument_release_ticks, release_calls,  # noqa: F401
+                          release_row_keyoffs, release_row_plan,
+                          release_ticks, _release_walk)
 from .rest_wave_restart import (ALTERNATE_BIT, REST_RESTART_DELAY,
                                 alternating_records, restart_block,
                                 rest_wave_restarts)  # noqa: F401
@@ -298,7 +311,9 @@ from .rest_two_stage import (REST_REACH, REST_TWO_STAGE_DELAY,  # noqa: F401
                              TWO_STAGE_BIT, _ENDS, _LEN, _plain_two_stage,
                              rest_reaches_stage_count, rest_two_stages,
                              two_stage_block, two_stage_records)
-from .rest_park import (CMD_SETWAVE, REST_SILENT_WAVE, lagged_instruments,
+from .rest_park import (CMD_SETWAVE, REST_PARK_ENV_FULL_PROGRAM,
+                        REST_SILENT_WAVE, _hold_sr_to_ad,
+                        lagged_instruments, vibrato_instruments,
                         program_instruments, programmed_instruments,
                         rest_park_pass, rest_park_plan,
                         rest_wave_rows)  # noqa: F401
@@ -351,8 +366,9 @@ from .wave_program import (PAIR_ENDS_FRAME, SLIDE_CUT_SHARE,
                            _wave_program_travel_entry, _wave_program_travels,
                            _wave_set_note_byte,
                            _wave_tail_wrapped_note_byte)  # noqa: F401
-from .wavetable import (_alt_drum_sweep, _drum_duration_steps, _drum_entries,
-                        _drum_max_steps,
+from .wavetable import (DRUM_SWEEP_UNCAP_S1, DRUM_RISE_FIRST_FRAME, DRUM_RISE_STEP_FRAMES, _DRUM_RISE,
+                        _alt_drum_sweep, _drum_duration_steps, _drum_entries,
+                        _drum_max_steps, _drum_rise_step_calls,
                         _drum_speed_index, _drum_sweep_hold, _drum_tick_noise,
                         _entered_record_block, _loop_of,
                         _noise_tick_frames, _real_unit_frames,
@@ -418,8 +434,9 @@ from .drum_fall import (DRUM_FALL_EXCLUDED, DRUM_FALL_FLOOR,
                         drum_gate_records, fall_steps,
                         short_head_patterns)  # noqa: F401
 from .drum_long import (DRUM_LONG_EXCLUDED, GT_END_PATTERN, HOLD_EXTRA,  # noqa: F401
-                        LONG_FALL_QUARTERS, MIN_UNITS, DrumLongPlan,
-                        _long_fall, drum_long_plan, drum_long_records)
+                        LONG_FALL_QUARTERS, MIN_UNITS, OWN_SWEEP_WINDOW,
+                        DrumLongPlan, _long_fall, drum_long_plan,
+                        drum_long_records, own_sweep)
 from .drum_held import (HELD_GATES, LOOP_VARIANT_ROWS, OVERLAY,  # noqa: F401
                         PATTERN_RESERVE, VARIANT_ROWS, ZERO_FILL,
                         DrumHeldPlan, _INDEXED_REACH, _ZP_INDEXED,

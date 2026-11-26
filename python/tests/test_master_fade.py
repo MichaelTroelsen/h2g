@@ -18,6 +18,7 @@ from corpus import CORPUS, needs_corpus
 from h2g import patterns as P
 from h2g.convert import _master_fade_positions, convert
 from h2g.detect import detect, find_master_fade, master_fade_is_fetch
+from h2g.goatwriter.constants import CMD_SETFILTERPTR
 from h2g.sidfile import load_sid
 
 REPO = Path(__file__).resolve().parents[2]
@@ -106,10 +107,21 @@ def test_the_fade_steps_down_one_level_per_position():
 def test_a_fading_pattern_is_a_copy_of_the_one_it_replaces():
     off, on = _sanxion(False), _sanxion(True)
     levels = _levels(on)
+
+    def bare(pattern):
+        """Without the filter pointers (`CMD_SETFILTERPTR`, a stop's 0 or a
+        restart's `fetch_restart` pointer) each position takes by its own
+        plan: they are not what a fade copy is a copy of."""
+        out = list(pattern)
+        for r in range(0, len(out), 4):
+            if out[r + 2] == CMD_SETFILTERPTR:
+                out[r + 2] = out[r + 3] = 0
+        return out
+
     for p in levels:
         pat = list(on.patterns[p])
         pat[2] = pat[3] = 0
-        assert any(list(q) == pat for i, q in enumerate(on.patterns)
+        assert any(bare(q) == bare(pat) for i, q in enumerate(on.patterns)
                    if i not in levels), "a fade copy matches no ordinary pattern"
     assert len(on.patterns) >= len(off.patterns) + 15
     assert len(on.patterns) <= P.MAX_PATTERNS

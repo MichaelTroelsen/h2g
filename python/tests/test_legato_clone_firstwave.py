@@ -70,8 +70,9 @@ def test_trans_atlantic_clones_leave_the_waveform_to_the_wavetable():
     pairs = _clones(song)
     # 6 until v0.5.550, whose room-aware pitch-seq phase clones add two more
     # legato clones (Trans-Atlantic gets 5 phase clones there); every one of
-    # the 8 still leaves its waveform to the wavetable.
-    assert len(pairs) == 8
+    # the 8 still leaves its waveform to the wavetable. 9 since v0.5.683,
+    # when its preset took `vibrato_phase` (one more legato clone).
+    assert len(pairs) == 9
     for clone, base in pairs:
         # The testbit, or since v0.5.588 (its preset names 1..62 in
         # `gate_off_firstwave_instruments`) the record's waveform with the

@@ -631,9 +631,13 @@ def test_the_bounds_engine_has_a_sim_and_a_walk():
     assert "class PulseBoundsSim" in gw and "def pulse_bounds_sims" in gw
     assert "sims = pulse_phase_sims(sid, det, lead) or bounds_sims" in conv, (
         "convert.py no longer hands the walk the bounds sims")
-    assert "and det.pulse_tri_hi < 0 and pulse_reseed_gated(sid)" in conv, (
+    assert ("and det.pulse_tri_hi < 0\n"
+            "                   and (pulse_reseed_gated(sid)\n"
+            '                        or det.pattern_dialect == "ilv")') in conv, (
         "the bounds sims reach the walk on a player whose reseed test has "
-        "not been read; see goatwriter.PULSE_RESEED_GATE")
+        "not been read; see goatwriter.PULSE_RESEED_GATE (the ILV dialect is "
+        "the second arm: its free rows come from `$88` and the duration tie, "
+        "tests/test_pulse_phase_ilv.py)")
     assert "free_rows=bool(bounds_sims))" in conv, (
         "convert_patterns is not asked for the bit-7 rows where the walk runs")
     assert ("if sim.RESEEDS and not (r in free and known):\n"

@@ -197,10 +197,13 @@ def test_clones_after_the_records_are_renumbered_not_dropped(name,
                                                              monkeypatch):
     """Files whose clones (appended after the source records) sit above a
     dropped record: each clone keeps its bytes and its rows follow it."""
-    if name == "Hunter_Patrol.sid":
+    if name in ("Hunter_Patrol.sid", "Zoids.sid"):
         # The rows its dead blocks free let 3 more skydive programs in
         # (speed table rows too), so on and off are no longer one song; the
-        # renumbering is what is under test here.
+        # renumbering is what is under test here. Zoids since its -S1 drum
+        # sweep stopped being cut at DRUM_MAX_SWEEP_STEPS (5 more rows,
+        # tests/test_drum_sweep_uncap_s1.py): the rows the drop frees now let
+        # a skydive program in.
         import h2g.goatwriter.dead_blocks as DB
         monkeypatch.setattr(DB, "plan_dead_blocks", lambda *a, **k: None)
     off = _convert(name)

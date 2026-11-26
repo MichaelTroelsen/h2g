@@ -61,7 +61,8 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
                            row_calls: int = 0,
                            gate_skip: Optional[int] = None,
                            dwell: bool = False,
-                           depth_extra: int = 0) -> Optional[tuple]:
+                           depth_extra: int = 0,
+                           round_up: bool = False) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the $78/$07 format.
 
     The mapping is close to literal because both sides express the depth the
@@ -418,6 +419,14 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
         half = half * (row_calls - 1) / row_calls
     # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
     # shortest is two calls (cmp 0), which is what the clamp gives.
+    if round_up:
+        # The tick-0 compensation above scales `half` by (row_calls - 1) /
+        # row_calls, and `round` then takes the fraction off the swing: the
+        # swing is `(cmp + 2) * speed`, and `speed` is a whole shift, so the
+        # depth cannot be paid back there. Rounding the half-period UP
+        # (`vibrato_round_up`) buys it back from the rate instead: Delta's
+        # `$23` at -S2 over 5-call rows is `half` 6.4, 6 -> 7 calls.
+        half = math.ceil(half - 1e-9)
     cmp_value = min(0x7F, max(0, round(half) - VIBRATO_CMP_BIAS))
     if depth_extra:
         # The depth loop shifts `shift + 1` times, so the player's depth is
@@ -1228,8 +1237,13 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     instr_row_calls: Optional[dict] = None,
                     table_span: bool = False,
                     skip: frozenset = frozenset(),
-                    early_delay: bool = False) -> dict:
+                    early_delay: bool = False,
+                    round_up: bool = False) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    `round_up` is `convert(vibrato_round_up=)`: the classic entry's
+    half-period rounds up where the tick-0 compensation left a fraction
+    (`_classic_vibrato_entry`). Classic bound/shift players only.
 
     `early_delay` is `convert(vibrato_early_delay=)`: the classic
     oscillator's `vibdelay` floor drops by the one effect call tick 0 does not
@@ -1309,7 +1323,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         offset = det.vibrato_offset
         entry_of = lambda b, i: _classic_vibrato_entry(
             b, mult, row_calls, gate_skip=gate_skip, dwell=det.vibrato_dwell,
-            depth_extra=det.vibrato_shift_extra)
+            depth_extra=det.vibrato_shift_extra, round_up=round_up)
         engine = "bound/shift"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset

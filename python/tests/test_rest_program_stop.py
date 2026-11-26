@@ -143,12 +143,12 @@ def test_a_rest_on_any_other_instrument_is_left_a_plain_keyoff():
 
 def test_a_cleared_rest_gives_the_envelopes_ad_back_its_row():
     """Beside `--rest-envelope-silence` the pattern stage schedules
-    `SETSR` / `SETWAVE` / `SETAD` on three rows. A rest this option does not
+    `SETWAVE` / `SETSR` / `SETAD` on three rows. A rest this option does not
     stop must come out as the envelope option alone has it: SETSR, SETAD."""
     pats, tracks, entries, starts = _song()
     env = _pat((0x60, 2, 0, 0),
-               (KEYOFF, 0, P.CMD_SETSR, 0),
-               (NO_NOTE, 0, SETWAVE, 0x08),
+               (KEYOFF, 0, SETWAVE, 0x08),
+               (NO_NOTE, 0, P.CMD_SETSR, 0),
                (NO_NOTE, 0, P.CMD_SETAD, 0),
                (NO_NOTE, 0, 0, 0))
     new, _ = RP.rest_park_plan([pats[0], env], [[0, 1, 0xFF, 0], [0xFF, 0],

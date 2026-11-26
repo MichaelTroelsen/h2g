@@ -282,16 +282,24 @@ class Detection:
     # that also alternates its waveform (bit $02) carries the drum's
     # high-byte fall inside the alternation program. False by default.
     drum_alt_fall: bool = False
+    # `convert(drum_alt_sweep=...)`: the same fall with no wavetable headroom
+    # held back, taken only where the plain table has room (W_A_R_Preview).
+    drum_alt_sweep: bool = False
     # The drum block spells its decrement `DEC shadow,X` straight after the
     # duration compare (`DRUM_SHADOW_DEC_SHAPE`, Lightforce `$F3E5`), so the
     # FIRST sweeping frame already reaches the chip. Warhawk's spelling stores
     # the value it loaded and decrements after. Set by `_find_drum_shadow_dec`
     # where `effect_drum` matched, False elsewhere.
     drum_shadow_dec: bool = False
-    # `convert(drum_split_tick=...)`, the same carriage: the second and later
-    # noise frames of a ticked nibble-arpeggio record are written gate-off
-    # above -S1 (`ticked_nibble_arp_entries`). False by default.
+    # `convert(drum_split_tick=...)`, the same carriage, now INERT: the split
+    # tick is unconditional (`ticked_nibble_arp_entries`). Nothing reads it.
     drum_split_tick: bool = False
+    # Interleaved records whose every note starts on a `$87 nn mm`, when
+    # `convert(ilv_start_cutoff=...)` is on (`goatwriter.filters.
+    # ilv_start_cutoff_command_records`): their filter table leaves the
+    # cutoff row out and each note's own row carries `CMD_SETFILTERCUTOFF`.
+    # Empty by default, which keeps every conversion byte-identical.
+    ilv_cutoff_cmd: frozenset = frozenset()
     # `{Goattracker instrument: frames its drum notes hold the gate}` for the
     # records the bit-$02 alternation emitter writes under `drum_gate_off`
     # (`goatwriter.drum_unit.drum_first_units`), set by `convert` just before

@@ -669,6 +669,10 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              if det.drum_gate_off and (drum or tick)
                              else None),
                 own_note=own_note,
+                # `drum_alt_sweep` is `drum_alt_fall` with no headroom held
+                # back (`convert` has checked the table's room).
+                sweep_headroom=(0 if det.drum_alt_sweep
+                                else _gw_attack.ALT_FALL_HEADROOM),
                 # Bit $01's stored-waveform fall beside the alternation
                 # (`goatwriter.stored_fall`): Chicken Song record 3 only,
                 # `det.stored_wave_fall` being the one corpus file's block.
@@ -897,7 +901,14 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              written=no_test_restart, gate_skip=gate_skip,
                              sweep=not arp_overwrites_sweep,
                              tick_ratio=getattr(
-                                 det, "drum_tick_ratios", {}).get(i))
+                                 det, "drum_tick_ratios", {}).get(i),
+                             rise_calls=(_drum_rise_step_calls(
+                                 multiplier, gate_skip,
+                                 None if typical is None or not row_calls
+                                 else typical * row_calls)
+                                 if (_DRUM_RISE and arp_overwrites_sweep
+                                     and det.effect_rise
+                                     and (arp_style & 2)) else None))
 
     if drum and not tick:
         if effects:
@@ -1038,7 +1049,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 first_up, first_calls,
                 base_entry,
                 budget,
-                split_tick=det.drum_split_tick, multiplier=multiplier)
+                multiplier=multiplier)
             if shaped is not None:
                 return shaped
         if tick and (hold is not None or arp_half is not None):
@@ -1542,7 +1553,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   written: bool = False,
                   gate_skip: Optional[int] = None,
                   sweep: bool = True,
-                  tick_ratio=None) -> tuple:
+                  tick_ratio=None,
+                  rise_calls: Optional[List[int]] = None) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1612,8 +1624,12 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     rest of the note, while the player stops writing $D404 the moment its
     counter runs out. Measured on the corpus, not argued.
 
-    A record that also sets the rise bit loses the rise here; it needs the same
-    slots. 4 files have the rise routine at all.
+    A record that also sets the rise bit loses the rise here, except where the
+    arpeggio's zero nibble overwrites the sweep (`rise_calls`): the climb
+    then takes the slots the sweep would have. Kentilla $04 is the one such
+    record in the corpus; a drum+rise record with no arpeggio (Kentilla $05,
+    Thrust $13) still loses it, and there the sweep and the rise both write
+    the frequency in the player. 5 files have the rise routine at all.
     """
     # The note opens on noise, for two frames, and then takes the voice's own
     # waveform. That is the `BCC` branch at Warhawk $1385 -> $1397: it fires
@@ -1721,8 +1737,21 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # `budget` is how many entries this record may occupy in total; the
         # caller shrinks it when the 255-entry table is running out. Below the
         # fixed five it changes nothing, so a file with room behaves as it did.
+        held = _drum_duration_steps(note_rows, row_calls, multiplier,
+                                    gate_skip, tick_ratio)
+        # The corpus-wide cap (DRUM_MAX_SWEEP_STEPS) stands in for `held`;
+        # where the record's own notes are measured, `held` is applied below
+        # and the cap would only truncate a sweep the player really makes
+        # (Zoids' record 12: 8 steps against the original's 12, held 17).
+        # Only at -S1: `_drum_duration_steps` is checked against the original
+        # there (Commando's 106 sweeps of exactly 5), while above it the
+        # lifted sweep runs a step or two past the original's (Rasputin
+        # voice 1: 12 against 11) and Formula_1_Simulator's 90 steps fill
+        # its table, losing it tie blocks (melody 100% -> 98%).
         want = _drum_max_steps(min_note, multiplier, gate_skip,
-                               capped=tick_ratio is None)
+                               capped=(tick_ratio is None
+                                       and (held is None or multiplier > 1
+                                            or not DRUM_SWEEP_UNCAP_S1)))
         prefix = left[:-1] if left[-1] == 0xFF else list(left)
         # strip the padding the tick block added, keeping the tick itself
         while len(prefix) > 1 and prefix[-1] == 0xFF:
@@ -1743,11 +1772,10 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # ... and no deeper than a note of this record's own typical length
         # gives the player frames to sweep in. The pitch bound above says how
         # far a chain *may* fall; this says how far the original's own block
-        # gets to before the note ends. Only ever a reduction, so a record
-        # whose notes are long enough -- or one with no measured note at
-        # all -- is written exactly as it was.
-        held = _drum_duration_steps(note_rows, row_calls, multiplier,
-                                    gate_skip, tick_ratio)
+        # gets to before the note ends. Only ever a reduction of `want`, so
+        # a record with no measured note at all is written exactly as it
+        # was; one whose notes are long enough keeps the pitch bound, which
+        # at -S1 is no longer cut at DRUM_MAX_SWEEP_STEPS (above).
         if held is not None:
             steps = min(steps, held)
         if not steps:
@@ -1757,7 +1785,92 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         while len(left) < WAVE_ENTRIES_PER_INSTR:
             left.append(0xFF)
             right.append(0x00)
+    elif rise_calls:
+        # **A drum record that also rises keeps the rise.** The player runs the
+        # drum block and the rise block every frame; the zero-nibble arpeggio
+        # after them writes the frequency from the note index the rise has
+        # just raised (Kentilla $04, effect $07: `G-6 G#6 A-6 ... E-7`, one
+        # semitone every fourth working frame, 9 steps in 38 frames, 50 notes
+        # of voice 1, 1,021,013 units of voice-1 travel against our 99,408).
+        # The drum's own sweep never reaches the chip (`sweep` is false), so
+        # the slots it would use hold the climb, unrolled: a note entry
+        # `+k` semitones from the pattern note per step, the gate-off waveform
+        # held in between by delays. A glide (`CMD_PORTAUP` looped, the plain
+        # rise's spelling) reads the right travel but siddump prints each of
+        # its calls as a `(+ xxxx)` bend where the original's steps are ties:
+        # `bend` read 0.96x -> 3.76x on the same file.
+        prefix = left[:-1] if left[-1] == 0xFF else list(left)
+        while len(prefix) > 1 and prefix[-1] == 0xFF:
+            prefix.pop()
+        pre_r = right[:len(prefix)]
+        gate_off = prefix[-1]
+        cur = sum((e + 1) if 0 < e <= WAVE_MAX_DELAY else 1 for e in prefix)
+        add_l: List[int] = []
+        add_r: List[int] = []
+        for k, at in enumerate(rise_calls, start=1):
+            gap = max(0, at - cur)
+            pend_l: List[int] = []
+            pend_r: List[int] = []
+            while gap > 0:
+                run = min(gap, WAVE_MAX_DELAY + 1)
+                if run == 1:
+                    pend_l.append(gate_off)
+                else:
+                    pend_l.append(run - 1)
+                pend_r.append(0x80)
+                gap -= run
+            pend_l.append(gate_off)
+            pend_r.append(k)
+            if len(prefix) + len(add_l) + len(pend_l) + 1 > budget:
+                break
+            add_l += pend_l
+            add_r += pend_r
+            cur = max(cur, at) + 1
+        left = prefix + add_l + [0xFF]
+        right = pre_r + add_r + [0x00]
+        while len(left) < WAVE_ENTRIES_PER_INSTR:
+            left.append(0xFF)
+            right.append(0x00)
     return left, right
+
+
+# The rise's cadence in the player's frames: the counter's step is one in four
+# working frames, so one semitone every `4 * (O + 1) / O` frames under an outer
+# gate of reload `O` (4.4 at Kentilla's 10). The first step's frame is measured
+# on Kentilla $04 (-t 180, subtune 0, 48 voice-1 notes): the global counter's
+# phase at the attack gives five step-frame patterns, 10/10/10/9/9 notes each,
+# which a static program cannot follow, so each step takes its own mode over the
+# notes: frames 2 7 11 15 20 24 29 33 37 after the attack, which
+# `int(2.7 + 4.4 k)` reproduces exactly.
+DRUM_RISE_FIRST_FRAME = 2.7
+DRUM_RISE_STEP_FRAMES = 4
+
+# Seam for tests/test_drum_rise.py: False restores the shape that drops the rise.
+_DRUM_RISE = True
+
+
+def _drum_rise_step_calls(multiplier: int, gate_skip: Optional[int],
+                          note_calls: Optional[int]) -> Optional[List[int]]:
+    """Call offsets (from the note's first call) of each rise step.
+
+    Step `k` (0-based) lands on frame `int(first + step * k)` and goes on
+    that frame's first call. Stops once a step would fall at or past the end of
+    the note's typical length `note_calls`; None where that length is unknown.
+    """
+    if not note_calls:
+        return None
+    m = max(1, multiplier)
+    step = DRUM_RISE_STEP_FRAMES * (
+        (gate_skip + 1) / gate_skip if gate_skip else 1.0)
+    out: List[int] = []
+    k = 0
+    while True:
+        at = m * int(DRUM_RISE_FIRST_FRAME + step * k)
+        if at >= note_calls:
+            break
+        out.append(at)
+        k += 1
+    return out or None
 
 
 def _drum_sweep_hold(tail: int, multiplier: int = 1,
@@ -1969,6 +2082,10 @@ def _real_unit_frames(speeds, idx: int, gate: int) -> int:
     return max(gate, math.ceil(true - Fraction(1, 2)))
 
 
+# The seam a test turns off to see a table at the sweep's old length.
+DRUM_SWEEP_UNCAP_S1 = True
+
+
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
                     gate_skip: Optional[int] = None,
                     capped: bool = True) -> int:
@@ -1989,6 +2106,11 @@ def _drum_max_steps(min_note: Optional[int], multiplier: int = 1,
     has room for thirteen steps here and its original takes five, because its
     note is four rows long. `_drum_duration_steps` is that second guard, and
     both are applied.
+
+    `capped=False` drops DRUM_MAX_SWEEP_STEPS and returns the pitch bound
+    alone: `_drum_entries` asks for it where `_drum_duration_steps` has
+    measured the record's notes, at -S1 (`tests/test_drum_sweep_uncap_s1.py`),
+    and where `Detection.drum_tick_ratios` sizes the record on its own clock.
 
     Returns 0 where no bound is known, so an unknown record keeps the shallow
     two-step form rather than guessing deep.
@@ -2032,7 +2154,8 @@ def _alt_drum_sweep(det: Detection, i: int, lead: int,
     frame and the count is `(rows - 2) * row_calls / multiplier` real frames.
     Declined for GTS2 (no speed table) and one call a frame.
     """
-    if (not det.drum_alt_fall or not det.drum_shadow_dec or not drum
+    if (not (det.drum_alt_fall or det.drum_alt_sweep)
+            or not det.drum_shadow_dec or not drum
             or not (arp_style & 0x01) or fmt != FORMAT_GTS5
             or multiplier < 2 or row_calls <= 0
             or not note_rows or min_notes is None):

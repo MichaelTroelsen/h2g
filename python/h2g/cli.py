@@ -194,6 +194,13 @@ def main(argv=None) -> int:
              "without that alternation is unchanged. Per song. Off by "
              "default")
     parser.add_argument(
+        "--release-row", action="store_true",
+        help="give a gate lead longer than one row: a KEYOFF on the rest row "
+             "before each note plus a short gatetimer (one row and that "
+             "gatetimer), for a lead (--hard-restart-frames x multiplier "
+             "calls) between one row and two, which no gatetimer reaches "
+             "alone. Per song. Off by default")
+    parser.add_argument(
         "--master-fade", action="store_true",
         help="reproduce a $D418 volume the player derives from a voice's "
              "orderlist position (Sanxion's fade to silence): one pattern "
@@ -271,6 +278,20 @@ def main(argv=None) -> int:
              "beside it. -S2 and above, drum blocks spelled `DEC shadow,X` "
              "only, and only where the wavetable has room to spare "
              "(Lightforce, Deep_Strike). Per song. Off by default")
+    parser.add_argument(
+        "--ilv-start-cutoff", action="store_true",
+        help="interleaved players: a filter record whose every note starts "
+             "on a $87 nn mm takes that start cutoff per note as a "
+             "CMD_SETFILTERCUTOFF on the note's row (Sun_Never_Shines' "
+             "voice-0 record), and the file's other filtered records keep "
+             "the full ping-pong sweep. Per song. Off by default")
+    parser.add_argument(
+        "--drum-alt-sweep", action="store_true",
+        help="--drum-alt-fall with no wavetable headroom held back, for a "
+             "record whose short per-record budget declined it "
+             "(W_A_R_Preview's $0A09). Declined where the plain wavetable "
+             "leaves under 32 rows (W_A_R). -S2 and above. Per song. Off by "
+             "default")
     parser.add_argument(
         "--release-held-stored-wave", action="store_true",
         help="lift Commando's by-name hold on the $68 stored-waveform pitch, "
@@ -471,6 +492,13 @@ def main(argv=None) -> int:
              "vibrato_early_delay); off leaves every conversion "
              "byte-identical.")
     parser.add_argument(
+        "--vibrato-round-up", action="store_true",
+        help="round a classic vibrato's tick-0-compensated half-period up "
+             "instead of to nearest: the swing a whole-shift speed cannot "
+             "pay back is bought from the rate. Per song (a --presets "
+             "entry's vibrato_round_up); off leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--lfo-wave", action="store_true",
         help="emit the command-table engine's LFO-table vibrato as a "
              "per-frame wave program (portamento steps by the table's own "
@@ -518,15 +546,19 @@ def main(argv=None) -> int:
              "byte-identical.")
     parser.add_argument(
         "--vibrato-phase", action="store_true",
-        help="at a multiplier above 1, start each vibrating note of the "
-             "first lap in the original's free-running triangle phase, as "
-             "far as the wavetable has room: an instrument clone per base, "
-             "a wavetable chain per (record, zero-speed steps, frame-4 "
-             "move) class started by CMD_SETWAVEPTR on the note's second "
-             "row, and a pattern copy per orderlist position. Reads only "
-             "the classic player whose row clock is two counted gates "
-             "(ACE_II, Saboteur_II). Needs --format gts5. Off leaves every "
-             "conversion byte-identical.")
+        help="start each vibrating note of the first lap in the "
+             "original's free-running triangle phase, as far as the "
+             "wavetable has room: an instrument clone per base, a wavetable "
+             "chain per (record, zero-speed steps, frame-4 move) class "
+             "started by CMD_SETWAVEPTR on the note's second row, and a "
+             "pattern copy per orderlist position. At -S1 a class is a jump "
+             "into an explicit up/down cycle and a program ahead of a tie or "
+             "slide is stopped on the row before it. Reads only the classic "
+             "player "
+             "whose row clock is two counted gates (ACE_II, Saboteur_II; at "
+             "-S1 Trans-Atlantic_Balloon_Challenge, Bangkok_Knights, "
+             "IK_plus, Nineteen, Pandora). Needs --format gts5. Off leaves "
+             "every conversion byte-identical.")
     parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
@@ -968,6 +1000,7 @@ def main(argv=None) -> int:
                           ("--master-volume", "master_volume"),
                           ("--pre-note-wave", "pre_note_wave"),
                           ("--rest-wave-restart", "rest_wave_restart"),
+                          ("--release-row", "release_row"),
                           ("--master-fade", "master_fade"),
                           ("--park-wave", "park_wave"),
                           ("--keep-hard-restart", "keep_hard_restart"),
@@ -982,6 +1015,8 @@ def main(argv=None) -> int:
                           ("--phase-split-over-passes",
                            "phase_split_over_passes"),
                           ("--drum-alt-fall", "drum_alt_fall"),
+                          ("--ilv-start-cutoff", "ilv_start_cutoff"),
+                          ("--drum-alt-sweep", "drum_alt_sweep"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -1013,6 +1048,7 @@ def main(argv=None) -> int:
                           ("--drum-fall", "drum_fall"),
                           ("--vibrato-onset", "vibrato_onset"),
                           ("--vibrato-early-delay", "vibrato_early_delay"),
+                          ("--vibrato-round-up", "vibrato_round_up"),
                           ("--lfo-wave", "lfo_wave"),
                           ("--tie-pulse-restart", "tie_pulse_restart"),
                           ("--tie-late-pitch", "tie_late_pitch"),
@@ -1113,6 +1149,7 @@ def main(argv=None) -> int:
                       master_volume=args.master_volume,
                       pre_note_wave=args.pre_note_wave,
                       rest_wave_restart=args.rest_wave_restart,
+                      release_row=args.release_row,
                       master_fade=args.master_fade,
                       park_wave=args.park_wave,
                       keep_hard_restart=args.keep_hard_restart,
@@ -1125,6 +1162,8 @@ def main(argv=None) -> int:
                       wobble_copy_depth=args.wobble_copy_depth,
                       phase_split_over_passes=args.phase_split_over_passes,
                       drum_alt_fall=args.drum_alt_fall,
+                      ilv_start_cutoff=args.ilv_start_cutoff,
+                      drum_alt_sweep=args.drum_alt_sweep,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(
@@ -1170,6 +1209,7 @@ def main(argv=None) -> int:
                       drum_fall=args.drum_fall,
                       vibrato_onset=args.vibrato_onset,
                       vibrato_early_delay=args.vibrato_early_delay,
+                      vibrato_round_up=args.vibrato_round_up,
                       lfo_wave=args.lfo_wave,
                       tie_pulse_restart=args.tie_pulse_restart,
                       tie_late_pitch=args.tie_late_pitch,

@@ -1013,7 +1013,9 @@ NIBBLE_GATE_MAX_HALVES = 4
 # a 136-step chain and drove three files to the 255-row table ceiling.
 #
 # It is a corpus-wide stand-in for the per-record number `_drum_duration_steps`
-# now derives, and the two are both applied: whichever is smaller wins.
+# now derives, and the two are both applied: whichever is smaller wins -- except
+# at -S1 where the record's notes are measured, where `held` alone bounds it
+# (`wavetable.DRUM_SWEEP_UNCAP_S1`, `tests/test_drum_sweep_uncap_s1.py`).
 #
 # It is not applied where `Detection.drum_tick_ratios` sizes the sweep on the
 # record's own tick clock (Rasputin, whose `$C0A5` `$FE nn` reloads the outer

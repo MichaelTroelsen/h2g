@@ -55,13 +55,14 @@ def _preset_opts(name):
     return fidelity._preset_opts(doc, name)
 
 
-def _convert(name, pulse_only=True):
+def _convert(name, pulse_only=True, **over):
     real = NP.free_note_attack_bits
     if not pulse_only:
         NP.free_note_attack_bits = lambda sid, det: None
     try:
         lines = []
-        sng = convert(str(CORPUS / name), log=lines.append, **_preset_opts(name))
+        sng = convert(str(CORPUS / name), log=lines.append,
+                      **{**_preset_opts(name), **over})
     finally:
         NP.free_note_attack_bits = real
     return parse_sng(sng), [l for l in lines if l.startswith("Free note")]
@@ -281,8 +282,15 @@ def test_lightforce_moves_only_the_instrument_column(lightforce):
 
 @needs_corpus
 def test_saboteur_ii_takes_all_nineteen():
-    old, _ = _convert("Saboteur_II.sid", pulse_only=False)
-    new, lines = _convert("Saboteur_II.sid")
+    # vibrato_phase ships on Saboteur_II since v0.5.683 and adds clones of its
+    # own after these; held off here so the last variant is the pulse-only
+    # one, and the shipped preset must still carry the key.
+    assert _preset_opts("Saboteur_II.sid")["vibrato_phase"] is True
+    old, _ = _convert("Saboteur_II.sid", pulse_only=False, vibrato_phase=False)
+    new, lines = _convert("Saboteur_II.sid", vibrato_phase=False)
+    shipped, shipped_lines = _convert("Saboteur_II.sid")
+    assert shipped_lines == lines
+    assert shipped.instruments != new.instruments
     assert lines == ["Free note (bit 7).......: 19 flagged note row(s) on 1 "
                      "variant(s) with no attack stage and no pulse reset (1 "
                      "pulse-only: the record has no attack)"]
