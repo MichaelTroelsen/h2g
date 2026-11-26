@@ -1665,6 +1665,10 @@ test dependency).
     `wave` 96.9% / `gate` 100.0%.** The 96.6% / 78.1% pair above is
     HISTORICAL. The round's adoption A/B read gate .781 -> 1.000; output_sha
     is now ca1924712100.
+    **RE-GRADED AT v0.5.682 (`build/fidelity.json` at 892d7a7, `-t 180`,
+    presets with `park_wave` on this file): the live pair is
+    `wave` 99.7% / `gate` 100.0%.** The 96.9% / 100.0% pair above is
+    HISTORICAL; park_wave alone moved `wave`. output_sha is now 96c27bbcc4d2.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
