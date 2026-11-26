@@ -445,6 +445,23 @@ def legato_tie_rows(patterns: List[List[int]], bit7: dict) -> set:
     return rows
 
 
+def flagged_tie_rows(patterns: List[List[int]], bit7: dict) -> set:
+    """(pattern, row) of every tie row (`CMD_TONEPORTA 00` on a note) whose
+    note byte carried bit 7: the complement of `legato_tie_rows`.
+
+    In the legato-marker player the flag skips the pulse AND the envelope
+    write (`free_note_skips_two_stage`), so a flagged tie that names another
+    instrument latches it and loads nothing in the original either."""
+    rows = set()
+    for pn, pat in enumerate(patterns):
+        for r in (bit7.get(pn) or ()):
+            k = r * 4
+            if (k + 3 < len(pat) and GT_FIRST_NOTE <= pat[k] <= GT_LAST_NOTE
+                    and pat[k + 2] == CMD_TONEPORTA and pat[k + 3] == 0):
+                rows.add((pn, r))
+    return rows
+
+
 def _lapped_tracks(tracks: List[List[int]]) -> List[List[int]]:
     """Each orderlist followed by a second lap from its restart position, so
     `_entry_instruments` (which calls this itself -- do not lap twice: the
@@ -1326,6 +1343,180 @@ def _free_note_variants(patterns: List[List[int]], rows: set,
                + "; ".join(f"{c} {w}" for w, c in sorted(why.items())) + ")"
                if declined else ""))
     return out, variants, declined
+
+
+def _envelope_flow(patterns: List[List[int]], tracks: List[List[int]],
+                   envelopes: dict, targets: set, hold: set) -> dict:
+    """(pattern, row) of each of `targets` -> the set of `(held instrument,
+    envelope pair)` the channel has just before that row, over every
+    orderlist in play order (`_entry_instruments`' walk and laps).
+
+    The pair on the chip is NOT the last instrument a row named. A note row
+    loads its instrument's pair unless it carries `CMD_TONEPORTA`
+    (gplay.c:354 around :397, player.s:833-835), so a tie that names an
+    instrument latches it without loading it, and `CMD_SETAD` /
+    `CMD_SETSR` rewrite one half. `envelopes` maps an instrument number to
+    its `(ad, sr)`; a pair is None where the walk cannot know it (the tune's
+    first note has not been played, an instrument with no record, a half
+    written over an unknown one). Rows in `hold` load nothing (the caller
+    respells them to carry the pair)."""
+    seen: dict = {}
+    for ti, track in enumerate(_lapped_tracks(tracks)):
+        live, pair = _track_start(None, ti), None
+        repeat, operand = 1, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(len(pat) // 4):
+                    k = r * 4
+                    note, ins, cmd, data = pat[k:k + 4]
+                    if note == 0xFF:
+                        break
+                    if ins:
+                        live = ins
+                    if (b, r) in targets:
+                        seen.setdefault((b, r), set()).add((live, pair))
+                    if (GT_FIRST_NOTE <= note <= GT_LAST_NOTE
+                            and cmd != CMD_TONEPORTA and (b, r) not in hold):
+                        pair = envelopes.get(live)
+                    if cmd == CMD_SETAD:
+                        pair = (data, pair[1]) if pair else None
+                    elif cmd == CMD_SETSR:
+                        pair = (pair[0], data) if pair else None
+            repeat = 1
+    return seen
+
+
+def _drop_tie_writes(patterns: List[List[int]],
+                     tracks: List[List[int]], envelopes: dict, ties: set):
+    """The `CMD_SETSR` / `CMD_SETAD` rows `_tied_instrument_envelopes` put
+    beside each of `ties` (flagged tie rows, `flagged_tie_rows`), cleared
+    where some way into them holds a pair that write would change.
+    Returns (patterns, rows cleared).
+
+    The pass writes the tie's new instrument's pair, which is right for a
+    player that reloads it on every tie and a no-op where the chip already
+    holds it. A flagged tie loads nothing in the original, so after a
+    declined free note that kept an earlier pair the write loads the named
+    instrument's over it (Flash_Gordon pattern $47 row 4: `$2C9C` over the
+    held `$366C`, 2162 frames of the one 52 s note). The row keeps its
+    instrument column (a latch, as the pass wrote it) and loses the
+    command: made here, after `_vibrato_command_pass`, it frees no hold
+    row for another pass to fill (the same drop before it moved
+    Chain_Reaction's aud -0.47 pp, where the write was a no-op). The walk is
+    repeated with the rows already cleared, whose downstream pair is then
+    the held one."""
+    out = [list(p) for p in patterns]
+    cand: dict = {}
+    for pn, r in ties:
+        pat = out[pn]
+        pair = envelopes.get(pat[4 * r + 1])
+        if pair is None:
+            continue
+        for q in range(max(r - 1, 0), min(r + 3, len(pat) // 4)):
+            k = q * 4
+            if q != r and pat[k + 2] == CMD_SETAD and pat[k + 3] == pair[0]:
+                cand[(pn, q)] = 0
+            elif q != r and pat[k + 2] == CMD_SETSR and pat[k + 3] == pair[1]:
+                cand[(pn, q)] = 1
+    done: set = set()
+    for _ in range(16):
+        seen = _envelope_flow(out, tracks, envelopes, set(cand), set())
+        step = 0
+        for (pn, q), half in list(cand.items()):
+            k = q * 4
+            if any(pair is not None and pair[half] != out[pn][k + 3]
+                   for _live, pair in seen.get((pn, q), ())):
+                out[pn][k + 2] = out[pn][k + 3] = 0
+                del cand[(pn, q)]
+                done.add((pn, q))
+                step += 1
+        if not step:
+            break
+    return out, len(done)
+
+
+def declined_free_note_clones(patterns: List[List[int]], declined: set,
+                              tracks: Optional[List[List[int]]],
+                              envelopes: dict, first_number: int,
+                              last_number: int = 0, log=None,
+                              ties: Optional[set] = None):
+    """The rows `free_note_variants` declined, respelled onto a clone of the
+    instrument they play that carries the envelope pair the channel already
+    holds there. Returns (patterns, [(base, clone number, pair)], count).
+
+    A note whose byte has bit 7 set skips the player's envelope write along
+    with the pulse and the attack (Flash_Gordon `$1145 LDA $1545 / BMI
+    $117F`), so the chip keeps the pair the last note that DID load one left.
+    The variant (`_free_note_variants`) cannot respell a record whose attack
+    the wavetable cannot skip, and the full start it falls back on loads the
+    record's own pair: Flash_Gordon voice 2's last note, 51.8 s, held `$366C`
+    in the original and sounded `$2C9C` here (`adsr` 0.954, voice 2 0.862,
+    all 2592 mismatching frames that one note). The wavetable and pulse are
+    still the record's own -- this takes only the half of the free note a
+    record's bytes can carry, the envelope, by naming a clone whose AD/SR
+    are the held pair (`_envelope_flow`, keyed per (base, pair)).
+
+    A row is taken only where every orderlist way into it agrees on the
+    pair; one whose held pair is already its record's own needs no clone. A
+    declined row left alone loads its record's pair, which later rows see, so
+    the walk is repeated with the rows not taken removed from `hold` until the
+    taken set is stable."""
+    if not tracks or not declined:
+        return patterns, [], 0
+    take = set(declined)
+    while True:
+        seen = _envelope_flow(patterns, tracks, envelopes, set(declined),
+                              take)
+        rows, same = set(), set()
+        tag: dict = {}
+        for rc, states in seen.items():
+            if rc not in take or len(states) != 1:
+                continue
+            live, pair = next(iter(states))
+            if not live or pair is None:
+                continue
+            if pair == envelopes.get(live):
+                same.add(rc)
+                continue
+            rows.add(rc)
+            tag[rc] = pair
+        out, clone_of, left, _why = _respell_on_clones(
+            patterns, rows, tracks, set(envelopes), first_number,
+            last_number, clear_command=False,
+            uncloneable="no record to clone",
+            row_kind=lambda pn, r: tag.get((pn, r)))
+        keep = (rows - left) | same
+        if keep == take:
+            break
+        take = keep
+    clones = [(key[0], number, key[1]) for key, number
+              in sorted(clone_of.items(), key=lambda kv: kv[1])]
+    fixed = 0
+    if clones and ties:
+        known = dict(envelopes)
+        known.update((number, pair) for _b, number, pair in clones)
+        out, fixed = _drop_tie_writes(out, tracks, known, ties)
+    if log is not None and clones:
+        log(f"Held envelope...........: {len(rows) - len(left)} declined "
+            f"flagged row(s) on {len(clones)} clone(s) keeping the held "
+            "envelope"
+            + (f", {fixed} flagged-tie envelope write(s) dropped"
+               if fixed else ""))
+    return out, clones, len(rows) - len(left)
 
 
 def _wide_entry(entry: tuple, quarters: int) -> tuple:

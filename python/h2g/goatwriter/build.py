@@ -2209,6 +2209,30 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             out += clone
             written_instr += 1
         stair_aliases.extend(free_variants)
+        # The rows the variants could not take keep the full start, which
+        # loads the record's own envelope where the original's free note
+        # keeps the pair the channel holds (`declined_free_note_clones`).
+        # Not beside a phase split (`phase_split_over_passes`): its clones
+        # and renamed columns are unmeasured here.
+        if _kept and not beside_phase:
+            patterns, env_clones, _n = (
+                _gw_note_passes.declined_free_note_clones(
+                    patterns, _kept, tracks,
+                    {g: (out[instr_at + 1 + (g - 1) * 25],
+                         out[instr_at + 1 + (g - 1) * 25 + 1])
+                     for g in range(1, written_instr + 1)},
+                    written_instr + 1,
+                    last_number=_gw_note_passes.clone_number_ceiling(
+                        patterns, written_instr), log=log,
+                    ties=_gw_note_passes.flagged_tie_rows(
+                        patterns, bit7_rows(patterns))))
+            for base, _number, pair in env_clones:
+                rec = instr_at + 1 + (base - 1) * 25
+                clone = bytearray(out[rec:rec + 25])
+                clone[0], clone[1] = pair
+                out += clone
+                written_instr += 1
+            stair_aliases.extend((b, n) for b, n, _p in env_clones)
         out[instr_at] = written_instr
     # The last tick of a toggling note holds the state the last toggle left,
     # where the wavetable's cycles would toggle once more

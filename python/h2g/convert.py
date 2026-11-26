@@ -248,6 +248,18 @@ def _drum_start_group(sid: SidFile, group_tempos, unit_tempos) -> Optional[int]:
     return g
 
 
+def _aligned_play_groups(irc, tracks, subtunes_before: int):
+    """`irc` with `play_groups` kept only where a group is a header subtune.
+
+    A split subtune shifts the numbering (the rule `group_tempos` is read
+    under above), and `wavetable._noise_tick_frames` looks a group up in the
+    header's speed gates.
+    """
+    if len(tracks) // 3 != subtunes_before:
+        irc.play_groups = {}
+    return irc
+
+
 # `Detection.master_fade` level meaning "D00 on the previous position's last
 # event row" (the tune-end zero of the row-fetch spelling).
 from .patterns import MASTER_FADE_TUNE_END  # noqa: E402
@@ -1831,12 +1843,15 @@ def convert(sid_path: str, log: Logger = print,
                          # at the fastest subtune's row, including the ones that
                          # never sound in it. Returns {} wherever the attribution
                          # is unsafe, and then the file-wide bound stands.
-                         instr_row_calls=instrument_row_calls(
-                             tracks, new_patterns, group_tempos or [],
-                             # ... and, beside it, the row the START subtune
-                             # plays each at: the drum sweep's length.
-                             start_group=_drum_start_group(
-                                 sid, group_tempos, unit_tempos)),
+                         instr_row_calls=_aligned_play_groups(
+                             instrument_row_calls(
+                                 tracks, new_patterns, group_tempos or [],
+                                 # ... and, beside it, the row the START
+                                 # subtune plays each at: the drum sweep's
+                                 # length.
+                                 start_group=_drum_start_group(
+                                     sid, group_tempos, unit_tempos)),
+                             tracks, subtunes_before),
                          gate_skip=gate_skip,
                          sfx_drum=(SFX_DRUM_STAGED if sfx_drum and sfx_drum_stage
                                    else sfx_drum),

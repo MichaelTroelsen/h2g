@@ -1373,11 +1373,17 @@ class InstrumentRowCalls(dict):
     start_rows: Dict[int, int]
     # {instrument} whose every note is one row long: see single_row_note_instruments.
     single_row: frozenset
+    # {instrument: the groups (subtunes) whose tracks play it}, instrument 1's
+    # implicit opening included. Set by `instrument_row_calls`; `convert` empties
+    # it where a split shifted the numbering, because a group is then no longer
+    # the header subtune whose speed gate `wavetable._noise_tick_frames` reads.
+    play_groups: Dict[int, frozenset]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start_rows = {}
         self.single_row = frozenset()
+        self.play_groups = {}
 
 
 def _orderlist_entries(track: List[int]):
@@ -1628,8 +1634,10 @@ def instrument_row_calls(tracks: List[List[int]],
     if start_group is not None:
         out.start_rows = start_subtune_row_calls(tracks, patterns,
                                                  group_tempos, start_group)
+    played: Dict[int, set] = {}
     if implicit:
         out[1] = min(group_tempos[g] for g in implicit)
+        played.setdefault(1, set()).update(implicit)
     for pattern, groups in plays.items():
         if pattern >= len(patterns):
             continue
@@ -1640,6 +1648,8 @@ def instrument_row_calls(tracks: List[List[int]],
             if instr:
                 prev = out.get(instr)
                 out[instr] = shortest if prev is None else min(prev, shortest)
+                played.setdefault(instr, set()).update(groups)
+    out.play_groups = {k: frozenset(v) for k, v in played.items()}
     return out
 
 

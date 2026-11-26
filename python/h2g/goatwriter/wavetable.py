@@ -82,7 +82,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        keep_slide: bool = False,
                        stored_fall: bool = True,
                        sfx_stray: bool = False,
-                       tie_late: bool = False) -> tuple:
+                       tie_late: bool = False,
+                       play_groups: Optional[frozenset] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -664,7 +665,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 # whatever the sustain. The gate lasts the note's first frame
                 # and the noise tick, the length `_drum_entries` holds.
                 gate_frames=((det.drum_first_unit.get(i + 1 + lead)
-                              or 1 + _noise_tick_frames(sid, det))
+                              or 1 + _noise_tick_frames(sid, det, play_groups))
                              if det.drum_gate_off and (drum or tick)
                              else None),
                 own_note=own_note,
@@ -778,7 +779,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # both-bits record (Warhawk, Formula_1_Simulator, Spellbound, Proteus,
         # Last_V8) are exactly the five whose gate derives 1, and IK -- where
         # the original measures two frames of noise -- derives 2.
-        extra = _noise_tick_frames(sid, det) * max(1, multiplier) - 1
+        extra = _noise_tick_frames(sid, det, play_groups) * max(1, multiplier) - 1
         tl, tr = [noise], [0x00]
         if extra == 1:
             tl.append(noise)
@@ -891,7 +892,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              sustain=(0 if det.drum_sustain_gate_off
                                       else data[base + 4] >> 4),
                              budget=budget,
-                             tick_frames=_noise_tick_frames(sid, det),
+                             tick_frames=_noise_tick_frames(sid, det, play_groups),
                              note_rows=typical, row_calls=row_calls,
                              written=no_test_restart, gate_skip=gate_skip,
                              sweep=not arp_overwrites_sweep,
@@ -954,7 +955,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 budget, written=no_test_restart,
                 tick=((noise if det.drum_gate_off and drum
                        else WAVE_NOISE_GATEOFF | (wave & 0x01),
-                       _noise_tick_frames(sid, det)) if tick else None),
+                       _noise_tick_frames(sid, det, play_groups)) if tick else None),
                 # A record played under tie chains locks its octave to the
                 # row (`fixed_arp_tie_rows`); never a clone's own step.
                 tie_row=arp_tie_row if arp_step_calls is None else None)
@@ -1860,7 +1861,8 @@ def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
                - _gate_calls(max(1, multiplier), gate_skip))
 
 
-def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
+def _noise_tick_frames(sid: SidFile, det: Detection,
+                       play_groups: Optional[frozenset] = None) -> int:
     """Frames of noise this player's drum block writes, from its speed gate.
 
     **It is the speed gate less one, and that is a mechanism rather than a fit.**
@@ -1917,6 +1919,22 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
     # SongSpeeds.frames), and a file where that subtune is unreadable -- or
     # every subtune's is -- must not let None reach Counter/`- 1`.
     idx = max(0, getattr(sid, "start_song", 1) - 1)
+    # **A record the start subtune never plays is read in the subtunes that do.**
+    # One wavetable serves every subtune, and the start subtune's gate is the
+    # right approximation for a record it plays; for one it does not, that gate
+    # is another subtune's clock. Commando's `$046F` (instrument 10) is played
+    # only in subtune 1, whose gate is 4 frames to the start subtune's 3: the
+    # player's drum block holds the noise for the unit's `gate - 1` frames, 3 on
+    # all 564 of its notes in a 180 s trace, and the start subtune's gate wrote
+    # 2. Where the subtunes that play the record agree on one gate that gate is
+    # used, otherwise (a record the start subtune plays, or subtunes that
+    # disagree, or a gate that cannot be read) the start subtune's stands.
+    if play_groups and idx not in play_groups:
+        gates = {g: raw[g] for g in play_groups if g < len(raw)}
+        if (len(gates) == len(play_groups)
+                and len(set(gates.values())) == 1
+                and None not in gates.values()):
+            idx = min(gates)
     gate = raw[idx] if idx < len(raw) else None
     if gate is None:
         frames = tuple(f for f in raw if f is not None)
@@ -2484,7 +2502,13 @@ def _wavetable_layout_once(sid: SidFile, det: Detection, instr_used: int,
                                   cut_out=cut_out,
                                   keep_slide=keep_slide,
                                   stored_fall=not plain,
-                                  tie_late=tie_late)
+                                  tie_late=tie_late,
+                                  # The subtunes that play this record: the
+                                  # drum tick is sized by THEIR speed gate
+                                  # when the start subtune is not one.
+                                  play_groups=getattr(
+                                      instr_row_calls, "play_groups",
+                                      {}).get(gt_number))
 
     if phase_probe is not None:
         # `fixed_arp_phase_split_plan`'s question, asked before the table is
