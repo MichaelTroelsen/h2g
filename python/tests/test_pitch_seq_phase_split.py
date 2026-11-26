@@ -60,8 +60,10 @@ def _food_feud_split():
         return plan
     G.arpeggio.pitch_seq_phase_split_plan = spy
     try:
+        # pulse_phase held off: since v0.5.680 the preset ships it, and its
+        # unroll lands before the plan, which would hide the plan's own
         convert(str(CORPUS / "Food_Feud.sid"), log=lines.append,
-                **_opts("Food_Feud.sid", pitch_seq=True))
+                **_opts("Food_Feud.sid", pitch_seq=True, pulse_phase=False))
     finally:
         G.arpeggio.pitch_seq_phase_split_plan = real
     return (cap["sid"], cap["det"], cap["tracks"], cap["patterns"],
@@ -200,14 +202,19 @@ def test_every_food_feud_bit10_note_plays_its_own_phase():
 
 @needs_corpus
 def test_the_shipped_preset_and_unclocked_files_do_not_split():
-    """No `pitch_seq` (Food_Feud's shipped preset) never asks; a file whose
+    """No `pitch_seq` never asks; Food_Feud ships it since v0.5.680, so its
+    shipped preset now splits and the option held off does not. A file whose
     bit-$10 phase cell nothing writes (Lion_Heart: a constant, so no clock to
     simulate) has no clock and no plan. Trans-Atlantic stood here until its
     undivided clock was read (task pitch-seq-flat-clock-other-files)."""
     lines = []
     convert(str(CORPUS / "Food_Feud.sid"), log=lines.append,
-            **_opts("Food_Feud.sid"))
+            **_opts("Food_Feud.sid", pitch_seq=False))
     assert not any("pitch phase split" in l for l in lines)
+    shipped = []
+    convert(str(CORPUS / "Food_Feud.sid"), log=shipped.append,
+            **_opts("Food_Feud.sid"))
+    assert any("pitch phase split" in l for l in shipped)
     name = "Lion_Heart"
     sid = load_sid(str(CORPUS / f"{name}.sid"))
     sid, det = _detect_tables(sid, lambda *a, **k: None)

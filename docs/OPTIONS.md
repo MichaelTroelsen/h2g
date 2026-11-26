@@ -3206,6 +3206,23 @@ and the +6% depth of the interval above the note. Built but off,
 `vibrato_hold.LIFT_ODD_BOUND` mirrors an odd bound's swing back (Samantha_Fox
 `tiefr` 74% -> 91%, `aud` -0.015 summed over 22 files).
 
+**At the player rate** (`-S1`, no multiplier) the option answers a different
+defect. The packed player runs no continuous effect on tick 0 of a row
+(`REALTIMEOPTIMIZATION`), so at rows of three calls the instrument vibrato holds
+the pitch on one call in three where the original steps every frame (I_Ball
+voice 0: ours `15EE 173C 173C 15EE 14A0 14A0 1352`, the original `15EB 1727 1863
+1727 15EB 14AF 1373 14AF`), and `_classic_vibrato_entry` pays for the missing
+calls with depth. A `$F4 nn` command row is not an effect and runs every call, so
+the held program steps once a call, starting on the original's own gate (`first`
+= the gate's frames, not the instrument's `vibdelay`). Forced on I_Ball
+(`-t 180 --presets --sound`): `travel` 0.72x -> 1.08x, `depth` 0.82x -> 1.06x,
+`tiefr` 71% -> 74%, `vib` .99x -> 1.00x, `cents` flat, `aud` .8666 -> .8659.
+Forced on the other 21 multiplier-1 files with a held record it lowers `cents`
+on 16 and `aud` on 9 and raises `aud` on none (the free-running counter phase,
+as at ACE_II), so it is per song; Wiz's melody falls 100% -> 5% under it and
+that is not examined. Packing with `-R0` reads `travel` and `depth` 1.06x, but
+double-corrects the pattern portamento (`patterns._scaled_step`).
+
 **Set in presets.json for Thanatos only** (user decision 2026-11-01). Forced
 A/B at f3d8987 (-t 180 --presets --sound): `aud` .9440 -> .9482, `loud`
 .9854 -> .9877, `tiefr` 15% -> 72%, tie .31 -> .92, bend .69 -> 1.07, travel

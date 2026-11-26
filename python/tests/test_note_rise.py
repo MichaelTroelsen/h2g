@@ -239,8 +239,9 @@ def test_game_killer_points_rows_2_to_17_of_each_note_at_a_rising_store(
     rise = [m for m in lines if "Note rise (bit $02)" in m]
     assert len(rise) == 1 and "295 store row(s)" in rise[0], rise
     # the notes' own sixteen values stay exact; the continued stores above
-    # them take the 2 more the table has room for
-    assert re.search(r"18 of 118 store value\(s\)", rise[0]), rise
+    # them take the 6 more the table has room for (2 before the shared tails
+    # of records 5, 6 and 7 were freed, `note_rise.tail_merges`)
+    assert re.search(r"22 of 118 store value\(s\)", rise[0]), rise
 
 
 def _hi_frames(trace, nframes, key, keep):

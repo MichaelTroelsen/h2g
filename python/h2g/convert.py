@@ -633,10 +633,11 @@ def convert(sid_path: str, log: Logger = print,
     original's chip holds it, by cloning the record per predecessor class
     (`prev_class_firstwave`).
 
-    vibrato_hold (multiplier > 1) replaces the classic vibrato's per-call
+    vibrato_hold replaces the classic vibrato's per-call
     speed-table entry with a frame-held wavetable program (`vibrato_hold`):
     the original moves a voice once a frame and holds each value, where the
-    instrument vibrato steps on every play call. Records with a one-frame
+    instrument vibrato steps on every play call (multiplier > 1) or skips
+    tick 0 of every row (multiplier 1, rows of 2 or more calls). Records with a one-frame
     half-period, a looping or pointed-into wave program, or a song whose
     update is stretched (outer gate, dwell, extra depth shift) keep the
     per-call entry.

@@ -751,6 +751,12 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # tempo split already edits: both would rename the same instrument
     # columns, and neither plan sees the other's bytes.
     phase_split = None
+    # True where bit $10's phase split is on a clock the planner never asks
+    # `displaces` about (not outer-gated: Food_Feud's divider clock, the one
+    # corpus file that splits there), so the split is made whatever the
+    # free-note respell has to do and the respell must then run beside it
+    # (`beside_phase` below; tests/test_free_note_beside_pitch_split.py).
+    pitch_split_undisplaced = False
     if duty_split is None and effects and det.arp_fixed_up and det.effect_arp:
         phase_split = fixed_arp_phase_split_plan(
             sid, det, tracks, patterns, effects, lead, instr_used,
@@ -834,6 +840,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                 for rec, res in sorted(failed)))
             no_room |= failed
             phase_split = None
+        pitch_split_undisplaced = (phase_split is not None
+                                   and not room_aware)
     # The gated nibble counter's residue gets it too, in the same slot
     # (`nibble_gate_phase_split_plan`): each clone's third slot a
     # `GatePhase`, its block laid out at that residue's counter phase and
@@ -2148,7 +2156,8 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # the split's clones are records of their own by now (the edits above
     # renamed the columns), so each is handed the start its record is.
     beside_phase = (phase_split is not None
-                    and getattr(det, "phase_split_over_passes", False))
+                    and (getattr(det, "phase_split_over_passes", False)
+                         or pitch_split_undisplaced))
     if (legato and two_stage and effects and duty_split is None
             and (phase_split is None or beside_phase)
             and _gw_note_passes.free_note_skips_two_stage(sid, det)):

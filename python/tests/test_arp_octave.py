@@ -1562,22 +1562,30 @@ def test_hunter_patrol_splits_by_parity():
 
 @needs_corpus
 def test_every_game_killer_clone_has_a_block_of_its_own():
-    """Eight clones at -S9 fit the 255-entry table only because each shares
+    """Eleven clones at -S9 fit the 255-entry table only because each shares
     its record's loop (`_shared_loop_block`): every clone's wavetable start
-    differs from its record's, and its block jumps into the record's."""
+    differs from its record's, and its block jumps into the record's -- or
+    into the rows the record's own tail jumps on to, where the record shares
+    that tail with another (`note_rise.tail_merges`)."""
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     import songview
     sng, clones = _split_of("Game_Killer")
     s = songview.parse_sng(sng)
-    assert len(clones) == 8, clones
+    assert len(clones) == 11, clones
+    wt = s.tables["WTBL"]
     for rec, c, _ in clones:
         a, b = s.instruments[rec - 1], s.instruments[c - 1]
         assert b.wave_ptr != a.wave_ptr, (rec, c)
         block = _wavetable_of(sng, c)
         assert block[-1][0] == 0xFF
-        own = _wavetable_of(sng, rec)
-        assert a.wave_ptr <= block[-1][1] < a.wave_ptr + len(own), (rec, c)
+        # every row the record's program plays, jumps followed
+        reach, row = set(), a.wave_ptr
+        while row and row not in reach and row <= len(wt):
+            reach.add(row)
+            left, right = wt[row - 1]
+            row = (right if left == 0xFF else row + 1)
+        assert block[-1][1] in reach, (rec, c)
 
 
 @needs_corpus

@@ -458,6 +458,106 @@ def reclaimable_holes(wave_entries: List[tuple], wave_starts: List[int],
     return holes, [move.get(x, x) for x in wave_starts]
 
 
+# Whether `_rise_plan_once` also frees the rows of tails one record shares
+# with another (`tail_merges`) once the duplicate blocks have not made room
+# (`tests/test_note_rise_tail_merge.py` turns it off).
+NOTE_RISE_TAIL_MERGE = True
+
+# Fewest rows a shared tail must free, past the jump that replaces it, for its
+# record to be rewritten. The shared tails worth taking are runs of holds ten
+# rows long (Game_Killer's records 5/6/7, 9/11); the short loops in between
+# (`80 0C / 80 00` pairs, three to seven rows) free little, and the passes
+# after the rise read a record's rows to place their own blocks: at 3 the
+# corpus byte-hash moved Geoff_Capes_Strongman_Challenge, whose legato tie
+# clones went from 5 to 4 (14 tie rows kept on CMD_TONEPORTA became 15),
+# Gerry_the_Germ, Human_Race, Battle_of_Britain and Chimera too; at 8 only
+# Game_Killer and Monty_on_the_Run move.
+TAIL_MERGE_MIN_FREED = 8
+
+
+def _tail_key(entries: List[tuple], lo: int, hi: int) -> tuple:
+    """Rows `lo` .. `hi - 1` (1-based) as a position-free key: a jump into
+    the span is its offset from `lo`, a jump out of it its absolute row."""
+    key = []
+    for row in range(lo, hi):
+        left, right = entries[row - 1]
+        if left == GT_WAVE_JUMP and right:
+            key.append((left, ("in", right - lo) if lo <= right < hi
+                        else ("out", right)))
+        else:
+            key.append((left, right))
+    return tuple(key)
+
+
+def tail_merges(wave_entries: List[tuple], wave_starts: List[int],
+                pointers: List[int], skip: Optional[set] = None
+                ) -> List[dict]:
+    """Records whose last rows are another record's, as holes.
+
+    Game_Killer's records 5, 6 and 7 are one arpeggio program at three
+    heads: after its first five rows each is the same eleven rows (a run of
+    holds, then a loop of holds whose jump goes back into the run), and
+    record 11 ends in the ten-row run of `F2 0B` record 9 ends in. A block
+    whose tail (every row from some row on, its jumps compared by where they
+    land inside the tail) is a tail of another block's plays the same
+    program from the other block's rows, so its own row there becomes a jump
+    to them (a jump is free, player.s `mt_nowavechange` reads it ahead) and
+    the rows after it are free. Each result is `dict(freed=(first row,
+    rows), edits={row: entry})`: `freed` is the hole, and `edits` the jump
+    that replaces the tail plus every jump elsewhere (a phase clone's, into
+    the loop) that landed in it and is moved to the same row of the kept
+    tail. A block is merged into another or kept for another, never both,
+    and none is merged where a pointer other than its own start names one of
+    its tail rows (`pointers`: every other row anything points at). `skip`
+    is the starts of blocks that are free already.
+    """
+    size = len(wave_entries)
+    named = {p for p in pointers if p}
+    starts = sorted({s for s in wave_starts if s})
+    bounds = sorted(set(starts) | named | {size + 1})
+    blocks = [(s, next(b for b in bounds if b > s)) for s in starts
+              if s not in (skip or ())]
+    jumps = [(r + 1, t) for r, (left, t) in enumerate(wave_entries)
+             if left == GT_WAVE_JUMP and t]
+    found = []
+    for a_s, a_e in blocks:
+        for c_s, c_e in blocks:
+            if (a_s, a_e) == (c_s, c_e):
+                continue
+            # The longest tail of A (leaving it a head row) that C ends in.
+            for length in range(min(a_e - a_s - 1, c_e - c_s), 0, -1):
+                if length - 1 < TAIL_MERGE_MIN_FREED:
+                    break
+                a_at, c_at = a_e - length, c_e - length
+                if (_tail_key(wave_entries, a_at, a_e)
+                        == _tail_key(wave_entries, c_at, c_e)):
+                    found.append((length - 1, a_s, a_e, c_s, c_e, length))
+                    break
+    found.sort(key=lambda f: (-f[0], f[1], f[3]))
+    merged: set = set()
+    kept: set = set()
+    out: List[dict] = []
+    for _saved, a_s, a_e, c_s, c_e, length in found:
+        if a_s in merged or a_s in kept or c_s in merged:
+            continue
+        a_at, c_at = a_e - length, c_e - length
+        edits: Dict[int, tuple] = {a_at: (GT_WAVE_JUMP, c_at)}
+        for row, t in jumps:
+            if a_at <= row < a_e:
+                continue                 # inside the freed rows
+            if a_at <= t < a_e:
+                edits[row] = (GT_WAVE_JUMP, c_at + (t - a_at))
+        # A row the freed rows' tail is entered at by something that is not
+        # a jump (a pointer inside it) cannot be moved.
+        if any(a_at < p < a_e for p in named):
+            continue
+        merged.add(a_s)
+        kept.add(c_s)
+        out.append(dict(freed=(a_at + 1, length - 1), edits=edits,
+                        start=a_s, into=c_s))
+    return out
+
+
 def _note_rows(tracks: List[List[int]], patterns: List[List[int]],
                numbers: set):
     """Every note an instrument in `numbers` plays, one lap of each orderlist
@@ -824,6 +924,7 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
     # has four) repeat each spread value in every kind, so there the lowest
     # values are kept exact and the stores above them are left to the vibrato.
     kinds = {ticks_of(ask) for ask in taken.values()}
+    merge_of: Dict[Tuple[int, int], dict] = {}   # a tail's freed rows -> merge
     def fitting(holes: List[Tuple[int, int]]):
         """Every (values, rows) whose programs fit, most values first."""
         for count in range(min(kmax, room), 0, -1):
@@ -870,6 +971,14 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
                                               wave_used, holes, speed_index,
                                               frames)
             base_table = list(wave_entries)
+            # A merged tail's jumps are written only where a program is
+            # placed in its freed rows: elsewhere the record keeps its own.
+            for hole in holes:
+                m = merge_of.get(hole)
+                if m is not None and any(
+                        hole[0] <= row < hole[0] + hole[1] for row in placed):
+                    for row, entry in m["edits"].items():
+                        base_table[row - 1] = entry
             entries: List[tuple] = []
             for row in sorted(placed):
                 if row <= wave_used:
@@ -983,6 +1092,11 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
             pat[4 * r + 3] for pat in patterns for r in range(len(pat) // 4)
             if pat[4 * r + 2] == CMD_SETWAVEPTR]
         free, starts_to = reclaimable_holes(wave_entries, wave_starts, named)
+        for m in (tail_merges(wave_entries, wave_starts, named,
+                              {s for s, _n in free})
+                  if NOTE_RISE_TAIL_MERGE else []):
+            merge_of[m["freed"]] = m
+            free = free + [m["freed"]]
         if free:
             for values_, rows_ in fitting(free):
                 got = attempt(values_, rows_, free)
@@ -1018,7 +1132,10 @@ def _rise_plan_once(sid: SidFile, det: Detection, tracks: List[List[int]],
         f"{tick_calls} calls a tick, {len(entries)} wavetable step(s) at "
         f"{wave_used + 1}"
         + (f" and {sum(1 for r in placed if r <= wave_used)} reused from "
-           f"{len(holes)} duplicate block(s)" if holes else "")
+           f"{sum(1 for h in holes if h not in merge_of)} duplicate block(s)"
+           + (f" and {sum(1 for h in holes if h in merge_of)} shared "
+              f"tail(s)" if any(h in merge_of for h in holes) else "")
+           if holes else "")
         + (f"; {mixed} row(s) mixed or occupied" if mixed else "")
         + (f"; {len(runs)} note(s) carried on through the rest after them"
            if runs else "")

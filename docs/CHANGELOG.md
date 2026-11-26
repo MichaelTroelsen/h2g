@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.680 — 2026-11-26
+
+- Adopt I_Ball vibrato_hold + phase split, Food_Feud pitch_seq + pulse_phase, Game_Killer tail merge
+
 ## 0.5.679 — 2026-11-26
 
 - Adopt Flash_Gordon declined bit-7 free-note envelope and Commando_2 noise-tick play groups

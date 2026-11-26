@@ -1,4 +1,20 @@
-"""The classic vibrato as a frame-held wavetable program, for multispeed songs.
+"""The classic vibrato as a frame-held wavetable program.
+
+**At the player rate (multiplier 1) it answers a different defect** (I_Ball,
+C:/t/listen-sub99-i-ball). The instrument vibrato is a continuous effect and
+the packed player runs none on tick 0 of a row (`REALTIMEOPTIMIZATION`,
+player.s:982-987), so at rows of 3 calls it holds the pitch on one call in
+three where the original steps every frame: `15EE 173C 173C 15EE 14A0 14A0
+1352` against `15EB 1727 1863 1727 15EB 14AF 1373 14AF`. `_classic_vibrato_entry`
+pays for the lost calls by shortening `cmp`, which keeps the rate and gives up
+the depth. Held, `$F4 nn` is a command row and runs every call, so the program
+steps once a call from the original's own gate, which at `-S1` is a frame.
+Forced on I_Ball: `travel` 0.72x -> 1.08x, `depth` 0.82x -> 1.06x, `tiefr` 71%
+-> 74%, `cents` and `vib` flat; packing with `-R0` instead reads the same
+(1.06x, 1.06x). Per song, and measured per song: forced on the other 21
+multiplier-1 files the free-running counter's phase (below) lowers `cents` on
+16 (raises it on 1) and `aud` on 9 (raises it on none; the same trade ACE_II
+showed at -S3), and takes Wiz's melody 100% -> 5%, which is not examined.
 
 The classic `$78/$07` player moves a voice's frequency ONCE A FRAME: its counter
 steps between 0 and `bound` and the voice sits at `note + (ctr - bound/2) *
@@ -298,7 +314,7 @@ def hold_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     """`blob` with each classic vibrato record's per-call entry replaced by a
     frame-held wavetable program (see the module docstring). `only` limits it
     to the original record numbers it names (`RECORD_HOLD`)."""
-    if (multiplier < 2 or det.vibrato_offset is None
+    if (multiplier < 1 or det.vibrato_offset is None
             or det.triangle_vibrato is not None
             or det.table_vibrato is not None
             or (det.vibrato_dwell and not HOLD_DWELL)
@@ -375,6 +391,20 @@ def hold_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             delay = max(rec[_VIBDELAY_AT], 1)
             first = max(multiplier,
                         multiplier * round((delay - 1) / multiplier))
+            if multiplier == 1:
+                # No lattice to round to, so the delay's `- 1` has nothing
+                # to round: the original's gate (`counter < N -> still`,
+                # detect.VibratoGate) is N frames from the note and a held
+                # step on call c sounds on frame c, so the first step is call
+                # N. Taken from `vibdelay` it came out one call early
+                # (I_Ball: first move at frame 3, the original's at 4, because
+                # the delay of 2 is spent AFTER the program's three firstwave
+                # rows and this program's first step skips them).
+                vg = det.vibrato_gate
+                gate = (vg.gate_for(_record_number(rec))
+                        if vg is not None and vg.form == "counter" else None)
+                if gate:
+                    first = max(first, gate)
             # The `$1003` family's own per-record delay (detect.
             # `_find_vibrato_delay_offset`): the oscillator is silent for
             # `delay + 1` frames from the note, past the age gate the

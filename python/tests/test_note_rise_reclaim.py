@@ -86,8 +86,11 @@ def test_game_killer_takes_all_sixteen_store_values():
     sng = C.convert(str(CORPUS / "Game_Killer.sid"), log=lines.append, **opts)
     # the notes' own sixteen values all fit (and stay exact); the rise that
     # now runs on through the rest after the notes asks for more, of which the
-    # table has room for two (`note_rise.continuation`)
-    assert any("18 of 118 store value(s)" in m and "reused from 4 duplicate "
+    # table has room for six (`note_rise.continuation`): two with the
+    # duplicate blocks alone (18 of 118), four more with the tail the
+    # records 5, 6 and 7 share (`note_rise.tail_merges`), which the phase
+    # clones of record 5 and 6 need the room for
+    assert any("22 of 118 store value(s)" in m and "reused from 4 duplicate "
                "block(s)" in m for m in lines), lines
     song = songview.parse_sng(sng)
     wt = song.tables["WTBL"]

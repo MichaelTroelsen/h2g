@@ -234,9 +234,11 @@ def test_game_killers_voice_two_octave_frames_agree_beyond_the_first_lap(
     keys = [f for f in so if f in su and so[f] in "bu" and su[f] in "bu"
             and "u" in (so[f], su[f])]
     bad = [f for f in keys if so[f] != su[f]]
-    assert len(keys) > 1500
-    # 260 before the unrolled laps (1389 of 1649 agreeing), 149 after.
-    assert len(bad) < 200, (len(bad), len(keys))
+    assert len(keys) > 1400
+    # 260 before the unrolled laps (1389 of 1649 agreeing), 149 after them,
+    # none once the vote is cast over them as well
+    # (`arpeggio.FIXED_ARP_VOTE_UNROLLED`: 1463 of 1463 agreeing).
+    assert len(bad) < 20, (len(bad), len(keys))
     # The remainder is the skip phase inside a 7-frame note: a 6-frame note
     # (no skipped frame in it) is exact.
     ends = ao[1:] + [ao[-1] + 40]

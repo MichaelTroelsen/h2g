@@ -56,6 +56,12 @@ def nibble_arp_up(sid: SidFile, det: Detection, nibble: int) -> Optional[bool]:
     return {0x69: True, 0xE9: False}.get(opcode)
 
 
+# `_note_phase_split` votes over the unrolled laps, not lap 1 alone, where the
+# fixed arp's looping body was written out (see its comment). False restores
+# the lap-1 vote (`tests/test_arp_unrolled_vote.py`).
+FIXED_ARP_VOTE_UNROLLED = True
+
+
 def fixed_arp_period(mask: int) -> int:
     """Counter steps per cycle of `counter & mask`: 2, 4 or 8 in the corpus.
 
@@ -2550,12 +2556,20 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
     held: dict = {}
     lap: dict = {}
     cur_ti, cur, row, last = -1, 0, 0, None
-    for ti, pos, play, p in plays():
+    # Where `spell` writes a looping body out lap by lap, the votes are cast
+    # over every lap as well (`FIXED_ARP_VOTE_UNROLLED`): a record played once
+    # a lap attacks on ONE residue in lap 1 and on another in lap 2, and a
+    # lap-1 vote saw a lone residue and cloned nothing, so the later lap's
+    # note kept the record's own phase (Game_Killer's record 5: 112 of its
+    # 225 notes one tick early).
+    timed = spell is not None and FIXED_ARP_VOTE_UNROLLED
+    vsrc, vres = (spell[0], spell[1]) if timed else (tracks, residues)
+    for ti, pos, play, p in plays(vsrc):
         if ti != cur_ti:
             if lap:
                 _share(held, lap, row)
             cur_ti, cur, row, last = ti, 0, 0, None
-        pat, res = patterns[p], residues.get((ti, pos, play), {})
+        pat, res = patterns[p], vres.get((ti, pos, play), {})
         for k in range(len(pat) // 4):
             if pat[k * 4] == 0xFF:
                 break
@@ -2576,9 +2590,18 @@ def _note_phase_split(tracks: List[List[int]], patterns: List[List[int]],
         major = phases.get(rec)
         if major is None:
             continue
-        top = max(n.values())
+        # By notes, or -- over the unrolled laps -- by the share of its
+        # voice's lap each residue is heard for (`held`): a note count
+        # weighs a one-off intro play the same as a note a short loop
+        # sounds every lap (Game_Killer's record 5: 5 intro notes on voice
+        # 0 against one note a lap on voice 2, which sounds 9 times the
+        # share).
+        weigh = (lambda r, c: held.get((rec, r), 0)) if timed else (
+            lambda r, c: c)
+        top = max(weigh(r, c) for r, c in n.items())
         for r, c in n.items():
-            if r == major or (factor is not None and c * factor < top):
+            if r == major or (factor is not None
+                              and weigh(r, c) * factor < top):
                 continue
             if distinct is not None and not distinct(rec, r):
                 continue
