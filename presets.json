@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.680 presets.py",
+  "generator": "h2g 0.5.681 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -2793,9 +2793,9 @@
       "max_hard_restart": true,
       "aligned_firstwave": true,
       "hard_restart_frames": 3,
+      "pulse_phase": true,
       "row_hard_restart": true,
-      "voice_arp": true,
-      "pulse_phase": true
+      "voice_arp": true
     },
     "Off_the_Cuff.sid": {
       "max_rows": 94,
