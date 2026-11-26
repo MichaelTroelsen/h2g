@@ -184,7 +184,14 @@ def test_devils_galops_out_of_band_phases_reach_the_packed_attack():
     # attack is $A41, the planned $A40 by this count's own rule -- the clone
     # keeps the running sweep, so the width is right and only the command
     # the count requires is gone.
-    assert _reach("Devils_Galop.sid") == {(0, 0): (551, 551), (0, 1): (61, 61),
+    # Voice 1 was 61/61 until v0.5.681: apply_pulse_phase now skips row 0 of
+    # the $68 sweep note whose row 1 carries the wide CMD_VIBRATO (task
+    # pulse-phase-devils-galop-sweep-vibrato), so that note's row has no
+    # CMD_SETPULSEPTR for this count to read; forced pulse_phase measured
+    # pphase .958 / poff .961 with and without it.
+    assert _reach("Devils_Galop.sid") == {(0, 0): (551, 551), (0, 1): (60, 61),
                                           (0, 2): (32, 33)}
     got = _reach("Monty_on_the_Run.sid")
-    assert (got[(0, 0)], got[(0, 1)]) == ((401, 405), (61, 61)), got
+    # Monty's v1 61 -> 60 at v0.5.681 by the same $68-sweep row-0 skip (the
+    # task's finding: Monty moves with it, aud .94206 -> .94222).
+    assert (got[(0, 0)], got[(0, 1)]) == ((401, 405), (60, 61)), got

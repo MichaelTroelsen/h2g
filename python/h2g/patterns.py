@@ -8024,6 +8024,21 @@ def _row_clock(changes: Dict[int, int], base_seconds: float,
     return clock
 
 
+def _carries_wide_sweep(pat: List[int], r: int) -> bool:
+    """True where row `r` opens a `$68` note whose first hold row holds the
+    `STORED_DEPTH_MARK` (`stored_wave.sweep_depths`). `_vibrato_command_pass`
+    turns the mark into the note's wide `CMD_VIBRATO` and writes it on every
+    FREE row of the note's block, row 0 included -- so a `CMD_SETPULSEPTR` on
+    row 0 would take the column and the note's first row would sweep at the
+    instrument's own depth instead (Devils_Galop's opening note under forced
+    `pulse_phase`, `tests/test_stored_wave_sweep_depth.py`). One column per
+    row, and the sweep is the more audible of the two: the note keeps the
+    record's own width and the column stays free."""
+    k = 4 * (r + 1)
+    return (k + 3 < len(pat) and pat[k + 2] == 4
+            and pat[k + 3] >= STORED_DEPTH_MARK)
+
+
 def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                       writes: list, index: dict, log=None,
                       row_seconds: Optional[List[float]] = None,
@@ -8095,7 +8110,7 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                 clocks[g] = _row_clock(merged, secs, calls_per_frame)
             inside = served = 0
             for r, _ in vector:
-                if src[4 * r + 2] != 0:
+                if src[4 * r + 2] != 0 or _carries_wide_sweep(src, r):
                     continue
                 served += 1
                 if secs is not None and pos in starts[ti]:
@@ -8130,7 +8145,7 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                 continue
             copy = list(src)
             for r, e in vector:
-                if copy[4 * r + 2] == 0:
+                if copy[4 * r + 2] == 0 and not _carries_wide_sweep(copy, r):
                     copy[4 * r + 2], copy[4 * r + 3] = CMD_SETPULSEPTR, e
                     written += 1
                 else:

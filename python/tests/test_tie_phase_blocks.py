@@ -158,14 +158,15 @@ def test_without_row_kind_nothing_is_tagged():
 
 # --- the block: the same one a phase clone of that residue gets ---------------
 
-def _convert_capturing(name):
-    """convert(name) under presets with the option forced, with the layout's
-    keyword arguments of the main call captured (the lists it fills are
-    live)."""
+def _convert_capturing(name, **extra):
+    """convert(name) under presets with the option forced (and `extra`
+    overriding either), with the layout's keyword arguments of the main call
+    captured (the lists it fills are live)."""
     import fidelity
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
     opts["tie_restart"] = True
+    opts.update(extra)
     seen: list = []
     real = GB._wavetable_layout
 
@@ -268,12 +269,25 @@ def test_a_table_with_no_room_keeps_the_old_spelling():
 
 
 @needs_corpus
-def test_chimeras_row_locked_ties_stay_on_the_old_spelling():
-    _sng, lines, seen, _real = _convert_capturing("Chimera.sid")
+@pytest.mark.parametrize("pulse_phase, row_locked", [
     # 477 before the arp split wrote a repeated orderlist entry out as one
     # entry per play (6 pattern copies, 24 more tie rows;
     # tests/test_arp_repeat_unroll.py).
-    assert any("(501 row-locked arpeggio)" in line for line in lines), lines
+    (False, 501),
+    # `pulse_phase` lays a pattern copy per opening duty (69 -> 110 patterns,
+    # 615 -> 1139 TONEPORTA-00 rows on the same 3 voices' music): the same
+    # row-locked ties counted once per copy, spelt the same way. The count is
+    # a layout figure, so the test pins it under each setting of the option
+    # and not under whatever presets.json carries (pulse-phase-chimera-
+    # row-locked-arpeggio; HISTORICAL, 0.5.676).
+    (True, 549),
+])
+def test_chimeras_row_locked_ties_stay_on_the_old_spelling(
+        pulse_phase, row_locked):
+    _sng, lines, seen, _real = _convert_capturing(
+        "Chimera.sid", pulse_phase=pulse_phase)
+    assert any(f"({row_locked} row-locked arpeggio)" in line
+               for line in lines), lines
     assert not any("restart the block of the residue" in line
                    for line in lines)
     assert not seen or not seen[-1][1]["tie_blocks"]

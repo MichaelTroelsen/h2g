@@ -85,6 +85,12 @@ def test_action_biker_quiet_copy_is_gone_at_max_rows_94():
 
 @needs_corpus
 def test_thing_on_a_spring_heard_copies_stay():
-    lines, _ = _convert("Thing_on_a_Spring.sid", tie_restart=True)
+    # pulse_phase held off: Thing_on_a_Spring ships it since v0.5.681, and
+    # its pattern copies replace the entry split this test reads.
+    lines, _ = _convert("Thing_on_a_Spring.sid", tie_restart=True,
+                        pulse_phase=False)
     assert [ln for ln in lines if "Entry instrument split" in ln
             and "of 05, 08" in ln]
+    shipped, _ = _convert("Thing_on_a_Spring.sid", tie_restart=True)
+    assert not [ln for ln in shipped if "Entry instrument split" in ln
+                and "of 05, 08" in ln]

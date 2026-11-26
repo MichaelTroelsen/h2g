@@ -460,7 +460,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "pulse_phase": true
     },
     "BMX_Kidz.sid": {
       "max_rows": 94,
@@ -591,7 +592,8 @@
       "rows": 17441,
       "multiplier": 1,
       "drum_gate_off": true,
-      "pre_note_wave": true
+      "pre_note_wave": true,
+      "pulse_phase": true
     },
     "Commando.sid": {
       "max_rows": 128,
@@ -1086,7 +1088,8 @@
         60,
         61,
         62
-      ]
+      ],
+      "pulse_phase": true
     },
     "Dragons_Lair_Part_II.sid": {
       "max_rows": 94,
@@ -2791,7 +2794,8 @@
       "aligned_firstwave": true,
       "hard_restart_frames": 3,
       "row_hard_restart": true,
-      "voice_arp": true
+      "voice_arp": true,
+      "pulse_phase": true
     },
     "Off_the_Cuff.sid": {
       "max_rows": 94,
@@ -3817,7 +3821,8 @@
         61,
         62
       ],
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "pulse_phase": true
     },
     "Thrust.sid": {
       "max_rows": 94,

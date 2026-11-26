@@ -134,23 +134,41 @@ def test_three_more_files_carry_the_rise_through_their_rest_rows():
     assert "1 note(s) carried on" in got["Human_Race"]
 
 
+def _store_rows_planned(rise):
+    """The `N store row(s)` count of the `Note rise (bit $02)` log line."""
+    import re
+    return int(re.search(r"(\d+) store row\(s\)", rise).group(1))
+
+
 @needs_corpus
-@pytest.mark.parametrize("name,rows", [("Game_Killer", None),
-                                       ("Battle_of_Britain", "368 store row(s)"),
+@pytest.mark.parametrize("name,more", [("Game_Killer", None),
+                                       ("Battle_of_Britain", 39),
                                        ("Human_Race", None)])
-def test_without_the_copies_the_rest_rows_are_mixed(name, rows, monkeypatch):
+def test_without_the_copies_the_rest_rows_are_mixed(name, more, monkeypatch):
     """The rest rows are `mixed` without a copy. Game_Killer and Human_Race
     then place under half of what they carry on and keep the plan without
-    the continuation; Battle_of_Britain places 58 of 97 and keeps 368 rows
-    where the copy takes 407 (409 before its tied rests rang out)."""
+    the continuation; Battle_of_Britain places 58 of 97 and keeps 43 rows
+    mixed, where the copy takes 39 store rows more (409 against 368 before
+    its tied rests rang out, 407 against 368 at v0.5.674).
+
+    The 39 is what is pinned, not the 368: the rows a pattern copy adds are
+    counted too, so the total moves with every pass that copies note
+    patterns (`pulse_phase` -- 40 copies on this file -- takes 368 -> 412 and
+    407 -> 451) while the rows the isolation itself contributes stay 39."""
+    _sng, lines, _ = _converted(name)
+    (with_copies,) = [m for m in lines if "Note rise (bit $02)" in m]
     monkeypatch.setattr(R, "_isolate", lambda t, p, *a: (t, p, 0))
     _sng, lines, _ = _converted(name)
     (rise,) = [m for m in lines if "Note rise (bit $02)" in m]
     assert "pattern copy" not in rise, rise
-    if rows is None:
+    assert "pattern copy" in with_copies, with_copies
+    if more is None:
         assert "carried on" not in rise, rise
     else:
-        assert rows in rise and "43 row(s) mixed" in rise, rise
+        assert "43 row(s) mixed" in rise, rise
+        assert "; 4 row(s) mixed" in with_copies, with_copies
+        assert (_store_rows_planned(with_copies)
+                - _store_rows_planned(rise)) == more, (with_copies, rise)
 
 
 @needs_corpus

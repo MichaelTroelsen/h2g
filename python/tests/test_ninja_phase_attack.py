@@ -226,14 +226,18 @@ _FULL = {0: (66, 93), 1: (28, 28), 2: (102, 102)}
 
 
 def test_no_shipped_preset_carries_both_flags():
-    """The lag is a property of `no_test_restart` + `pulse_phase` together, and
-    only a forced flag brings them together: no `presets.json` song has both."""
+    """The lag is a property of `no_test_restart` + `pulse_phase` together.
+    Since v0.5.681 Ninja ships both, and it is the only song that does; it is
+    safe there because its shipped `aligned_firstwave` overrides
+    `no_test_restart` (task pulse-phase-ninja-no-test-restart-lag). Any other
+    song carrying both lacks that cover, so none may."""
     _, doc = _corpus_and_presets()
     both = [n for n, o in doc["songs"].items()
             if o.get("pulse_phase") and o.get("no_test_restart")]
-    assert both == []
+    assert both == [_NAME]
+    assert all(doc["songs"][n].get("aligned_firstwave") for n in both)
     assert doc["songs"][_NAME].get("no_test_restart") is True
-    assert not doc["songs"][_NAME].get("pulse_phase")
+    assert doc["songs"][_NAME].get("pulse_phase") is True
 
 
 def test_ninjas_firstwave_is_the_real_waveform_and_the_testbit_without_the_flag():

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.681 — 2026-11-26
+
+- Adopt pulse_phase on Ninja, Battle_of_Britain, Devils_Galop, Chimera and Thing_on_a_Spring
+
 ## 0.5.680 — 2026-11-26
 
 - Adopt I_Ball vibrato_hold + phase split, Food_Feud pitch_seq + pulse_phase, Game_Killer tail merge
