@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
-from .patterns import (CMD_SETPULSEPTR, CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
+from .patterns import (CMD_SETPULSEPTR, CMD_SETWAVE, CMD_SETWAVEPTR, CMD_TONEPORTA, DEFAULT_TRACK, GT_END_PATTERN, GT_FIRSTNOTE,
                        GT_KEYOFF, GT_LASTNOTE, GT_NO_NOTE,
                        GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
                        GT_TRANSPOSE_UP,
@@ -40,6 +40,24 @@ SILENT_PATTERN = [GT_KEYOFF, 0, 0, 0, GT_NO_NOTE, 0, CMD_SETPULSEPTR, 0,
 # KEYOFF row is the one event the pattern holds; the no-note row after it
 # is not an event and ENDPATT is not a row.
 SILENT_EVENT_ROWS = frozenset({0})
+
+# The park of a tune whose original zeroes `$D404` on every voice when it
+# stops (`Detection.stop_zeroes_ctrl`; `master_fade.park_end_wave` swaps it in
+# for `SILENT_PATTERN`). The waveform write comes FIRST so it lands on the
+# earliest row the park has: the original's write is the play call after its
+# last note's gate-off, and every row later is a frame the voice rings out its
+# release against the original's silence (Kings_of_the_Beach_ingame: wave
+# .9689 with the write on row 3, .9971 on row 1). A wavetable that is still
+# running rewrites the waveform on the very tick a command sets it, so the
+# write is repeated after `CMD_SETWAVEPTR 0` has stopped the program; for a
+# program that has already ended the first write is the one that counts and
+# the second is the same byte.
+WAVE_PARK_PATTERN = [GT_KEYOFF, 0, 0, 0,
+                     GT_NO_NOTE, 0, CMD_SETWAVE, 0,
+                     GT_NO_NOTE, 0, CMD_SETPULSEPTR, 0,
+                     GT_NO_NOTE, 0, CMD_SETWAVEPTR, 0,
+                     GT_NO_NOTE, 0, CMD_SETWAVE, 0,
+                     GT_END_PATTERN, 0, 0, 0]
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.682 — 2026-11-26
+
+- Adopt 10 decided changes: Bangkok tie_late_pitch, Delta-13 filter addend, Pandora slide goal, Phantoms note-rise JSR, Shockway vibrato trim, 5 Title Tunes stair parity, Kings park_wave, IK_plus pitch_seq bandpass, Gremlins pulse_phase, Pygmies pitch_seq
+
 ## 0.5.681 — 2026-11-26
 
 - Adopt pulse_phase on Ninja, Battle_of_Britain, Devils_Galop, Chimera and Thing_on_a_Spring

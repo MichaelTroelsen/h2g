@@ -195,6 +195,11 @@ from .pulse import (_bounds_record, budget_pulse_phase_commands,
                     track_set_tick_ratios, CLOCK_WINDOW_ROWS, ClockNote,
                     _clock_notes,
                     triangle_start, TriangleStart, _write_pulsetable)  # noqa: F401
+from .pulse import (PARITY_B, STAIR_CALLS, STAIR_MIN_STEP, is_held_stair,
+                    is_parity, parity_direction, base_direction,
+                    parity_records, resolve_parity, parity_index, held_stairs, _STAIR_ON,
+                    stair_costs_records,
+                    _held_ramp_rows, _parity_pointer)  # noqa: F401
 from .pulse import (SPELLED_SPEED_MIN, _ramp_rows, _setrow, _tri_call_speed,
                     _tri_table_speed)  # noqa: F401
 from .pulse import (MIXED_SPEED_MIN_ERR, MIXED_CELL_ROW, _tri_exact_rate,

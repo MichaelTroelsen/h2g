@@ -484,9 +484,10 @@ _REACH = {
     # Re-pinned by lay-pulse-phase-table-adopts-union-groups: the {1, 2}
     # union is adopted after {18, 23} (242 rows, 6 records kept): window
     # total 1202 -> 1351, subtune 4 voice 0 210 -> 383, subtune 2 voice 1
-    # 63 -> 39.
+    # 63 -> 39. listen-sub99-gremlins (start subtune's clones rank first):
+    # subtune 2 voice 1 39 -> 36.
     "Human_Race.sid": {(0, 0): (455, 457), (0, 1): (120, 120),
-                       (1, 1): (216, 216), (2, 1): (39, 120),
+                       (1, 1): (216, 216), (2, 1): (36, 120),
                        (3, 0): (138, 138), (4, 0): (383, 386),
                        (4, 1): (0, 264)},
 }

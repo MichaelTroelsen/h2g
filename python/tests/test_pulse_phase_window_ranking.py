@@ -163,7 +163,10 @@ def test_human_races_window_reach_total_rises_and_subtune_zero_holds():
     # 1202 until lay-pulse-phase-table-adopts-union-groups (both unions
     # adopted, 242 rows): subtune 4 voice 0 210 -> 383, subtune 2 voice 1
     # 63 -> 39.
-    assert sum(reached.values()) == 1351, reached
+    # 1348 from listen-sub99-gremlins (the start subtune's clones rank first,
+    # `first_group`): subtune 2 voice 1 39 -> 36, the one voice that was
+    # outside subtune 0 and shared a clone's room with it.
+    assert sum(reached.values()) == 1348, reached
 
 
 # --- following the tempo changes the tempo pass wrote ----------------------

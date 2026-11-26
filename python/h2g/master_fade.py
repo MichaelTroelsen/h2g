@@ -86,6 +86,50 @@ def written_positions(sid: SidFile, det: Detection, tracks: List[List[int]],
     return seen
 
 
+def park_end_wave(tracks: List[List[int]], patterns: List[List[int]],
+                  log=None, event_rows=None) -> int:
+    """Swap `WAVE_PARK_PATTERN` in for the silent park on every parked voice.
+
+    The original's stop state writes waveform `$00` on all three voices in
+    one play call (`Detection.stop_zeroes_ctrl`); `SILENT_PATTERN` only
+    closes the gate, so the voice rings out its release against the
+    original's silence. One shared copy, APPENDED after every other pattern
+    for the reason `park_end_volume` gives (a pattern stored after a moved
+    one shifts a byte, and sidplayfp's render of the whole tune with it).
+
+    Returns how many orderlist entries were changed.
+    """
+    from .patterns import GT_ORDER_RESTART, MAX_PATTERNS
+    from .tracks import SILENT_EVENT_ROWS, SILENT_PATTERN, WAVE_PARK_PATTERN
+    copy_index = None
+    done = 0
+    for track in tracks:
+        m = next((i for i, b in enumerate(track) if b == GT_ORDER_RESTART),
+                 None)
+        if (m is None or m < 1 or m + 1 >= len(track)
+                or track[m + 1] != m - 1):
+            continue                        # not parked on its own last entry
+        at = track[m - 1]
+        if at >= len(patterns) or patterns[at] != list(SILENT_PATTERN):
+            continue
+        if copy_index is None:
+            if len(patterns) >= MAX_PATTERNS:
+                if log:
+                    log("*** NO ROOM FOR THE TUNE-END WAVEFORM PATTERN (AT "
+                        f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                return done
+            copy_index = len(patterns)
+            patterns.append(list(WAVE_PARK_PATTERN))
+            if event_rows is not None:
+                event_rows[copy_index] = SILENT_EVENT_ROWS
+        track[m - 1] = copy_index
+        done += 1
+    if log and done:
+        log(f"Tune-end waveform.......: $00 on the silent park of {done} "
+            "voice(s), the original's stop state zeroing $D404")
+    return done
+
+
 def park_end_volume(tracks: List[List[int]], patterns: List[List[int]],
                     log=None, event_rows=None) -> int:
     """Write the tune-end `D00` into the silent park, one voice per subtune.
@@ -106,8 +150,9 @@ def park_end_volume(tracks: List[List[int]], patterns: List[List[int]],
     Returns how many orderlists were changed.
     """
     from .patterns import CMD_SETMASTERVOL, GT_ORDER_RESTART, MAX_PATTERNS
-    from .tracks import SILENT_EVENT_ROWS, SILENT_PATTERN
-    copy_index = None
+    from .tracks import (SILENT_EVENT_ROWS, SILENT_PATTERN,
+                         WAVE_PARK_PATTERN)
+    copy_index = {}
     done = 0
     for g in range(0, len(tracks), 3):
         for track in tracks[g:g + 3]:
@@ -117,21 +162,25 @@ def park_end_volume(tracks: List[List[int]], patterns: List[List[int]],
                     or track[m + 1] != m - 1):
                 continue                    # not parked on its own last entry
             at = track[m - 1]
-            if at >= len(patterns) or patterns[at] != list(SILENT_PATTERN):
+            # The plain park, or the one `park_end_wave` swapped in: each
+            # gets its own `D00` copy, so the two options compose.
+            if at >= len(patterns) or patterns[at] not in (
+                    list(SILENT_PATTERN), list(WAVE_PARK_PATTERN)):
                 continue
-            if copy_index is None:
+            base = tuple(patterns[at])
+            if base not in copy_index:
                 if len(patterns) >= MAX_PATTERNS:
                     if log:
                         log("*** NO ROOM FOR THE TUNE-END VOLUME PATTERN (AT "
                             f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
                     return done
-                copy = list(SILENT_PATTERN)
+                copy = list(base)
                 copy[2], copy[3] = CMD_SETMASTERVOL, 0
-                copy_index = len(patterns)
+                copy_index[base] = len(patterns)
                 patterns.append(copy)
                 if event_rows is not None:
-                    event_rows[copy_index] = SILENT_EVENT_ROWS
-            track[m - 1] = copy_index
+                    event_rows[copy_index[base]] = SILENT_EVENT_ROWS
+            track[m - 1] = copy_index[base]
             done += 1
             break                           # one voice per subtune
     if log and done:

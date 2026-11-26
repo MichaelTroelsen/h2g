@@ -24,11 +24,16 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
-                         build_pulse_phase_table, pulse_usage, _instruments_used, find_song_speeds, effective_frames,
+                         build_pulse_phase_table, held_stairs,
+                         parity_direction, parity_index,
+                         parity_records, stair_costs_records,
+                         pulse_usage, resolve_parity, _instruments_used, find_song_speeds, effective_frames,
                          step_durations,
                          HEADER_LEN, startup_phase, GT_TEMPO_INSTRUMENT,
                          first_row_deltas,
                          _parse_song, GT_MAX_TABLELEN)
+from .goatwriter.pulse import (
+    build_pulse_phase_table as _build_stair_table)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -42,7 +47,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        collect_pulse_phases, apply_pulse_phase,
                        inherit_free_rows, inherit_event_rows, IlvArps)
 from .ilv_arp_default import ilv_default_arps
-from .master_fade import (park_end_volume as _mf_park_end,
+from .master_fade import (park_end_wave as _mf_park_wave,
+                          park_end_volume as _mf_park_end,
                           written_positions as _mf_written)
 from .cmd_chord import find_cmd_chord, chord_note_cycles, record_intro
 from .instrument_drop import (
@@ -386,6 +392,7 @@ def convert(sid_path: str, log: Logger = print,
             pre_note_wave: bool = False,
             rest_wave_restart: bool = False,
             master_fade: bool = False,
+            park_wave: bool = False,
             keep_hard_restart: bool = False,
             drum_sustain_gate_off: bool = False,
             release_held_stored_wave: bool = False,
@@ -818,6 +825,13 @@ def convert(sid_path: str, log: Logger = print,
     `reindex_tracks` before `pack_repeats`, which would fold the unrolled
     repeats back). Only for the version-0 orderlist, where the position is
     the flat index. Off by default: it moves the bytes of the files it reaches.
+
+    park_wave writes waveform `$00` on the silent park (`master_fade.
+    park_end_wave`, `tracks.WAVE_PARK_PATTERN`) of a song whose player zeroes
+    `$D404` on every voice when it stops (`Detection.stop_zeroes_ctrl`). The
+    plain park only closes the gate, so each voice rings out its release
+    against the original's silence. Needs `legal_restart` and `silent_park`.
+    Off by default: it moves the bytes of every parked file with that player.
 
     drum_long carries the bit-$01 drum's high-byte fall on the drum notes
     LONGER than their record's median length. `_drum_entries` writes one
@@ -1735,21 +1749,72 @@ def convert(sid_path: str, log: Logger = print,
             plan = collect_pulse_phases(
                 new_patterns, tracks, walk_tempos, sims, log,
                 free_rows=free_rows, calls_per_frame=calls_per_frame,
-                tri_start=start, event_rows=event_rows)
+                tri_start=start, event_rows=event_rows,
+                parity=(parity_records(sid, det, sims, multiplier, lead)
+                        if start is not None else frozenset()))
             table = None
             if plan:
                 phases, writes = plan
+                # A counter-0 note of a held staircase (`Counter0Phase`)
+                # opens its first step a tick sooner than the other parity.
+                # The table is laid for the slew first, as it always was,
+                # and then for the staircase (`goatwriter.held_stairs`)
+                # where the walk planned one: its counter-0 notes take keys
+                # of their own (`parity_direction`) that enter the table a
+                # hold row ahead of their neighbour
+                # (`goatwriter.parity_index`), and it ships only if it keeps
+                # every record the slew table kept -- a step is two rows
+                # where a slew is one a leg.
+                parity_to: dict = {}
+                stair_phases = None
+                if any(getattr(ph, "counter0", False)
+                       for (_, _, rows) in writes
+                       for (_, ph) in rows.values()):
+                    stair_in: dict = {}
+                    stair_writes = []
+                    for (ti, pos, rows) in writes:
+                        mine = {}
+                        for r, (num, ph) in rows.items():
+                            if getattr(ph, "counter0", False):
+                                ph = (ph[0], parity_direction(ph[1]))
+                            stair_in.setdefault(num, set()).add(ph)
+                            mine[r] = (num, ph)
+                        stair_writes.append((ti, pos, mine))
+                    stair_phases, parity_to = resolve_parity(
+                        sid, det, multiplier, stair_in, lead)
+                pulse_args = (sid, det, _instruments_used(det, None, lead),
+                              pulse, multiplier)
                 # A compilation's further players are appended after this
                 # table (`_append_players`, the same gate), so it is laid
                 # out as short as the same widths allow.
-                table = build_pulse_phase_table(
-                    sid, det, _instruments_used(det, None, lead), pulse,
-                    multiplier, phases, log, lead,
+                build = dict(
                     prefer_short=(not isinstance(sid, PlayerView)
                                   and len(det.players) >= 2),
                     usage=pulse_usage(tracks, new_patterns, lead))
+                slew_log: list = []
+                table = build_pulse_phase_table(
+                    *pulse_args, phases, slew_log.append if parity_to
+                    else log, lead, **build)
+                if parity_to:
+                    stair = stair_log = None
+                    if table:
+                        stair_log = []
+                        with held_stairs(True):
+                            stair = _build_stair_table(
+                                *pulse_args, stair_phases, stair_log.append,
+                                lead, **build)
+                    if stair is not None and not stair_costs_records(
+                            stair, table, build["usage"]):
+                        table, writes = stair, stair_writes
+                        slew_log = stair_log
+                    else:
+                        parity_to = {}
+                    for line in slew_log:
+                        log(line)
             if plan and table:
                 entries, starts, index = table
+                if parity_to:
+                    index = parity_index(entries, index, parity_to)
                 # Seconds one row of each group lasts on the clock the walk
                 # ran on (`tempo` calls of `calls_per_frame` per frame, 50
                 # frames a second): what ranks the pattern copies by when
@@ -1758,7 +1823,10 @@ def convert(sid_path: str, log: Logger = print,
                     new_patterns, tracks, writes, index, log,
                     row_seconds=[max(1, t) / (50.0 * calls_per_frame)
                                  for t in walk_tempos],
-                    calls_per_frame=multiplier)
+                    calls_per_frame=multiplier,
+                    first_group=(max(0, getattr(sid, "start_song", 1) - 1)
+                                 if len(tracks) // 3 == subtunes_before
+                                 else 0))
                 pulse_plan = (entries, starts)
             else:
                 # Nothing shipped: the expansion collect may have made is
@@ -1783,6 +1851,8 @@ def convert(sid_path: str, log: Logger = print,
     # adds or renumbers a pattern -- after the prune above -- because patterns
     # are stored in index order and anything stored after the new pattern
     # moves a byte, which moves sidplayfp's render of the whole tune.
+    if park_wave and legal_restart and silent_park and det.stop_zeroes_ctrl:
+        _mf_park_wave(tracks, new_patterns, log)
     if master_fade and legal_restart and silent_park and det.tune_end_volume:
         _mf_park_end(tracks, new_patterns, log)
     # `build_sng` changes the tracks and patterns it is given; a phased

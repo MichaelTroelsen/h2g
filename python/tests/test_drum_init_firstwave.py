@@ -24,11 +24,17 @@ from h2g.goatwriter import FIRSTWAVE_DRUM_INIT, FIRSTWAVE_FREERUN  # noqa: E402
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def _firstwaves(sfx_drum: bool) -> list:
+def _firstwaves(sfx_drum: bool, shipped: bool = False) -> list:
+    """IK_plus's firstwaves under its preset. Since v0.5.682 the preset also
+    ships pitch_seq / two_stage / sfx_drum_bandpass, which re-lay the
+    instrument table; unless `shipped`, those are held off so the count
+    below reads the drum-init mechanism alone."""
     from h2g.convert import convert
     name = "IK_plus.sid"
     doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
     opts = fidelity._preset_opts(doc, name)
+    if not shipped:
+        opts.update(pitch_seq=False, two_stage=False, sfx_drum_bandpass=False)
     opts["sfx_drum"] = sfx_drum
     sng = convert(str(CORPUS / name), log=lambda m: None, **opts)
     return [i.firstwave for i in songview.parse_sng(sng).instruments]
@@ -43,6 +49,9 @@ def test_ik_plus_drum_alone_records_open_the_init_call_gate_clear():
     assert len(changed) == 2, changed
     assert set(changed) == {(FIRSTWAVE_FREERUN, FIRSTWAVE_DRUM_INIT)}
     assert FIRSTWAVE_DRUM_INIT & 0x01 == 0, "the init call must not raise the gate"
+    # The shipped preset still opens a drum-alone record gate-clear.
+    off_s, on_s = _firstwaves(False, True), _firstwaves(True, True)
+    assert {(a, b) for a, b in zip(off_s, on_s) if a != b} ==         {(FIRSTWAVE_FREERUN, FIRSTWAVE_DRUM_INIT)}
 
 
 @needs_corpus

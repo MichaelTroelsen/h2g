@@ -385,7 +385,8 @@
       "prev_class_firstwave": true,
       "regrid": true,
       "regrid_phase": true,
-      "regrid_prepay": 1
+      "regrid_prepay": 1,
+      "tie_late_pitch": true
     },
     "Battle_of_Britain.sid": {
       "max_rows": 94,
@@ -1472,7 +1473,8 @@
       "initial_instrument": true,
       "pre_note_wave": true,
       "prev_class_firstwave": true,
-      "tie_late_pitch": true
+      "tie_late_pitch": true,
+      "pulse_phase": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -1807,7 +1809,10 @@
       "regrid": true,
       "regrid_full_debt": true,
       "regrid_phase": true,
-      "sfx_drum_stage": true
+      "sfx_drum_stage": true,
+      "pitch_seq": true,
+      "two_stage": true,
+      "sfx_drum_bandpass": true
     },
     "International_Karate.sid": {
       "max_rows": 94,
@@ -1909,7 +1914,8 @@
         61,
         62
       ],
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "park_wave": true
     },
     "Kings_of_the_Beach_intro.sid": {
       "max_rows": 128,
@@ -3127,7 +3133,8 @@
       "master_volume": true,
       "pre_note_wave": true,
       "prev_class_firstwave": true,
-      "row_hard_restart": true
+      "row_hard_restart": true,
+      "pitch_seq": true
     },
     "Radio_ACE.sid": {
       "max_rows": 94,

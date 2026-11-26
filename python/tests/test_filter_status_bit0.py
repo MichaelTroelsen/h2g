@@ -84,7 +84,9 @@ BYPASSES = {"Bangkok_Knights", "Nemesis_the_Warlock", "Nineteen", "Pandora",
 REACHES = {"Deep_Strike", "Delta_Mix-E-Load_loader", "Dragons_Lair_Part_II",
            "Food_Feud", "Knucklebusters", "Lightforce", "Sanxion",
            "Tarzan"}
-NO_BIT01 = {"ACE_II", "Auf_Wiedersehen_Monty", "I_Ball", "IK_plus",
+# Delta joined at v0.5.682: detect.find_filter now reads its ADC-addend
+# filter (task listen-sub99-delta-13), and its status writes carry no bit 0/1.
+NO_BIT01 = {"ACE_II", "Auf_Wiedersehen_Monty", "Delta", "I_Ball", "IK_plus",
             "Trans-Atlantic_Balloon_Challenge",
             "Sigma_Seven", "Thanatos"}
 

@@ -234,11 +234,12 @@ def _slide_semitones(pitches: Optional[Dict[int, int]], total: int) -> int:
     notes = _slide_goals(pitches, total)
     if not notes:
         return 0
+    from .skydive import GT_FREQ_TABLE
 
     def errors(k: int) -> Optional[List[tuple]]:
         if any(not 0 <= n + k <= 95 for n, _, _ in notes):
             return None
-        return [(abs(math.log2(_note_freq(n + k) / goal)), w)
+        return [(abs(math.log2(GT_FREQ_TABLE[n + k] / goal)), w)
                 for n, w, goal in notes]
 
     def cost(k: int) -> float:
@@ -271,6 +272,7 @@ def _slide_goals(pitches: Optional[Dict[int, int]],
     rise). Empty where nothing can be said -- no distribution, a zero total,
     or any note the offset would take to zero.
     """
+    from .skydive import GT_FREQ_TABLE
     s = total & 0xFFFF
     if not pitches or not s:
         return []
@@ -279,7 +281,7 @@ def _slide_goals(pitches: Optional[Dict[int, int]],
     for n, plays in pitches.items():
         if n < 0 or n > 95 or plays <= 0:
             continue
-        target = _note_freq(n) + delta
+        target = GT_FREQ_TABLE[n] + delta
         if target <= 0:
             return []
         notes.append((n, plays, target))

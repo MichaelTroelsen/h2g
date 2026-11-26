@@ -310,7 +310,8 @@ def test_the_drum_blocks_that_set_a_passband_are_these_files():
         got = find_sfx_drum_bandpass(sid)
         if got != (-1, -1):
             found[p.stem] = got
-    assert set(found) == {"After_8", "I_Ball", "Mr_Meaner", "Nineteen",
+    assert set(found) == {"After_8", "I_Ball", "IK_plus", "Mr_Meaner",
+                          "Nineteen",
                           "Off_the_Cuff", "Pandora", "Pygmies_Revenge",
                           "Rikky", "Rock_Tells_the_Tale", "Star_Paws",
                           "Thundercats",

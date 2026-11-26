@@ -200,6 +200,14 @@ def main(argv=None) -> int:
              "copy with its own D0v per fading position. A song without "
              "that shape is unchanged. Per song. Off by default")
     parser.add_argument(
+        "--park-wave", action="store_true",
+        help="write waveform $00 on the silent park of a song whose player "
+             "zeroes $D404 on every voice when it stops (Kings of the "
+             "Beach ingame's stop state), so the voices do not ring out "
+             "their release against the original's silence. Needs "
+             "--legal-restart and --silent-park. A song without that "
+             "player is unchanged. Per song. Off by default")
+    parser.add_argument(
         "--keep-hard-restart", action="store_true",
         help="keep Goattracker's hard restart on every instrument even "
              "under --no-hard-restart, so the envelope's rate period is "
@@ -961,6 +969,7 @@ def main(argv=None) -> int:
                           ("--pre-note-wave", "pre_note_wave"),
                           ("--rest-wave-restart", "rest_wave_restart"),
                           ("--master-fade", "master_fade"),
+                          ("--park-wave", "park_wave"),
                           ("--keep-hard-restart", "keep_hard_restart"),
                           ("--drum-sustain-gate-off", "drum_sustain_gate_off"),
                           ("--release-held-stored-wave",
@@ -1105,6 +1114,7 @@ def main(argv=None) -> int:
                       pre_note_wave=args.pre_note_wave,
                       rest_wave_restart=args.rest_wave_restart,
                       master_fade=args.master_fade,
+                      park_wave=args.park_wave,
                       keep_hard_restart=args.keep_hard_restart,
                       drum_sustain_gate_off=args.drum_sustain_gate_off,
                       release_held_stored_wave=args.release_held_stored_wave,

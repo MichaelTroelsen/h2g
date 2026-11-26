@@ -36,7 +36,8 @@ def test_the_trim_takes_one_call_off_record_six_only():
     assert V._depth_trimmed(NAME, 11, shipped) == shipped
     assert V._depth_trimmed("Warhawk", 6, shipped) == shipped
     assert V._depth_trimmed(NAME, 6, None) is None
-    assert V.CLASSIC_DEPTH_CMP_TRIM == {(NAME, 6): 1}
+    assert {k: v for k, v in V.CLASSIC_DEPTH_CMP_TRIM.items()
+            if k[0] == NAME} == {(NAME, 6): 1}
 
 
 def test_the_trim_cannot_underflow_cmp():

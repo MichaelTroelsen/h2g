@@ -2041,6 +2041,23 @@ land on rests (Nineteen `-t 40`: 2 of 235).
 
 `tests/test_sfx_drum_bandpass.py`.
 
+**The shadow-form drum (IK_plus; `tests/test_sfx_drum_bandpass_shadow.py`).**
+IK+'s fire block aims its two noise stores at a RAM image of the SID but writes
+`$60 -> $D416` / `$2F -> $D418` to the chip ten bytes behind the pair, as every
+direct-form file does; `find_sfx_drum_bandpass` read only the direct form, so the
+option was inert there (its docstring said the tail was not behind the pair; it
+is). It now falls back to `SFX_DRUM_SHADOW_SHAPE`. Its notes hold one hit each
+(1077 of 1231 hits are the only hit of their note, `-t 180`) and the player
+restarts the note's filter accumulator, so the first hit is written out with the
+drum's own `$60` spike and the absolute restore (`$28`), which the direct-form
+files' long notes cannot have (`find_sfx_drum_shadow_spike`). Measured on IK_plus
+at `-t 180 --sound`, presets + `--sfx-drum-bandpass` (historical, v0.5.674):
+`band` .835 -> 1.000, `bnote` 0.000 -> .999, `cfrm` .768 -> .890, `cut` .581 ->
+.902, `aud` .9073 -> .9260, `loud_ratio` .814 -> .956, no printed column
+falling. Without the spike row the same option read `cfrm` .446. Not adopted:
+the presets entry is a separate step; forced on, IK_plus is the only corpus file
+this change moves.
+
 **The hit on a rest (v0.5.624, `goatwriter/sfx_rest_click.py`).** The sfx
 block writes its hit unmasked, so one frame into a rest of the drum record the
 original raises the gate under ADSR `$0000`: a ~8 ms noise click siddump names
@@ -4235,6 +4252,32 @@ at 0e0167e (`-t 180 --presets --sound`): `aud` .9569 -> .9602, `loud` .9628 ->
 .9772, `vol` .9119 -> .9780. The corpus byte-hash moves Confuzion only. Off by
 default; on for Sanxion and Confuzion only. `tests/test_master_fade.py`
 pins the list, and `tests/test_master_fade_tune_end.py` pins the park write.
+
+## `--park-wave` (waveform $00 when the original stops)
+
+Hubbard's `$FE` pattern byte makes the player `JSR` its stop entry, which sets
+a flag; the NEXT play call writes `$00` to `$D404` on every voice in one call
+(Kings_of_the_Beach_ingame `$9121 -> $9070`, then `$90AD`: `LDA #$00 / LDX
+last / LDY base,X / STA $D404,Y / DEX / BPL`) and the player freezes on its
+pulse/filter tail. The plain silent park only closes the gate, so each of our
+voices rings out its release against the original's silence. The option swaps
+`tracks.WAVE_PARK_PATTERN` in for the park (`master_fade.park_end_wave`, one
+shared copy appended after every other pattern, for the reason `park_end_volume`
+gives): `CMD_SETWAVE 0` on the first free row, then `CMD_SETPULSEPTR 0`, then
+`CMD_SETWAVEPTR 0` and `CMD_SETWAVE 0` again, so a wavetable that is still
+running cannot keep the waveform. It composes with `--master-fade`'s tune-end
+`D00`. Gated on `Detection.stop_zeroes_ctrl` (`STOP_ZEROES_CTRL_SHAPE`, 28 of
+the 95 files) plus `--legal-restart` and `--silent-park`. Off by default.
+
+Measured at 1c9d17c (`-t 180 --presets --sound`, the option on in `always`):
+Kings_of_the_Beach_ingame `wave` .9689 -> .9971 (the 120 excused tail frames
+and the 33 charged ones both go; 3 frames, one a voice, remain because a park
+row is a whole tempo step after the KEYOFF row), `aud` .9248 -> .9329. The
+corpus byte-hash moves 13 of 89 converted files (6 refused), and Kings is the
+only one whose register columns move: on the other 12 every printed column is
+identical and `aud`/`loud` move by at most .0023, the render jitter's size (why
+no column sees the write there was not traced).
+`tests/test_park_wave.py` pins the pattern, the swap and the gate.
 
 ## Per-song presets — `presets.json`
 

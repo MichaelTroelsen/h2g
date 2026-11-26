@@ -36,17 +36,23 @@ sys.path.insert(0, str(PYTHON_ROOT))
 
 from corpus import CORPUS, needs_corpus  # noqa: E402
 
-from h2g.goatwriter.primitives import _note_freq  # noqa: E402
+from h2g.goatwriter.skydive import GT_FREQ_TABLE  # noqa: E402
 from h2g.goatwriter.wave_program import _slide_semitones  # noqa: E402
 
 NOTE = 48                 # the GT note nearest Pandora's $1168
 SUMS = [0x0480, 0x0780, 0x0B15, 0x0C55, 0x0C75, 0xD4F5]   # running sums
-COUNTS = [-5, -10, -17, -21, -22, +22]
+# The third count is -18, not -17: `_slide_goals` and `_slide_semitones` read
+# Goattracker's REAL note table (`GT_FREQ_TABLE`, gplay.c:9-35) rather than the
+# `GT_FREQ0 * 2**(n/12)` formula, whose note 48 is 4464 where the table says
+# $1168 = 4456. The player's own target is $1168 - $0B15 = 1619, which sits
+# 47 cents above note 30 ($0628) and 53 below note 31 ($0685); the formula's
+# 1627 flipped it to 31 (tests/test_slide_goal_real_table.py).
+COUNTS = [-5, -10, -18, -21, -22, +22]
 
 
 def _target(total: int) -> int:
     s = total & 0xFFFF
-    return _note_freq(NOTE) + (-s if s < 0x8000 else 0x10000 - s)
+    return GT_FREQ_TABLE[NOTE] + (-s if s < 0x8000 else 0x10000 - s)
 
 
 def test_the_net_rise_takes_a_positive_count_each_frame_its_own():
@@ -57,7 +63,7 @@ def test_the_net_rise_lands_within_a_quarter_tone_of_the_accumulator():
     # the last frame: note $1168 - $D4F5 (mod $10000) is $3C73 in the
     # original; the whole-semitone count stands within 50 cents of it
     k = _slide_semitones({NOTE: 100}, SUMS[-1])
-    cents = 1200 * math.log2(_note_freq(NOTE + k) / _target(SUMS[-1]))
+    cents = 1200 * math.log2(GT_FREQ_TABLE[NOTE + k] / _target(SUMS[-1]))
     assert k > 0 and abs(cents) < 50, (k, cents)
 
 

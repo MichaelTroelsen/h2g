@@ -6,7 +6,7 @@ from dataclasses import (dataclass)
 from typing import (List, Optional)
 
 from ..detect import (Detection, FILTER_ENABLE_BIT,
-                      find_sfx_drum_bandpass)
+                      find_sfx_drum_bandpass, find_sfx_drum_shadow_spike)
 from ..sidfile import (SidFile)
 from .constants import (CMD_SETFILTERCTRL, CMD_SETFILTERCUTOFF,
                         CMD_SETFILTERPTR, CMD_TONEPORTA, _SONG_MAX_PATTERNS,
@@ -1617,7 +1617,8 @@ def _run_length_rows(steps: List[int]) -> List[tuple]:
 
 def _sfx_bandpass_block(passband: int, blip: int, resctl: int, cutoff: int,
                         step: int, multiplier: int, period: int,
-                        first_hit: int, at: int) -> List[tuple]:
+                        first_hit: int, at: int,
+                        spike: int = -1) -> List[tuple]:
     """A drum record's filter program with the drum's one-frame blip in it.
 
     **THE BLIP LIVES IN THE RECORD'S OWN PROGRAM, NOT BEHIND A WAVETABLE
@@ -1658,6 +1659,32 @@ def _sfx_bandpass_block(passband: int, blip: int, resctl: int, cutoff: int,
     q, r = divmod(total, n_mod)
     each = [q] * (n_mod - r) + [q + 1] * r
     per_call = _filter_step_per_call(step, m)
+    if spike >= 0 and m == 1 and first_hit == 1 and period > 2:
+        # The SHADOW-form drum (IK+, `find_sfx_drum_shadow_spike`): a note holds
+        # one hit and the player restarts its accumulator at the note, so the
+        # first hit is written out -- the strike frame held (the player never
+        # writes a note's start cutoff, `_classic_sweep_block`), the hit's own
+        # `$D416` spike on the blip call, the first stepped value (two steps
+        # down: the hit frame's step is the one the spike hides) on the
+        # restore call, then the sweep. Later hits of a long note fall
+        # through to the loop below, without the spike.
+        block = [(FILT_SET_PARAMS | passband, resctl),
+                 (FILT_SET_PARAMS | blip, resctl),
+                 (FILT_SET_CUTOFF, spike & 0xFF),
+                 (FILT_SET_PARAMS | passband, resctl),
+                 (FILT_SET_CUTOFF, (cutoff + 2 * per_call) & 0xFF)]
+        block += _run_length_rows([per_call] * (calls - 2))
+        loop_at = at + len(block)
+        n_bp = 0
+        n_tail = calls - 2
+        total = period * (step - 256 if step >= 0x80 else step)
+        q, r = divmod(total, n_tail)
+        each = [q] * (n_tail - r) + [q + 1] * r
+        block.append((FILT_SET_PARAMS | blip, resctl))
+        block.append((FILT_SET_PARAMS | passband, resctl))
+        block += _run_length_rows(each)
+        block.append((FILT_STOP, loop_at))
+        return block
     block: List[tuple] = [(FILT_SET_PARAMS | passband, resctl),
                           (FILT_SET_CUTOFF, cutoff)]
     block += _run_length_rows([per_call] * (first_hit - 1))
@@ -2194,7 +2221,8 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
             blip, first_hit = sfx_blips[i]
             block = _sfx_bandpass_block(
                 filt.passband, blip, resctl, filt.cutoff, step, multiplier,
-                det.sfx_period, first_hit, len(entries) + 1)
+                det.sfx_period, first_hit, len(entries) + 1,
+                find_sfx_drum_shadow_spike(sid))
             if len(entries) + len(block) > GT_MAX_FILT:
                 block = None        # the blip does not fit: keep the sweep
         if block is not None:

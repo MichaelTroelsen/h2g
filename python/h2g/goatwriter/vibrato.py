@@ -30,7 +30,21 @@ from . import primitives as _gw_primitives
 # -14%; see "DECIDED" in `_classic_vibrato_entry`). Keyed by name and record,
 # as `stored_wave.HELD` keys by name, so no other file's bytes move and the
 # entry formula is untouched. Pinned in tests/test_lvvp_depth_trim.py.
-CLASSIC_DEPTH_CMP_TRIM = {("Las Vegas Video Poker", 6): 1}
+# A NEGATIVE value adds calls instead. Shockway_Rider's records 4 and 8 (the
+# two carrying vibrato byte $23: bound 4, shift 3, at -S2 with 5-call rows;
+# the stamps `06:23` and `0A:23` count the lead record)
+# get `($85, 4)` where the formula gives `($84, 4)`. The tick-0 compensation
+# makes the half-period 8 * 4/5 = 6.4 updates and round() takes it down to 6,
+# and the swing is `calls * (interval >> rshift)` with rshift an integer, so
+# 6 calls swing 0.75 of the original's and 7 swing 0.875 at 9% more period.
+# `depth` 0.662 -> 0.828, `bend` 0.729 -> 0.747, `vib` 1.047 -> 1.014, `aud`
+# -0.0003 (-t 180, v0.5.676). The same joint rounding for every file moves 45
+# and loses `vib` on 12 of them (Delta 0.991 -> 0.927, Powerplay 0.993 ->
+# 0.949), so it is keyed. Record 10 (byte $2B) keeps its own entry. Pinned in
+# tests/test_shockway_vibrato_depth.py.
+CLASSIC_DEPTH_CMP_TRIM = {("Las Vegas Video Poker", 6): 1,
+                          ("Shockway Rider", 4): -1,
+                          ("Shockway Rider", 8): -1}
 
 
 def _depth_trimmed(name: str, record: int, entry: Optional[tuple]
@@ -39,7 +53,7 @@ def _depth_trimmed(name: str, record: int, entry: Optional[tuple]
     trim = CLASSIC_DEPTH_CMP_TRIM.get((name, record), 0)
     if entry is None or not trim:
         return entry
-    cmp_value = max(0, (entry[0] & 0x7F) - trim)
+    cmp_value = min(0x7F, max(0, (entry[0] & 0x7F) - trim))
     return (SPEED_NOTE_RELATIVE | cmp_value, entry[1])
 
 

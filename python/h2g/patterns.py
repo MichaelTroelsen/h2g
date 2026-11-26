@@ -7340,7 +7340,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                          free_rows: Optional[Dict[int, frozenset]] = None,
                          calls_per_frame: int = 1,
                          tri_start: Optional[list] = None,
-                         event_rows: Optional[Dict[int, frozenset]] = None):
+                         event_rows: Optional[Dict[int, frozenset]] = None,
+                         parity: frozenset = frozenset()):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
@@ -7428,6 +7429,13 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     plus 0..9 table ticks along its planned direction -- so the loss was
     in the walk, which is what this change repairs.
 
+    `parity` is the set of instrument bytes whose table is a held staircase
+    with a two-tick hold (`goatwriter.parity_records`): a note of one of them
+    that opens with the voice's delay counter at its reload (0) is planned
+    as a `Counter0Phase` with `counter0` set, because its first step comes a
+    tick sooner than a counter-1 note's. The pair itself, and so `phases`
+    and every key built from it, is what it was; `convert` reads the flag.
+
     `tri_start` is the triangle engine's player state, one entry per group (a
     `(prefetch, voices)` pair: the ticks the player sweeps before its first
     fetch, and per voice X the `(instrument byte, direction, counter)` it
@@ -7482,7 +7490,7 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
         if not per_voice:
             _walk_triangle_group(g, patterns, tracks, max(1, tempos[g]), sims,
                                  calls_per_frame, tri_start, phases, writes,
-                                 log, event_rows)
+                                 log, event_rows, parity)
             continue
         # The bounds engine: a per-voice accumulator, so each voice is
         # walked on its own copy of every record and no voice can move
@@ -7797,12 +7805,28 @@ def _close_hold(h: "_OpenHold") -> None:
         hold_steps(h.code), hold_wait(h.code), then)))
 
 
+class Counter0Phase(tuple):
+    """A planned `(width, direction)` that says whether the note opened with
+    its voice's delay counter at the reload (`counter0`): equal to, and
+    hashing as, the plain pair, so every plan built from it is the plan
+    there always was and only `convert` reads the flag
+    (`goatwriter.parity_direction`)."""
+
+    def __new__(cls, width: int, direction: int, counter0: bool = False):
+        self = super().__new__(cls, (width, direction))
+        self.counter0 = counter0
+        return self
+
+    def __getnewargs__(self):
+        return (self[0], self[1], self.counter0)
+
+
 def _walk_triangle_group(g: int, patterns: List[List[int]],
                          tracks: List[List[int]], tempo: int, sims: dict,
                          calls_per_frame: int, tri_start: Optional[list],
                          phases: dict, writes: list, log,
-                         event_rows: Optional[Dict[int, frozenset]] = None
-                         ) -> None:
+                         event_rows: Optional[Dict[int, frozenset]] = None,
+                         parity: frozenset = frozenset()) -> None:
     """The triangle engine's walk of one group: its three voices in
     LOCKSTEP, tick by tick, X = 2, 1, 0 within each tick -- the player's
     own loop order.
@@ -7912,8 +7936,16 @@ def _walk_triangle_group(g: int, patterns: List[List[int]],
                     if kind == "note" and instr and x in passes and npass < 2:
                         held = _triangle_hold(x, sim, recs, cells, cur, lead)
                         slot = passes[x][npass].setdefault(pos, {})
-                        slot[r] = (instr, (sim.width, cells[x].direction
-                                           if held is None else held))
+                        if held is not None:
+                            slot[r] = (instr, (sim.width, held))
+                        else:
+                            # The delay counter at its reload: the first step
+                            # comes a tick sooner than on the other parity
+                            # (`Counter0Phase`).
+                            ph = (sim.width, cells[x].direction)
+                            if instr in parity and cells[x].counter == 0:
+                                ph = Counter0Phase(*ph, True)
+                            slot[r] = (instr, ph)
                         if held is not None and not tie:
                             open_holds[x] = _OpenHold(
                                 slot, r, instr, sim, held,
@@ -8042,7 +8074,8 @@ def _carries_wide_sweep(pat: List[int], r: int) -> bool:
 def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                       writes: list, index: dict, log=None,
                       row_seconds: Optional[List[float]] = None,
-                      calls_per_frame: Optional[float] = None) -> int:
+                      calls_per_frame: Optional[float] = None,
+                      first_group: Optional[int] = None) -> int:
     """Write the planned CMD_SETPULSEPTR commands, always into copies.
 
     One clone per distinct (pattern, command vector), shared across every
@@ -8069,6 +8102,15 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
     tempo pass wrote); without it the row length stays constant.
     A row whose command column is taken serves nothing. Without
     `row_seconds` there is no clock to rank by and the plan order stands.
+
+    **The start subtune ranks first** (`first_group`, listen-sub99-gremlins).
+    The in-window ranking maximises rows over ALL subtunes, which on a file
+    whose plan is many times the table's room (Gremlins: 348 clones wanted,
+    11 free) hands every copy to the subtune with the cheapest rows and none
+    to the one a player opens on: the start subtune's voice 2 (67 clones,
+    299 note rows) reached 0 of 299 while subtune 1 reached 224 of 598. A
+    clone serving a note row of `first_group` is therefore kept ahead of every
+    other, then ranked as above; `None` keeps the global ranking.
     """
     def usable(src: List[int], vector) -> bool:
         return not all(src[4 * r + 2] == CMD_SETPULSEPTR and src[4 * r + 3] == e
@@ -8091,6 +8133,7 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
     if row_seconds is not None:
         starts: Dict[int, Dict[int, int]] = {}
         score: dict = {}
+        firsts: set = set()
         clocks: dict = {}
         order: dict = {}
         for (ti, pos, target, vector) in slots:
@@ -8120,9 +8163,12 @@ def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
                         inside += 1
             have = score.get(key, (0, 0))
             score[key] = (have[0] + inside, have[1] + served)
+            if served and first_group is not None and g == first_group:
+                firsts.add(key)
         room = MAX_PATTERNS - len(patterns)
         if len(score) > room:
-            ranked = sorted(score, key=lambda k: (-score[k][0], -score[k][1],
+            ranked = sorted(score, key=lambda k: (k not in firsts,
+                                                  -score[k][0], -score[k][1],
                                                   order[k]))
             keep = set(ranked[:max(0, room)])
 

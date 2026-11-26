@@ -575,6 +575,13 @@ class Detection:
     # the end of the orderlists): the original goes silent by that write, not
     # by any note. `TUNE_END_VOLUME_SHAPE`. Consulted by `master_fade` only.
     tune_end_volume: bool = False
+    # True when the player carries the stop-state zeroing block (`LDA #0 /
+    # LDX n / LDY voice,X / STA $D404,Y / DEX / BPL`, Kings of the Beach
+    # ingame `$90AD`): a stop request (the `$FE` pattern byte's `JSR` to the
+    # stop entry) makes the NEXT play call write waveform `$00` on every voice
+    # at once and then freeze. `STOP_ZEROES_CTRL_SHAPE`. Consulted by
+    # `master_fade.park_end_wave` only.
+    stop_zeroes_ctrl: bool = False
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -2729,13 +2736,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             f"{det.instr_stride}, passband ${f.passband:02X}, "
             f"cutoff starts at ${f.cutoff:02X}"
             + (", sweep stops at bit 7" if f.clamp else "")
-            + (", never reset (free-running)" if f.free_running else ""))
+            + (", never reset (free-running)" if f.free_running else "")
+            + (f", plus an unmodelled per-voice term at ${f.addend:04X} "
+               f"(start centred by ${FILTER_ADDEND_CENTRE:02X})"
+               if f.addend else ""))
 
     det.master_volume = find_master_volume(sid)
     det.master_fade = find_master_fade(sid)
     det.master_fade_fetch = (det.master_fade is not None
                              and master_fade_is_fetch(sid))
     det.tune_end_volume = search_file(sid.data, TUNE_END_VOLUME_SHAPE) > -1
+    det.stop_zeroes_ctrl = search_file(sid.data, STOP_ZEROES_CTRL_SHAPE) > -1
     return det
 
 
@@ -2852,6 +2863,34 @@ FILTER_MODE_SHAPE = "A9 ?? 8D 18 D4"
 #    what `data[i + 11] == 0x0A` tests: anything else is another routine.
 FILTER_SHAPE_CLAMP = ("AD ?? ?? 29 20 F0 ?? BD ?? ?? 30 0A "
                       "18 79 ?? ?? 9D ?? ?? 8D 16 D4 B9 ?? ?? 8D 17 D4")
+# 1b. **The sweep with a second term added at the chip.** Delta $C1A1 is
+#     FILTER_SHAPE with an `ADC base,X` between the accumulator's store and the
+#     $D416 write:
+#
+#        C1A8  BD 4E C3  LDA cutoff,X
+#        C1AB  18        CLC
+#        C1AC  79 45 C4  ADC step,Y
+#        C1AF  9D 4E C3  STA cutoff,X
+#        C1B2  7D 4B C3  ADC base,X       ; carry from the add above rides in
+#        C1B5  8D 16 D4  STA $D416
+#
+#     so the chip sees `cutoff + base`, where `base,X` is a second per-voice
+#     accumulator the status byte's bit 7 block steps every few frames
+#     ($C1FA..$C201). Only Delta spells it (a scan of the 95 corpus files for
+#     the loose `9D .. .. 7D .. .. 8D 16 D4` finds nothing else). Of its 13
+#     subtunes four run a filtered instrument (indices 0, 9, 10 and 12, the
+#     page `Delta_13`; `siddump -a<n> -t120` counts $D416 changes).
+FILTER_SHAPE_ADDEND = ("AD ?? ?? 29 20 F0 ?? BD ?? ?? 18 79 ?? ?? 9D ?? ?? "
+                       "7D ?? ?? 8D 16 D4 B9 ?? ?? 8D 17 D4")
+# `base,X` steps by a record byte every few frames and wraps at 8 bits, so over
+# a tune it is spread across the whole byte (Delta subtune 13: $00..$FC and
+# round again every 720 frames, traced with `siddump -w` on $C34C; its mean over
+# 180 s is $7B and the $D416 mean $7C). Goattracker has no per-voice second
+# accumulator and a filter program restarts at every note, so the term cannot be
+# carried; the sweep starts from the middle of the byte instead of the bottom.
+# Measured against start $00 on Delta_13: aud .947 -> .909 (the filter sat far
+# too low for most of the tune) against .947 -> .947 centred.
+FILTER_ADDEND_CENTRE = 0x80
 # 2. **The mode write at the player's entry.** FILTER_MODE_SHAPE takes the
 #    FIRST `LDA #imm / STA $D418` in the file, and Tarzan's first is the exit
 #    of its digi routine ($53C0 `LDA #$00 / STA $D418`, then `LDA $5404 / STA
@@ -2937,6 +2976,11 @@ class FilterInfo:
     # `cutoff` is only its power-on file byte and every note CONTINUES the
     # sweep from wherever the last one left it.
     free_running: bool = False
+    # C64 address of a second per-voice term the player ADDS at the chip
+    # (FILTER_SHAPE_ADDEND), 0 where there is none. It is not modelled -- it
+    # steps on its own clock and wraps -- so `cutoff` already carries
+    # FILTER_ADDEND_CENTRE in its place.
+    addend: int = 0
 
 
 # The interleaved dialect's filter, which `FILTER_SHAPE` cannot reach because
@@ -3058,6 +3102,13 @@ MASTER_FADE_SHAPE_FETCH = "A9 ?? 38 ED ?? ?? C9 0F 90 02 A9 0F 8D 18 D4"
 # files (Chain_Reaction, Master_of_Magic, Spellbound, Thing_on_a_Spring, Zoids,
 # Zoolook, Sanxion) reach 0 through the position/level formula, not here.
 TUNE_END_VOLUME_SHAPE = "A9 00 8D ?? ?? 8D 18 D4 58"
+# The stop state's zeroing block: `LDA #$00 / LDX last / LDY base,X / STA
+# $D404,Y / DEX / BPL`. Kings_of_the_Beach_ingame `$90AD` runs it on the play
+# call after the `$FE` handler (`$9121`, `JSR $9070`) sets the stop flag, so
+# every voice's `$D404` reads `$00` in one frame and the player then only
+# runs its pulse/filter tail (`JMP $9336`). Static census over the 95 Hubbard
+# files (2026-11-22, `A9 00 AE ?? ?? BC ?? ?? 99 04 D4 CA 10 F7`): 28 files.
+STOP_ZEROES_CTRL_SHAPE = "A9 00 AE ?? ?? BC ?? ?? 99 04 D4 CA 10 F7"
 
 
 def master_fade_is_fetch(sid: SidFile) -> bool:
@@ -3106,17 +3157,23 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
     data = sid.data
     i = search_file(data, FILTER_SHAPE)
     d = 0                                  # operand shift of the clamp spelling
+    addend_shift = 0                       # extra shift of the resctl load
     if i <= -1:
         i = search_file(data, FILTER_SHAPE_CLAMP)
         d = 2
     if i <= -1:
+        i = search_file(data, FILTER_SHAPE_ADDEND)
+        d = 0                              # not the clamp's shift
+        if i > -1:
+            addend_shift = 3
+    if i <= -1:
         return None
-    clamp = bool(d)
+    clamp = d == 2
 
     status_var = data[i + 1] | data[i + 2] << 8
     step = data[i + 12 + d] | data[i + 13 + d] << 8
     cutoff_var = data[i + 15 + d] | data[i + 16 + d] << 8
-    resctl = data[i + 21 + d] | data[i + 22 + d] << 8
+    resctl = data[i + 21 + d + addend_shift] | data[i + 22 + d + addend_shift] << 8
     # The layout claim, tested rather than assumed: one array, resonance then
     # step. A file where the two operands are not adjacent is reading some
     # other pair of tables and is not ours to interpret.
@@ -3162,9 +3219,13 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
     offset = sid.to_offset(resctl)
     if not 0 <= offset < len(data) or not 0 <= status < len(data):
         return None
+    addend = 0
+    if addend_shift:
+        addend = data[i + 18] | data[i + 19] << 8
+        cutoff = (cutoff + FILTER_ADDEND_CENTRE) & 0xFF
     return FilterInfo(addr=resctl, offset=offset, passband=passband,
                       cutoff=cutoff, status=status, clamp=clamp,
-                      free_running=free_running)
+                      free_running=free_running, addend=addend)
 
 
 # The pattern-fetch shape that consumes a second operand byte. Warhawk $10EC:
@@ -6201,6 +6262,60 @@ NODUR_AT_COUNTER = 5
 NODUR_AT_SAVE = 12
 NODUR_AT_STEP = 16
 
+# Phantoms_of_the_Asteroid $E2FE: the same block spelled through the player's
+# store wrappers, and the only corpus file with it (a byte scan of all 95
+# files for the shape below, and for a looser one with the step and store
+# wildcarded, finds no other):
+#
+#     E2FE  AD 63 E4  LDA effect         ; the record's +5 copy at $E463
+#           29 02     AND #$02 / BEQ out
+#           BD 2D E4  LDA dur,X / AND #$1F / CMP #$11 / BCC out
+#           BD 2A E4  LDA ticks,X / CMP #$14   ; the flags are never read: the
+#                                              ; next LDA overwrites them, so
+#                                              ; there is NO ticks-left window
+#           AD 65 E4  LDA counter / AND #$01 / BEQ out
+#           BD 5A E4  LDA savehi,X / BEQ out
+#           FE 5A E4  INC savehi,X
+#           AC 23 E4  LDY voiceofs
+#           20 46 F0  JSR $F046      ; INC $E6 / STA $D401,Y / DEC $E6
+#
+# `A` holds the value BEFORE the step, as in NOTE_RISE_SHAPE; only the dead
+# compare and the store's spelling differ, which is why that shape missed it.
+# siddump of the original, voice 0 from frame 1729 (record 0x0A, the vibrato
+# 27A2/27EB/2759/2710 on the even frames): the odd frames read `28EB 29A2
+# 2A10 2B59 ...`, the high byte rising $01 a store over the vibrato's low
+# byte, and a write log shows the second `D401` store (`hi=27` then `hi=28`)
+# on exactly those frames. The JSR's target is read, not assumed: a wrapper
+# that does not store to $D401 is not this block.
+NOTE_RISE_JSR_SHAPE = ("29 02 F0 ?? BD ?? ?? 29 1F C9 ?? 90 ?? BD ?? ?? C9 ?? "
+                       "AD ?? ?? 29 01 F0 ?? BD ?? ?? F0 ?? ?? ?? ?? AC ?? ?? "
+                       "20 ?? ??")
+JSR_AT_MIN = 10
+JSR_AT_COUNTER = 19
+JSR_AT_SAVE = 26
+JSR_AT_STEP = 30
+JSR_AT_STORE = 37
+JSR_AT_DUR = 5
+
+
+def _note_rise_jsr_block(sid: SidFile, data: bytes, load: str) -> int:
+    """File offset of NOTE_RISE_JSR_SHAPE's `AND #$02`, or -1.
+
+    Structural beyond the shape: the `JSR` must land on a wrapper whose first
+    store (within six bytes) is `STA $D401,Y`, the frequency HIGH byte."""
+    at = search_file(data, f"{load} {NOTE_RISE_JSR_SHAPE}")
+    if at < 1:
+        return -1
+    lead = len(load.split())
+    b = at + lead
+    target = data[b + JSR_AT_STORE] | data[b + JSR_AT_STORE + 1] << 8
+    off = sid.to_offset(target)
+    if not 0 <= off <= len(data) - 6:
+        return -1
+    if b"\x99\x01\xd4" not in data[off:off + 6]:
+        return -1
+    return at
+
 
 def _note_rise_block(data: bytes, load: str) -> Tuple[int, int]:
     """(file offset of the block's `AND #$02`, its step instructions), or
@@ -6302,7 +6417,19 @@ def _find_note_rise(sid: SidFile, det: Detection) -> Optional[NoteRise]:
         # Fallback, consulted only where the dialects above matched nothing.
         nd = search_file(data, f"{load} {NOTE_RISE_NODUR_SHAPE}")
         if nd < 1:
-            return None
+            jr = _note_rise_jsr_block(sid, data, load)
+            if jr < 1:
+                return None
+            b = jr + lead
+            step = NOTE_RISE_STEPS.get(data[b + JSR_AT_STEP])
+            if (step is None
+                    or data[b + JSR_AT_STEP + 1:b + JSR_AT_STEP + 3]
+                    != data[b + JSR_AT_SAVE:b + JSR_AT_SAVE + 2]):
+                return None
+            return NoteRise(
+                counter=data[b + JSR_AT_COUNTER]
+                | data[b + JSR_AT_COUNTER + 1] << 8,
+                min_length=data[b + JSR_AT_MIN], step=step)
         b = nd + lead
         step = NOTE_RISE_STEPS.get(data[b + NODUR_AT_STEP])
         if (step is None or data[b + NODUR_AT_STEP + 1:b + NODUR_AT_STEP + 3]
@@ -6367,10 +6494,16 @@ def note_rise_rest_carries_on(sid: SidFile, det: Detection) -> bool:
         # so there is no array for the status byte to be stored into.
         nd = search_file(data, f"{load} {NOTE_RISE_NODUR_SHAPE}")
         if nd < 1:
-            return False
-        b = nd + (2 if zp else 3)
-        dur = None
-        save = data[b + NODUR_AT_SAVE:b + NODUR_AT_SAVE + 2]
+            jr = _note_rise_jsr_block(sid, data, load)
+            if jr < 1:
+                return False
+            b = jr + (2 if zp else 3)
+            dur = data[b + JSR_AT_DUR:b + JSR_AT_DUR + 2]
+            save = data[b + JSR_AT_SAVE:b + JSR_AT_SAVE + 2]
+        else:
+            b = nd + (2 if zp else 3)
+            dur = None
+            save = data[b + NODUR_AT_SAVE:b + NODUR_AT_SAVE + 2]
     else:
         b = at + (2 if zp else 3)
         dur = data[b + NOTE_RISE_AT_DUR:b + NOTE_RISE_AT_DUR + 2]
@@ -8086,8 +8219,9 @@ def find_sfx_drum_bandpass(sid: SidFile) -> tuple[int, int]:
     own block rather than searched for alone, because `FILTER_EFFECT_CUTOFF_SHAPE`
     followed by a mode write also spells the player's ordinary filter set-up,
     and a bare scan would take that for the drum. The shadow form (IK+, whose
-    pair is two stores into RAM) is not read: its tail is not directly behind
-    the pair.
+    pair is two stores into RAM) is read through `SFX_DRUM_SHADOW_SHAPE`,
+    consulted only where the direct form found nothing; its tail is the same
+    ten bytes behind the pair (this docstring said it was not, which it is).
 
     The bits are returned as the `$D418` carries them (`$20` for bandpass), the
     form `FILT_SET_PARAMS | passband` and `FilterInfo.passband` use. 0 is
@@ -8096,6 +8230,12 @@ def find_sfx_drum_bandpass(sid: SidFile) -> tuple[int, int]:
     """
     d = sid.data
     off = search_file(d, SFX_DRUM_SHAPE)
+    if off < 0:
+        # The shadow form (IK+): its pair is two stores into a RAM image, but
+        # each is still `LDA #imm / STA abs` (5 bytes), so the tail sits the
+        # same ten bytes behind it. The shadow shape already ends on the
+        # `$D416` store, which anchors it as the drum's block.
+        off = search_file(d, SFX_DRUM_SHADOW_SHAPE)
     if off < 0 or off + 20 > len(d):
         return -1, -1
     t = off + 10
@@ -8105,6 +8245,22 @@ def find_sfx_drum_bandpass(sid: SidFile) -> tuple[int, int]:
     if not passband:
         return -1, -1
     return passband, d[t + 1]
+
+
+def find_sfx_drum_shadow_spike(sid: SidFile) -> int:
+    """The drum's `$D416` write where the fire block is the SHADOW form, else -1.
+
+    IK+'s drum notes hold one hit each (1077 of 1231 hits are the only hit of
+    their note, `-t 180`), and the player restarts the note's filter
+    accumulator at every note, so the cutoff after the hit's spike is a
+    constant: `goatwriter._sfx_bandpass_block` can write it as an absolute
+    row. The direct form's notes sustain up to ~20 hits and keep the
+    unspiked sweep (the docstring there).
+    """
+    d = sid.data
+    if search_file(d, SFX_DRUM_SHAPE) >= 0:
+        return -1
+    return find_sfx_drum_bandpass(sid)[1]
 
 
 def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:

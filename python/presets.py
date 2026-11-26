@@ -451,6 +451,10 @@ EXCLUDED_FROM_ALWAYS = {
     # derives from a voice's orderlist position (`detect.find_master_fade`),
     # one pattern copy per fading position. Reaches Sanxion.sid alone.
     "master_fade",
+    # Per song and never a default: waveform $00 on the silent park of a song
+    # whose player zeroes $D404 on every voice when it stops
+    # (`master_fade.park_end_wave`, `Detection.stop_zeroes_ctrl`).
+    "park_wave",
     # Per song and never a default: the bit-$01 drum sweep on the notes
     # longer than their record's median (`goatwriter/drum_long.py`). Reaches
     # Monty_on_the_Run, Devils_Galop and International_Karate; the first two

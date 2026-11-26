@@ -55,6 +55,10 @@ BLOCKS = {
     # NOTE_RISE_NODUR_SHAPE: no duration test at all, so MIN is 0. Monty's
     # record 12 (GT 13, effect $02) opens the song on it.
     "Monty_on_the_Run": (0x84FA, 0x00, -1),
+    # NOTE_RISE_JSR_SHAPE: the store is `JSR $F046` (a wrapper around `STA
+    # $D401,Y`) behind a dead `LDA ticks / CMP #$14`; Phantoms_of_the_Asteroid
+    # $E2FE, record 0 (effect $02) rising over its vibrato.
+    "Phantoms_of_the_Asteroid": (0xE465, 0x11, 1),
 }
 
 
@@ -74,7 +78,7 @@ def _converted(name, **extra):
 
 
 @needs_corpus
-def test_the_block_is_read_in_exactly_the_nine_files_that_carry_it():
+def test_the_block_is_read_in_exactly_the_ten_files_that_carry_it():
     found = {}
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))

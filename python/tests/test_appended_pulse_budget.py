@@ -120,8 +120,13 @@ def test_5_title_tunes_subtune_0_asks_for_the_short_layout_and_gets_it(
     assert (kind, prefer) == ("SidFile", True), calls
     assert rows == 143, calls          # 167 on the bound-to-bound loops
     # 167 / 214 until the phase tables' loops turned on the nibble lattice.
-    assert any(l.startswith("Pulse phase.............: shared ramps -- 143 "
-                            "table row(s) where one ramp per phase took 215")
+    # The slew table (143 rows, built first and priced) is not the shipped
+    # one: players 3 and 6 are held staircases on a counter that free-runs
+    # across notes, and the staircase table (`test_pulse_phase_parity.py`)
+    # keeps every record the slew kept in 147 rows, which still leaves the
+    # appended players their sweeps.
+    assert any(l.startswith("Pulse phase.............: shared ramps -- 147 "
+                            "table row(s) place 3 of 3 phase-tracked record(s)")
                for l in lines), [l for l in lines if "Pulse phase" in l]
 
 
@@ -181,6 +186,10 @@ def test_the_short_layout_writes_the_same_registers_for_subtune_0():
         pytest.skip("siddump or gt2reloc not available here")
     opts, _doc = _opts(FIVE)
     real_append, real_build = C._append_players, C.build_pulse_phase_table
+    # The slew tables: the staircase has its own pulse-table row budget
+    # (tests/test_pulse_phase_parity.py) and ships different registers.
+    real_parity = C.parity_records
+    C.parity_records = lambda *a, **k: frozenset()
 
     def per_phase(*a, **kw):
         kw["prefer_short"] = False
@@ -192,6 +201,7 @@ def test_the_short_layout_writes_the_same_registers_for_subtune_0():
         long_ = C.convert(str(CORPUS / FIVE), log=lambda m: None, **opts)
     finally:
         C._append_players, C.build_pulse_phase_table = real_append, real_build
+        C.parity_records = real_parity
     assert short != long_
     wd = pathlib.Path(tempfile.mkdtemp(prefix="appended_pulse_budget_"))
     try:

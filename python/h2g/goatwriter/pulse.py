@@ -115,6 +115,72 @@ def _stair_rows(at: int, count: int, direction: int, step: int,
     return rows
 
 
+# The staircase a held-width sweep lays: `STAIR_CALLS` table calls a step, so
+# a hold is ONE row of one call, and the row before a step's set row is what
+# a counter-0 entry points at (`resolve_parity`). Gated on the step being
+# exactly STAIR_CALLS table speeds (5_Title_Tunes' players 3, 5 and 6 at
+# -S1: step $80 / speed $40, step $40 / speed $20).
+STAIR_CALLS = 2
+
+# ... and only where the steps are wide. A held stair is two rows a step
+# where a slew is one row a leg, so a fine lattice costs the table: 5_Title_Tunes'
+# record 5 (step $40, 24 steps a leg) goes 31 -> 89 rows on its own and the
+# four players a compilation appends after it then find the pulse table full
+# and lose their sweeps. Its pphase reads the same buckets either way (voice
+# 0 is the one voice whose buckets already agree), where records 3 and 6
+# (step $80, 12 steps a leg) go 26 -> 28 and 42 -> 44 rows.
+STAIR_MIN_STEP = 0x80
+
+
+_STAIR_ON = [False]
+
+
+@contextmanager
+def held_stairs(on: bool):
+    """Lay the phase table with held staircases (`on`) or, by default, with
+    every sweep a slew: how `convert` prices the staircase against the table
+    it costs (`stair_costs_records`)."""
+    was, _STAIR_ON[0] = _STAIR_ON[0], on
+    try:
+        yield
+    finally:
+        _STAIR_ON[0] = was
+
+
+def is_held_stair(step: Optional[int], speed: int) -> bool:
+    return bool(step and speed and step == STAIR_CALLS * speed
+                and STAIR_MIN_STEP <= step <= 0xFFF)
+
+
+def _held_ramp_rows(at: int, ticks: int, direction: int, step: int,
+                    calls: int) -> List[tuple]:
+    """`ticks` calls of the player's own staircase from width `at`: each width
+    HELD `calls` calls, then stepped by `step` -- `_ramp_rows`' replacement
+    where a slew at the mean rate would move the width every call.
+
+    The call that follows a set-width row (or a jump into the leg) is the first
+    of the width's hold, so the rows open with `calls - 1` held calls and then
+    one set-width row plus `calls - 1` hold calls a step."""
+    rows: List[tuple] = []
+    rem = ticks
+    if rem <= 0:
+        return rows
+    h = min(calls - 1, rem)
+    if h:
+        rows += [(t, 0) for t in _split_ticks(h)]
+        rem -= h
+    k = 0
+    while rem > 0:
+        k += 1
+        rows.append(_setrow((at + direction * step * k) & 0xFFF))
+        rem -= 1
+        h = min(calls - 1, rem)
+        if h:
+            rows += [(t, 0) for t in _split_ticks(h)]
+            rem -= h
+    return rows
+
+
 def _stair_legs(width: int, step: int, calls: int, first_top: int,
                 bottom: int, top: int) -> tuple[List[tuple], int]:
     """`_lattice_legs` as a held stair: the same lattice, the same turns, but
@@ -1733,8 +1799,36 @@ def hold_direction(steps: int, wait: int = 0,
     return base + HOLD_THEN * (1 + ((((n << 12) | w2) << 1) | (d2 < 0)))
 
 
+# The triangle player holds each width `delay` ORIGINAL ticks and then steps
+# it, and the delay counter is per voice and free-running, so a note opens
+# on one of `delay` counter phases: at delay 2 the first step after the
+# fetch lands one tick later (counter 0) or two (counter 1). A phase entry
+# keyed on (width, direction) alone cannot say which, and a held staircase
+# laid on one parity is half a step off the other (5_Title_Tunes: 50/50
+# across 1124 notes a voice). `parity_direction(d)` is the SAME direction
+# one tick early -- counter 0 -- as one integer far above every hold code, so
+# a phase still sorts and keys a table like any other and `d > 0` still
+# reads its way. `convert` resolves it around the table build
+# (`resolve_parity`, `parity_index`).
+PARITY_B = 1 << 60
+
+
+def parity_direction(direction: int) -> int:
+    """`direction` (+1 / -1) as the counter-0 phase of a held staircase."""
+    return direction + (PARITY_B if direction > 0 else -PARITY_B)
+
+
+def is_parity(direction: int) -> bool:
+    return abs(direction) >= PARITY_B
+
+
+def base_direction(direction: int) -> int:
+    """+1 / -1 for a moving phase, parity or not."""
+    return 1 if direction > 0 else -1
+
+
 def is_hold(direction: int) -> bool:
-    return direction > 1
+    return 1 < direction < PARITY_B
 
 
 def hold_steps(direction: int) -> int:
@@ -2632,6 +2726,8 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
         return _nearest_ticks(distance, speed) if step else distance // speed
 
     def ramp(at: int, ticks: int, d: int) -> List[tuple]:
+        if _STAIR_ON[0] and is_held_stair(step, speed):
+            return _held_ramp_rows(at, ticks, d, step, STAIR_CALLS)
         return _ramp_rows(at, ticks, d, speed)
 
     setrow = _setrow
@@ -2809,6 +2905,103 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     for row, key in fixups:
         block[row] = (0xFF, phase_index[key])
     return block, phase_index
+
+
+def stair_costs_records(stair: tuple, plain: tuple,
+                        usage: Optional[List[int]] = None) -> bool:
+    """Whether the table laid with held staircases keeps fewer records than
+    the one laid without (`index` only holds the records that kept a phase
+    entry), weighed by notes sounded where `usage` is given. The staircase
+    ships only where it costs no record: its rows are real (a step is two
+    rows where a slew is one a leg) and Human_Race's table places 3 of its
+    7 phase-tracked records with them where it placed 5 without."""
+    def kept(table: tuple) -> int:
+        nums = {key[0] for key in table[2]}
+        return sum((usage[n] if usage and n < len(usage) else 1)
+                   for n in nums)
+    return kept(stair) < kept(plain)
+
+
+def parity_index(entries: list, index: dict, targets: dict) -> dict:
+    """`index` with the counter-0 keys of `resolve_parity`'s `targets`
+    added: each enters one hold row ahead of its neighbour's entry."""
+    index = dict(index)
+    for (num, w, d), (wa, da) in targets.items():
+        ptr = index.get((num, wa, da))
+        if ptr is None:
+            continue
+        # Only a neighbour's entry (`wa` one step on) is entered a tick
+        # early; a note that kept its own (`resolve_parity`) takes it as is.
+        index[(num, w, d)] = (_parity_pointer(entries, ptr) if wa != w
+                              else ptr)
+    return index
+
+
+def _parity_pointer(entries: list, ptr: int) -> int:
+    """The entry a counter-0 note takes where a counter-1 note takes `ptr`,
+    the set row of a held staircase's step: the ONE-CALL HOLD row that
+    precedes it. The note's first call waits there and the set row plays on
+    the second, so the staircase's widths arrive a tick later than from `ptr`
+    -- the original's counter-0 note, whose width on the attack frame is
+    the step before. A set row with no hold before it (the first row of a
+    leg, which a jump names) has nothing to point at and keeps `ptr`."""
+    before = ptr - 1
+    if before >= 1 and entries[before - 1] == (1, 0):
+        return before
+    return ptr
+
+
+def parity_records(sid: SidFile, det: Detection, sims: dict, multiplier: int,
+                   lead: int = 1) -> frozenset:
+    """The instrument bytes of `sims` whose table is a held staircase with a
+    two-tick hold (`is_held_stair`; the delay-2 records), the only ones
+    `patterns.collect_pulse_phases` plans counter-0 phases for."""
+    out = set()
+    for num, sim in sims.items():
+        if getattr(sim, "delay", None) != STAIR_CALLS:
+            continue
+        params = _phase_sweep_params(sid, det, num - 1 - lead, multiplier)
+        if params is not None and is_held_stair(params[5], params[1]):
+            out.add(num)
+    return frozenset(out)
+
+
+def resolve_parity(sid: SidFile, det: Detection, multiplier: int,
+                   phases: dict, lead: int) -> tuple:
+    """(phases without counter-0 entries, {(num, w, d): (w2, d2)}).
+
+    A counter-0 note of a held staircase (`is_held_stair`) opens its first
+    step one tick EARLIER than a counter-1 note on the same width: its
+    widths from the next frame are the staircase's from `w + step`, one call
+    later. The plain table is therefore asked for that neighbour's entry
+    (`w2 = w + d * step`), and the caller points the note one hold row ahead
+    of it. A record whose table is not a held staircase never had such a
+    phase planned (`patterns.collect_pulse_phases`'s `parity`), but one that
+    does reach here keeps its own width: the entry it always had."""
+    plain: dict = {}
+    targets: dict = {}
+    for num, ws in phases.items():
+        keep = set()
+        params = _phase_sweep_params(sid, det, num - 1 - lead, multiplier)
+        stair = params is not None and is_held_stair(params[5], params[1])
+        for (w, d) in ws:
+            if not is_parity(d):
+                keep.add((w, d))
+                continue
+            da = base_direction(d)
+            wa = w
+            if stair:
+                # One step on. Where that step reaches the bound the sweep
+                # turns (`PulsePhaseSim.advance`) and the phase it turns
+                # into is one the walk rarely plans and a table pays rows
+                # for, so such a note keeps its own entry, a tick early.
+                nxt = (w + da * params[5]) & 0xFFF
+                if nxt >> 8 != (params[3] if da > 0 else params[2]) >> 8:
+                    wa = nxt
+            keep.add((wa, da))
+            targets[(num, w, d)] = (wa, da)
+        plain[num] = keep
+    return plain, targets
 
 
 def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
