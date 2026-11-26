@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.681 presets.py",
+  "generator": "h2g 0.5.682 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -864,7 +864,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 50149,
+      "bytes": 50219,
       "subtunes": 13,
       "rows": 55649,
       "multiplier": 2,
@@ -1473,8 +1473,8 @@
       "initial_instrument": true,
       "pre_note_wave": true,
       "prev_class_firstwave": true,
-      "tie_late_pitch": true,
-      "pulse_phase": true
+      "pulse_phase": true,
+      "tie_late_pitch": true
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -1740,8 +1740,10 @@
       "rows": 23374,
       "multiplier": 1,
       "no_test_restart": false,
+      "two_stage": true,
       "sfx_drum": true,
       "wave_program": true,
+      "pitch_seq": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -1809,10 +1811,8 @@
       "regrid": true,
       "regrid_full_debt": true,
       "regrid_phase": true,
-      "sfx_drum_stage": true,
-      "pitch_seq": true,
-      "two_stage": true,
-      "sfx_drum_bandpass": true
+      "sfx_drum_bandpass": true,
+      "sfx_drum_stage": true
     },
     "International_Karate.sid": {
       "max_rows": 94,
@@ -1914,8 +1914,8 @@
         61,
         62
       ],
-      "row_hard_restart": true,
-      "park_wave": true
+      "park_wave": true,
+      "row_hard_restart": true
     },
     "Kings_of_the_Beach_intro.sid": {
       "max_rows": 128,
@@ -3015,7 +3015,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 26903,
+      "bytes": 27109,
       "subtunes": 4,
       "rows": 29893,
       "multiplier": 2,
@@ -3127,14 +3127,14 @@
       "no_test_restart": true,
       "two_stage": true,
       "wave_program": true,
+      "pitch_seq": true,
       "max_hard_restart": true,
       "aligned_firstwave": true,
       "hard_restart_frames": 3,
       "master_volume": true,
       "pre_note_wave": true,
       "prev_class_firstwave": true,
-      "row_hard_restart": true,
-      "pitch_seq": true
+      "row_hard_restart": true
     },
     "Radio_ACE.sid": {
       "max_rows": 94,
