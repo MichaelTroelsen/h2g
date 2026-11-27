@@ -311,8 +311,21 @@ def test_nothing_but_the_bit02_notes_moves(monkeypatch):
     column of a rest row, the last row of a toggling note
     (tests/test_wave_eor_stop.py)."""
     import songview
+    import h2g.convert as _C
+    from h2g.funk_gatetimers import _split_class
+
+    def _funk_only():
+        # The longer-row gatetimer pass reads the finished bytes and declines
+        # at its pattern reserve, so the arm that carries this plan's 25
+        # clones (and their patterns) and the one that does not can differ
+        # by that pass alone: compare them under the funk pass only.
+        monkeypatch.setattr(_C, "split_funk_gatetimers",
+                            lambda blob, rows, t, log=None:
+                            _split_class(blob, rows, t, log))
+    _funk_only()
     off, _ = _convert(monkeypatch, enabled=False)
     monkeypatch.undo()
+    _funk_only()
     on, seen = _convert(monkeypatch)
     plan = seen["plan"]
     instr_used = seen["args"][4]

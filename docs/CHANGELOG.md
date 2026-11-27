@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.685 — 2026-11-27
+
+- Adopt three decided harness/emitter changes: travel ignores pre-gate writes, _bend_tail takes dead-envelope frames, Human_Race longer-row gatetimers
+
 ## 0.5.684 — 2026-11-27
 
 - Adopt Thanatos filter staircase, Thing_on_a_Spring drum_sustain_gate_off and Human_Race's lean phase staircase

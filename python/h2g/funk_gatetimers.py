@@ -54,6 +54,9 @@ from .patterns import GT_ORDER_RESTART, MAX_PATTERNS
 # Records that fit once the tempo record (63) is kept free for.
 _MAX_RECORDS = GT_TEMPO_INSTRUMENT - 1
 
+# Pattern slots a longer-row pass leaves free past its own copies.
+LONGER_ROW_PATTERN_RESERVE = 16
+
 
 def _pattern_entries(order: bytes):
     """(index, pattern number) for each pattern an orderlist names; the
@@ -68,18 +71,27 @@ def _pattern_entries(order: bytes):
             yield i, b
 
 
-def split_funk_gatetimers(blob: bytes, rows: List[int],
-                          ticks_for: Callable[[int], int],
-                          log: Optional[Callable[[str], None]] = None
-                          ) -> bytes:
-    """`blob` with each record's gatetimer matched to the rows that play it.
+def _split_class(blob: bytes, rows: List[int],
+                 ticks_for: Callable[[int], int],
+                 log: Optional[Callable[[str], None]] = None,
+                 short: int = FUNK_ROW_CALLS
+                 ) -> bytes:
+    """`blob` with each record's gatetimer matched to the rows that play it,
+    for ONE short row class (`short`).
 
     `rows[s]` is subtune `s`'s row in play calls (`convert`'s `group_tempos`);
     `ticks_for(row)` is the gatetimer ticks the writer gives a record whose
     shortest row is `row`. Returned unchanged where the file has no funk
     subtune, no longer one, or the subtunes do not line up with `rows`.
+
+    `short` names the row class the pass treats as the shortest (2, the funk
+    row, by default). `split_funk_gatetimers` runs it again for each longer
+    row below the file's longest, so a record a tempo-3 subtune and a tempo-4
+    one share is bounded for the 3-call subtune alone. A record a subtune
+    BELOW `short` plays is never touched: that subtune's bound is the one
+    the earlier pass set, and raising it would stall the voice.
     """
-    funk = {s for s, r in enumerate(rows) if r == FUNK_ROW_CALLS}
+    funk = {s for s, r in enumerate(rows) if r == short}
     if not funk or len(funk) == len(rows):
         return bytes(blob)
     try:
@@ -118,7 +130,12 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
                 if k:
                     explicit.setdefault(k, set()).add(s)
 
-    funk_ticks = ticks_for(FUNK_ROW_CALLS)
+    funk_ticks = ticks_for(short)
+    # The longer-row passes log under their own name, so a count of the funk
+    # pass's lines (tests/test_funk_gatetimers*.py) still reads one line.
+    label = ("Funk gatetimers........." if short == FUNK_ROW_CALLS
+             else "Row gatetimers.........")
+    below = {s for s, r in enumerate(rows) if r < short}
     out = bytearray(blob)
     raised: List[int] = []
     split: List[int] = []
@@ -131,10 +148,19 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
         cur = blob[at] & _GATETIMER_MASK
         if cur != funk_ticks:
             continue
+        if users & below:
+            continue
         longer = users - funk
         if not longer:
             continue
         if implicit.get(k, set()) & funk:
+            if short != FUNK_ROW_CALLS:
+                # The longer-row passes leave a record the short class opens
+                # on alone: moving the longer subtunes' named uses to a clone
+                # dropped Warhawk subtune 4's `aud` .716 -> .661 and subtune
+                # 3's .516 -> .498 (two subtunes already under .75), against a
+                # gate gain on subtune 2 alone.
+                continue
             # A funk voice opens on this record with no pattern naming it, so
             # the funk side cannot move. The longer subtunes' NAMED uses can:
             # they take a clone with their own gatetimer, and the original
@@ -178,12 +204,26 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
                     respell[p] = moves
                 else:
                     repoint[(is_funk, p)] = len(pats) + len(repoint)
+        # A longer-row pass COPIES patterns only up to the reserve the passes
+        # after this one (and the tests pinning it) leave free: Rasputin's
+        # 190 patterns became 195 for a gate gain of +.007, past the 192 that
+        # `test_fraction_runs_row_clock` holds, and Knucklebusters' copies
+        # made its dropped and undropped arms disagree at the 208 cap.
+        ceiling = (MAX_PATTERNS if short == FUNK_ROW_CALLS
+                   else MAX_PATTERNS - LONGER_ROW_PATTERN_RESERVE)
         if (count + len(cloned) > _MAX_RECORDS
+                or (repoint and len(pats) + len(repoint) > ceiling)
                 or len(pats) + len(repoint) > MAX_PATTERNS):
             if log:
-                log(f"Funk gatetimers.........: declined, {len(cloned)} "
+                log(f"{label}: declined, {len(cloned)} "
                     f"record(s) to split would need {count + len(cloned)} "
                     f"instruments and {len(pats) + len(repoint)} patterns")
+            if short != FUNK_ROW_CALLS:
+                # A longer-row pass is all or nothing: raising the records
+                # no shorter class plays while their split is declined moved
+                # Rasputin's records away from their own duty clones
+                # (gatetimer 130 against the clone's 131).
+                return bytes(blob)
             split, reverse, cloned = [], {}, []
             clone_of, fmap, lmap, repoint, respell = {}, {}, {}, {}, {}
 
@@ -246,7 +286,7 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
                          + ", ".join(f"${k:02X}" for k in raised))
         if split:
             parts.append(f"{len(split)} record(s) played in both a "
-                         f"{FUNK_ROW_CALLS}-call subtune and a longer one "
+                         f"{short}-call subtune and a longer one "
                          "split ("
                          + ", ".join(f"${k:02X}->${clone_of[k]:02X}"
                                      for k in split)
@@ -258,5 +298,27 @@ def split_funk_gatetimers(blob: bytes, rows: List[int],
                          "named uses moved to a clone ("
                          + ", ".join(f"${k:02X}->${clone_of[k]:02X}"
                                      for k in sorted(reverse)) + ")")
-        log("Funk gatetimers.........: " + "; ".join(parts))
+        log(f"{label}: " + "; ".join(parts))
     return bytes(res)
+
+
+def split_funk_gatetimers(blob: bytes, rows: List[int],
+                          ticks_for: Callable[[int], int],
+                          log: Optional[Callable[[str], None]] = None
+                          ) -> bytes:
+    """The funk row's pass, then one for every longer row below the file's
+    longest, shortest first.
+
+    A record two tempo classes share is charged the SHORTER class's bound
+    (`tracks.instrument_row_calls`), which is the safety bound and a cost for
+    the longer class: Human_Race's instrument `$0A00` is played by the 3-call
+    subtune 2 and the 4-call subtunes 0 and 1, so it gates off 2 calls before
+    a note everywhere where the original's 4-call rows gate off 4 -- 318 notes
+    of the default subtune's voice 0 hold the gate one frame too long.
+    """
+    out = _split_class(blob, rows, ticks_for, log)
+    top = max(rows, default=0)
+    for r in sorted(set(rows)):
+        if FUNK_ROW_CALLS < r < top:
+            out = _split_class(out, rows, ticks_for, log, short=r)
+    return out

@@ -252,6 +252,25 @@ def test_the_drop_moves_numbering_only_not_what_any_position_plays(name):
     # spelt in an orderlist, so the reference cannot be uncapped: allow exactly
     # the rows its own log declined, as CMD_SETFILTERPTR 0 and nothing else.
     declined = _declined_filter_stops(lines)
+    if any(l.startswith("Row gatetimers") and "declined" in l for l in lines):
+        # The longer-row gatetimer pass (`funk_gatetimers`) copies patterns,
+        # and the undropped arm's ghosts put it at the 208 cap where it
+        # declines: the arms then differ by its clones, not by the drop
+        # (Knucklebusters, 8 records split in the kept arm). Compare both
+        # with that pass off.
+        import h2g.funk_gatetimers as FG
+        keep_row = C.split_funk_gatetimers
+        C.split_funk_gatetimers = (
+            lambda blob, rows, t, log=None: FG._split_class(blob, rows, t, log))
+        try:
+            kept = _resolved(_preset_convert(name))
+            C.drop_unplayed_patterns = lambda tracks, patterns: (tracks, patterns, [])
+            lines = []
+            undropped = _resolved(_preset_convert(name, log=lines.append))
+        finally:
+            C.drop_unplayed_patterns = real
+            C.split_funk_gatetimers = keep_row
+        declined = _declined_filter_stops(lines)
     assert kept[1:] == undropped[1:]
     if declined == 0:
         assert kept == undropped

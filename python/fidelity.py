@@ -985,9 +985,24 @@ def _bend_tail(v: Voice) -> int:
     Like `wave`'s `since_off`, a voice whose gate has never been raised counts
     from frame 0. A voice whose bends were not parsed from a dump (no
     `bend_events`) has no tail to subtract.
+
+    **A bend is also tail when the envelope has already died**
+    (`_envelope_dead_frames`, the rule `depth` and the silent-tie counts cut
+    on), whatever release nibble is in force at the frame it is printed. The
+    first test reads the nibble *in force*, and Confuzion's player writes
+    AD/SR = $0000 on the gate-off frame (release 0: silent in one frame) and
+    puts the instrument's real SR back three frames later, with the gate
+    still closed. From that write the nibble in force is 9 and the
+    nibble-only test sees 38 more audible frames -- on an envelope that fell
+    to zero three frames earlier and cannot climb again. Our packed player
+    leaves SR at release 0, so the same vibrato frames are tail on our side
+    and counted bend on the original's: bend 0.73x where the frames the
+    chip can sound read 0.88x (v0.5.674, -t 180, historical: orig 105758 ->
+    87934, ours 77232 unchanged; task listen-sub99-confuzion).
     """
     if not v.bend_events:
         return 0
+    dead = _envelope_dead_frames(v)
     wf, ad = sorted(v.wf_events), sorted(v.adsr_events)
     i = j = tail = 0
     off: int | None = 0
@@ -1003,9 +1018,34 @@ def _bend_tail(v: Voice) -> int:
         while j < len(ad) and ad[j][0] <= f:
             adsr = ad[j][1]
             j += 1
-        if off is not None and f - off >= _release_frames(adsr & 0x0F):
+        if ((off is not None and f - off >= _release_frames(adsr & 0x0F))
+                or f in dead):
             tail += d
     return tail
+
+
+def _envelope_dead_frames(v: Voice) -> set[int]:
+    """Gate-closed frames on which `v`'s envelope is at zero and cannot climb
+    again before the next gate rising edge (`envelope_zero_frame`, one segment
+    per edge). Only closed-gate frames: the open-gate rules of
+    `envelope_zero_frame` (AD/SR zero, sustain 0) are not taken here, so the
+    one thing this adds to `_bend_tail` is the released-out envelope a later
+    SR write cannot revive. Empty for a voice without waveform events, which
+    reads audible."""
+    if not v.wf_events:
+        return set()
+    wf_ev = sorted(v.wf_events)
+    n = max(wf_ev[-1][0], v.bend_events[-1][0] if v.bend_events else 0) + 2
+    wf = register_timeline(wf_ev, n)
+    ad = register_timeline(sorted(v.env_adsr_events or v.adsr_events), n)
+    rises = [f for f in range(n)
+             if wf[f] & WF_GATE and (f == 0 or not wf[f - 1] & WF_GATE)]
+    dead: set[int] = set()
+    for k, s in enumerate(rises):
+        e = rises[k + 1] if k + 1 < len(rises) else n
+        dead.update(f for f in range(envelope_zero_frame(wf, ad, s, e), e)
+                    if not wf[f] & WF_GATE)
+    return dead
 
 
 # A frequency step bigger than this fraction of the pitch is a NOTE change, not
@@ -1072,6 +1112,19 @@ def _travel_steps(v: Voice) -> list[tuple[int, int, int]]:
     skip: set[int] = set()
     for a in v.attack_frames:
         skip |= {a - 1, a, a + 1}
+    # Before a voice's FIRST gate-on nothing has sounded, so a register write
+    # there is no pitch travel: Commodore_64_Music_Examples' packed player
+    # runs its vibrato state on the voices that have not played yet and writes
+    # $0640, $FFF8, $F999, ... to $D400/$D401 on all three from frame 2 while
+    # the waveform register is still 0 -- 79,300 of the 112,800 units by
+    # which `travel` read 1.36x (1.114x with them dropped from both sides;
+    # v0.5.674, -t 180, historical). The original does it too: Off_the_Cuff
+    # voice 2 sweeps $0B24 -> $2951 and back, ungated and unenveloped, for 616
+    # frames (its file travel 1,061,069 -> 618,169). Keyed on the gate bit
+    # rather than the first ATTACK, so a voice gated from frame 0 keeps its
+    # travel before siddump names a note; a voice with no gate-on at all (or
+    # no waveform write) is counted as before.
+    first = min((f for f, w in v.wf_events if w & 1), default=None)
     steps = []
     # (frame, sign) of the last step taken as a note change, for the
     # hysteresis below; None once a step that is not one has intervened.
@@ -1081,6 +1134,9 @@ def _travel_steps(v: Voice) -> list[tuple[int, int, int]]:
         if not d:
             continue
         sign = 1 if cur > prev else -1
+        if first is not None and f < first:
+            fall = None
+            continue
         if f in skip or f - 1 in skip:
             fall = None
             continue

@@ -296,9 +296,21 @@ def test_phantoms_idles_on_a_vibrato_free_instrument_first_lap_only():
     opts = fidelity._preset_opts(doc, name)
     opts.pop("pre_note_wave", None)
     path = str(CORPUS / name)
-    off = parse_sng(convert(path, log=lambda m: None, **opts))
-    lines = []
-    on = parse_sng(convert(path, log=lines.append, pre_note_wave=True, **opts))
+    # The first-lap copy names a record on row 0, a real use the longer-row
+    # gatetimer pass (`funk_gatetimers`) reads off the finished bytes, so the
+    # two arms are compared under the funk pass only.
+    import h2g.convert as _C
+    from h2g.funk_gatetimers import _split_class
+    keep = _C.split_funk_gatetimers
+    _C.split_funk_gatetimers = (
+        lambda blob, rows, t, log=None: _split_class(blob, rows, t, log))
+    try:
+        off = parse_sng(convert(path, log=lambda m: None, **opts))
+        lines = []
+        on = parse_sng(convert(path, log=lines.append, pre_note_wave=True,
+                               **opts))
+    finally:
+        _C.split_funk_gatetimers = keep
     assert on.instruments == off.instruments
     assert on.instruments[0].vib_ptr != 0
     assert any("vibrato-free instrument" in m for m in lines)
