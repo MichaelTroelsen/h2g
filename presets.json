@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.683 presets.py",
+  "generator": "h2g 0.5.684 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -3751,7 +3751,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 7098,
+      "bytes": 7216,
       "subtunes": 1,
       "rows": 2321,
       "multiplier": 4,
@@ -3770,6 +3770,7 @@
       "rows": 17381,
       "multiplier": 2,
       "drum_fall_loop": true,
+      "drum_sustain_gate_off": true,
       "gate_off_firstwave_instruments": [
         1,
         2,
@@ -3835,8 +3836,7 @@
         62
       ],
       "prev_class_firstwave": true,
-      "pulse_phase": true,
-      "drum_sustain_gate_off": true
+      "pulse_phase": true
     },
     "Thrust.sid": {
       "max_rows": 94,
