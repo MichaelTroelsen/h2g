@@ -106,7 +106,8 @@ def test_the_option_reaches_only_the_heard_songs():
     took = {k for k in doc["songs"]
             if F._preset_opts(doc, k).get("drum_sustain_gate_off")}
     assert took == {"Crazy_Comets.sid", "Spellbound.sid", "Warhawk.sid",
-                    "Proteus.sid"}  # Proteus heard 2026-10-31
+                    "Proteus.sid",  # Proteus heard 2026-10-31
+                    "Thing_on_a_Spring.sid"}  # adopted v0.5.684 on the Zoids cap
 
 
 @needs_corpus

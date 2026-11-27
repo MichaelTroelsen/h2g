@@ -1603,8 +1603,43 @@ def _clamp_frames(start: int, step: int) -> int:
     return n
 
 
+# Most frames of per-frame staircase `_clamped_block` will write: two rows a
+# frame, and the whole filter table is `GT_MAX_FILT` (64) rows, of which the
+# block spends three on params, start and stop. A clamp that takes longer to
+# reach $80 (Thanatos' takes 32 frames) stops 2 frames short of it; the rest
+# of the table is none of this block's to spend.
+STAIRCASE_MAX_FRAMES = (GT_MAX_FILT - 3) // 2
+
+
+def _frame_staircase(passband: int, resctl: int, start: int, step: int,
+                     multiplier: int, frames: int) -> List[tuple]:
+    """The clamped block for a step that is not a whole number per call.
+
+    The player adds `step` once a frame and holds the value for the rest of it;
+    a table row adds per CALL. `_filter_step_per_call` rounds `step / m` to a
+    whole number, and `3 / 4` rounds to 1: a sweep 4/3 too fast (Thanatos,
+    `cut` 1.12x, `cfrm` 65%). A one-call row of the whole step followed by a
+    row holding the other `m - 1` calls is the same staircase exactly -- the
+    chip sees the value the player writes, the frame it writes it -- for two
+    rows a frame.
+
+    The strike frame writes no cutoff (`_classic_sweep_block`: the fetch
+    resets the accumulator without writing the chip), so it is a params row
+    and `m - 1` held calls; the next frame's first call is a set-cutoff row
+    carrying the first stepped value, and `frames - 1` staircase pairs follow.
+    `2 * frames + 3` rows, which `STAIRCASE_MAX_FRAMES` keeps inside the
+    table."""
+    block = [(FILT_SET_PARAMS | passband, resctl), (multiplier - 1, 0x00),
+             (FILT_SET_CUTOFF, (start + step) & 0xFF), (multiplier - 1, 0x00)]
+    for _ in range(frames - 1):
+        block.append((1, step & 0xFF))
+        block.append((multiplier - 1, 0x00))
+    block.append((FILT_STOP, 0x00))
+    return block
+
+
 def _clamped_block(passband: int, resctl: int, start: int, step: int,
-                   per_call: int) -> List[tuple]:
+                   per_call: int, multiplier: int = 1) -> List[tuple]:
     """Set params, set cutoff, modulate to the player's hold value, stop.
 
     **THE ENDPOINT IS KEPT, NOT THE CLOCK.** The player travels
@@ -1624,6 +1659,10 @@ def _clamped_block(passband: int, resctl: int, start: int, step: int,
     if per_call:
         signed = step - 256 if step >= 0x80 else step
         p = per_call - 256 if per_call >= 0x80 else per_call
+        if multiplier > 1 and signed != p * multiplier:
+            return _frame_staircase(
+                passband, resctl, start, step, multiplier,
+                min(frames, STAIRCASE_MAX_FRAMES))
         calls = max(1, round(frames * signed / p))
         while calls:
             n = min(calls, FILT_MODULATE)
@@ -2568,7 +2607,7 @@ def _filter_entries_once(sid: SidFile, det: Detection, instr_used: int,
                                         len(entries) + 1, held)
         elif filt.clamp:
             block = _clamped_block(filt.passband, resctl, filt.cutoff, step,
-                                   per_call)
+                                   per_call, multiplier)
         else:
             if per_call:
                 block = _classic_sweep_block(

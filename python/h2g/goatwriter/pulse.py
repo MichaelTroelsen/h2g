@@ -133,18 +133,39 @@ STAIR_MIN_STEP = 0x80
 
 
 _STAIR_ON = [False]
+_STAIR_HEAD: list = [None]
 
+# The lean staircase (`held_stairs(True, head=STAIR_HEAD)`): an entry piece
+# that leaves the shared chain -- a phase off the sweep's band, which ramps
+# a long way to a bound before it joins the loop -- lays only its first
+# STAIR_HEAD calls as the player's staircase (one hold call, then the first
+# step's set row) and the rest of its ramp as the slew at the mean rate. The
+# shared chained legs stay full staircases, where every lattice width is an
+# entry anyway and a step costs no more than the slew's own row pair.
+# Measured on Human_Race (`docs/LESSONS.md`): its two $E0/$80 unions lay 226
+# and 170 rows as full staircases, 122 of the 170 in three off-band pieces
+# that ramp 16-31 steps (two rows a step) where a slew takes one; the lean
+# layout is 255 rows and places all five parity records where the full one
+# placed three in 253. What the scored columns read is the first step: the
+# opening width one frame after the attack (pphase) and the first
+# displacements (poff). STAIR_HEAD 1, 2 and 3 score alike (pphase 1.00,
+# poff .8369); 0 -- no staircase on a piece at all -- overshoots to 1.06.
+STAIR_HEAD = STAIR_CALLS
 
 @contextmanager
-def held_stairs(on: bool):
+def held_stairs(on: bool, head: Optional[int] = None):
     """Lay the phase table with held staircases (`on`) or, by default, with
     every sweep a slew: how `convert` prices the staircase against the table
-    it costs (`stair_costs_records`)."""
+    it costs (`stair_costs_records`). With `head` the staircase is lean
+    (`STAIR_HEAD`): an entry piece's own ramps keep only their first `head`
+    calls as a staircase."""
     was, _STAIR_ON[0] = _STAIR_ON[0], on
+    was_head, _STAIR_HEAD[0] = _STAIR_HEAD[0], head
     try:
         yield
     finally:
         _STAIR_ON[0] = was
+        _STAIR_HEAD[0] = was_head
 
 
 def is_held_stair(step: Optional[int], speed: int) -> bool:
@@ -2725,8 +2746,17 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
     def whole(distance: int) -> int:
         return _nearest_ticks(distance, speed) if step else distance // speed
 
-    def ramp(at: int, ticks: int, d: int) -> List[tuple]:
+    def ramp(at: int, ticks: int, d: int, own: bool = False) -> List[tuple]:
         if _STAIR_ON[0] and is_held_stair(step, speed):
+            lean = _STAIR_HEAD[0]
+            if own and lean is not None and ticks > lean:
+                # An entry piece's own ramp under the lean staircase: the
+                # first `lean` calls as the player's steps, then the slew
+                # from the width those steps reached.
+                rows = _held_ramp_rows(at, lean, d, step, STAIR_CALLS)
+                steps = sum(1 for r in rows if r[0] & 0x80 and r[0] != 0xFF)
+                return rows + _ramp_rows((at + d * step * steps) & 0xFFF,
+                                         ticks - lean, d, speed)
             return _held_ramp_rows(at, ticks, d, step, STAIR_CALLS)
         return _ramp_rows(at, ticks, d, speed)
 
@@ -2896,9 +2926,9 @@ def _phase_block(base: int, num: int, want_set: set, width: int, speed: int,
             out, back = _leg_ramps(w, direction, mine[0], mine[1], wrap, step)
             heads = loop_heads
         n_out = whole(out)
-        piece += ramp(w, n_out, direction)
+        piece += ramp(w, n_out, direction, own=True)
         piece += ramp((w + direction * n_out * speed) & 0xFFF, whole(back),
-                      -direction)
+                      -direction, own=True)
         piece += [(0xFF, heads[0] if direction > 0 else heads[1])]
         phase_index[(num, w, direction)] = at
         block += piece

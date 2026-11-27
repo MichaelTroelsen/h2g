@@ -25,7 +25,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          outer_gate_skip, pulse_phase_sims,
                          pulse_bounds_sims, pulse_reseed_gated,
                          triangle_start,
-                         build_pulse_phase_table, held_stairs,
+                         build_pulse_phase_table, held_stairs, STAIR_HEAD,
                          parity_direction, parity_index,
                          parity_records, stair_costs_records,
                          pulse_usage, resolve_parity, _instruments_used, find_song_speeds, effective_frames,
@@ -1871,6 +1871,22 @@ def convert(sid_path: str, log: Logger = print,
                             stair = _build_stair_table(
                                 *pulse_args, stair_phases, stair_log.append,
                                 lead, **build)
+                    if stair is not None and stair_costs_records(
+                            stair, table, build["usage"]):
+                        # The full staircase costs records: lay the lean
+                        # one (`goatwriter.STAIR_HEAD`) -- only the first
+                        # step of an off-chain piece, the rest a slew --
+                        # and ship it if it costs none. A rescue, consulted
+                        # only where the full one failed, so a file that
+                        # ships the full staircase keeps its bytes.
+                        lean_log: list = []
+                        with held_stairs(True, head=STAIR_HEAD):
+                            lean = _build_stair_table(
+                                *pulse_args, stair_phases, lean_log.append,
+                                lead, **build)
+                        if lean is not None and not stair_costs_records(
+                                lean, table, build["usage"]):
+                            stair, stair_log = lean, lean_log
                     if stair is not None and not stair_costs_records(
                             stair, table, build["usage"]):
                         table, writes = stair, stair_writes

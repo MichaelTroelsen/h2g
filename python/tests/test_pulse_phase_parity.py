@@ -173,9 +173,10 @@ def test_the_staircase_ships_only_where_it_keeps_every_record_the_slew_kept():
     assert not stair_costs_records(table(2), table(3, 4), usage)
 
 
-def test_human_race_keeps_its_slew_where_the_staircase_costs_it_records():
-    """Its staircase table places 3 of the 7 phase-tracked records in 253
-    rows where the slew places 5 in 227: the slew ships, byte for byte."""
+def test_human_race_full_staircase_costs_it_records_so_the_lean_one_ships():
+    """Its FULL staircase table places 3 of the 7 phase-tracked records in 253
+    rows where the slew places 5 in 227, so it is not what ships: the lean
+    staircase (`STAIR_HEAD`, tests/test_pulse_phase_stair_lean.py) is."""
     from test_pulse_phase_union import _corpus_and_presets
     corpus, doc = _corpus_and_presets()
     path = corpus / "Human_Race.sid"
@@ -186,21 +187,20 @@ def test_human_race_keeps_its_slew_where_the_staircase_costs_it_records():
     from h2g import convert as C
     kwargs = fidelity._preset_opts(doc, "Human_Race.sid")
     tried: list = []
-    shipped: list = []
-    real_stair, real_index = C._build_stair_table, C.parity_index
+    real_stair = C._build_stair_table
 
     def spy_stair(*a, **kw):
         out = real_stair(*a, **kw)
         tried.append(out)
         return out
-
-    def spy_index(*a, **kw):
-        shipped.append(a)
-        return real_index(*a, **kw)
-    C._build_stair_table, C.parity_index = spy_stair, spy_index
+    C._build_stair_table = spy_stair
     try:
         C.convert(str(path), log=lambda m: None, **kwargs)
     finally:
-        C._build_stair_table, C.parity_index = real_stair, real_index
-    assert tried and tried[0] is not None, "the staircase was never laid"
-    assert not shipped, "the staircase shipped where it costs records"
+        C._build_stair_table = real_stair
+    assert len(tried) == 2 and tried[0] is not None, "the staircase was never laid"
+    full, lean = tried
+    full_nums = {k[0] for k in full[2]}
+    lean_nums = {k[0] for k in lean[2]}
+    assert len(full_nums) == 3 and len(full[0]) == 253
+    assert len(lean_nums) == 5 and len(lean[0]) <= 255

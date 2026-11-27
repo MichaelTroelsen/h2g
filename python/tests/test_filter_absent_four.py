@@ -200,7 +200,11 @@ def test_a_static_free_running_record_stops():
 
 @needs_corpus
 @pytest.mark.parametrize("stem,mult,want", [
-    ("Thanatos", 4, [(0x90, 0xF4), (0x00, 0x20), (0x60, 0x01), (0xFF, 0x00)]),
+    # 3 a frame is 0.75 a call at -S4: a one-call +3 row and a 3-call hold
+    # row a frame (`_frame_staircase`), 30 frames of the 32 it takes to
+    # reach $80, which is what the 64-row table has room for.
+    ("Thanatos", 4, [(0x90, 0xF4), (3, 0x00), (0x00, 0x23), (3, 0x00)]
+     + [(1, 0x03), (3, 0x00)] * 29 + [(0xFF, 0x00)]),
     ("Sigma_Seven", 1, [(0x90, 0xF4), (0x7F, 0x02), (0xFF, 0x02),
                         (0x90, 0xF4), (0x7F, 0x02), (0xFF, 0x05),
                         (0x90, 0xF4), (0x7F, 0x02), (0xFF, 0x08)]),
