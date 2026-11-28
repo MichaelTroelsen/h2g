@@ -2689,6 +2689,35 @@ this change moves none of them, and `adsr` is not a term. So it is a
 command-line option waiting on a criterion that can see it, not a per-song
 search candidate — stated here rather than left as a per-song hope.
 
+## `--rest-park-twin` (the rest that keeps a pitch loop stepping)
+
+`--rest-wave-silence` points a rest on a running wavetable at a two-row stop
+program, which writes `$08` and zeroes the table pointer. The original does not
+stop a record's pitch LOOP at a rest: I_Ball's instrument 3 (note column base,
+base, +24 semitones, period 3) keeps stepping with the voice at wave `$08`, ADSR
+`$0000`, so its frequency register keeps reversing across the rest. The stop
+program freezes the register where the park lands, and `vib` (`reversal_ratio`)
+reads 1.0056 -> .9438 under the two rest options.
+
+With `--rest-park-twin` a rest on ONE instrument whose program loops points at a
+silent copy of the loop body (waveform `$E8`, delays and notes kept, closed by
+its own `FF`), after one `CMD_SETSR $00` row under `--rest-envelope-silence`
+(`goatwriter.rest_park.twin_loops`). A loop with a command row or one that
+opens on a delay keeps the stop program (Shockway_Rider's delay-opened twin
+stepped a note pitch onto its hard-restart frame: runs.jsonl
+`rest-park-silent-stepping-twin-i-ball`, `shockway-rest-twin-delay-opened`).
+Needs `--rest-wave-silence`; inert without it. Per song, off by default.
+
+Measured on I_Ball at v0.5.685 (`-t 180 --presets --sound`; historical), the
+presets plus `rest_wave_silence` + `rest_envelope_silence`, stop program against
+twin: vib .9438 -> .9943 (the base is 1.0056), `loud_ratio` .9184 -> .9195;
+every other column equal. Against the shipped I_Ball (no rest options) the twin
+arm reads ctrl 70 -> 92%, hold 67 -> 83%, holdnf 75 -> 92%, wave 95 -> 96%,
+adsr 93 -> 98%, tiefr 89 -> 91%, travel 1.08x -> 1.05x; `tie` falls .96x -> .93x
+(the count ratio: 393 ours-only ties on rest frames the original does not tie
+are gone, 35 same-frame ties are lost, `tie_agreement` rises .888 -> .911) and
+`loud_ratio` .930 -> .920 (unprinted). `tests/test_rest_park_twin.py`.
+
 ## One subtune's tempo reaching another's clock (fixed v0.5.330)
 
 `CMD_SETTEMPO` under `$80` sets **all three channels** (`gplay.c:494`), patterns

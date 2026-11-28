@@ -2645,7 +2645,8 @@ class _EnvLevel:
 
 def adsr_audible_compare(orig: list[Voice], ours: list[Voice],
                          nframes: int, lag: int = 0,
-                         mask_release: bool = False) -> dict:
+                         mask_release: bool = False,
+                         forgive: list[set[int]] | None = None) -> dict:
     """`adsr` with the frames the SID cannot hear not charged -- the `adsrnf`
     column.
 
@@ -2685,21 +2686,37 @@ def adsr_audible_compare(orig: list[Voice], ours: list[Voice],
     through the next note (an instrument reload that never comes). `adsr` is
     unchanged and stays the strict reading.
 
+    **The next-note fetch frame** (`forgive`, the `fetch_frames` sets; None
+    leaves every figure as it was). Goattracker fetches the next note early and
+    writes its instrument's pair together with the `$09` firstwave, so on that
+    frame ours is gated on and carries the NEW pair while the original is still
+    on its released note and writes the same pair one frame later. `gatenf` and
+    `holdnf` already do not charge that frame (user ruling 2026-10-31: inaudible
+    -- the `$09` selects no waveform, so the early attack starts under test and
+    zero output). It is forgiven here only where the pair ours writes IS the
+    pair the original has on the NEXT frame (release nibble masked as above); a
+    fetch frame carrying any other pair keeps its charge. Mega_Apocalypse's
+    voice 1 swaps its pair on every note, which put 638 of its 661 missing
+    frames on this one frame (v0.5.685, historical).
+
     `adsr_nf_forgiven` is how many frames were not charged (`_zero` the a1
-    share, `_ads` the a2). Equals `adsr` on a file with none.
+    share, `_ads` the a2, `_fetch` the fetch frame). Equals `adsr` on a file
+    with none.
     """
     agree = total = 0
-    forgiven = zero = ads = 0
+    forgiven = zero = ads = fetch = 0
     keep = ~RELEASE_NIBBLE if mask_release else -1
     per_voice = []
-    for a, b in zip(orig, ours):
+    for vi, (a, b) in enumerate(zip(orig, ours)):
         ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
                           register_timeline(b.adsr_events, nframes), lag)
         wa, wb = _aligned(register_timeline(a.wf_events, nframes),
                           register_timeline(b.wf_events, nframes), lag)
         ea, eb = _EnvLevel(), _EnvLevel()
+        skip = ({f - max(lag, 0) for f in forgive[vi]}
+                if forgive is not None and vi < len(forgive) else set())
         va = vt = 0
-        for x, y, ga, gb in zip(ta, tb, wa, wb):
+        for i, (x, y, ga, gb) in enumerate(zip(ta, tb, wa, wb)):
             ga, gb = (ga or 0) & GATE_BIT, (gb or 0) & GATE_BIT
             pa, pb = ea.phase(x, ga), eb.phase(y, gb)
             ea.step(x)
@@ -2709,6 +2726,11 @@ def adsr_audible_compare(orig: list[Voice], ours: list[Voice],
             if (x & keep) == (y & keep):
                 va += 1
                 vt += 1
+                continue
+            if (i in skip and not ga and gb and i + 1 < len(ta)
+                    and (ta[i + 1] & keep) == (y & keep)):
+                fetch += 1                   # the next-note fetch frame
+                forgiven += 1
                 continue
             if not ga and not gb:
                 if pa == "Z" and pb == "Z":
@@ -2729,6 +2751,7 @@ def adsr_audible_compare(orig: list[Voice], ours: list[Voice],
         "adsr_nf_forgiven": forgiven,
         "adsr_nf_forgiven_zero": zero,
         "adsr_nf_forgiven_ads": ads,
+        "adsr_nf_forgiven_fetch": fetch,
         "adsr_nf_voices": per_voice,
     }
 
@@ -7624,8 +7647,12 @@ DIMENSIONS = (
               "running with only A/D/S differing (the release nibble is the "
               "one that governs, and it agrees or is masked). Both players "
               "reload the pair at the next gate-on, so those frames are "
-              "inaudible (census 2026-11-01, classes a1/a2). **Blind to** "
-              "anything on a gated frame (never forgiven), to a frame where "
+              "inaudible (census 2026-11-01, classes a1/a2). The next-note "
+              "fetch frame (`fetch_frames`, the one `gatenf` and `holdnf` "
+              "forgive) is not charged either, where the pair ours writes on "
+              "it is the pair the original has on the next frame. **Blind to** "
+              "anything on a gated frame (never forgiven, bar that fetch "
+              "frame), to a frame where "
               "the two gates differ (`gate` owns it), and to the level "
               "model's error at the edge of the release (a frame-stepped "
               "approximation, not reSID); forgiven frames leave the "
@@ -9324,7 +9351,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                     mask_release=bool(opts.get("cut_release"))))
             row.update(adsr_audible_compare(
                 a, best_dump, nframes, lag=lag,
-                mask_release=bool(opts.get("cut_release"))))
+                mask_release=bool(opts.get("cut_release")),
+                forgive=fetch_frames(a, best_dump, nframes)))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(gate_nofetch_compare(a, best_dump, nframes, lag=lag))
             row.update(tie_compare(a, best_dump, nframes, lag=lag))
@@ -9464,9 +9492,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # `import sound` pulls in fidelity plus nine h2g modules.
         import sound  # noqa: PLC0415 -- numpy, harness only; see above
         prior = 0.02 * row.get("startup_lag", 0)
+        # A multispeed file's real onsets sit at a call of its `-S`, which the
+        # frame-grouped trace the prior comes from cannot see: `sound.align`
+        # estimates that remainder from the loudness envelopes, inside one frame.
+        subframe = (row.get("multiplier") or 1) >= 2
         got = sound.compare_sids(
             local_orig, packed, seconds, sub,
-            row.get("matched_subtune", our_sub), prior_s=prior)
+            row.get("matched_subtune", our_sub), prior_s=prior,
+            subframe=subframe)
         row.update(timeline_columns(got))
         if getattr(args, "sound_voices", False) and "sound_failed" not in got:
             # Voices paired by the register traces' wave agreement; a run
@@ -9477,7 +9510,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             t0 = time.time()
             row.update(aud_voices_columns(
                 local_orig, packed, seconds, sub,
-                row.get("matched_subtune", our_sub), pairing, prior_s=prior))
+                row.get("matched_subtune", our_sub), pairing, prior_s=prior,
+                subframe=subframe))
             row["aud_voice_pairing_basis"] = vp["basis"] if vp else "index"
             if vp:
                 row["aud_voice_matrix"] = vp["matrix"]
@@ -9529,7 +9563,7 @@ def voice_pairing(orig: list[Voice], ours: list[Voice], nframes: int,
 def aud_voices_columns(orig_sid: Path, our_sid: Path, seconds: int,
                        sub_orig: int, sub_ours: int, pairing: list[int],
                        prior_s: float | None = None,
-                       compare=None) -> dict:
+                       compare=None, subframe: bool = False) -> dict:
     """`aud_voices` (original voice order, 3 values, `None` where a solo
     render failed or the voice sounds on neither side) and the
     `aud_voice_pairing` it was scored under.
@@ -9543,9 +9577,10 @@ def aud_voices_columns(orig_sid: Path, our_sid: Path, seconds: int,
     vals, failed = [], []
     for i in range(3):
         j = pairing[i] if i < len(pairing) else i
+        extra = {"subframe": True} if subframe else {}
         got = compare(orig_sid, our_sid, seconds, sub_orig, sub_ours,
                       prior_s=prior_s, mute=sound.solo_mute(i + 1),
-                      mute_ours=sound.solo_mute(j + 1))
+                      mute_ours=sound.solo_mute(j + 1), **extra)
         if "sound_failed" in got:
             failed.append(f"voice {i + 1}: {got['sound_failed']}")
             vals.append(None)

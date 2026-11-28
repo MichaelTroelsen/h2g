@@ -4730,13 +4730,20 @@ ENVELOPE_CUT_SHAPES = (
 # reached only when the row counter `$1412,X` is 0 (`LSR / CMP` equal), so the
 # `BNE` never branches and every note end zeroes AD/SR (675/529/493 of 675/529/493
 # note ends on the three voices, traced at v0.5.581).
+#
+# A second fallback: the gate-clear masks with a per-voice cell instead of `#$FE`
+# (`LDA mask,X / AND cell,X / STA $D404,Y / LDA #0 / STA $D405,Y / STA $D406,Y`,
+# Ninja $C974-$C97F, reached when the note's row counter `$CC25,X` is 0). Ninja
+# only in the 89-file corpus; its records carry release nibble of $A (AD$38 SR$0A, AD$08 SR$3A) that
+# never sound in the original, which writes $0000 to AD/SR at every note end.
 ENVELOPE_CUT_FALLBACK_SHAPES = (
     "29 FE 99 04 D4 BD ?? ?? D0 08 A9 00 99 05 D4 99 06 D4",
+    "3D ?? ?? 99 04 D4 A9 00 99 05 D4 99 06 D4",
 )
 
 
 def find_envelope_cut(sid: SidFile) -> bool:
-    """Whether this player zeroes AD and SR when a note ends (33 files)."""
+    """Whether this player zeroes AD and SR when a note ends (34 files)."""
     if any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES):
         return True
     return any(search_file(sid.data, sh) >= 1

@@ -316,8 +316,9 @@ from .rest_park import (CMD_SETWAVE, REST_PARK_ENV_FULL_PROGRAM,
                         REST_SILENT_WAVE, _hold_sr_to_ad,
                         lagged_instruments, vibrato_instruments,
                         program_instruments, programmed_instruments,
-                        rest_park_pass, rest_park_plan,
-                        rest_wave_rows)  # noqa: F401
+                        rest_park_pass, rest_park_plan, rest_wave_rows,
+                        TwinBody, _plan_with_twins, twin_layout,
+                        twin_loops)  # noqa: F401
 from .sfx_rest_click import (ENVELOPE_FIRSTWAVE, ENVELOPE_HELD,
                              ENVELOPE_LEAD, ENVELOPE_PARK_WAVE,
                              ENVELOPE_ROW_FRAMES, GT_ENDPATT, INSTR_BYTES,
@@ -367,7 +368,7 @@ from .wave_program import (PAIR_ENDS_FRAME, SLIDE_CUT_SHARE,
                            _wave_program_travel_entry, _wave_program_travels,
                            _wave_set_note_byte,
                            _wave_tail_wrapped_note_byte)  # noqa: F401
-from .wavetable import (DRUM_SWEEP_UNCAP_S1, DRUM_RISE_FIRST_FRAME, DRUM_RISE_STEP_FRAMES, _DRUM_RISE,
+from .wavetable import (DRUM_SWEEP_UNCAP_S1, DRUM_RISE_FIRST_FRAME, DRUM_RISE_STEP_FRAMES, _DRUM_RISE, _TICK_UNCAP_NIBBLE,
                         _alt_drum_sweep, _drum_duration_steps, _drum_entries,
                         _drum_max_steps, _drum_rise_step_calls,
                         _drum_speed_index, _drum_sweep_hold, _drum_tick_noise,
@@ -495,6 +496,7 @@ from .dead_blocks import (DeadBlocks, dead_records, named_records, plan_dead_blo
                           reached_rows, remap_rows, remap_setwaveptr,
                           setwaveptr_operands, WAVE_SETPTR,
                           _targets)  # noqa: F401
+from .shared_blocks import (SharedBlocks, plan_shared_blocks)  # noqa: F401
 from .build import (_arp_phase_distinct, _block_is_steady, _build_sng,
                     _build_sng_split, _heard_splits, _RetryDeadBlocks,
                     _note_split_displaces, _RetrySplit, build_sng,

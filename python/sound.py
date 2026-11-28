@@ -286,8 +286,25 @@ WIDE_WINDOW_S = 0.5
 
 
 def align(a: Features, b: Features, prior_s: float | None = None,
-          window_s: float | None = None) -> int:
+          window_s: float | None = None, subframe: bool = False) -> int:
     """Hops to delay `a` by so its envelope lines up with `b`'s.
+
+    `subframe` (multispeed files only, `fidelity._measure` passes it for
+    `multiplier >= 2`) estimates the prior's SUB-FRAME remainder from the two
+    loudness envelopes, inside the prior's own +-`PRIOR_WINDOW_S` and not on
+    `aud`. The prior is whole frames of `startup_lag`, read off traces that
+    group a frame's `-S` calls and sample after the last; the packed player's
+    real onsets sit at call `c` of those `S`, so the rendered sound trails the
+    whole-frame prior by up to a frame that no per-frame register column can
+    see. Measured on the 52 multispeed rows of build/fidelity.json at v0.5.685
+    (C:/t/listen-r2-las-vegas-video-poker/census_lag2.py): the envelope lag
+    moves 48 of 52 by +4..+7 hops, `aud` rises beyond the 0.0069 noise floor on
+    26 and falls on none, and `loud` -- not the objective -- falls on none (the
+    test the v0.5.459 removal below set: "a true alignment does not degrade an
+    independent measure of the same two signals"). Las_Vegas_Video_Poker
+    34 -> 40 hops, aud .9184 -> .9484. A one-call-per-frame file has no
+    sub-frame remainder, and there the envelope search is the noisy one (4 of
+    the 5 downs over all 93 rows, Crazy_Comets -.0246), so it keeps the prior.
 
     Bounded search around `prior_s`. **The objective is `aud` ITSELF, the
     residual this alignment is used for** -- changed at v0.5.455 from the
@@ -354,9 +371,9 @@ def align(a: Features, b: Features, prior_s: float | None = None,
     # estimate of zero". A caller that names the window is asking for a
     # search; one that supplies a prior and leaves the window to us is asking
     # for that prior to be resolved.
-    refine = prior_s is not None and window_s is None
+    refine = prior_s is not None and window_s is None and not subframe
     if window_s is None:
-        window_s = PRIOR_WINDOW_S if refine else WIDE_WINDOW_S
+        window_s = PRIOR_WINDOW_S if prior_s is not None else WIDE_WINDOW_S
     span = int(math.ceil(window_s / a.hop_s))
     if n < 4:
         return prior
@@ -604,7 +621,7 @@ def first_dip(per_second: list) -> int | None:
 
 
 def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
-                 window_s: float | None = None) -> dict:
+                 window_s: float | None = None, subframe: bool = False) -> dict:
     """`a` is the original, `b` ours. Aligns on the envelope, then scores.
 
     `window_s` cuts the SCORING to a prefix of the aligned overlap; the
@@ -616,7 +633,7 @@ def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
     if ra != rb:
         raise ValueError(f"sample rates differ: {ra} vs {rb}")
     fa, fb = features(xa, ra), features(xb, rb)
-    lag = align(fa, fb, prior_s=prior_s)
+    lag = align(fa, fb, prior_s=prior_s, subframe=subframe)
     got = compare_features(fa, fb, lag, window_s=window_s)
     got["sound_lag_ms"] = round(1000.0 * lag * fa.hop_s, 1)
     return got
@@ -778,7 +795,8 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
                  cache: Path = AUDIO_DIR,
                  renderer=listen.render_sidplayfp,
                  window_s: float | None = None,
-                 mute: tuple = (), mute_ours: tuple | None = None) -> dict:
+                 mute: tuple = (), mute_ours: tuple | None = None,
+                 subframe: bool = False) -> dict:
     """Render both sides with ONE renderer and score them.
 
     `mute` silences those voices (1-based) on the original's render, and on
@@ -803,7 +821,8 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
                       mute_ours)
     if b is None:
         return {"sound_failed": "ours"}
-    got = compare_wavs(a, b, prior_s=prior_s, window_s=window_s)
+    got = compare_wavs(a, b, prior_s=prior_s, window_s=window_s,
+                       subframe=subframe)
     got["sound_cache"] = [a.name, b.name]
     return got
 

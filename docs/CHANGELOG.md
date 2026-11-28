@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.686 — 2026-11-28
+
+- Adopt six second-round changes: IK noise-tick uncap, Thrust shared blocks + drum_long, Ninja masked envelope cut, Zoolook duration-gate vibrato_phase, adsrnf fetch frame, aud sub-frame alignment (+ rest_park_twin, off)
+
 ## 0.5.685 — 2026-11-27
 
 - Adopt three decided harness/emitter changes: travel ignores pre-gate writes, _bend_tail takes dead-envelope frames, Human_Race longer-row gatetimers

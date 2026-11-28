@@ -5986,6 +5986,45 @@ def test_adsrnf_maps_the_lag_like_adsr():
     assert nf["adsr_nf"] == 1.0 and nf["adsr_nf_forgiven"] > 0
 
 
+def _fetch_pair_voices(ours_pair=0x1B49):
+    """Orig: note 1 released at 10, note 2 gated at 21 with a new pair. Ours:
+    the `$09` fetch frame at 20 (gate on, no waveform) carries `ours_pair`
+    one frame ahead of the original's write."""
+    oo = _three(fidelity.Voice(
+        wf_events=[(0, 0x11), (10, 0x10), (21, 0x11)],
+        adsr_events=[(0, 0x0A09), (21, 0x1B49)], attack_frames=[0, 21]))
+    uu = _three(fidelity.Voice(
+        wf_events=[(0, 0x11), (10, 0x10), (20, 0x09), (21, 0x11)],
+        adsr_events=[(0, 0x0A09), (20, ours_pair)], attack_frames=[0, 21]))
+    return oo, uu
+
+
+def test_adsrnf_forgives_the_fetch_frame_that_writes_the_pair_one_frame_early():
+    oo, uu = _fetch_pair_voices()
+    base = fidelity.adsr_audible_compare(oo, uu, 40)
+    assert base["adsr_nf"] < 1.0 and base["adsr_nf_forgiven_fetch"] == 0
+    nf = fidelity.adsr_audible_compare(oo, uu, 40, forgive=[{20}, set(), set()])
+    assert nf["adsr_nf"] == 1.0
+    assert nf["adsr_nf_forgiven_fetch"] == 1 and nf["adsr_nf_forgiven"] == 1
+    # `adsr` is the strict reading and does not take the hook
+    assert fidelity.adsr_compare(oo, uu, 40)["adsr"] < 1.0
+
+
+def test_adsrnf_keeps_the_charge_on_a_fetch_frame_with_the_wrong_pair():
+    """Ours writes $2C5A where the original writes $1B49 a frame later: the
+    fetch frame is on the forgiven list but the pair is a real difference."""
+    oo, uu = _fetch_pair_voices(ours_pair=0x2C5A)
+    nf = fidelity.adsr_audible_compare(oo, uu, 40, forgive=[{20}, set(), set()])
+    assert nf["adsr_nf_forgiven_fetch"] == 0
+    assert nf["adsr_nf"] < 1.0
+
+
+def test_adsrnf_fetch_forgiveness_is_only_on_the_listed_frame():
+    oo, uu = _fetch_pair_voices()
+    nf = fidelity.adsr_audible_compare(oo, uu, 40, forgive=[{19}, set(), set()])
+    assert nf["adsr_nf_forgiven_fetch"] == 0 and nf["adsr_nf"] < 1.0
+
+
 def test_adsrnf_is_registered_beside_adsr_and_says_what_it_is_blind_to():
     keys = [d.key for d in fidelity.DIMENSIONS]
     assert keys.index("adsr_nf") == keys.index("adsr") + 1

@@ -32,6 +32,7 @@ import fidelity as F                                         # noqa: E402
 import songview                                              # noqa: E402
 from h2g.convert import convert                              # noqa: E402
 from h2g.goatwriter import dead_blocks as D                  # noqa: E402
+from h2g import vibrato_phase                                # noqa: E402
 from h2g import vibrato_hold                                  # noqa: E402
 from h2g.goatwriter import build as B                        # noqa: E402
 from h2g.goatwriter.constants import (CMD_SETWAVEPTR,        # noqa: E402
@@ -281,6 +282,9 @@ def test_dropping_the_blocks_changes_no_program_that_plays(name, monkeypatch):
     # into whatever rows are left, and these two arms leave different counts:
     # it is not what is under test here.
     monkeypatch.setattr(vibrato_hold, "RECORD_HOLD", {})
+    # Likewise Zoolook's early-rows vibrato classes (v0.5.686), laid into the
+    # rows left over.
+    monkeypatch.setattr(vibrato_phase, "EARLY_VERIFIED", frozenset())
     new, lines = _convert(name)
     assert any(m.startswith("Dead wavetable blocks") for m in lines)
     monkeypatch.setattr(D, "plan_dead_blocks", lambda *a, **k: None)

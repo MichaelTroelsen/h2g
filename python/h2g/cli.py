@@ -286,6 +286,13 @@ def main(argv=None) -> int:
              "voice-0 record), and the file's other filtered records keep "
              "the full ping-pong sweep. Per song. Off by default")
     parser.add_argument(
+        "--rest-park-twin", action="store_true",
+        help="with --rest-wave-silence: a rest on one instrument whose "
+             "wavetable program LOOPS points at a silent stepping copy of "
+             "the loop instead of the stop program, so the pitch loop the "
+             "original keeps stepping through a rest keeps stepping "
+             "(I_Ball's instrument 3). Per song. Off by default")
+    parser.add_argument(
         "--drum-alt-sweep", action="store_true",
         help="--drum-alt-fall with no wavetable headroom held back, for a "
              "record whose short per-record budget declined it "
@@ -1017,6 +1024,7 @@ def main(argv=None) -> int:
                           ("--drum-alt-fall", "drum_alt_fall"),
                           ("--ilv-start-cutoff", "ilv_start_cutoff"),
                           ("--drum-alt-sweep", "drum_alt_sweep"),
+                          ("--rest-park-twin", "rest_park_twin"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
@@ -1164,6 +1172,7 @@ def main(argv=None) -> int:
                       drum_alt_fall=args.drum_alt_fall,
                       ilv_start_cutoff=args.ilv_start_cutoff,
                       drum_alt_sweep=args.drum_alt_sweep,
+                      rest_park_twin=args.rest_park_twin,
                       skip_gate=args.skip_gate,
                       real_firstwave_instruments=real_firstwave_instruments,
                       gate_off_firstwave_instruments=(

@@ -360,6 +360,7 @@ def convert(sid_path: str, log: Logger = print,
             rest_wave_silence: bool = False,
             rest_program_stop: bool = False,
             rest_envelope_silence: bool = False,
+            rest_park_twin: bool = False,
             compact_instruments: bool = False,
             engine: int = 0,
             tempo: int | str | None = None,
@@ -877,6 +878,10 @@ def convert(sid_path: str, log: Logger = print,
     gate-off head and a shared `CMD_PORTADOWN` chain (`goatwriter/drum_long.py`,
     -S2 and above only). Off by default: it moves the bytes of every file with
     such a record (Monty_on_the_Run, Devils_Galop, International_Karate).
+    Where the table is too full for the chain (Thrust, 255 of 255 rows), the
+    records whose blocks are identical store one copy
+    (`goatwriter/shared_blocks.py`) and the plan is asked again; a plan that
+    fits is not touched.
 
     drum_fall_loop carries the bit-$01 drum's high-byte fall on a note whose
     fall is longer than the record's own program can hold
@@ -971,6 +976,14 @@ def convert(sid_path: str, log: Logger = print,
     beats on voice 2 (solo loud_ratio .220 against .738 with this on;
     heard, 2026-10-25). Per song: it costs `adsr` agreement where
     Goattracker's $0F00 is read against the original's $0000.
+
+    rest_park_twin points a `rest_wave_silence` rest that parks on ONE
+    instrument with a LOOPING wavetable program at a silent stepping copy of
+    that loop instead of the stop program, so the pitch loop the original
+    keeps stepping through a rest (I_Ball's instrument 3) keeps stepping, with
+    the voice silent (`goatwriter.rest_park.twin_loops`). Needs
+    `rest_wave_silence`; inert without it. Off by default: it moves the bytes
+    of every file that ships `rest_wave_silence`; per song.
 
     sfx_drum_bandpass writes the one frame of bandpass the sfx drum's fire
     block sets (`detect.find_sfx_drum_bandpass`) into the filter program of
@@ -2049,6 +2062,7 @@ def convert(sid_path: str, log: Logger = print,
                          drum_fall=drum_fall,
                          rest_program_stop=(program_stop
                                             and not rest_wave_silence),
+                         rest_park_twin=rest_park_twin,
                          # Where the patterns carry both rest families the
                          # park program zeroes SR and AD on the park's call
                          # (`goatwriter.rest_park.REST_PARK_ENV_PROGRAM`).

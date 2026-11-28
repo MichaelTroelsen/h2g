@@ -85,6 +85,50 @@ two counted gates and whose swing waits for age 4: ACE_II and Saboteur_II
 (Saboteur_II: `bend` .66 -> .81, `travel` .70 -> .78, nothing else beyond
 +-0.001).
 
+**Early classes: the duration-gated update** (Zoolook; `_duration_gate`,
+`EARLY_VERIFIED`). Its swing is gated on the note's LENGTH (`$4263 LDA $44C7,X /
+AND #$1F / CMP #$03 / BCC`), not its age, so the first update after the fetch
+frame already shows it: `first` = 1, where the age gate's is 4 (`note_phases`
+carries it per note, `classify` reads the offsets from it). Frame 1 is ahead of
+the note's second pattern row (a row of 10-11 frames is call 30-32 at -S3), so the
+chain a second row starts cannot carry the phase: a class is the note's own
+INSTRUMENT, a copy of the record whose program is the record's events, the
+swing's offset on frame 1 (a `$F1`/`$F2` of up to two depths, `A`) and a jump
+into a shared EXPLICIT triangle -- `bound` ups and `bound` downs of one depth,
+a frame each and a delay row between (`early_loop`), entered at the row of the
+note's phase (`cycle_rotation`, no `vibtime`, so no free calls to find). A
+record whose program has a row after frame 1 (Zoolook's byte `$1A` record, which re-gates
+at call 15) and a note whose next fetch is a tie (`EARLY_SKIP_TIED`) keep the
+record's own vibrato. Needs a gap of `m - 1 >= 2` calls between steps: -S3 and
+up.
+
+Two corrections the dialect needed, measured against siddump of Zoolook
+(`fidelity.py -t 180`, v0.5.685; historical, C:/t/listen-r2-zoolook):
+
+* **The new-song call is no update** (`note_phases` counted frame 0 of the
+  voices' history). A file whose initial instrument carries a vibrato byte
+  stepped the counter once too often: every note of Zoolook's first 4621
+  frames sat one step ahead (5306 of 6118 direction signs agreed over 568
+  notes), and with the call left out 6118 of 6118. The age-gated pass reads it
+  too: Saboteur_II (`vibrato_phase` is in its preset) moves, `tiefr` 83.7 ->
+  84.4%, `travel` .776 -> .790, `bend` .805 -> .821, `cents` +0.1 pp, `aud`
+  +0.0001, `wave` -0.0001; ACE_II and Trans-Atlantic are unchanged byte for
+  byte, and forced on IK_plus it reads `cents` 92.5 -> 94.0%, `travel` .977
+  -> .997, `aud` +0.0002, `loud` -0.0003.
+* **A class costs an instrument, and the 62 are shared** with the
+  previous-class firstwave clones (`prev_class_firstwave`, second build), which
+  are made most-used first up to the same limit: Zoolook's 62 are full without
+  this pass (23 clones) and with three classes it makes 20 (seven: 16). `EARLY_MAX_CLONES`
+  is the sweep (its comment).
+
+Measured, Zoolook `-t 180 --presets --sound`, `vibrato_phase` forced, three
+classes (v0.5.685; historical): `tiefr` 85.1 -> 90.7%, `cents` 93.7 -> 96.1%,
+`tie` 0.864 -> 0.924, `depth` 0.61 -> 0.66, `travel` 0.63 -> 0.71, `bend`
+0.667 -> 0.682, `aud` 0.9067 -> 0.9097, `loud` 0.9694 -> 0.9703; `wave` 99.43
+-> 99.35% (the displaced firstwave clones). 223 of the 568 vibrating notes are
+taken (the rest are tied, in a repeat whose plays name different classes, or
+of the records left out).
+
 **At -S1** (`multiplier == 1`; Trans-Atlantic_Balloon_Challenge, whose clock
 `_clock_cells` reads: outer 109, inner 2, three frames a row, the outer gate
 skipping one call in 113) the packed player runs one call a frame, a wavetable
@@ -147,6 +191,35 @@ STOP_AT_FETCH = True
 # The age at which the classic update starts to write the swing: `$E289
 # LDA $E587,X / CMP #$04 / BCC` in ACE_II. The update runs from frame 1.
 FIRST_ACTIVE = 4
+# A duration-gated update (Zoolook, `_duration_gate`) writes from frame 1: the
+# fetch frame (0) runs none of the update, the next one steps and shows.
+EARLY_FIRST_ACTIVE = 1
+# The duration-gated files the counter model has been read against a trace of
+# the original on, by PSID title. 23 corpus files carry the dialect
+# (`_duration_gate`) and the pass reads the clock and counter of three of them
+# (Chain_Reaction, Thanatos, Zoolook); the model agrees with the traced
+# direction sequence on every frame of Zoolook's 568 vibrating notes (6118 of
+# 6118 steps) and NOT on Chain_Reaction's first 4621 frames (record `$0B`:
+# 2008 of 2793 steps, every note one step ahead, as Zoolook's were before the
+# new-song call stopped counting; its first fetch is call 2 where Zoolook's is
+# call 1, so its start-up runs another call that is no update). The pass is
+# keyed to what has been read; `vibrato_phase` forced on Chain_Reaction with
+# the gate open reads `aud` -0.0044, `cents` -0.74 pp, `tiefr` +2.1 pp.
+EARLY_VERIFIED = frozenset({"Zoolook"})
+# An early class is one instrument, and the 62 instruments are shared with every
+# pass that clones a record after this one (`prev_class_firstwave` is built on
+# the same limit): each class displaces the least-used of its variants. Swept
+# on Zoolook, `-t 180 --presets --sound`, `vibrato_phase` forced
+# (C:/t/listen-r2-zoolook, v0.5.685; historical): 2 classes `aud` +0.0000, 3
+# `aud` +0.0031 `loud` +0.0009 `tiefr` 85.1 -> 90.7%, 4 (the fourth is
+# `(10, 0, -1)`) `aud` +0.0001 `loud` -0.0004, 5 and 7 flat on `aud` with
+# `wave` -0.0013 / -0.0018. The cap is that sweep, not a derivation.
+EARLY_MAX_CLONES = 3
+# A note whose next fetch is a tie (a pitch command) goes on past that fetch,
+# where the original's update stalls one frame and the shared loop does not:
+# its first segment is exact and the rest is a frame off. Left to the record's
+# own vibrato (Zoolook's `$28A8`: 3 notes of 85 frames each).
+EARLY_SKIP_TIED = True
 CMD_PORTAUP, CMD_PORTADOWN = 1, 2           # gcommon.h
 _AGE_GATE = bytes([0xC9, FIRST_ACTIVE, 0x90])     # CMP #4 / BCC
 _MAX_RECORDS = 62                                  # GT_TEMPO_INSTRUMENT - 1
@@ -279,6 +352,35 @@ def _age_load(window: bytes) -> bool:
     return at >= 3 and window[at - 3] == 0xBD      # LDA abs,X
 
 
+def _duration_gate(sid: SidFile, det: Detection) -> bool:
+    """Whether the update writes its swing from the FIRST update after a fetch
+    and only gates it on the note's length (Zoolook `$4263`: `LDA $44C7,X /
+    AND #$1F / CMP #$03 / BCC`): the dialect `VibratoGate.form == "duration"`
+    names. There is no age to wait for, so the swing shows from frame 1."""
+    gate = det.vibrato_gate
+    if gate is None or gate.form != "duration" or gate.gate is None:
+        return False
+    site = _find_vibrato_site(sid, det)
+    if site is None:
+        return False
+    window = bytes(sid.data[site[1]:site[1] + 0x140])
+    shape = bytes([0x29, 0x1F, 0xC9, gate.gate, 0x90])    # AND #$1F / CMP / BCC
+    at = window.find(shape)
+    return at >= 3 and window[at - 3] == 0xBD      # LDA abs,X
+
+
+def first_active(sid: SidFile, det: Detection) -> Optional[int]:
+    """The frame, counted from a note's fetch, on which the original's update
+    first writes its swing: `FIRST_ACTIVE` behind an age gate,
+    `EARLY_FIRST_ACTIVE` behind a duration gate of a file `EARLY_VERIFIED`
+    names, None where neither is read."""
+    if _age_gate(sid, det):
+        return FIRST_ACTIVE
+    if sid.name in EARLY_VERIFIED and _duration_gate(sid, det):
+        return EARLY_FIRST_ACTIVE
+    return None
+
+
 def note_phases(blob: bytes, sid: SidFile, det: Detection,
                 slides: bool = False) -> list:
     """Every vibrating note of the first lap, with the original's triangle:
@@ -294,8 +396,9 @@ def note_phases(blob: bytes, sid: SidFile, det: Detection,
     cells_at = _uv.counter_cells(sid, det)
     speeds = _gw_tempo.find_song_speeds(sid, det)
     clock = _clock_cells(sid, 0)
+    swing_from = first_active(sid, det)
     if (cells_at is None or speeds is None or clock is None
-            or not _age_gate(sid, det) or blob[HEADER_LEN] != 1
+            or swing_from is None or blob[HEADER_LEN] != 1
             or speeds.frames_for(0) != clock[2]):
         return []
     try:
@@ -340,7 +443,7 @@ def note_phases(blob: bytes, sid: SidFile, det: Detection,
         state = start[v]
         after: Dict[int, tuple] = {}
         f_first = frames[0]
-        for f in range(f_first):
+        for f in range(1, f_first):
             b = _record_byte(sid, det, first)
             if b:
                 bound = (b & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
@@ -368,13 +471,15 @@ def note_phases(blob: bytes, sid: SidFile, det: Detection,
                               for r in range(idx, end_row)):
                 continue
             life = frames[end_row] - f0
-            if life < MIN_LIFE:
+            tie_next = lane[end_row][3] in _PITCH_COMMANDS
+            if life < swing_from + 2:
                 continue
             bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
             offs = {j: after[f0 + j][0] - (bound >> 1) for j in range(1, life)}
             out.append(dict(place=place, record=rec, byte=byte, bound=bound,
                             shift=byte & VIBRATO_SHIFT_MASK, life=life,
-                            frame=f0, offsets=offs))
+                            frame=f0, offsets=offs, first=swing_from,
+                            tie_next=tie_next))
     return out
 
 
@@ -397,15 +502,16 @@ def classify(note: dict, explicit: bool = False) -> Optional[Tuple[int, int]]:
     explicit up/down cycle the note's program jumps into (`cycle_rotation`),
     which takes no null steps to set the phase."""
     offs, bound, life = note["offsets"], note["bound"], note["life"]
-    if FIRST_ACTIVE not in offs:
+    first = note.get("first", FIRST_ACTIVE)
+    if first not in offs:
         return None
-    dirs = [offs[j] - offs[j - 1] for j in range(FIRST_ACTIVE + 1, life)
+    dirs = [offs[j] - offs[j - 1] for j in range(first + 1, life)
             if j in offs and j - 1 in offs][:2 * bound]
     if any(x not in (-1, 1) for x in dirs):
         return None
     n = (cycle_rotation(bound, dirs) if explicit
          else rotation(bound, dirs))
-    return None if n is None else (n, offs[FIRST_ACTIVE])
+    return None if n is None else (n, offs[first])
 
 
 # --- emitting a class ---------------------------------------------------------
@@ -500,6 +606,60 @@ def chain_rows(kept: Dict[int, tuple], n: int, a_move: int, calls: int,
     for t in (free[len(free) - n:] if n else []):
         tl[t] = null_row
     return _lay_out(tl, t_row, t_l, _last_wave(kept, t_row))
+
+
+def early_frame_rows(calls: int) -> int:
+    """Rows one frame of the explicit loop takes: the step and the delay that
+    holds the other `calls - 1` calls."""
+    gap: List[tuple] = []
+    _wait(gap, [None], calls - 1)
+    return 1 + len(gap)
+
+
+def early_loop(bound: int, calls: int, first_row: int) -> List[tuple]:
+    """The shared explicit triangle of an early class (`early_rows`): `bound`
+    ups and `bound` downs of one depth, a frame each, no `vibtime`, closing in
+    the jump to `first_row`. A class jumps into it at the row of its phase."""
+    rows: List[tuple] = []
+    for i in range(2 * bound):
+        rows.append(((_SYM_UP if i < bound else _SYM_DOWN), 1))
+        _wait(rows, [None], calls - 1)
+    rows.append((GT_WAVE_JUMP, first_row))
+    return rows
+
+
+def early_after(kept: Dict[int, tuple], end_t: int, bound: int, rot: int,
+                calls: int, first: int) -> int:
+    """The loop phase a class enters at: its rotation `rot` advanced past the
+    frames the class program unrolls itself (none while the record's program
+    has no row after frame `first`)."""
+    return rot % (2 * bound)
+
+
+def early_rows(kept: Dict[int, tuple], end_t: int, bound: int, rot: int,
+               calls: int, first: int, move: Optional[tuple]) -> List[tuple]:
+    """An early class's program, WITHOUT the closing jump into the shared loop:
+    the record's events with `move` (the swing's offset on frame `first`, a
+    `$F1`/`$F2` of up to two depths) on frame `first`'s first call, an event
+    that falls on it one call after, up to the first call of frame `first + 1`
+    where the loop's step on the original's phase takes over. `_Unsupported`
+    where a record's row falls after that (merging it would move the
+    swing the loop carries)."""
+    t_a = first * calls
+    t_l = t_a + calls
+    if any(t >= t_l for t in kept):
+        raise _Unsupported()
+    tl = {t: row for t, row in kept.items() if t < t_a}
+    if move is not None:
+        tl[t_a] = move
+    for t, row in sorted((t, r) for t, r in kept.items() if t_a <= t < t_l):
+        u = t
+        while u in tl:
+            u += 1
+        if u >= t_l:
+            raise _Unsupported()
+        tl[u] = row
+    return _lay_out(tl, 0, t_l, None)
 
 
 def simulate(rows: List[tuple], stbl: List[tuple], start: int, calls: int,
@@ -641,6 +801,14 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     notes = note_phases(blob, sid, det, slides=(m == 1))
     if not notes:
         return blob
+    first = notes[0]["first"]
+    # A duration-gated update (`_duration_gate`) shows its swing from frame 1,
+    # before the note's second pattern row: the class is the instrument itself
+    # (`early_rows`), not a chain a second row starts. Its rows need a gap of
+    # `m - 1` calls between two steps, and one call is no delay row.
+    early = first == EARLY_FIRST_ACTIVE
+    if early and m < 3:
+        return blob
     wtbl, ptbl, ftbl, stbl = _read_tables(blob, tables_at, patt_at)
     count = blob[instr_at]
     recs_at = instr_at + 1
@@ -655,7 +823,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             if (blob[start + r * 4 + 2] == CMD_VIBRATO
                     and blob[start + r * 4 + 3]):
                 return blob
-    t_a = FIRST_ACTIVE * m
+    t_a = first * m
     t_l = t_a + m
 
     # The records whose program a class can start from.
@@ -693,7 +861,10 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     classes: Dict[tuple, dict] = {}
     for note in notes:
         k = note["record"]
-        cls = classify(note, explicit=(m == 1)) if k in taken else None
+        if early and EARLY_SKIP_TIED and note.get("tie_next"):
+            continue
+        cls = (classify(note, explicit=(m == 1 or early))
+               if k in taken else None)
         if cls is None or note["byte"] != taken[k]["byte"]:
             continue
         key = (k, cls[0], cls[1])
@@ -704,21 +875,24 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
 
     # The second pattern row's first call: the program time `CMD_SETWAVEPTR`
     # on it takes effect at (`t_row`), the row clock in calls.
-    speeds = _gw_tempo.find_song_speeds(sid, det)
-    row_len = speeds.exact_row(0) if speeds is not None else None
-    if (m == 1 and speeds is not None and speeds.frames_for(0)
-            and row_len is not None and row_len.denominator != 1):
-        # At -S1 our row is the whole number of calls the tempo says; the
-        # outer gate's rare skipped call is the original's, which the
-        # re-grid (`regrid_phase`) takes up, so the corrected row's fraction
-        # is no part of where OUR second pattern row falls.
-        row_len = Fraction(speeds.frames_for(0))
-    if row_len is None or (row_len * m).denominator != 1:
-        return blob
-    # The note's call 0 runs no wavetable row: program time is the call - 1.
-    t_row = int(row_len * m) - 1
-    if not 1 < t_row < t_a:
-        return blob
+    t_row = None
+    if not early:
+        speeds = _gw_tempo.find_song_speeds(sid, det)
+        row_len = speeds.exact_row(0) if speeds is not None else None
+        if (m == 1 and speeds is not None and speeds.frames_for(0)
+                and row_len is not None and row_len.denominator != 1):
+            # At -S1 our row is the whole number of calls the tempo says; the
+            # outer gate's rare skipped call is the original's, which the
+            # re-grid (`regrid_phase`) takes up, so the corrected row's
+            # fraction is no part of where OUR second pattern row falls.
+            row_len = Fraction(speeds.frames_for(0))
+        if row_len is None or (row_len * m).denominator != 1:
+            return blob
+        # The note's call 0 runs no wavetable row: program time is the call
+        # - 1.
+        t_row = int(row_len * m) - 1
+        if not 1 < t_row < t_a:
+            return blob
 
     # Programs are built from symbolic rows (a first byte above $FF: the null
     # step, a move, the held step) so that two classes' rows can be compared
@@ -729,6 +903,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         and the chain the rest."""
         k, n, a = key
         info = taken[k]
+        if early:
+            return (n, a), 0
         if m == 1:
             return 0, 0
         cap = len(free_calls(info["kept"], t_row, t_a))
@@ -749,6 +925,9 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             if abs(a) > 2 or (abs(a) == 2 and info["shift"] < 1):
                 raise _Unsupported()
             moves[a] = ((_SYM_UP if a > 0 else _SYM_DOWN), abs(a))
+        if early:
+            return early_rows(info["kept"], info["end_t"], info["bound"],
+                              n, m, first, moves.get(a))
         return chain_rows(info["kept"], n2, a, m, t_row, (_SYM_NULL, 0), moves)
 
     def concrete(rows, info):
@@ -774,19 +953,33 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     def entry_row(key):
         """The row of the shared loop a class's chain jumps to: its cycle
         rotation at -S1, the loop's first row otherwise."""
+        if early:
+            return early_entry(key[0], key[1])
         return key[1] if m == 1 else 0
 
     def loop_key(info):
+        if early:
+            return ((), 0, info["bound"], info["shift"])
         tail = tuple(sorted((t - t_l, row) for t, row in info["kept"].items()
                             if t >= t_l))
         return (tail, max(0, info["end_t"] - t_l), info["bound"], info["shift"])
 
     def loop_rows_for(lkey, first_row):
         tail, end, bnd, _s = lkey
+        if early:
+            return early_loop(bnd, m, first_row)
         if m == 1:
             return ([(_SYM_UP, 1)] * bnd + [(_SYM_DOWN, 1)] * bnd
                     + [(GT_WAVE_JUMP, first_row)])
         return _held_rows(dict(tail), end, (_SYM_STEP, 0), 0, m, first_row)
+
+    def early_entry(k, j):
+        """The row of the shared loop a class's program jumps to: the frame
+        after its unrolled steps (`early_rows`), `early_frame_rows` rows a
+        frame."""
+        info = taken[k]
+        return (early_after(info["kept"], info["end_t"], info["bound"], j, m,
+                            first) * early_frame_rows(m))
 
     def calls_of(row):
         return row[0] + 1 if row[0] <= GT_WAVE_LAST_DELAY else 1
@@ -824,7 +1017,8 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     stems: Dict[tuple, int] = {}                # stem rows -> first row
     made: Dict[tuple, int] = {}                 # class -> chain's 1-based row
     new_records: List[tuple] = []               # ((record, nulls), bytearray)
-    while pending and count + len(bases) < _MAX_RECORDS:
+    while (pending and count + len(bases) < _MAX_RECORDS
+           and (not early or len(bases) < EARLY_MAX_CLONES)):
         best = None
         for key, rows in pending.items():
             info = taken[key[0]]
@@ -838,7 +1032,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
                     extra = len(loop_rows_for(lkey, 1))
                 except _Unsupported:
                     continue
-            if (key[0], nb) not in bases:
+            if not early and (key[0], nb) not in bases:
                 try:
                     stem = stem_rows(info["kept"], nb, t_row, (_SYM_NULL, 0))
                 except _Unsupported:
@@ -859,7 +1053,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         if lkey not in loops:
             loops[lkey] = len(wtbl) + 1
             wtbl.extend(concrete(loop_rows_for(lkey, len(wtbl) + 1), info))
-        if (key[0], nb) not in bases:
+        if not early and (key[0], nb) not in bases:
             stem = stem_rows(info["kept"], nb, t_row, (_SYM_NULL, 0))
             skey = (tuple(stem), info["bound"] if nb else None)
             if skey not in stems:
@@ -885,6 +1079,15 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
         wtbl.extend(concrete(rows_c, info))
         programs.setdefault(lkey, []).append(dict(rows=shared, at=at))
         made[key] = at
+        if early:
+            # The class is its own instrument: the record, started at the
+            # class's program.
+            rec = bytearray(recs[key[0] - 1])
+            rec[_WAVE_AT] = at
+            rec[_STBL_AT] = 0
+            rec[_VIBDELAY_AT] = 0
+            bases[(key[0], nb)] = at
+            new_records.append(((key[0], nb), rec))
     if not made:
         return blob
 
@@ -930,7 +1133,9 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             stops: Dict[int, int] = {}
             for r, val in (maps[0] or {}).items():
                 nxt = rows[r + 1] if r + 1 < len(rows) else None
-                if (nxt is not None and nxt[2] == 0
+                if early:
+                    mapping[r] = val
+                elif (nxt is not None and nxt[2] == 0
                         and not GT_FIRST_NOTE <= nxt[0] <= GT_LAST_NOTE):
                     if m == 1 and STOP_AT_FETCH:
                         # At -S1 the program steps on every call and so
@@ -997,8 +1202,9 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
     for at, _p, mapping, body, nrows, _t in plans:
         for r, (k, nb, chain) in mapping.items():
             body[r * 4 + 1] = clone_of[(k, nb)]
-            body[(r + 1) * 4 + 2] = CMD_SETWAVEPTR
-            body[(r + 1) * 4 + 3] = chain
+            if not early:
+                body[(r + 1) * 4 + 2] = CMD_SETWAVEPTR
+                body[(r + 1) * 4 + 3] = chain
         for stop in stop_rows.get(_t[:2], {}).values():
             body[stop * 4 + 2] = CMD_SETWAVEPTR
             body[stop * 4 + 3] = 0
@@ -1043,7 +1249,7 @@ def phase_classic_vibrato(blob: bytes, sid: SidFile, det: Detection,
             f"vibrating note(s) ({early} of {total} in the first "
             f"{WEIGHT_WINDOW} frames) started in the original's phase by "
             f"{len(keys)} clone(s) and {len(made)} wavetable chain(s) "
-            f"({named} notes in their classes, lost to "
+            f"({named} notes in their classes {sorted(made)}, lost to "
             + ", ".join(f"{k} {v}" for k, v in lost.items()) + "), "
             f"{len(new_patterns)} pattern(s) copied, wavetable "
             f"{len(wtbl)}/{GT_MAX_TABLELEN} rows")

@@ -64,6 +64,7 @@ from . import note_rise as _gw_note_rise
 from . import wave_eor as _gw_wave_eor
 from . import note_pitch_split as _gw_note_pitch_split
 from . import dead_blocks as _gw_dead_blocks
+from . import shared_blocks as _gw_shared_blocks
 from . import counter_fall as _gw_counter_fall
 from . import rise_stair as _gw_rise_stair
 from . import tri_clock as _gw_tri_clock
@@ -617,6 +618,7 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               pitch_tie_phase: bool = False,
               rest_program_stop: bool = False,
               rest_envelope_park: bool = False,
+              rest_park_twin: bool = False,
               drop_dead_blocks: bool = False,
               vibrato_onset: bool = False,
               vibrato_early_delay: bool = False,
@@ -1678,13 +1680,48 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             and (getattr(det, "drum_long", False)
                  or getattr(det, "drum_fall_loop", False))):
         from . import drum_long as _gw_drum_long
-        dlong = _gw_drum_long.drum_long_plan(
-            sid, det, tracks, patterns, lead, instr_used, fmt, multiplier,
-            gate_skip, table, len(wave_entries), row_calls, note_rows,
-            log=log, plain=getattr(det, "drum_long", False),
-            loop=getattr(det, "drum_fall_loop", False),
-            wave_entries=wave_entries, wave_starts=wave_starts,
-            play_groups=getattr(instr_row_calls, "play_groups", None))
+
+        def _long_plan(pats, entries, starts):
+            return _gw_drum_long.drum_long_plan(
+                sid, det, tracks, pats, lead, instr_used, fmt, multiplier,
+                gate_skip, table, len(entries), row_calls, note_rows,
+                log=log, plain=getattr(det, "drum_long", False),
+                loop=getattr(det, "drum_fall_loop", False),
+                wave_entries=entries, wave_starts=starts,
+                play_groups=getattr(instr_row_calls, "play_groups", None))
+
+        dlong = _long_plan(patterns, wave_entries, wave_starts)
+        if dlong is None:
+            # A full table (Thrust: 255 of 255) leaves the sweep no room, and
+            # its records carry the same program several times: store the
+            # copies once (`shared_blocks`) and ask again. Only on a table
+            # the first plan found no room in, so a file that fits is
+            # untouched.
+            holders = (arp_starts, clone_starts, phase_clone_starts,
+                       tie_block_starts, attack_hold_starts, cut_starts,
+                       drum_starts)
+            library_end = (eor_span[2]
+                           + len(_gw_wave_eor.EOR_STOP_PROGRAM) - 1
+                           if eor_span else 0)
+            shared = _gw_shared_blocks.plan_shared_blocks(
+                wave_entries, wave_starts, lead,
+                [r for rows in holders for r in rows],
+                _gw_dead_blocks.setwaveptr_operands(patterns),
+                protect=max(lead * WAVE_ENTRIES_PER_INSTR, library_end))
+            if shared is not None:
+                trial = [list(pat) for pat in patterns]
+                _gw_dead_blocks.remap_setwaveptr(trial, shared.row_map)
+                dlong = _long_plan(trial, shared.entries, shared.starts)
+                if dlong is not None:
+                    for rows in holders + (eor_span,):
+                        _gw_dead_blocks.remap_rows(rows, shared.row_map)
+                    wave_starts[:] = shared.starts
+                    wave_entries = shared.entries
+                    if log:
+                        log(f"Shared wavetable blocks.: {len(shared.shared)} "
+                            f"record(s) share another's identical block, "
+                            f"{shared.rows} of {len(shared.entries) + shared.rows}"
+                            f" rows freed for the drum sweep")
         if dlong is not None:
             patterns = dlong.patterns
             wave_entries = wave_entries + dlong.entries
@@ -2384,7 +2421,10 @@ def _build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             "only": program_only,
             "lagged": _gw_rest_park.lagged_instruments(
                 out, instr_at, written_instr),
-            "envelope": rest_envelope_park}))
+            "envelope": rest_envelope_park}),
+        # Only where asked, so a caller that wraps the plan keeps its shape.
+        **({"twin": True} if rest_park_twin and program_only is None
+           else {}))
     if dead_dropped:
         # A record dropped as unnamed, named after all by a pass that ran
         # later: its pointer is 0 and it would play nothing. Never ship that.

@@ -42,6 +42,25 @@ is sufficient there and is what it was before this pass; and a conversion with
 no `CMD_SETWAVE $08` row (the option off, which is every shipped preset)
 comes back unchanged, byte for byte, with no rows appended.
 
+**A looping program can be stepped silently instead of stopped: the twin
+(`--rest-park-twin`).** The original's rest does NOT stop a pitch loop of the
+record (I_Ball's instrument 3: base note, base note, +24 semitones, period 3):
+the player keeps stepping it with the voice at wave `$08`, ADSR `$0000`, so its
+frequency register keeps reversing across the rest, and the stop program
+freezes it where the park lands. A rest whose live instrument is a single
+KNOWN instrument with a LOOPING program is then pointed at a copy of the
+loop body, its waveform column made `$E8` (silent, gplay.c:527: the voice
+reads `$08`, below siddump's note threshold, so no tie is brought back), its
+delay entries and its note column kept, closed by its own `FF <first row>`.
+Under `--rest-envelope-silence` the copy opens on one `CMD_SETSR $00` row that
+runs once (the `FF` jumps past it) and the AD stays on the rest's hold row. A
+loop with a command row, or one that opens on a delay (a delay entry compares
+against a `wavetime` the old table leaves wherever it was, gplay.c:697-704),
+keeps the stop program. Twins are keyed by body, so instruments that share a
+loop share the rows, and only those a rest points at are appended. Measured
+(I_Ball, `-t 180`, v0.5.685, historical): the stop program costs vib 1.0056 ->
+.9438, the twin .9943.
+
 **`--rest-program-stop` is the same pass restricted to the instruments whose
 record selects the byte-code wave PROGRAM** (`only`). A bit-6 rest bypasses
 that interpreter (`detect.wave_program_rest_bypass`), so its program stops at
@@ -113,6 +132,92 @@ REST_PARK_ENV_FULL_PROGRAM: Tuple[Tuple[int, int], ...] = (
 # for `value + 1` calls) and writes nothing. Placed in front of the park it
 # lets the park land one call later; see `lagged_instruments`.
 REST_PARK_DELAY: Tuple[int, int] = (0x00, GT_WAVE_NO_NOTE)
+
+# (rows, index of the row the closing `FF` jumps back to)
+TwinBody = Tuple[Tuple[Tuple[int, int], ...], int]
+
+
+def twin_loops(entries: List[Tuple[int, int]], starts: Dict[int, int]
+               ) -> Dict[int, TwinBody]:
+    """Instrument number -> silent twin of its program's LOOP, for every
+    instrument whose program loops (see "the twin" in the module docstring).
+
+    `entries` is the 1-based wavetable as (left, right) rows, `starts` the
+    instrument's first row (0 = no program). The program is WALKED from its
+    start the way the player runs it, following each `FF <target>`; the loop
+    is the cycle the walk first closes (an instrument's own tail, or a tail
+    shared with other instruments that its `FF` jumps into). A walk that
+    reaches a stop (`FF 00`), leaves the table or sits on an `FF` row it
+    already followed is not a loop.
+
+    The twin of the cycle: every waveform entry (left `$10`-`$EF`) becomes
+    `$E8`; delays (left `$00`-`$0F`, which still write their note column when
+    they expire) and the note column are kept. A cycle that BEGINS on a delay
+    is declined (a delay entry compares against a `wavetime` the old table
+    leaves wherever it was, gplay.c:697-704, and Shockway_Rider's twin of such
+    a loop stepped a note pitch onto its hard-restart frame: runs.jsonl
+    `rest-park-silent-stepping-twin-i-ball`), as is a cycle with a command row
+    (`$F0`-`$FE`): a command executed under a rest is an effect the original
+    did not run there."""
+    out: Dict[int, TwinBody] = {}
+    n = len(entries)
+    for g, s in starts.items():
+        if not s or s > n:
+            continue
+        path: List[int] = []
+        at: Dict[int, int] = {}
+        followed = set()
+        pos, cycle = s, None
+        while 1 <= pos <= n:
+            if pos in at:
+                cycle = at[pos]
+                break
+            left, right = entries[pos - 1]
+            if left == GT_WAVE_JUMP:
+                if not right or pos in followed:
+                    break
+                followed.add(pos)
+                pos = right
+                continue
+            at[pos] = len(path)
+            path.append(pos)
+            pos += 1
+        if cycle is None:
+            continue
+        body = [entries[p - 1] for p in path[cycle:]]
+        if any(0xF0 <= left <= 0xFE for left, _ in body):
+            continue
+        rows = [(WAVE_SILENT_BASE | REST_SILENT_WAVE, note)
+                if 0x10 <= left < 0xF0 else (left, note)
+                for left, note in body]
+        if rows[0][0] <= 0x0F:
+            continue
+        out[g] = (tuple(rows), 0)
+    return out
+
+
+def twin_layout(loops: Dict[int, TwinBody], used, base: int,
+                prefix: Tuple[Tuple[int, int], ...] = ()
+                ) -> Tuple[Dict[int, int], List[Tuple[int, int]]]:
+    """(pointer by instrument, rows to append) for the instruments in `used`,
+    the first appended row being 1-based row `base`. Instruments that share a
+    body share its rows; the pointer is the first row of `prefix` (the
+    commands run once, before the loop: `--rest-envelope-silence`'s SR) or of
+    the body, never a delay or an `FF`, and the closing `FF` jumps past the
+    prefix."""
+    placed: Dict[TwinBody, int] = {}
+    rows: List[Tuple[int, int]] = []
+    ptr: Dict[int, int] = {}
+    for g in sorted(used):
+        key = loops[g]
+        body, lead = key
+        if key not in placed:
+            placed[key] = base + len(rows)
+            rows.extend(prefix)
+            rows.extend(body)
+            rows.append((GT_WAVE_JUMP, placed[key] + len(prefix) + lead))
+        ptr[g] = placed[key]
+    return ptr, rows
 
 
 def rest_wave_rows(patterns: List[List[int]]) -> int:
@@ -224,8 +329,9 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
                    only: Optional[frozenset] = None,
                    late_park: int = 0, lagged: frozenset = frozenset(),
                    envelope: bool = False,
-                   vib: Optional[frozenset] = None, free_park: int = 0
-                   ) -> List[List[int]]:
+                   vib: Optional[frozenset] = None, free_park: int = 0,
+                   twins: Optional[Dict[int, int]] = None,
+                   stats: Optional[dict] = None) -> List[List[int]]:
     """`CMD_SETWAVE $08` -> `CMD_SETWAVEPTR park` on each rest whose live
     instrument has a wavetable program (`programmed`), or is not known (a
     pattern reached holding more than one instrument, or none the walk can
@@ -239,13 +345,19 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
     pointer of the program that also holds the AD, taken by a rest whose live
     instruments are all KNOWN and none has vibrato; every other rest takes
     `park` (see `REST_PARK_ENV_FULL_PROGRAM`). Only the non-`only` path uses
-    it: `--rest-program-stop` keeps the two-row program."""
+    it: `--rest-program-stop` keeps the two-row program.
+
+    `twins` (instrument -> pointer, see `twin_loops`): a rest whose live
+    instrument is that ONE instrument points at its silent stepping twin
+    instead of the stop program. `stats`, when given, collects `twin` (the
+    instruments that took one), `plain` (rests on `park`) and `full` (rests
+    on `free_park`)."""
     from .note_passes import _entry_instruments
-    if only is None and (not (park or free_park) or not programmed):
+    if only is None and (not (park or free_park or twins) or not programmed):
         return patterns
     entry = _entry_instruments(tracks, patterns)
     out: List[List[int]] = []
-    placed = stopping = unknown = cleared = nfull = 0
+    placed = stopping = unknown = cleared = nfull = twinned = 0
     for number, pat in enumerate(patterns):
         cands = set(entry.get(number, ()))
         copy: Optional[List[int]] = None
@@ -331,8 +443,17 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
             full = bool(free_park and vib is not None and cands
                         and not (cands & vib))
             to = free_park if full else park
-            if not to:
+            g = next(iter(cands)) if len(cands) == 1 else 0
+            if twins and g in twins:
+                to, full = twins[g], False
+                twinned += 1
+                if stats is not None:
+                    stats.setdefault("twin", set()).add(g)
+            elif not to:
                 continue
+            elif stats is not None:
+                key = "full" if full else "plain"
+                stats[key] = stats.get(key, 0) + 1
             if copy is None:
                 copy = list(pat)
             copy[r + 2] = CMD_SETWAVEPTR
@@ -349,9 +470,55 @@ def rest_park_pass(patterns: List[List[int]], tracks: List[List[int]],
         log(f"Rest park...............: {placed} rest(s) point the wavetable "
             f"at the parked waveform ({unknown} of an instrument not yet "
             f"named)" + (f", {nfull} with the AD in the program" if nfull else "")
+            + (f", {twinned} of them at a silent stepping twin of the "
+               f"instrument's loop" if twinned else "")
             + (f", {stopping} on an instrument with no program"
                if stopping else ""))
     return out
+
+
+def _plan_with_twins(patterns, tracks, wave_entries, loops, programmed, log,
+                     envelope, vib):
+    """`rest_park_plan`'s non-`only` path with silent stepping twins, or None
+    where no rest takes one or the layout does not fit (the caller then plans
+    without twins). The layout is [park program][full program][twins]: a
+    sentinel run of `rest_park_pass` counts which of the three the rests
+    point at, and only those are appended."""
+    split = bool(envelope and vib is not None)
+    if split:
+        base, full = REST_PARK_ENV_PROGRAM, REST_PARK_ENV_FULL_PROGRAM
+    else:
+        base = REST_PARK_ENV_PROGRAM if envelope else REST_PARK_PROGRAM
+        full = ()
+    stats: dict = {}
+    rest_park_pass(patterns, tracks, programmed, 1, None, envelope=envelope,
+                   vib=vib, free_park=1 if split else 0,
+                   twins={g: 1 for g in loops}, stats=stats)
+    used = stats.get("twin", set())
+    if not used:
+        return None
+    at = len(wave_entries) + 1
+    park = free = 0
+    rows: List[Tuple[int, int]] = []
+    if stats.get("plain"):
+        park = at + len(rows)
+        rows += list(base)
+    if stats.get("full"):
+        free = at + len(rows)
+        rows += list(full)
+    prefix = ((WAVECMD_BASE | CMD_SETSR, 0x00),) if envelope else ()
+    ptr, twin_rows = twin_layout(loops, used, at + len(rows), prefix)
+    rows += twin_rows
+    if (at + len(rows) - 1 > GT_MAX_TABLELEN
+            or any(p > 0xFF for p in (park, free, *ptr.values()))):
+        if log:
+            log("Rest park...............: no room in the wavetable for the "
+                "silent stepping twins; rests keep the stop program")
+        return None
+    new = rest_park_pass(patterns, tracks, programmed, park, log,
+                         envelope=envelope, vib=vib, free_park=free,
+                         twins=ptr)
+    return new, wave_entries + rows
 
 
 def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
@@ -360,12 +527,17 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
                    only: Optional[frozenset] = None,
                    lagged: frozenset = frozenset(),
                    envelope: bool = False,
-                   vib: Optional[frozenset] = None
+                   vib: Optional[frozenset] = None, twin: bool = False
                    ) -> Tuple[List[List[int]], List[Tuple[int, int]]]:
     """(patterns, wave_entries) with the park program appended and the rests
     of looping instruments pointed at it. Unchanged where the patterns hold
     no `CMD_SETWAVE $08`, no instrument with a program, or the program would not fit
-    the table."""
+    the table.
+
+    `twin` (`--rest-park-twin`): a rest on ONE instrument whose program loops
+    points at a silent stepping copy of that loop instead of the stop program
+    (`twin_loops`), after SR zeroed once where `envelope` is on. Falls back to
+    the stop program for every rest when the twins do not fit the table."""
     if not rest_wave_rows(patterns):
         return patterns, wave_entries
     programmed = programmed_instruments(starts)
@@ -416,6 +588,12 @@ def rest_park_plan(patterns: List[List[int]], tracks: List[List[int]],
         return new, wave_entries + prog
     if not programmed:
         return patterns, wave_entries
+    loops = twin_loops(wave_entries, starts) if twin else {}
+    if loops:
+        planned = _plan_with_twins(patterns, tracks, wave_entries, loops,
+                                   programmed, log, envelope, vib)
+        if planned is not None:
+            return planned
     if envelope and vib is not None:
         # `vib`: the instruments with a vibrato pointer. A rest that cannot be
         # on one takes the full program (the AD on the park's frame), the

@@ -98,5 +98,7 @@ def test_only_monty_devils_galop_and_geoff_ship_the_option():
     # on every column at 1ee1557, so it stays off until measured on its own.
     # Geoff_Capes_Strongman_Challenge is the -S1 adoption (`own_sweep`;
     # test_drum_long_s1.py): travel .78 -> .90, tie .82 -> .92, tiefr 76 -> 85%.
+    # Thrust ships it since v0.5.686, the room found by shared_blocks
+    # (test_shared_blocks.py): tie .78 -> .86, tiefr 59 -> 64%.
     assert on == ["Devils_Galop.sid", "Geoff_Capes_Strongman_Challenge.sid",
-                  "Monty_on_the_Run.sid"]
+                  "Monty_on_the_Run.sid", "Thrust.sid"]

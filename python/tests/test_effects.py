@@ -720,8 +720,36 @@ def test_the_guarded_cut_spelling_is_a_fallback_only():
     assert find_envelope_cut(_S(b"\x00" + guarded))
     assert not find_envelope_cut(_S(b"\x00" + guarded.replace(
         bytes.fromhex("D008"), bytes.fromhex("F008")))), "the BNE is part of the shape"
-    assert len(ENVELOPE_CUT_FALLBACK_SHAPES) == 1
+    assert len(ENVELOPE_CUT_FALLBACK_SHAPES) == 2, "guarded, and Ninja's masked clear"
     assert len(ENVELOPE_CUT_SHAPES) == 2, "the primary pair is untouched"
+
+
+def test_the_masked_gate_clear_cut_is_a_fallback():
+    """`LDA mask,X / AND cell,X / STA $D404,Y / LDA #0 / STA $D405,Y /
+    STA $D406,Y` (Ninja $C974): the gate is cleared through a per-voice mask
+    cell, not `AND #$FE`, and every note end still zeroes AD and SR.
+    """
+    from h2g.detect import find_envelope_cut
+
+    class _S:
+        def __init__(self, data):
+            self.data = data
+    masked = bytes.fromhex("3D5DCC9904D4A9009905D49906D4")
+    assert find_envelope_cut(_S(b"\x00" + masked))
+    assert not find_envelope_cut(_S(b"\x00" + masked.replace(
+        bytes.fromhex("A900"), bytes.fromhex("A901")))), "the zeroing is part of the shape"
+
+
+@needs_corpus
+def test_ninja_cuts_its_release_at_every_note_end():
+    """Ninja's records carry release nibble $A (AD$38 SR$0A, AD$08 SR$3A) that
+    the original never sounds; the masked-clear shape is what reads its cut.
+    Measured at v0.5.686: aud .916 -> .944, tail 64% -> 100% (onset 100 -> 91%,
+    one instrument, accepted by the user as a pairing artefact).
+    """
+    from h2g.detect import find_envelope_cut
+    from h2g.sidfile import load_sid
+    assert find_envelope_cut(load_sid(_CORPUS / "Ninja.sid"))
 
 
 def _sr(sid, det, **kw):

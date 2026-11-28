@@ -1042,9 +1042,23 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                               else _first_frame_lead(
                                   wave, multiplier + step_lead, force=True,
                                   written=no_test_restart))
+            # **The tick is `_noise_tick_frames` whole frames of calls, not
+            # what one delay entry can hold.** `tl` is [noise, delay], and a
+            # delay spends at most `WAVE_MAX_DELAY + 1` calls, so above -S9 the
+            # sum read off `tl` (17 at -S10, where two frames are 20) cut the
+            # tick short -- but this shape unrolls the tick into runs
+            # (`_hold_run`), which have no such cap. International_Karate's
+            # 17-call noise started at call 1 of a frame reaches one frame end
+            # (call 9) and not the second (19): 112 of its 378 plain unit-3
+            # notes read one noise frame where the original has two
+            # (tests/test_ticked_nibble_tick_calls.py).
+            tick_calls = (_noise_tick_frames(sid, det, play_groups)
+                          * max(1, multiplier)
+                          if _TICK_UNCAP_NIBBLE else
+                          sum(1 if b > WAVE_MAX_DELAY else b + 1 for b in tl))
             shaped = _gw_arpeggio.ticked_nibble_arp_entries(
                 lead0, lead0_r,
-                sum(1 if b > WAVE_MAX_DELAY else b + 1 for b in tl),
+                tick_calls,
                 noise, tail, _arp_relative(arp_fixed, arp_note, arp_up), half,
                 first_up, first_calls,
                 base_entry,
@@ -1847,6 +1861,10 @@ DRUM_RISE_STEP_FRAMES = 4
 
 # Seam for tests/test_drum_rise.py: False restores the shape that drops the rise.
 _DRUM_RISE = True
+
+# Seam for tests/test_ticked_nibble_tick_calls.py: False restores the tick length
+# read off the single delay entry (17 calls at -S10, where two frames are 20).
+_TICK_UNCAP_NIBBLE = True
 
 
 def _drum_rise_step_calls(multiplier: int, gate_skip: Optional[int],

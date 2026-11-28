@@ -810,6 +810,16 @@ Phantoms_of_the_Asteroid and Thing_on_a_Spring read 1.000, while
 5_Title_Tunes (.85), Bangkok_Knights (.84) and Ninja (.88) keep real
 envelope differences.
 
+**`adsrnf` and the fetch frame.** `adsr_audible_compare(forgive=fetch_frames(...))`
+also leaves out the next-note fetch frame that `gatenf` and `holdnf` already forgive,
+but only where the pair ours writes on it (gate on, `$09`, original still released) is
+the pair the original has on the NEXT frame; a fetch frame with any other pair keeps
+its charge. `adsr` is unchanged. Corpus pass at HEAD 3503f19 (v0.5.685, historical),
+converter bytes untouched: `adsrnf` rose on 12 of 93 files and fell on none (Gerry_the_Germ
+.873 -> .9998, Commando .891 -> 1.000, Rasputin .881 -> .957, Mega_Apocalypse .967 -> .9986,
+Zoids .951 -> .9999); no other column or `output_sha` moved. Several of those were
+`outlier-adsrnf-*` queue entries whose cause was this frame.
+
 ### Why a column misses — `attribute.py` (v0.5.627)
 
 ```sh

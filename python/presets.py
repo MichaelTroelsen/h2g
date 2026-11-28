@@ -504,6 +504,11 @@ EXCLUDED_FROM_ALWAYS = {
     # held back (`attack._wave_alternate_entries(sweep_headroom=)`), for
     # W_A_R_Preview's record, whose short per-record budget declined the fall.
     "drum_alt_sweep",
+    # Per song and never a default: a `--rest-wave-silence` rest on one
+    # instrument with a looping wavetable program points at a silent stepping
+    # twin of the loop (`goatwriter.rest_park.twin_loops`), keeping the pitch
+    # loop the original steps through a rest. Reaches I_Ball.
+    "rest_park_twin",
     # Per song and never a default: a `$68` waveform-state copy's vibrato
     # depth sized on its own pitch (`stored_wave.COPY_DEPTH_EXTRA`, a measured
     # constant). Reaches Monty_on_the_Run alone, which ships it with

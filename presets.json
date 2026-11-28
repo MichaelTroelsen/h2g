@@ -1732,7 +1732,10 @@
       "regrid": true,
       "regrid_full_debt": true,
       "regrid_phase": true,
-      "vibrato_hold": true
+      "vibrato_hold": true,
+      "rest_wave_silence": false,
+      "rest_envelope_silence": false,
+      "rest_park_twin": false
     },
     "IK_plus.sid": {
       "max_rows": 94,
@@ -3849,7 +3852,8 @@
       "multiplier": 3,
       "max_hard_restart": true,
       "hard_restart_frames": 3,
-      "rest_late_keyoff": true
+      "rest_late_keyoff": true,
+      "drum_long": true
     },
     "Thundercats.sid": {
       "max_rows": 128,
@@ -4043,7 +4047,8 @@
       "drum_gate_off": true,
       "hard_restart_frames": 3,
       "master_fade": true,
-      "prev_class_firstwave": true
+      "prev_class_firstwave": true,
+      "vibrato_phase": true
     }
   }
 }
