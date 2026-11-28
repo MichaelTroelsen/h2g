@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.685 presets.py",
+  "generator": "h2g 0.5.686 presets.py",
   "corpus": "..\\..\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -1732,10 +1732,10 @@
       "regrid": true,
       "regrid_full_debt": true,
       "regrid_phase": true,
-      "vibrato_hold": true,
-      "rest_wave_silence": false,
       "rest_envelope_silence": false,
-      "rest_park_twin": false
+      "rest_park_twin": false,
+      "rest_wave_silence": false,
+      "vibrato_hold": true
     },
     "IK_plus.sid": {
       "max_rows": 94,
@@ -3851,9 +3851,9 @@
       "rows": 18397,
       "multiplier": 3,
       "max_hard_restart": true,
+      "drum_long": true,
       "hard_restart_frames": 3,
-      "rest_late_keyoff": true,
-      "drum_long": true
+      "rest_late_keyoff": true
     },
     "Thundercats.sid": {
       "max_rows": 128,
